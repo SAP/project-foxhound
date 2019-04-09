@@ -29,9 +29,8 @@ LOCAL_INCLUDES += [
 # Don't use STL wrappers here (i.e. wrapped <new>); they require mozalloc
 DisableStlWrapping()
 
-# Include fallible for third party code using the xpcom glue
+# Add Taintfox build
 USE_LIBS += [
-    'fallible',
     'taint',
 ]
 

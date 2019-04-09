@@ -956,9 +956,20 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
  public:
   GeneralParser(JSContext* cx, LifoAlloc& alloc,
                 const JS::ReadOnlyCompileOptions& options, const Unit* units,
-                size_t length, bool foldConstants, UsedNameTracker& usedNames,
+                size_t length, const StringTaint& taint,
+                bool foldConstants, UsedNameTracker& usedNames,
                 SyntaxParser* syntaxParser, LazyScript* lazyOuterFunction,
                 ScriptSourceObject* sourceObject, ParseGoal parseGoal);
+
+  GeneralParser(JSContext* cx, LifoAlloc& alloc,
+                const JS::ReadOnlyCompileOptions& options, const Unit* units,
+                size_t length,
+                bool foldConstants, UsedNameTracker& usedNames,
+                SyntaxParser* syntaxParser, LazyScript* lazyOuterFunction,
+                ScriptSourceObject* sourceObject, ParseGoal parseGoal) :
+    GeneralParser(cx, alloc, options, units, length, EmptyTaint,
+                  foldConstants, usedNames, syntaxParser, lazyOuterFunction,
+                  sourceObject, parseGoal) { }
 
   inline void setAwaitHandling(AwaitHandling awaitHandling);
   inline void setInParametersOfAsyncFunction(bool inParameters);

@@ -152,8 +152,8 @@ nsresult nsHtml5TreeOperation::AppendTextToTextNode(
 
 nsresult
 nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
-                                 const StringTaint& taint,
                                  uint32_t aLength,
+                                 const StringTaint& taint,
                                  nsIContent* aParent,
                                  nsHtml5DocumentBuilder* aBuilder)
 {
@@ -637,7 +637,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
   }
 
   // TODO(samuel)
-  return AppendText(aBuffer, EmptyTaint, aLength, aStackParent, aBuilder);
+  return AppendText(aBuffer, aLength, EmptyTaint, aStackParent, aBuilder);
 }
 
 nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
@@ -837,7 +837,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       char16_t* buffer = mTwo.unicharPtr;
       uint32_t length = mFour.integer;
       // TODO(samuel)
-      return AppendText(buffer, EmptyTaint, length, parent, aBuilder);
+      return AppendText(buffer, length, EmptyTaint, parent, aBuilder);
 
     }
     case eTreeOpFosterParentText: {

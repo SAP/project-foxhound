@@ -127,10 +127,7 @@ class CharacterData : public nsIContent {
    * the document is notified of the content change.
    */
   nsresult SetText(const char16_t* aBuffer, uint32_t aLength, bool aNotify, const StringTaint& aTaint);
-  /**
-   * Append the given value to the current text. If aNotify is true then
-   * the document is notified of the content change.
-   */
+
   nsresult SetText(const nsAString& aStr, bool aNotify) {
     return SetText(aStr.BeginReading(), aStr.Length(), aNotify, aStr.Taint());
   }
@@ -139,7 +136,8 @@ class CharacterData : public nsIContent {
    * Append the given value to the current text. If aNotify is true then
    * the document is notified of the content change.
    */
-  nsresult AppendText(const char16_t* aBuffer, uint32_t aLength, bool aNotify);
+  nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
+                      bool aNotify, const StringTaint& aTaint);
 
   bool TextIsOnlyWhitespace() final;
   bool ThreadSafeTextIsOnlyWhitespace() const final;

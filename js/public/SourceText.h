@@ -59,6 +59,8 @@
 #include "js/UniquePtr.h"  // js::UniquePtr
 #include "js/Utility.h"    // JS::FreePolicy
 
+#include "Taint.h"
+
 namespace JS {
 
 namespace detail {
@@ -73,7 +75,7 @@ enum class SourceOwnership {
 };
 
 template <typename Unit>
-class SourceText final {
+class SourceText final : public TaintableString {
  private:
   static_assert(std::is_same<Unit, mozilla::Utf8Unit>::value ||
                     std::is_same<Unit, char16_t>::value,
@@ -118,6 +120,9 @@ class SourceText final {
     other.units_ = nullptr;
     other.length_ = 0;
     other.ownsUnits_ = false;
+    // taintfox
+    setTaint(other.taint());
+    other.clearTaint();
   }
 
   ~SourceText() {
@@ -172,6 +177,16 @@ class SourceText final {
   }
 
   /**
+   * Taintfox: init with additional taint information
+   */
+  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Unit* units,
+                                           size_t unitsLength, StringTaint taint,
+                                           SourceOwnership ownership) {
+    setTaint(taint);
+    return init(cx, units, unitsLength, ownership);
+  }
+
+  /**
    * Exactly identical to the |init()| overload above that accepts
    * |const Unit*|, but instead takes character data: |const CharT*|.
    *
@@ -187,6 +202,19 @@ class SourceText final {
                                            SourceOwnership ownership) {
     return init(cx, reinterpret_cast<const Unit*>(chars), charsLength,
                 ownership);
+  }
+
+  /**
+   * Taintfox: init with additional taint information
+   */
+  template <typename Char, typename = typename std::enable_if<
+                               std::is_same<Char, CharT>::value &&
+                               !std::is_same<Char, Unit>::value>::type>
+  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Char* chars,
+                                           size_t charsLength, StringTaint taint,
+                                           SourceOwnership ownership) {
+    setTaint(taint);
+    return init(cx, chars, charsLength, ownership);
   }
 
   /**

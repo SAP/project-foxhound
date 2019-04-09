@@ -42,6 +42,8 @@
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 
+#include "Taint.h"
+
 using mozilla::ArrayLength;
 using mozilla::AssertedCast;
 using mozilla::DecodeOneUtf8CodePoint;
@@ -497,8 +499,9 @@ template <typename Unit>
 TokenStreamCharsBase<Unit>::TokenStreamCharsBase(JSContext* cx,
                                                  const Unit* units,
                                                  size_t length,
+                                                 const StringTaint& taint,
                                                  size_t startOffset)
-    : TokenStreamCharsShared(cx), sourceUnits(units, length, startOffset) {}
+  : TokenStreamCharsShared(cx, taint), sourceUnits(units, length, startOffset) {}
 
 template <>
 MOZ_MUST_USE bool TokenStreamCharsBase<char16_t>::
@@ -564,8 +567,8 @@ MOZ_MUST_USE bool TokenStreamCharsBase<Utf8Unit>::
 template <typename Unit, class AnyCharsAccess>
 TokenStreamSpecific<Unit, AnyCharsAccess>::TokenStreamSpecific(
     JSContext* cx, const ReadOnlyCompileOptions& options, const Unit* units,
-    size_t length)
-    : TokenStreamChars<Unit, AnyCharsAccess>(cx, units, length,
+    size_t length, const StringTaint& taint)
+   : TokenStreamChars<Unit, AnyCharsAccess>(cx, units, length, taint,
                                              options.scriptSourceOffset) {}
 
 bool TokenStreamAnyChars::checkOptions() {

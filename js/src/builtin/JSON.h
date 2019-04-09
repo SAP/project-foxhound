@@ -38,7 +38,8 @@ extern bool Stringify(JSContext* cx, js::MutableHandleValue vp,
 // TaintFox: need to pass taint information when working with raw character ranges.
 template <typename CharT>
 extern bool ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const CharT> chars,
-                                 HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+                                 HandleValue reviver, MutableHandleValue vp,
+                                 const StringTaint* taint);
 
 }  // namespace js
 

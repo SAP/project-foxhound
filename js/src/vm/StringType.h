@@ -169,6 +169,7 @@ class JSString : public js::gc::Cell, public TaintableString {
  protected:
   // TaintFox: We add another pointer size of inline chars here to make the total size of JString
   // evenly divisible by the gc::CellSize on 32 bit platforms.
+  // Reduced from 3 to 2 on 64 bit build
   static const size_t NUM_INLINE_CHARS_LATIN1 =
       3 * sizeof(void*) / sizeof(JS::Latin1Char);
   static const size_t NUM_INLINE_CHARS_TWO_BYTE =

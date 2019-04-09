@@ -101,19 +101,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     return 0;
   }
 
-NS_IMETHODIMP nsStandardURL::
-nsPrefObserver::Observe(nsISupports *subject,
-                        const char *topic,
-                        const char16_t *data)
-{
-    if (!strcmp(topic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
-        nsCOMPtr<nsIPrefBranch> prefBranch( do_QueryInterface(subject) );
-        if (prefBranch) {
-            PrefsChanged(prefBranch, NS_ConvertUTF16toUTF8(data).get());
-        } 
-    }
-    return NS_OK;
-}
+  uint32_t origLen = aOut.Length();
 
   Span<const char> span = MakeSpan(aStr + aSeg.mPos, aSeg.mLen);
 
@@ -127,24 +115,7 @@ nsPrefObserver::Observe(nsISupports *subject,
       char bufferArr[512];
       Span<char> buffer = MakeSpan(bufferArr);
 
-int32_t nsStandardURL::
-nsSegmentEncoder::EncodeSegmentCount(const char *str,
-                                     const URLSegment &seg,
-                                     int16_t mask,
-                                     nsAFlatCString &result,
-                                     bool &appended,
-                                     uint32_t extraLen)
-{
-    // extraLen is characters outside the segment that will be 
-    // added when the segment is not empty (like the @ following
-    // a username).
-    appended = false;
-    if (!str)
-        return 0;
-    int32_t len = 0;
-    if (seg.mLen > 0) {
-        uint32_t pos = seg.mPos;
-        len = seg.mLen;
+      auto encoder = mEncoding->NewEncoder();
 
       nsAutoCString valid;  // has to be declared in this scope
       if (MOZ_UNLIKELY(!IsUTF8(span.From(upTo)))) {
@@ -759,9 +730,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char *spec,
                                                   useEncRef);
     }
   }
-
-  // Taintfox TODO(samuel) ???
-
+  // TODO: taintfox samuel???
   // do not escape the hostname, if IPv6 address literal, mHost will
   // already point to a [ ] delimited IPv6 address literal.
   // However, perform Unicode normalization on it, as IDN does.
@@ -969,14 +938,12 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char *spec,
     }
   }
 
-    if (mDirectory.mLen > 1) {
-        netCoalesceFlags coalesceFlag = NET_COALESCE_NORMAL;
-        if (SegmentIs(buf,mScheme,"ftp")) {
-            coalesceFlag = (netCoalesceFlags) (coalesceFlag 
-                                        | NET_COALESCE_ALLOW_RELATIVE_ROOT
-                                        | NET_COALESCE_DOUBLE_SLASH_IS_ROOT);
-        }
-        CoalescePath(coalesceFlag, buf + mDirectory.mPos);
+  if (mDirectory.mLen > 1) {
+    netCoalesceFlags coalesceFlag = NET_COALESCE_NORMAL;
+    if (SegmentIs(buf, mScheme, "ftp")) {
+      coalesceFlag =
+          (netCoalesceFlags)(coalesceFlag | NET_COALESCE_ALLOW_RELATIVE_ROOT |
+                             NET_COALESCE_DOUBLE_SLASH_IS_ROOT);
     }
     CoalescePath(coalesceFlag, buf + mDirectory.mPos);
   }
@@ -1006,19 +973,18 @@ bool nsStandardURL::SegmentIs(const URLSegment &seg, const char *val,
          (val[seg.mLen] == '\0');
 }
 
-bool
-nsStandardURL::SegmentIs(const URLSegment &seg1, const char *val, const URLSegment &seg2, bool ignoreCase)
-{
-    if (seg1.mLen != seg2.mLen)
-        return false;
-    if (seg1.mLen == -1 || (!val && mSpec.IsEmpty()))
-        return true; // both are empty
-    if (!val)
-        return false;
-    if (ignoreCase)
-        return !PL_strncasecmp(mSpec.get() + seg1.mPos, val + seg2.mPos, seg1.mLen); 
-    else
-        return !strncmp(mSpec.get() + seg1.mPos, val + seg2.mPos, seg1.mLen); 
+bool nsStandardURL::SegmentIs(const char *spec, const URLSegment &seg,
+                              const char *val, bool ignoreCase) {
+  // one or both may be null
+  if (!val || !spec) return (!val && (!spec || seg.mLen < 0));
+  if (seg.mLen < 0) return false;
+  // if the first |seg.mLen| chars of |val| match, then |val| must
+  // also be null terminated at |seg.mLen|.
+  if (ignoreCase)
+    return !PL_strncasecmp(spec + seg.mPos, val, seg.mLen) &&
+           (val[seg.mLen] == '\0');
+
+  return !strncmp(spec + seg.mPos, val, seg.mLen) && (val[seg.mLen] == '\0');
 }
 
 bool nsStandardURL::SegmentIs(const URLSegment &seg1, const char *val,

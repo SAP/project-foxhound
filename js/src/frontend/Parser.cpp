@@ -195,16 +195,17 @@ PerHandlerParser<ParseHandler>::PerHandlerParser(
       handler(cx, alloc, lazyOuterFunction),
       internalSyntaxParser_(internalSyntaxParser) {}
 
+// TODO taintfox: check EmptyTaint is correct here
 template <class ParseHandler, typename Unit>
 GeneralParser<ParseHandler, Unit>::GeneralParser(
     JSContext* cx, LifoAlloc& alloc, const ReadOnlyCompileOptions& options,
-    const Unit* units, size_t length, bool foldConstants,
+    const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
     UsedNameTracker& usedNames, SyntaxParser* syntaxParser,
     LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
     ParseGoal parseGoal)
     : Base(cx, alloc, options, foldConstants, usedNames, syntaxParser,
            lazyOuterFunction, sourceObject, parseGoal),
-      tokenStream(cx, options, units, length) {}
+      tokenStream(cx, options, units, length, taint) {}
 
 template <typename Unit>
 void Parser<SyntaxParseHandler, Unit>::setAwaitHandling(
@@ -7440,7 +7441,7 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
     // TaintFox: TODO this string comparison could fail if "use asm" was tainted...
     case TokenKind::String:
       if (!canHaveDirectives &&
-          anyChars.currentToken().atom() == context->names().useAsm) {
+          anyChars.currentToken().str() == context->names().useAsm) {
         if (!abortIfSyntaxParser()) {
           return null();
         }

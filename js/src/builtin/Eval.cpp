@@ -155,7 +155,7 @@ static bool EvalStringMightBeJSON(const mozilla::Range<const CharT> chars) {
 template <typename CharT>
 static EvalJSONResult ParseEvalStringAsJSON(
     JSContext* cx, const mozilla::Range<const CharT> chars,
-    MutableHandleValue rval const StringTaint* taint) {
+    MutableHandleValue rval, const StringTaint* taint) {
   size_t len = chars.length();
   MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
              (chars[0] == '[' && chars[len - 1] == ']'));

@@ -34,7 +34,6 @@ class SyntaxParseHandler
 {
     // Remember the last encountered name or string literal during syntax parses.
     JSAtom* lastAtom;
-    JSLinearString* lastStr;
     TokenPos lastStringPos;
 
   // WARNING: Be careful about adding fields to this function, that might be

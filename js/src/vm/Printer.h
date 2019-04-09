@@ -205,8 +205,9 @@ extern const char js_EscapeMap[];
 extern JS::UniqueChars QuoteString(JSContext* cx, JSString* str,
                                    char quote = '\0');
 
-extern char*
-QuoteString(Sprinter* sp, JSString* str, char16_t quote);
+// Appends the quoted string to the given Sprinter. Follows the same semantics
+// as QuoteString from above.
+extern bool QuoteString(Sprinter* sp, JSString* str, char quote = '\0');
 
 // Appends the JSON quoted string to the given Sprinter.
 extern bool JSONQuoteString(Sprinter* sp, JSString* str);

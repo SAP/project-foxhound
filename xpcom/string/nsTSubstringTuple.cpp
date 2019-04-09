@@ -6,7 +6,10 @@
 
 #include "mozilla/CheckedInt.h"
 
-StringTaint nsTSubstringTuple::Taint() const
+#define TO_SUBSTRING(_v) (*(_v))
+
+template <typename T>
+StringTaint nsTSubstringTuple<T>::Taint() const
 {
   StringTaint res;
   uint32_t len;

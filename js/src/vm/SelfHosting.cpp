@@ -2273,7 +2273,7 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     if (!opName)
         return false;
 
-    char* op_str = JS_EncodeString(cx, opName);
+    char* op_str = JS_EncodeStringToUTF8(cx, opName).get();
     if (!op_str)
         return false;
 

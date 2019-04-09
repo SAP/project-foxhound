@@ -14,6 +14,8 @@
 #include "nsStringFlags.h"
 #include "nsCharTraits.h"
 
+#include "Taint.h"
+
 template <typename T>
 class nsTSubstringTuple;
 
@@ -94,7 +96,7 @@ namespace detail {
 //   nsStringRepr for wide characters
 //   nsCStringRepr for narrow characters
 template <typename T>
-class nsTStringRepr {
+class nsTStringRepr : public TaintableString {
  public:
   typedef mozilla::fallible_t fallible_t;
 

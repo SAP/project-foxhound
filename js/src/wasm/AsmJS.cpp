@@ -627,7 +627,7 @@ static inline bool IsUseOfName(ParseNode* pn, PropertyName* name) {
   return pn->isName(name);
 }
 
-static inline bool IsIgnoredDirectiveName(JSContext* cx, JSAtom* atom) {
+static inline bool IsIgnoredDirectiveName(JSContext* cx, JSLinearString* str) {
   // TaintFox: modified to work with JSLinearString
   int32_t res;
   return CompareStrings(cx, str, cx->names().useStrict, &res) && res != 0;
@@ -3103,8 +3103,11 @@ static bool CheckModuleProcessingDirectives(ModuleValidator<Unit>& m) {
       return true;
     }
 
-        if (!IsIgnoredDirectiveName(m.cx(), ts.currentToken().atom()))
-            return m.failCurrentOffset("unsupported processing directive");
+    // TODO: Taintfox: change this to .str()
+    if (!IsIgnoredDirectiveName(m.cx(),
+                                ts.anyCharsAccess().currentToken().atom())) {
+      return m.failCurrentOffset("unsupported processing directive");
+    }
 
     TokenKind tt;
     if (!ts.getToken(&tt)) {

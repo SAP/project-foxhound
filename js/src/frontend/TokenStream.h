@@ -215,6 +215,8 @@
 #include "vm/RegExpConstants.h"
 #include "vm/StringType.h"
 
+#include "Taint.h"
+
 struct JSContext;
 struct KeywordInfo;
 
@@ -370,7 +372,7 @@ struct Token {
 
     /** Potentially-numeric atom. */
     // Taintfox: cannot be an atom anymore
-    // JSAtom* atom;
+    JSAtom* atom;
     JSLinearString* str;
 
     struct {
@@ -402,7 +404,14 @@ struct Token {
     MOZ_ASSERT(type == TokenKind::Name || type == TokenKind::PrivateName);
     u.name = name;
   }
+  
+  void setAtom(JSAtom* atom) {
+    MOZ_ASSERT(type == TokenKind::String || type == TokenKind::TemplateHead ||
+               type == TokenKind::NoSubsTemplate);
+    u.atom = atom;
+  }
 
+  // Taintfox: should replace setAtom with setString
   void setString(JSLinearString* str) {
     MOZ_ASSERT(type == TokenKind::String || type == TokenKind::TemplateHead ||
                type == TokenKind::NoSubsTemplate);
@@ -428,6 +437,13 @@ struct Token {
     return u.name->JSAtom::asPropertyName();  // poor-man's type verification
   }
 
+  JSAtom* atom() const {
+    MOZ_ASSERT(type == TokenKind::String || type == TokenKind::TemplateHead ||
+               type == TokenKind::NoSubsTemplate);
+    return u.atom;
+  }
+
+  // TODO: Taintfox remove atom()
   JSLinearString* str() const {
     MOZ_ASSERT(type == TokenKind::String || type == TokenKind::TemplateHead ||
                type == TokenKind::NoSubsTemplate);
@@ -1512,8 +1528,13 @@ class TokenStreamCharsShared {
    */
   CharBuffer charBuffer;
 
+  // Taintfox: TODO: link this taint to the charBuffer
+  StringTaint _taint;
+
  protected:
-  explicit TokenStreamCharsShared(JSContext* cx) : charBuffer(cx) {}
+  explicit TokenStreamCharsShared(JSContext* cx, const StringTaint& taint)
+    : charBuffer(cx),
+      _taint(taint) {}
 
   MOZ_MUST_USE bool appendCodePointToCharBuffer(uint32_t codePoint);
 
@@ -1563,7 +1584,7 @@ template <typename Unit>
 class TokenStreamCharsBase : public TokenStreamCharsShared {
  protected:
   TokenStreamCharsBase(JSContext* cx, const Unit* units, size_t length,
-                       size_t startOffset);
+                       const StringTaint& taint, size_t startOffset);
 
   /**
    * Convert a non-EOF code unit returned by |getCodeUnit()| or
@@ -1967,6 +1988,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
   }
 #endif
 
+  // TODO:  taintfox: atoms are not allowed
   void newAtomToken(TokenKind kind, JSAtom* atom, TokenStart start,
                     TokenStreamShared::Modifier modifier, TokenKind* out) {
     MOZ_ASSERT(kind == TokenKind::String || kind == TokenKind::TemplateHead ||
@@ -2409,6 +2431,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   using GeneralCharsBase::internalComputeLineOfContext;
   using GeneralCharsBase::matchUnicodeEscapeIdent;
   using GeneralCharsBase::matchUnicodeEscapeIdStart;
+  // Taintfox: no Atoms
   using GeneralCharsBase::newAtomToken;
   using GeneralCharsBase::newNameToken;
   using GeneralCharsBase::newNumberToken;
@@ -2434,7 +2457,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
 
  public:
   TokenStreamSpecific(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-                      const Unit* units, size_t length);
+                      const Unit* units, size_t length, const StringTaint& taint);
 
   /**
    * Get the next code point, converting LineTerminatorSequences to '\n' and
@@ -2820,10 +2843,11 @@ class MOZ_STACK_CLASS TokenStream final
 
  public:
   TokenStream(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-              const Unit* units, size_t length, StrictModeGetter* smg)
+              const Unit* units, size_t length, const StringTaint& taint,
+              StrictModeGetter* smg)
       : TokenStreamAnyChars(cx, options, smg),
         TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(cx, options, units,
-                                                             length) {}
+                                                             length, taint) {}
 };
 
 template <class TokenStreamSpecific>

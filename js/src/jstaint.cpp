@@ -28,9 +28,10 @@ std::u16string js::taintarg(JSContext* cx, HandleString str)
     if (!linear)
         return std::u16string();
 
-    ScopedJSFreePtr<char16_t> buf(cx->pod_malloc<char16_t>(linear->length()));
+    js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
+    
     CopyChars(buf.get(), *linear);
-    std::u16string result(buf, linear->length());
+    std::u16string result(buf.get(), linear->length());
     return result;
 }
 

@@ -635,17 +635,16 @@ void nsHtml5TreeBuilder::insertFosterParentedChild(
 void
 nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffer, const StringTaint& aTaint, int32_t aStart, int32_t aLength)
 {
-  NS_PRECONDITION(aBuffer, "Null buffer");
-  NS_PRECONDITION(aParent, "Null parent");
+  MOZ_ASSERT(aBuffer, "Null buffer");
+  MOZ_ASSERT(aParent, "Null parent");
   MOZ_ASSERT(!aStart, "aStart must always be zero.");
 
   if (mBuilder) {
     nsresult rv = nsHtml5TreeOperation::AppendText(
       aBuffer, // XXX aStart always ignored???
-      aTaint,
       aLength,
-      static_cast<nsIContent*>(deepTreeSurrogateParent ?
-                               deepTreeSurrogateParent : aParent),
+      aTaint,
+      static_cast<nsIContent*>(aParent),
       mBuilder);
     if (NS_FAILED(rv)) {
       MarkAsBrokenAndRequestSuspensionWithBuilder(rv);

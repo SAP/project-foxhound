@@ -712,9 +712,10 @@ class ParseNode {
     } unary;
     struct { /* name, labeled statement, etc. */
      private:
+      friend class NullaryNode;
       friend class NameNode;
       JSAtom* atom;          /* lexical name or label atom */
-      JSLinearString* str;       /* TaintFox: possibley tainted string literal */
+      JSLinearString* str;   /* TaintFox: possibly tainted string literal */
       ParseNode* initOrStmt; /* var initializer, argument default,
                               * or label statement target */
     } name;
@@ -841,16 +842,26 @@ inline void ReplaceNode(ParseNode** pnp, ParseNode* pn) {
 
 class NullaryNode : public ParseNode {
  public:
-  // TaintFox: changed to populate pn_str instead
-  NullaryNode(ParseNodeKind kind, const TokenPos& pos, JSLinearString* str)
+
+  NullaryNode(ParseNodeKind kind, const TokenPos& pos)
       : ParseNode(kind, JSOP_NOP, pos) {
     MOZ_ASSERT(is<NullaryNode>());
-    pn_str = str;
   }
 
   NullaryNode(ParseNodeKind kind, JSOp op, const TokenPos& pos)
       : ParseNode(kind, op, pos) {
     MOZ_ASSERT(is<NullaryNode>());
+  }
+
+  // This constructor is for a few mad uses in the emitter. It populates
+  // the pn_atom field even though that field belongs to a branch in pn_u
+  // that nullary nodes shouldn't use -- bogus.
+  // TaintFox: changed to populate pn_str instead
+  NullaryNode(ParseNodeKind kind, JSOp op, const TokenPos& pos, JSLinearString* str)
+    : ParseNode(kind, op, pos)
+  {
+    MOZ_ASSERT(is<NullaryNode>());
+    pn_u.name.str = str;
   }
 
   static bool test(const ParseNode& node) { return node.isArity(PN_NULLARY); }

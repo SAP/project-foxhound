@@ -3447,6 +3447,9 @@ class nsContentUtils {
   static bool sIsFrameTimingPrefEnabled;
   static bool sIsFormAutofillAutocompleteEnabled;
   static bool sIsUAWidgetEnabled;
+  // Taintfox
+  static bool sEncodeDecodeURLHash;
+  static bool sGettersDecodeURLHash;
   static bool sSendPerformanceTimingNotifications;
   static bool sUseActivityCursor;
   static bool sAnimationsAPICoreEnabled;

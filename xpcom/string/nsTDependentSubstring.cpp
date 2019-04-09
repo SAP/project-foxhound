@@ -25,7 +25,7 @@ void nsTDependentSubstring<T>::Rebind(const substring_type& str,
   DataFlags newDataFlags = DataFlags(0);
   this->SetData(newData, newLength, newDataFlags, EmptyTaint);
   // TaintFox: propagate taint.
-  AssignTaint(str.Taint());
+  this->AssignTaint(str.Taint());
 }
 
 template <typename T>
@@ -39,7 +39,7 @@ void nsTDependentSubstring<T>::Rebind(const char_type* data, size_type length) {
       const_cast<char_type*>(static_cast<const char_type*>(data));
   size_type newLength = length;
   DataFlags newDataFlags = DataFlags(0);
-  this->SetData(newData, newLength, newDataFlags);
+  this->SetData(newData, newLength, newDataFlags, EmptyTaint);
 }
 
 template <typename T>

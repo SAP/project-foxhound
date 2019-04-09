@@ -128,12 +128,12 @@ TaintFlow& TaintFlow::extend(TaintOperation operation)
     return *this;
 }
 
-TaintFlow::iterator TaintFlow::begin() const
+TaintFlow::Iterator TaintFlow::begin() const
 {
     return Iterator(head_);
 }
 
-TaintFlow::iterator TaintFlow::end() const
+TaintFlow::Iterator TaintFlow::end() const
 {
     return Iterator();
 }
@@ -153,7 +153,8 @@ TaintRange::TaintRange(const TaintRange& other) : begin_(other.begin_), end_(oth
 
 TaintRange& TaintRange::operator=(const TaintRange& other)
 {
-    begin_ = other.begin_, end_ = other.end_;
+    begin_ = other.begin_;
+    end_ = other.end_;
     flow_ = other.flow_;
 
     return *this;
@@ -375,7 +376,7 @@ StringTaint& StringTaint::concat(const StringTaint& other, uint32_t offset)
 // Slight hack, see below.
 static std::vector<TaintRange> empty_taint_range_vector;
 
-StringTaint::iterator StringTaint::begin()
+std::vector<TaintRange>::iterator StringTaint::begin()
 {
     // We still need to return an iterator even if there are no ranges stored in this instance.
     // In that case we don't have a std::vector though. Solution: use a static std::vector.
@@ -384,21 +385,21 @@ StringTaint::iterator StringTaint::begin()
     return ranges_->begin();
 }
 
-StringTaint::iterator StringTaint::end()
+std::vector<TaintRange>::iterator StringTaint::end()
 {
     if (!ranges_)
         return empty_taint_range_vector.end();
     return ranges_->end();
 }
 
-StringTaint::const_iterator StringTaint::begin() const
+std::vector<TaintRange>::const_iterator StringTaint::begin() const
 {
     if (!ranges_)
         return empty_taint_range_vector.begin();
     return ranges_->begin();
 }
 
-StringTaint::const_iterator StringTaint::end() const
+std::vector<TaintRange>::const_iterator StringTaint::end() const
 {
     if (!ranges_)
         return empty_taint_range_vector.end();

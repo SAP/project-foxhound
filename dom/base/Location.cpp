@@ -517,7 +517,6 @@ void Location::GetOrigin(nsAString& aOrigin, nsIPrincipal& aSubjectPrincipal,
   // TaintFox: location.origin source.
   aOrigin.AssignTaint(StringTaint(0, aOrigin.Length(), TaintSource("location.origin")));
 
-  return NS_OK;
 }
 
 void Location::GetPathname(nsAString& aPathname,
@@ -561,11 +560,16 @@ void Location::SetPathname(const nsAString& aPathname,
     return;
   }
 
-  if (NS_SUCCEEDED(uri->SetFilePath(NS_ConvertUTF16toUTF8(aPathname)))) {
-    if (aPathname.isTainted())
-      ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
+  nsresult rv = NS_MutateURI(uri)
+    .SetFilePath(NS_ConvertUTF16toUTF8(aPathname))
+    .Finalize(uri);
 
-    return SetURI(uri);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  
+  if (aPathname.isTainted()) {
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
   }
 
   SetURI(uri, aSubjectPrincipal, aRv);
@@ -820,22 +824,8 @@ nsresult Location::Reload(bool aForceget) {
     return NS_OK;
   }
 
-  if (webNav) {
-    uint32_t reloadFlags = nsIWebNavigation::LOAD_FLAGS_NONE;
-
-    if (aForceget) {
-      reloadFlags = nsIWebNavigation::LOAD_FLAGS_BYPASS_CACHE | 
-                    nsIWebNavigation::LOAD_FLAGS_BYPASS_PROXY;
-    }
-    rv = webNav->Reload(reloadFlags);
-    if (rv == NS_BINDING_ABORTED) {
-      // This happens when we attempt to reload a POST result and the user says
-      // no at the "do you want to reload?" prompt.  Don't propagate this one
-      // back to callers.
-      rv = NS_OK;
-    }
-  } else {
-    rv = NS_ERROR_FAILURE;
+  if (!webNav) {
+    return NS_ERROR_FAILURE;
   }
 
   uint32_t reloadFlags = nsIWebNavigation::LOAD_FLAGS_NONE;

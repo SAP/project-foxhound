@@ -91,11 +91,6 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
 
         return true;
     }
-    if (shared) {
-      *sharedBuffer = buf;
-    }
-    return true;
-  }
 
     // blech, have to copy.
     JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);

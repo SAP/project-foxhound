@@ -206,7 +206,7 @@ void nsStringBuffer::Release() {
 #endif
 
     STRING_STAT_INCREMENT(Free);
-    ClearTaint();       // TaintFox: clear() is guaranteed to free all resources.
+    this->ClearTaint();       // TaintFox: clear() is guaranteed to free all resources.
     free(this); // we were allocated with |malloc|
   }
 }

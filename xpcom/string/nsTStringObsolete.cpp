@@ -187,10 +187,10 @@ void nsTString<T>::ReplaceChar(char_type aOldChar, char_type aNewChar) {
   if (!this->EnsureMutable())  // XXX do this lazily?
     this->AllocFailed(this->mLength);
 
-  for (uint32_t i=0; i<mLength; ++i)
+  for (uint32_t i = 0; i < this->mLength; ++i)
   {
-    if (mData[i] == aOldChar)
-      mData[i] = aNewChar;
+    if (this->mData[i] == aOldChar) {
+      this->mData[i] = aNewChar;
       // TaintFox: TODO(samuel) are these still used?
     }
   }

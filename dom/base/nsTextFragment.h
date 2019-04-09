@@ -76,19 +76,17 @@ class nsTextFragment final : public TaintableString {
   /**
    * Get a pointer to constant char16_t data.
    */
-  const char16_t *Get2b() const
-  {
-    NS_ASSERTION(Is2b(), "not 2b text"); 
-    return m2b;
+  const char16_t* Get2b() const {
+    MOZ_ASSERT(Is2b(), "not 2b text");
+    return static_cast<char16_t*>(m2b->Data());
   }
 
   /**
    * Get a pointer to constant char data.
    */
-  const char *Get1b() const
-  {
-    NS_ASSERTION(!Is2b(), "not 1b text"); 
-    return (const char *)m1b;
+  const char* Get1b() const {
+    NS_ASSERTION(!Is2b(), "not 1b text");
+    return (const char*)m1b;
   }
 
   /**
@@ -125,7 +123,7 @@ class nsTextFragment final : public TaintableString {
       }
     }
 
-    return SetTo(aString.get(), aString.Length(), aUpdateBidi, aString.getTaint(), aForce2b);
+    return SetTo(aString.get(), aString.Length(), aUpdateBidi, aString.taint(), aForce2b);
   }
 
   /**

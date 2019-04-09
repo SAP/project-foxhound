@@ -842,7 +842,7 @@ static const uint32_t JSCLASS_FOREGROUND_FINALIZE =
 // compiled JavaScript reporting function. See JS_ReportTaintSink.
 #define JSCLASS_GLOBAL_APPLICATION_SLOTS (5 + 1)
 #define JSCLASS_GLOBAL_SLOT_COUNT                                             \
-    (JSCLASS_GLOBAL_APPLICATION_SLOTS + JSProto_LIMIT * 2 + 41)
+    (JSCLASS_GLOBAL_APPLICATION_SLOTS + JSProto_LIMIT * 2 + 38)
 #define JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(n)                                    \
     (JSCLASS_IS_GLOBAL | JSCLASS_HAS_RESERVED_SLOTS(JSCLASS_GLOBAL_SLOT_COUNT + (n)))
 #define JSCLASS_GLOBAL_FLAGS                                                  \

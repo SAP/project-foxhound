@@ -18,7 +18,7 @@ namespace binding_detail {
 // A struct that has the same layout as an nsString but much faster
 // constructor and destructor behavior. FakeString uses inline storage
 // for small strings and a nsStringBuffer for longer strings.
-struct FakeString {
+struct FakeString : public TaintableString {
   FakeString()
       : mDataFlags(nsString::DataFlags::TERMINATED),
         mClassFlags(nsString::ClassFlags(0)) {}

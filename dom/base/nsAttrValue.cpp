@@ -704,11 +704,9 @@ uint32_t nsAttrValue::GetAtomCount() const {
   return 0;
 }
 
-nsIAtom*
-nsAttrValue::AtomAt(int32_t aIndex) const
-{
-  NS_PRECONDITION(aIndex >= 0, "Index must not be negative");
-  NS_PRECONDITION(GetAtomCount() > uint32_t(aIndex), "aIndex out of range");
+nsAtom* nsAttrValue::AtomAt(int32_t aIndex) const {
+  MOZ_ASSERT(aIndex >= 0, "Index must not be negative");
+  MOZ_ASSERT(GetAtomCount() > uint32_t(aIndex), "aIndex out of range");  
   
   if (BaseType() == eAtomBase) {
     return GetAtomValue();

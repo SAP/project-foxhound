@@ -20,7 +20,7 @@
 
 #include "Taint.h"
 // Taintfox: lots of things missing in merge
-// SourceBufferHolder class, where are you?
+// SourceBufferHolder class, where are you? => SourceText
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -3534,6 +3534,24 @@ extern JS_PUBLIC_API void SetStackFormat(JSContext* cx, StackFormat format);
 extern JS_PUBLIC_API StackFormat GetStackFormat(JSContext* cx);
 
 }  // namespace js
+
+// TaintFox: Get and set string taint information.
+//
+// We need this since JSStrings are opaque pointers outside the engine.
+extern JS_PUBLIC_API const StringTaint&
+JS_GetStringTaint(const JSString* str);
+
+extern JS_PUBLIC_API const StringTaint&
+JS_GetStringTaint(const JSFlatString* str);
+
+extern JS_PUBLIC_API void
+JS_SetStringTaint(JSString* str, const StringTaint& taint);
+
+// TaintFox: Report tainted flows into a sink.
+//
+// This will print to stdout and trigger a custom JavaScript event on the current page.
+extern JS_PUBLIC_API void 
+JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink);
 
 namespace JS {
 

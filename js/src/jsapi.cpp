@@ -21,6 +21,7 @@
 #endif
 #include <stdarg.h>
 #include <string.h>
+#include <iostream>
 
 #include "jsdate.h"
 #include "jsexn.h"
@@ -4727,12 +4728,13 @@ JS_PUBLIC_API bool JS::ToJSONMaybeSafely(JSContext* cx, JS::HandleObject input,
   return callback(sb.rawTwoByteBegin(), sb.length(), data);
 }
 
+// TODO: taintfox: check whether we need to propagate taint here
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
                                 uint32_t len, MutableHandleValue vp) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len),
-                              NullHandleValue, vp);
+                              NullHandleValue, vp, nullptr);
 }
 
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
@@ -4740,13 +4742,14 @@ JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
   return JS_ParseJSONWithReviver(cx, str, NullHandleValue, vp);
 }
 
+// TODO: taintfox: check whether we need to propagate taint here
 JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, const char16_t* chars,
                                            uint32_t len, HandleValue reviver,
                                            MutableHandleValue vp) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len),
-                              reviver, vp);
+                              reviver, vp, nullptr);
 }
 
 JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, HandleString str,
@@ -6005,26 +6008,26 @@ JS_PUBLIC_API bool JS::StartIncrementalEncoding(JSContext* cx,
 }
 
 // TaintFox: Taint related JSAPI code.
-JS_PUBLIC_API(const StringTaint&)
+JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSString* str)
 {
     return str->taint();
 }
 
-JS_PUBLIC_API(const StringTaint&)
+JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSFlatString* str)
 {
     return str->taint();
 }
 
-JS_PUBLIC_API(void)
+JS_PUBLIC_API void
 JS_SetStringTaint(JSString* str, const StringTaint& taint)
 {
     str->setTaint(taint);
 }
 
 
-JS_PUBLIC_API(void)
+JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
 {
     MOZ_ASSERT(str->isTainted());
@@ -6076,7 +6079,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
         options.setFile("taint_reporting.js");
 
         AutoObjectVector emptyScopeChain(cx);
-        CompileFunction(cx, emptyScopeChain, options, "ReportTaintSink", 3, argnames, funbody, strlen(funbody), &report);
+        CompileFunctionUtf8(cx, emptyScopeChain, options, "ReportTaintSink", 3, argnames, funbody, strlen(funbody), &report);
         MOZ_ASSERT(report);
 
         // Store the compiled function into the current global object.

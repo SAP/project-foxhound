@@ -332,7 +332,8 @@ class nsHtml5Tokenizer {
   nsHtml5HtmlAttributes* emptyAttributes();
 
  private:
-  inline void appendCharRefBuf(char16_t c) {
+  // TODO: TaintFox: Why is the taintflow not used here???
+  inline void appendCharRefBuf(char16_t c, const TaintFlow* t) {
     MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length,
                        "Attempted to overrun charRefBuf!");
     charRefBuf[charRefBufLen++] = c;

@@ -117,7 +117,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
 
     copy = chars.isLatin1()
       ? NewStringCopyN<CanGC>(cx, chars.latin1Range().begin().get(), len)
-      : NewStringCopyNDontDeflate<CanGC>(x, chars.twoByteRange().begin().get(), len);
+      : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().begin().get(), len);
     copy->setTaint(str->taint());
     return copy;
   }
@@ -128,8 +128,8 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
     if (!copiedChars) {
       return nullptr;
     }
-
-    copy = NewString<CanGC>(cx, copiedChars.forget(), len);
+  
+    copy = NewString<CanGC>(cx, std::move(copiedChars), len);
     copy->setTaint(str->taint());
     return copy;
   }

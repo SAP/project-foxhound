@@ -13,7 +13,8 @@ void nsTString<T>::Rebind(const char_type* data, size_type length) {
   // If we currently own a buffer, release it.
   this->Finalize();
 
-  this->SetData(const_cast<char_type*>(data), length, DataFlags::TERMINATED);
+  // TODO: taintfox propagate taint
+  this->SetData(const_cast<char_type*>(data), length, DataFlags::TERMINATED, EmptyTaint);
   this->AssertValidDependentString();
 }
 

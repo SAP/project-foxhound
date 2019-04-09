@@ -122,8 +122,8 @@ nsHtml5Tokenizer::nsHtml5Tokenizer(nsHtml5TreeBuilder* tokenHandler,
       cstart(0),
       strBufLen(0),
       charRefBuf(jArray<char16_t, int32_t>::newJArray(32)),
-      charRefTaint(),
       charRefBufLen(0),
+      charRefTaint(),
       bmpChar(jArray<char16_t, int32_t>::newJArray(1)),
       astralChar(jArray<char16_t, int32_t>::newJArray(2)),
       endTagExpectation(nullptr),
@@ -466,7 +466,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
 {
   stateloop: for (; ; ) {
     switch(state) {
-      case NS_HTML5TOKENIZER_DATA: {
+      case nsHtml5Tokenizer::DATA: {
         for (; ; ) {
           if (reconsume) {
             reconsume = false;
@@ -490,7 +490,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
             }
             case '<': {
               flushChars(buf, taint, pos);
-              state = P::transition(mViewSource, NS_HTML5TOKENIZER_TAG_OPEN, reconsume, pos);
+              state = P::transition(mViewSource, nsHtml5Tokenizer::TAG_OPEN, reconsume, pos);
               NS_HTML5_BREAK(dataloop);
             }
             case '\0': {
@@ -1540,7 +1540,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           switch (c) {
             case ']': {
               flushChars(buf, taint, pos);
-              state = P::transition(mViewSource, NS_HTML5TOKENIZER_CDATA_RSQB, reconsume, pos);
+              state = P::transition(mViewSource, nsHtml5Tokenizer::CDATA_RSQB, reconsume, pos);
               NS_HTML5_BREAK(cdatasectionloop);
             }
             case '\0': {
@@ -1690,7 +1690,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           }
           case '#': {
             appendCharRefBuf('#', taint[pos]);
-            state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_NCR, reconsume, pos);
+            state = P::transition(mViewSource, nsHtml5Tokenizer::CONSUME_NCR, reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
           }
           default: {
@@ -4091,8 +4091,8 @@ void nsHtml5Tokenizer::eof() {
   int32_t returnState = returnStateSave;
   eofloop: for (; ; ) {
     switch(state) {
-      case NS_HTML5TOKENIZER_SCRIPT_DATA_LESS_THAN_SIGN:
-      case NS_HTML5TOKENIZER_SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN: {
+      case nsHtml5Tokenizer::SCRIPT_DATA_LESS_THAN_SIGN:
+      case nsHtml5Tokenizer::SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN: {
         tokenHandler->characters(nsHtml5Tokenizer::LT_GT, EmptyTaint, 0, 1);
         NS_HTML5_BREAK(eofloop);
       }
@@ -4101,11 +4101,11 @@ void nsHtml5Tokenizer::eof() {
         tokenHandler->characters(nsHtml5Tokenizer::LT_GT, EmptyTaint, 0, 1);
         NS_HTML5_BREAK(eofloop);
       }
-      case NS_HTML5TOKENIZER_RAWTEXT_RCDATA_LESS_THAN_SIGN: {
+      case nsHtml5Tokenizer::RAWTEXT_RCDATA_LESS_THAN_SIGN: {
         tokenHandler->characters(nsHtml5Tokenizer::LT_GT, EmptyTaint, 0, 1);
         NS_HTML5_BREAK(eofloop);
       }
-      case NS_HTML5TOKENIZER_NON_DATA_END_TAG_NAME: {
+      case nsHtml5Tokenizer::NON_DATA_END_TAG_NAME: {
         tokenHandler->characters(nsHtml5Tokenizer::LT_SOLIDUS, EmptyTaint, 0, 2);
         emitStrBuf();
         NS_HTML5_BREAK(eofloop);
@@ -4380,11 +4380,11 @@ void nsHtml5Tokenizer::eof() {
         state = returnState;
         continue;
       }
-      case NS_HTML5TOKENIZER_CDATA_RSQB: {
+      case nsHtml5Tokenizer::CDATA_RSQB: {
         tokenHandler->characters(nsHtml5Tokenizer::RSQB_RSQB, EmptyTaint, 0, 1);
         NS_HTML5_BREAK(eofloop);
       }
-      case NS_HTML5TOKENIZER_CDATA_RSQB_RSQB: {
+      case nsHtml5Tokenizer::CDATA_RSQB_RSQB: {
         tokenHandler->characters(nsHtml5Tokenizer::RSQB_RSQB, EmptyTaint, 0, 2);
         NS_HTML5_BREAK(eofloop);
       }
@@ -4420,7 +4420,7 @@ bool nsHtml5Tokenizer::internalEncodingDeclaration(
 void
 nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
-  if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
+  if ((returnState & nsHtml5Tokenizer::DATA_AND_RCDATA_MASK)) {
     // TODO(samuel)
     appendStrBuf(val[0]);
     appendStrBuf(val[1]);
@@ -4432,7 +4432,7 @@ nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, const StringTaint& taint,
 void
 nsHtml5Tokenizer::emitOrAppendOne(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
-  if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
+  if ((returnState & nsHtml5Tokenizer::DATA_AND_RCDATA_MASK)) {
     // TODO(samuel)
     appendStrBuf(val[0]);
   } else {

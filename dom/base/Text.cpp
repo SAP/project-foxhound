@@ -44,7 +44,7 @@ already_AddRefed<Text> Text::SplitText(uint32_t aOffset, ErrorResult& aRv) {
   CharacterDataChangeInfo::Details details = {
       CharacterDataChangeInfo::Details::eSplit, newContent};
   nsresult rv =
-      SetTextInternal(cutStartOffset, cutLength, nullptr, 0, true, &details);
+    SetTextInternal(cutStartOffset, cutLength, nullptr, 0, true, EmptyTaint, &details);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;

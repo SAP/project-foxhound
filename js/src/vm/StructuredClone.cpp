@@ -2058,22 +2058,11 @@ JSString* JSStructuredCloneReader::readStringImpl(uint32_t nchars) {
   return chars.toStringDontDeflate(context(), nchars);
 }
 
-template <typename CharT>
-JSString*
-JSStructuredCloneReader::readStringImpl(uint32_t nchars)
-{
-    if (nchars > JSString::MAX_LENGTH) {
-        JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr, JSMSG_SC_BAD_SERIALIZED_DATA,
-                                  "string length");
-        return nullptr;
-    }
-    Chars<CharT> chars(context());
-    if (!chars.allocate(nchars) || !in.readChars(chars.get(), nchars))
-        return nullptr;
-    JSString* str = NewString<CanGC>(context(), chars.get(), nchars);
-    if (str)
-        chars.forget();
-    return str;
+JSString* JSStructuredCloneReader::readString(uint32_t data) {
+  uint32_t nchars = data & JS_BITMASK(31);
+  bool latin1 = data & (1 << 31);
+  return latin1 ? readStringImpl<Latin1Char>(nchars)
+                : readStringImpl<char16_t>(nchars);
 }
 
 #ifdef ENABLE_BIGINT

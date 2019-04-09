@@ -66,7 +66,7 @@ nsIContentHandle* AllocateContentHandle();
 void accumulateCharactersForced(const char16_t* aBuf, int32_t aStart,
                                 int32_t aLength) {
   // TODO(samuel)
-  accumulateCharacters(aBuf, EmptyTaint, aStart, aLength)
+  accumulateCharacters(aBuf, EmptyTaint, aStart, aLength);
 }
 
 void MarkAsBrokenAndRequestSuspensionWithBuilder(nsresult aRv) {

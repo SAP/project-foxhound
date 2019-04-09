@@ -127,7 +127,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedString str(cx, ArgToRootedString(cx, args, 0));
+    RootedString str(cx, ArgToLinearString(cx, args, 0));
     if (!str || str->length() == 0)
         return false;
 
@@ -198,7 +198,8 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
             if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
                 return false;
 
-            taint_flow.append(ObjectValue(*node));
+            if (!taint_flow.append(ObjectValue(*node)))
+              return false;
         }
 
         RootedObject flow(cx, NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
@@ -245,7 +246,7 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
 
         // TODO process arguments as well
 
-        char* op_str = JS_EncodeString(cx, operation);
+        char* op_str = JS_EncodeStringToUTF8(cx, operation).get();
         if (!op_str)
             return false;
 
@@ -575,11 +576,11 @@ static bool Unescape(StringBuffer& sb,
       // Need to use <= and >= here since k can increase by more than 1 per iteration
       // Note: if just the '%' of an escaped sequence is tainted, then this will still mark
       // the resulting character as tainted.
-      if (k >= (int)current->end()) {
+      if (k >= current->end()) {
         outTaint->append(TaintRange(ti, ni, TaintFlow::extend(current->flow(), operation)));
         current++;
       }
-      if (k <= (int)current->begin()) {
+      if (k <= current->begin()) {
         ti = ni;
       }
     }
@@ -3425,7 +3426,9 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
 
   // Step 13.
   size_t index = 0;
-
+  // TaintFox: tainting count
+  size_t count = 0;
+ 
   // Step 14.
   while (index != strLength) {
     // Step 14.a.
@@ -3513,6 +3516,8 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
 
   js::StaticStrings& staticStrings = cx->staticStrings();
   uint32_t resultlen = (limit < strLength ? limit : strLength);
+  size_t count = 0;
+      
   MOZ_ASSERT(limit > 0 && resultlen > 0,
              "Neither limit nor strLength is zero, so resultlen is greater "
              "than zero.");
@@ -4241,7 +4246,8 @@ enum EncodeResult { Encode_Failure, Encode_BadUri, Encode_Success };
 template <typename CharT>
 static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
                                             const CharT* chars, size_t length,
-                                            const bool* unescapedSet) {
+                                            const bool* unescapedSet,
+                                            const StringTaint& taint) {
   Latin1Char hexBuf[3];
   hexBuf[0] = '%';
 
@@ -4366,10 +4372,10 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   EncodeResult res;
   if (str->hasLatin1Chars()) {
     AutoCheckCannotGC nogc;
-    res = Encode(sb, str->latin1Chars(nogc), str->length(), unescapedSet, unescapedSet2, str->taint());
+    res = Encode(sb, str->latin1Chars(nogc), str->length(), unescapedSet, str->taint());
   } else {
     AutoCheckCannotGC nogc;
-    res = Encode(sb, str->twoByteChars(nogc), str->length(), unescapedSet, unescapedSet2, str->taint());
+    res = Encode(sb, str->twoByteChars(nogc), str->length(), unescapedSet, str->taint());
   }
 
   if (res == Encode_Failure) {
@@ -4382,13 +4388,13 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add encode operation to output taint.
-  if (unescapedSet2 == js_isUriReservedPlusPound)
+  if (unescapedSet == js_isUriReservedPlusPound)
     sb.taint().extend(TaintOperation("encodeURI"));
   else
     sb.taint().extend(TaintOperation("encodeURIComponent"));
 
   MOZ_ASSERT(res == Encode_Success);
-  return TransferBufferToString(sb, rval);
+  return TransferBufferToString(sb, str, rval);
 }
 
 enum DecodeResult { Decode_Failure, Decode_BadUri, Decode_Success };
@@ -4588,10 +4594,11 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
   return Encode(cx, str, nullptr, args.rval());
 }
 
+// TODO: TaintFox chars - need to propagate taint here
 JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
   StringBuffer sb(cx);
   EncodeResult result = Encode(sb, reinterpret_cast<const Latin1Char*>(chars),
-                               length, js_isUriReservedPlusPound);
+                               length, js_isUriReservedPlusPound, EmptyTaint);
   if (result == EncodeResult::Encode_Failure) {
     return nullptr;
   }

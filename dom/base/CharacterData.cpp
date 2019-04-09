@@ -310,7 +310,7 @@ nsresult CharacterData::SetTextInternal(
     // stored as char16_t since converting char* to char16_t* is expensive.
     // Use char16_t also when we have bidi characters.
     bool use2b = HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY) || bidi;
-    bool ok = mText.SetTo(to, false, use2b, newTaint);
+    bool ok = mText.SetTo(to, false, use2b);
     mText.SetBidi(bidi);
 
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);

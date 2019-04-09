@@ -291,7 +291,7 @@ class BulkWriteHandle final {
  * TaintFox: the (internal) XPCOM string classes are taint aware
  */
 template <typename T>
-class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableString {
+class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   friend class mozilla::BulkWriteHandle<T>;
 
  public:
@@ -541,7 +541,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableS
     // TaintFox: copy taint from replacement string.
     // At this point taint_ will already have been "reshaped" correctly, we just
     // need to insert the new taint.
-    taint_.insert(aCutStart, aStr.Taint());
+    this->InsertTaintAt(aCutStart, aStr.Taint());
   }
   MOZ_MUST_USE bool Replace(index_type aCutStart, size_type aCutLength,
                             const self_type& aStr,
@@ -549,7 +549,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableS
     return Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length(),
                    aFallible);
     // TaintFox: copy taint from replacement string.
-    taint_.insert(aCutStart, aStr.Taint());
+    this->InsertTaintAt(aCutStart, aStr.Taint());
   }
   void NS_FASTCALL Replace(index_type aCutStart, size_type aCutLength,
                            const substring_tuple_type& aTuple);
@@ -1045,7 +1045,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableS
       SetToEmptyBuffer();
 
       // TaintFox: clear taint here.
-      ClearTaint();
+      base_string_type::ClearTaint();
     }
   }
 
@@ -1107,7 +1107,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableS
   // been changed by the Append().
   void AppendTaint(const StringTaint& aTaint)
   {
-    taint_.concat(aTaint, Length());
+    this->AppendTaintAt(base_string_type::Length(), aTaint);
   }
 
  protected:
@@ -1157,13 +1157,15 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T>, public TaintableS
     base_string_type::mData = char_traits::sEmptyBuffer;
     base_string_type::mLength = 0;
     base_string_type::mDataFlags = DataFlags::TERMINATED;
+    this->ClearTaint();
     AssertValid();
   }
 
-  void SetData(char_type* aData, size_type aLength, DataFlags aDataFlags) {
+  void SetData(char_type* aData, size_type aLength, DataFlags aDataFlags, const StringTaint& aTaint) {
     base_string_type::mData = aData;
     base_string_type::mLength = aLength;
     base_string_type::mDataFlags = aDataFlags;
+    this->setTaint(aTaint);
     AssertValid();
   }
 

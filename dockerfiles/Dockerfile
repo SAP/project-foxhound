@@ -1,5 +1,4 @@
 FROM ubuntu:18.04
-#FROM owasp/zap2docker-stable:2.7.0
 
 ENV SHELL /bin/bash
 
@@ -36,8 +35,6 @@ RUN [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
 RUN wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O /tmp/bootstrap.py && \
     python /tmp/bootstrap.py --application-choice=browser --no-interactive || true && \
     rm /tmp/bootstrap.py
-
-
 
 RUN mkdir -p /usr/local/src/firefox
 

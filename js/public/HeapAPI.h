@@ -14,6 +14,8 @@
 #include "js/TraceKind.h"
 #include "js/Utility.h"
 
+#include "Taint.h"
+
 struct JSStringFinalizer;
 
 /* These values are private to the JS engine. */
@@ -197,6 +199,12 @@ struct String {
   static const uint32_t TYPE_FLAGS_MASK = JS_BITMASK(9) - JS_BIT(2) - JS_BIT(0);
   static const uint32_t PERMANENT_ATOM_MASK = NON_ATOM_BIT | JS_BIT(8);
   static const uint32_t PERMANENT_ATOM_FLAGS = JS_BIT(8);
+
+  // TaintFox: make shadow::String compatible with JSString.
+  //
+  // Superclasses come first in the object layout, thus the taint
+  // property will be at offset zero in JSString.
+  StringTaint taint;
 
   uintptr_t flags_;
 #if JS_BITS_PER_WORD == 32

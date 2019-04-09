@@ -35,7 +35,7 @@ void nsTDependentString<T>::Rebind(const string_type& str, uint32_t startPos) {
       str.GetDataFlags() & (DataFlags::TERMINATED | DataFlags::LITERAL);
   this->SetData(newData, newLen, newDataFlags, EmptyTaint);
   // TaintFox: propagate taint.
-  AssignTaint(str.Taint().subtaint(startPos, str.Length()));
+  this->AssignTaint(str.Taint().subtaint(startPos, str.Length()));
 }
 
 template <typename T>

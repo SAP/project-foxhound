@@ -84,17 +84,18 @@ inline T MaybeForwarded(T t) {
 
 inline void RelocationOverlay::forwardTo(Cell* cell) {
   MOZ_ASSERT(!isForwarded());
+
+  // TaintFox: TODO: check this
   // The location of magic_ is important because it must never be valid to see
   // the value Relocated there in a GC thing that has not been moved.
   // TaintFox: magic_ now overlaps with taint_, which is fine since that will always be a valid
   // pointer or null.
-  static_assert(offsetof(RelocationOverlay, magic_) == offsetof(JSObject, group_) &&
-                offsetof(RelocationOverlay, magic_) == offsetof(js::Shape, base_) &&
-                offsetof(RelocationOverlay, magic_) == offsetof(JSString, taint_),
-                "RelocationOverlay::magic_ is in the wrong location");
-  // TaintFox: TODO: check this
-  magic_ = Relocated;
-  newLocation_ = cell;
+  // static_assert(offsetof(RelocationOverlay, magic_) == offsetof(JSObject, group_) &&
+  //               offsetof(RelocationOverlay, magic_) == offsetof(js::Shape, base_) &&
+  //               offsetof(RelocationOverlay, magic_) == offsetof(JSString, taint_),
+  //               "RelocationOverlay::magic_ is in the wrong location");
+  // magic_ = Relocated;
+  // newLocation_ = cell;
     
   // Preserve old flags because nursery may check them before checking
   // if this is a forwarded Cell.

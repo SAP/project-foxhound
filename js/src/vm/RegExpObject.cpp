@@ -254,7 +254,7 @@ RegExpObject* RegExpObject::create(JSContext* cx, HandleAtom source,
                                    RegExpFlag flags, NewObjectKind newKind) {
   CompileOptions dummyOptions(cx);
   TokenStream dummyTokenStream(cx, dummyOptions, (const char16_t*)nullptr, 0,
-                               nullptr);
+                               EmptyTaint, nullptr);
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   if (!irregexp::ParsePatternSyntax(dummyTokenStream, allocScope.alloc(),

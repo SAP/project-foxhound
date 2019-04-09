@@ -1951,7 +1951,8 @@ CCGraphBuilder::CCGraphBuilder(CCGraph& aGraph, CycleCollectorResults& aResults,
       mMergeZones(aMergeZones),
       mNoteChildCount(0) {
   // 4096 is an allocation bucket size.
-  static_assert(sizeof(CCGraphBuilder) <= 4096,
+  // Taintfox, bumping this up
+  static_assert(sizeof(CCGraphBuilder) <= 8192,
                 "Don't create too large CCGraphBuilder objects");
 
   if (aCCRuntime) {

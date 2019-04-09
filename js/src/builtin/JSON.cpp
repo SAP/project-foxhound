@@ -34,6 +34,9 @@
 #include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"
 
+#include <iterator>
+
+
 using namespace js;
 
 using mozilla::CheckedInt;
@@ -58,9 +61,10 @@ static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               RangedPtr<DstCharT> dstCharBegin,
               RangedPtr<DstCharT> dstPtr) // dstPtr after post-incrementation
 {
-  if (auto flow = srcTaint.at(std::distance(src, srcBegin)))
-    outTaint.append(TaintRange(std::distance(dstCharBegin, dstBegin),
-                               std::distance(dstPtr - 1, dstBegin),
+  // TODO: double check pointer arithemetic here
+  if (auto flow = srcTaint.at(std::distance(src.get(), srcBegin.get())))
+    dstTaint.append(TaintRange(std::distance(dstCharBegin.get(), dstBegin.get()),
+                               std::distance(dstPtr.get() - 1, dstBegin.get()),
                                *flow));
 }
 
@@ -171,7 +175,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
 }
 
 template <typename SrcCharT, typename CharVectorT>
-static bool Quote(JSContext* cx, CharVectorT& sb, JSLinearString* str) {
+static bool Quote(JSContext* cx, CharVectorT& sb, StringTaint& taint, JSLinearString* str) {
   // We resize the backing buffer to the maximum size we could possibly need,
   // write the escaped string into it, and shrink it back to the size we ended
   // up needing.
@@ -195,7 +199,7 @@ static bool Quote(JSContext* cx, CharVectorT& sb, JSLinearString* str) {
   RangedPtr<DstCharT> dstBegin{sb.begin(), sb.begin(), sb.end()};
   RangedPtr<DstCharT> dstEnd =
       InfallibleQuote(srcBegin, srcBegin + len, dstBegin + sbInitialLen,
-                      str->taint(), sb.taint());
+                      str->taint(), taint);
   size_t newSize = dstEnd - dstBegin;
   sb.shrinkTo(newSize);
 
@@ -216,12 +220,12 @@ static bool Quote(JSContext* cx, StringBuffer& sb, JSString* str) {
     }
   }
   if (linear->hasTwoByteChars()) {
-    return Quote<char16_t>(cx, sb.rawTwoByteBuffer(), linear);
+    return Quote<char16_t>(cx, sb.rawTwoByteBuffer(), sb.taint(), linear);
   }
 
   return sb.isUnderlyingBufferLatin1()
-             ? Quote<Latin1Char>(cx, sb.latin1Chars(), linear)
-             : Quote<Latin1Char>(cx, sb.rawTwoByteBuffer(), linear);
+    ? Quote<Latin1Char>(cx, sb.latin1Chars(), sb.taint(), linear)
+    : Quote<Latin1Char>(cx, sb.rawTwoByteBuffer(), sb.taint(), linear);
 }
 
 namespace {
@@ -1038,14 +1042,15 @@ static bool Revive(JSContext* cx, HandleValue reviver, MutableHandleValue vp) {
 }
 
 template <typename CharT>
-bool
-js::ParseJSONWithReviver(JSContext* cx, const mozilla::Range<const CharT> chars, HandleValue reviver,
-                         MutableHandleValue vp, const StringTaint* taint)
-{
-    /* 15.12.2 steps 2-3. */
-    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, taint));
-    if (!parser.parse(vp))
-        return false;
+bool js::ParseJSONWithReviver(JSContext* cx,
+                              const mozilla::Range<const CharT> chars,
+                              HandleValue reviver, MutableHandleValue vp,
+                              const StringTaint* taint) {
+  /* 15.12.2 steps 2-3. */
+  Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, taint));
+  if (!parser.parse(vp)) {
+    return false;
+  }
 
   /* 15.12.2 steps 4-5. */
   if (IsCallable(reviver)) {
@@ -1054,13 +1059,13 @@ js::ParseJSONWithReviver(JSContext* cx, const mozilla::Range<const CharT> chars,
   return true;
 }
 
-template bool
-js::ParseJSONWithReviver(JSContext* cx, const mozilla::Range<const Latin1Char> chars,
-                         HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+template bool js::ParseJSONWithReviver(
+    JSContext* cx, const mozilla::Range<const Latin1Char> chars,
+    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
 
-template bool
-js::ParseJSONWithReviver(JSContext* cx, const mozilla::Range<const char16_t> chars, HandleValue reviver,
-                         MutableHandleValue vp, const StringTaint* taint);
+template bool js::ParseJSONWithReviver(
+    JSContext* cx, const mozilla::Range<const char16_t> chars,
+    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
 
 static bool json_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
