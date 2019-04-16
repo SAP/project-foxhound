@@ -833,7 +833,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
 
   // TaintFox
   StringTaint newTaint = str->taint().subtaint(begin, begin + len);
-
+  
   /*
    * Optimization for one level deep ropes.
    * This is common for the following pattern:

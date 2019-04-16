@@ -379,7 +379,7 @@ bool nsTSubstring<T>::Assign(char_type aChar, const fallible_t&) {
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!IsTainted());
+  MOZ_ASSERT(!this->IsTainted());
 
   *this->mData = aChar;
   FinishBulkWriteImpl(1);
@@ -421,7 +421,7 @@ bool nsTSubstring<T>::Assign(const char_type* aData, size_type aLength,
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!IsTainted());
+  MOZ_ASSERT(!this->IsTainted());
 
   char_traits::copy(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
@@ -453,7 +453,7 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!IsTainted());
+  MOZ_ASSERT(!this->IsTainted());
 
   char_traits::copyASCII(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);

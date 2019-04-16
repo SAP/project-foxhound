@@ -2273,8 +2273,8 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     if (!opName)
         return false;
 
-    char* op_str = JS_EncodeStringToUTF8(cx, opName).get();
-    if (!op_str)
+    UniqueChars op_chars = JS_EncodeStringToUTF8(cx, opName);
+    if (!op_chars)
         return false;
 
     // add arguments
@@ -2297,7 +2297,7 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     if(str->isTainted()) {
         StringTaint newTaint = StringTaint::extend(
             str->taint(),
-            TaintOperation(op_str, taint_args));
+            TaintOperation(op_chars.get(), taint_args));
 
         str->setTaint(newTaint);
     }

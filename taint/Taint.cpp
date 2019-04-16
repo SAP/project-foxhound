@@ -328,7 +328,7 @@ StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
     StringTaint newtaint;
     for (auto& range : *this) {
         if (range.begin() < end && range.end() > begin)
-            newtaint.append(TaintRange(std::max(range.begin(), begin) - begin, std::min(range.end(), end) - begin, range.flow()));
+	  newtaint.append(TaintRange(std::max(range.begin(), begin) - begin, std::min(range.end(), end) - begin, range.flow()));
     }
 
     return newtaint;

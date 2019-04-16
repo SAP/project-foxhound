@@ -17,9 +17,11 @@ RUN apt-get update &&    \
 	    libgconf2-dev \
 	    libdbus-glib-1-dev \
 	    libpulse-dev \
+	    libnotify-bin \
 	    yasm \
 	    nasm \
-	    mercurial
+	    mercurial \
+	    ccache
 
 RUN cargo install cbindgen
 
@@ -44,4 +46,8 @@ CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
     ./mach build
 
 
+# To run the build
 # docker run -v /sapmnt/home/I505600/workspace/testing/taintfox:/usr/local/src/firefox -it taintfox
+
+# To run the container with a bash terminal and Xterm sharing
+#  docker run -v /sapmnt/home/I505600/workspace/testing/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it --entrypoint=/bin/bash taintfox

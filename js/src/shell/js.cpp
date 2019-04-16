@@ -1281,7 +1281,7 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
     if (!str)
         return false;
 
-    char* utf8chars = JS_EncodeStringToUTF8(cx, str);
+    JS::UniqueChars utf8chars = JS_EncodeStringToUTF8(cx, str);
     if (!utf8chars)
         return false;
 
@@ -1322,8 +1322,6 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
     if (marker)
         fprintf(gOutFile->fp, "\033[0m");
     fprintf(gOutFile->fp, "\n");
-
-    JS_free(cx, utf8chars);
 
     return true;
 }
