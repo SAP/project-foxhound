@@ -4,7 +4,9 @@ function stringRepeatTest() {
     assertLastTaintOperationEquals(repStr, "repeat");
     assertNotHasTaintOperation(str, "repeat");
     assertFullTainted(repStr);
+}
 
+function stringSingleRepeatTest() {
     var str = randomTaintedString();
     var repStr = str.repeat(1);
     assertLastTaintOperationEquals(repStr, "repeat");
@@ -13,6 +15,7 @@ function stringRepeatTest() {
 }
 
 runTaintTest(stringRepeatTest);
+runTaintTest(stringSingleRepeatTest);
 
 if (typeof reportCompare === 'function')
   reportCompare(true, true);

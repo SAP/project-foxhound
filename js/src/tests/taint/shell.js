@@ -113,6 +113,8 @@ if (typeof rand === 'undefined') {
 }
 
 defaultCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";   // TODO extend
+escapableCharset = "!@#$%^&*()+=-[]\\\';,./{}|\":<>?~"
+
 if (typeof randomString === 'undefined') {
     // Generate a random string
     var randomString = function(len, charset) {
@@ -128,6 +130,14 @@ if (typeof randomString === 'undefined') {
             str += charset.charAt(Math.floor(Math.random() * charset.length));
 
         return str;
+    }
+}
+
+escapableCharset = "!@#$%^&*()+=-[]\\\';,./{}|\":<>?~"
+if (typeof randomStringWithEsacpables === 'undefined') {
+    // Generate a random String with some esacpable characters
+    var randomStringWithEsacpables = function(len) {
+	return randomString(len, escapableCharset);
     }
 }
 
@@ -159,6 +169,14 @@ if (typeof randomMultiTaintedString === 'undefined') {
     // Generates a random string with randomly tainted substrings
     var randomMultiTaintedString = function(len) {
         var str = randomString(len);
+        return multiTaint(str);
+    }
+}
+
+if (typeof randomMultiTaintedStringWithEscapables === 'undefined') {
+    // Generates a random string with randomly tainted substrings
+    var randomMultiTaintedStringWithEscapables = function(len) {
+        var str = randomStringWithEsacpables(len);
         return multiTaint(str);
     }
 }
@@ -224,6 +242,6 @@ if (typeof runTaintTest === 'undefined') {
         }
 
         doTest();         // Will be interpreted
-        runJITTest(doTest);
+//        runJITTest(doTest);
     }
 }

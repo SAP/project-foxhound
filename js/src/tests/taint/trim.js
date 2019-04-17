@@ -3,16 +3,16 @@ function trimTaintTest() {
     var lpad = "      ";
     var rpad = "  " + taint("           ") + " ";
     var trimMe = lpad + str + rpad;
-    assertEqualTaint(trimMe.trim(), str);
     assertLastTaintOperationEquals(trimMe.trim(), 'trim');
+    assertEqualTaint(trimMe.trim(), str);
     assertNotHasTaintOperation(trimMe, 'trim');
 
-    assertEqualTaint(trimMe.trimLeft(), str+rpad);
     assertLastTaintOperationEquals(trimMe.trimLeft(), 'trimLeft');
+    assertEqualTaint(trimMe.trimLeft(), str+rpad);
     assertNotHasTaintOperation(trimMe, 'trimLeft');
 
-    assertEqualTaint(trimMe.trimRight(), lpad+str);
     assertLastTaintOperationEquals(trimMe.trimRight(), 'trimRight');
+    assertEqualTaint(trimMe.trimRight(), lpad+str);
     assertNotHasTaintOperation(trimMe, 'trimRight');
 }
 

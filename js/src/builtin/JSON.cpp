@@ -36,7 +36,6 @@
 
 #include <iterator>
 
-
 using namespace js;
 
 using mozilla::CheckedInt;
@@ -50,7 +49,6 @@ const Class js::JSONClass = {js_JSON_str,
                              JSCLASS_HAS_CACHED_PROTO(JSProto_JSON)};
 
 // TaintFox: expanding taint information
-// TODO: Can this do in a separate function?
 template <typename SrcCharT, typename DstCharT>
 static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               const StringTaint& srcTaint,
@@ -61,10 +59,10 @@ static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               RangedPtr<DstCharT> dstCharBegin,
               RangedPtr<DstCharT> dstPtr) // dstPtr after post-incrementation
 {
-  // TODO: double check pointer arithemetic here
-  if (auto flow = srcTaint.at(std::distance(src.get(), srcBegin.get())))
-    dstTaint.append(TaintRange(std::distance(dstCharBegin.get(), dstBegin.get()),
-                               std::distance(dstPtr.get() - 1, dstBegin.get()),
+  // TODO: probably not very efficient as we are adding character wise to the the taint ranges
+  if (auto flow = srcTaint.at(std::distance(srcBegin.get(), src.get())))
+    dstTaint.append(TaintRange(std::distance(dstBegin.get(), dstCharBegin.get()),
+                               std::distance(dstBegin.get(), dstPtr.get()),
                                *flow));
 }
 
@@ -79,6 +77,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
     // TaintFox: need to propgate Tainting information here
     const StringTaint& srcTaint, StringTaint& dstTaint) {
   RangedPtr<const SrcCharT> src = srcBegin;
+  RangedPtr<const SrcCharT> srcCharBegin = src;
   RangedPtr<DstCharT> dstBegin = dstPtr;
   RangedPtr<DstCharT> dstCharBegin = dstPtr;
   // Maps characters < 256 to the value that must follow the '\\' in the quoted
@@ -110,6 +109,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
   /* Step 2. */
   while (src != srcEnd) {
     dstCharBegin = dstPtr;
+    srcCharBegin = src;
     const SrcCharT c = *src++;
     
     // Handle the Latin-1 cases.
@@ -119,7 +119,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
       // Directly copy non-escaped code points.
       if (escaped == 0) {
         *dstPtr++ = c;
-        appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+        appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
         continue;
       }
 
@@ -136,14 +136,14 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
 
         *dstPtr++ = ToLowerHex(c & 0xF);
       }
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
       continue;
     }
 
     // Non-ASCII non-surrogates are directly copied.
     if (!unicode::IsSurrogate(c)) {
       *dstPtr++ = c;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
       continue;
     }
 
@@ -151,9 +151,9 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
     if (MOZ_LIKELY(unicode::IsLeadSurrogate(c) && src < srcEnd &&
                    unicode::IsTrailSurrogate(*src))) {
       *dstPtr++ = c;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
       *dstPtr++ = *src++;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
       continue;
     }
 
@@ -166,7 +166,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
     *dstPtr++ = ToLowerHex((as32 >> 4) & 0xF);
     *dstPtr++ = ToLowerHex(as32 & 0xF);
 
-    appendTaintIfRequired(srcTaint, dstTaint, srcBegin, src, dstBegin, dstCharBegin, dstPtr);
+    appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
   }
 
   /* Steps 3-4. */

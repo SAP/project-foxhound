@@ -1116,7 +1116,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+      str->taint().extend(TaintOperation("toLowerCase"));
       return str;
     }
 
@@ -1149,7 +1149,8 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (!res)
     return nullptr;
   // TaintFox: Add taint operation to all taint ranges of the input string.
-    res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+  res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+
   return res;
 }
 
@@ -1545,7 +1546,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->setTaint(StringTaint::extend(str->taint(), TaintOperation("toUpperCase")));
+      str->taint().extend(TaintOperation("toUpperCase"));
       return str;
     }
 
@@ -2906,15 +2907,16 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   }
 
   // TaintFox: Add trim operation to current taint flow.
+  // the acutal trimming of taint ranges has been done in
+  // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (trimStart && trimEnd)
-      result->setTaint(StringTaint::extend(str->taint(), TaintOperation("trim")));
+      result->taint().extend(TaintOperation("trim"));
   else if (trimStart)
-      result->setTaint(StringTaint::extend(str->taint(), TaintOperation("trimStart")));
+      result->taint().extend(TaintOperation("trimLeft"));
   else if (trimEnd)
-      result->setTaint(StringTaint::extend(str->taint(), TaintOperation("trimEnd")));
+      result->taint().extend(TaintOperation("trimRight"));
   else
-      // TODO deadcode?
-      result->setTaint(StringTaint::extend(str->taint(), TaintOperation("trim")));
+      result->taint().extend(TaintOperation("trim"));
 
   args.rval().setString(result);
   return true;
@@ -3475,7 +3477,7 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
     }
 
     // TaintFox: extend taint flow
-    sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) })));
+    sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) }));
 
     // Step 14.c.ii.5.
     if (splits.length() == limit) {
@@ -3500,7 +3502,7 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: extend taint flow
-  sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) })));
+  sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) }));
 
   // Step 18.
   return NewCopiedArrayTryUseGroup(cx, group, splits.begin(), splits.length());
@@ -3514,7 +3516,6 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
   }
 
-  js::StaticStrings& staticStrings = cx->staticStrings();
   uint32_t resultlen = (limit < strLength ? limit : strLength);
   size_t count = 0;
       
@@ -3528,33 +3529,22 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     return nullptr;
   }
 
-  if (str->hasLatin1Chars()) {
-    splits->setDenseInitializedLength(resultlen);
+  // Taintfox removing check on atom type
+  splits->ensureDenseInitializedLength(cx, 0, resultlen);
 
-    JS::AutoCheckCannotGC nogc;
-    const Latin1Char* latin1Chars = str->latin1Chars(nogc);
-    for (size_t i = 0; i < resultlen; ++i) {
-      Latin1Char c = latin1Chars[i];
-      MOZ_ASSERT(staticStrings.hasUnit(c));
-      splits->initDenseElement(i, StringValue(staticStrings.getUnit(c)));
+  for (size_t i = 0; i < resultlen; ++i) {
+    // TaintFox: code modified to avoid atoms.
+    JSString* sub = NewDependentString(cx, str, i, 1);
+    // was:
+    // JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
+    if (!sub) {
+      return nullptr;
     }
-  } else {
-    splits->ensureDenseInitializedLength(cx, 0, resultlen);
 
-    for (size_t i = 0; i < resultlen; ++i) {
-      // TaintFox: code modified to avoid atoms.
-      JSString* sub = NewDependentString(cx, str, i, 1);
-      // was:
-      // JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
-      if (!sub) {
-        return nullptr;
-      }
+    // TaintFox: extend taint flow
+    sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
 
-      // TaintFox: extend taint flow
-      sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) })));
-
-      splits->initDenseElement(i, StringValue(sub));
-    }
+    splits->initDenseElement(i, StringValue(sub));
   }
 
   return splits;
@@ -3596,6 +3586,10 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
         return nullptr;
       }
       splits->initDenseElement(splitsIndex++, StringValue(sub));
+
+      // TaintFox: extend taint flow
+      sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
+
       lastEndIndex = index + 1;
     }
   }
@@ -3606,6 +3600,9 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
   if (!sub) {
     return nullptr;
   }
+  // TaintFox: extend taint flow
+  sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
+
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
   return splits;
@@ -4251,19 +4248,20 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
   Latin1Char hexBuf[3];
   hexBuf[0] = '%';
 
-  StringTaint newtaint;
-  auto current = taint.begin();
-  size_t ti = 0;      // begin of current output taint range
-
-  auto appendEncoded = [&sb, &hexBuf](Latin1Char c) {
+  auto appendEncoded = [&sb, &taint, &hexBuf](Latin1Char c, size_t k) {
     static const char HexDigits[] = "0123456789ABCDEF"; /* NB: uppercase */
 
     hexBuf[1] = HexDigits[c >> 4];
     hexBuf[2] = HexDigits[c & 0xf];
+
+    // We are adding one encoded character, ie 3 chars (e.g. "%25")
+    if (taint.at(k)) {
+      sb.taint().append(TaintRange(sb.length(), sb.length() + 3, *taint.at(k)));
+    }
     return sb.append(hexBuf, 3);
   };
 
-  auto appendRange = [&sb, chars, length](size_t start, size_t end) {
+  auto appendRange = [&sb, &taint, chars, length](size_t start, size_t end) {
     MOZ_ASSERT(start <= end);
 
     if (start < end) {
@@ -4272,6 +4270,7 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
           return false;
         }
       }
+      sb.taint().concat(taint.subtaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;
@@ -4290,12 +4289,12 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
 
       if (mozilla::IsSame<CharT, Latin1Char>::value) {
         if (c < 0x80) {
-          if (!appendEncoded(c)) {
+          if (!appendEncoded(c, k)) {
             return Encode_Failure;
           }
         } else {
-          if (!appendEncoded(0xC0 | (c >> 6)) ||
-              !appendEncoded(0x80 | (c & 0x3F))) {
+          if (!appendEncoded(0xC0 | (c >> 6), k) ||
+              !appendEncoded(0x80 | (c & 0x3F), k)) {
             return Encode_Failure;
           }
         }
@@ -4324,30 +4323,16 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
         uint8_t utf8buf[4];
         size_t L = OneUcs4ToUtf8Char(utf8buf, v);
         for (size_t j = 0; j < L; j++) {
-          if (!appendEncoded(utf8buf[j])) {
+          if (!appendEncoded(utf8buf[j], k)) {
             return Encode_Failure;
           }
         }
       }
 
-      // TaintFox: Build new taint ranges.
-      if (current != taint.end()) {
-        // Need to use <= and >= here since k can increase by more than 1 per iteration
-        if (k + 1 >= current->end()) {
-          newtaint.append(TaintRange(ti, sb.length(), current->flow()));
-          current++;
-        }
-        if (k + 1 <= current->begin()) {
-          ti = sb.length();
-        }
-      }
-
       startAppend = k + 1;
     }
+
   }
-
-
-  sb.setTaint(std::move(newtaint));
 
   if (startAppend > 0) {
     if (!appendRange(startAppend, length)) {
@@ -4403,10 +4388,11 @@ template <typename CharT>
 static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
                            const bool* reservedSet, const StringTaint& taint) {
   size_t ti = 0;          // Index of current taint flow
-  auto appendRange = [&sb, chars](size_t start, size_t end) {
+  auto appendRange = [&sb, &taint, chars](size_t start, size_t end) {
     MOZ_ASSERT(start <= end);
 
     if (start < end) {
+      sb.taint().concat(taint.subtaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;
@@ -4437,6 +4423,10 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
         if (!appendRange(startAppend, start)) {
           return Decode_Failure;
         }
+
+        if (taint.at(k))
+          sb.taint().append(TaintRange(sb.length(), sb.length() + 1, *taint.at(k)));
+
         if (!sb.append(ch)) {
           return Decode_Failure;
         }
@@ -4479,13 +4469,15 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
           return Decode_Failure;
         }
 
+        if (taint.at(k))
+          sb.taint().append(TaintRange(sb.length(), sb.length() + 1, *taint.at(k)));
+
         uint32_t v = JS::Utf8ToOneUcs4Char(octets, n);
         MOZ_ASSERT(v >= 128);
         if (v >= unicode::NonBMPMin) {
           if (v > unicode::NonBMPMax) {
             return Decode_BadUri;
           }
-
           if (!sb.append(unicode::LeadSurrogate(v))) {
             return Decode_Failure;
           }
@@ -4502,9 +4494,6 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
       startAppend = k + 1;
     }
 
-    // TaintFox: Propagate taint into output StringBuffer
-    // TODO this is likely wrong for 32-bit symbols.
-    sb.appendTaintAt(sb.length() - 1, taint.subtaint(ti, ti + 1));
   }
 
   if (startAppend > 0) {

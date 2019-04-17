@@ -1302,7 +1302,12 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
             fprintf(gOutFile->fp, "\e[0m");
             marker = false;
         }
-        fprintf(gOutFile->fp, "%c", utf8chars[i]);
+        // Print tainted spaces as a block (u2588)
+        if (taint[i-offset] && utf8chars[i] == ' ') {
+            fprintf(gOutFile->fp, "\u2588");
+        } else {
+            fprintf(gOutFile->fp, "%c", utf8chars[i]);
+        }
         if (escape == 0 && utf8chars[i] == '\\' && utf8chars[i+1] == 'u') {
             escape = 5;
             offset++;

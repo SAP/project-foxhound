@@ -581,7 +581,8 @@ function String_codePointAt(pos) {
 function String_repeat(count) {
     // Steps 1-3.
     RequireObjectCoercible(this);
-    var S = ToString(this);
+    // TaintFox: prevent tainting when repeat count = 1
+    var S = CopyString(ToString(this));
 
     // Steps 4-5.
     var n = ToInteger(count);

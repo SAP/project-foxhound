@@ -194,9 +194,9 @@ MOZ_ALWAYS_INLINE void JSDependentString::init(JSContext* cx,
   }
 
   // TaintFox: copy taint information from the base string.
-  initTaint();
+  this->initTaint();
   if (base->isTainted())
-    setTaint(StringTaint::substr(base->taint(), start, start + length));
+    this->setTaint(base->taint().subtaint(start, start + length));
 }
 
 MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(

@@ -59,14 +59,18 @@ function strReplaceTest() {
     var b = a.replace("x", "y");
     assertNotHasTaintOperation(a, 'replace');
     assertLastTaintOperationEquals(b, 'replace');
+}
+
+function strReplaceFunctionCallTest() {
 
     // Test function call
     str = taint("aba");
     rep = str.replace("a", x => x+1)
-    // assertRangeTainted(rep, [0, 1]);  // TODO fails
+    assertRangeTainted(rep, [0, 1]);
     assertRangeTainted(rep, [2, 4]);
     assertLastTaintOperationEquals(rep, 'replace');
     assertNotHasTaintOperation(str, 'replace');
+
     str = taint("aba");
     rep = str.replace(/a/g, x => x+1)
     assertRangeTainted(rep, [0, 1]);
@@ -76,6 +80,7 @@ function strReplaceTest() {
 }
 
 runTaintTest(strReplaceTest);
+runTaintTest(strReplaceFunctionCallTest);
 
 if (typeof reportCompare === 'function')
   reportCompare(true, true);

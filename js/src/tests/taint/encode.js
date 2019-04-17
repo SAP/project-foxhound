@@ -1,28 +1,27 @@
 
 function testEncodingFunctions() {
-    var str = randomMultiTaintedString();
+    var str = randomMultiTaintedString(20) + randomMultiTaintedStringWithEscapables(20);
 
     var encodedStr = encodeURI(str);
-    assertTainted(encodedStr);
-    print(JSON.stringify(encodedStr.taint));
     assertLastTaintOperationEquals(encodedStr, 'encodeURI');
+    assertTainted(encodedStr);
     assertNotHasTaintOperation(str, 'encodeURI');
 
     var decodedStr = decodeURI(encodedStr);
+    assertLastTaintOperationEquals(decodedStr, 'decodeURI');
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertLastTaintOperationEquals(decodedStr, 'decodeURI');
     assertNotHasTaintOperation(encodedStr, 'decodeURI');
 
     encodedStr = encodeURIComponent(str);
-    assertTainted(encodedStr);
     assertLastTaintOperationEquals(encodedStr, 'encodeURIComponent');
+    assertTainted(encodedStr);
     assertNotHasTaintOperation(str, 'encodeURIComponent');
 
     decodedStr = decodeURIComponent(encodedStr);
+    assertLastTaintOperationEquals(decodedStr, 'decodeURIComponent');
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertLastTaintOperationEquals(decodedStr, 'decodeURIComponent');
     assertNotHasTaintOperation(encodedStr, 'decodeURIComponent');
 }
 
