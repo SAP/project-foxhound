@@ -3180,10 +3180,12 @@ SearchService.prototype = {
   _submissionURLIgnoreList: [
     "ignore=true",
     "hspart=lvs",
-    "form=CONBDF",
+    "pc=COSP",
     "clid=2308146",
-    "fr=mcafee",
+    "fr=mca",
     "PC=MC0",
+    "lavasoft.gosearchresults",
+    "securedsearch.lavasoft",
   ],
 
   _loadPathIgnoreList: [
@@ -3511,6 +3513,8 @@ SearchService.prototype = {
       return;
     }
 
+    let searchRegion = Services.prefs.getCharPref("browser.search.region", null);
+
     let searchSettings;
     let locale = Services.locale.appLocaleAsBCP47;
     if ("locales" in json &&
@@ -3543,6 +3547,12 @@ SearchService.prototype = {
         for (let engine of searchSettings[region].visibleDefaultEngines) {
           jarNames.add(engine);
         }
+        if ("regionOverrides" in json &&
+            searchRegion in json.regionOverrides) {
+          for (let engine in json.regionOverrides[searchRegion]) {
+            jarNames.add(json.regionOverrides[searchRegion][engine]);
+          }
+        }
       }
 
       engineNames = visibleDefaultEngines.split(",");
@@ -3564,11 +3574,6 @@ SearchService.prototype = {
           break;
         }
       }
-    }
-
-    let searchRegion;
-    if (Services.prefs.prefHasUserValue("browser.search.region")) {
-      searchRegion = Services.prefs.getCharPref("browser.search.region");
     }
 
     // Fallback to building a list based on the regions in the JSON
