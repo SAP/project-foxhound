@@ -123,7 +123,7 @@ class nsTextFragment final : public TaintableString {
       }
     }
 
-    return SetTo(aString.get(), aString.Length(), aUpdateBidi, aString.taint(), aForce2b);
+    return SetTo(aString.get(), aString.Length(), aUpdateBidi, aString.Taint(), aForce2b);
   }
 
   /**

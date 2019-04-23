@@ -17,11 +17,11 @@ StringTaint nsTSubstringTuple<T>::Taint() const
     res = mHead->Taint();
     len = mHead->Length();
   } else {
-    res = TO_SUBSTRING(mFragA).taint();
+    res = TO_SUBSTRING(mFragA).Taint();
     len = TO_SUBSTRING(mFragA).Length();
   }
 
-  res.concat(TO_SUBSTRING(mFragB).taint(), len);
+  res.concat(TO_SUBSTRING(mFragB).Taint(), len);
   return res;
 }
 

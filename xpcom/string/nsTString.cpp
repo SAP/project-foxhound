@@ -14,7 +14,7 @@ void nsTString<T>::Rebind(const char_type* data, size_type length) {
   this->Finalize();
 
   // TODO: taintfox propagate taint
-  this->SetData(const_cast<char_type*>(data), length, DataFlags::TERMINATED, EmptyTaint);
+  this->SetData(const_cast<char_type*>(data), length, DataFlags::TERMINATED);
   this->AssertValidDependentString();
 }
 

@@ -92,11 +92,14 @@ namespace detail {
 // If you need to take a parameter, use [const] ns[C]Substring&.
 // If you need to instantiate a string, use ns[C]String or descendents.
 //
+// Taintfox: don't be tempted to inherit from TaintableString here, as it
+// may mess up memory allocation asssumptions.
+//
 // NAMES:
 //   nsStringRepr for wide characters
 //   nsCStringRepr for narrow characters
 template <typename T>
-class nsTStringRepr : public TaintableString {
+class nsTStringRepr {
  public:
   typedef mozilla::fallible_t fallible_t;
 
@@ -170,6 +173,11 @@ class nsTStringRepr : public TaintableString {
   size_type Length() const { return mLength; }
 
   DataFlags GetDataFlags() const { return mDataFlags; }
+
+  const StringTaint& Taint() const { return mTaint; }
+  StringTaint& Taint() { return mTaint; }
+
+  bool isTainted() const { return mTaint.hasTaint(); }
 
   bool IsEmpty() const { return mLength == 0; }
 
@@ -291,16 +299,27 @@ class nsTStringRepr : public TaintableString {
   nsTStringRepr() = delete;  // Never instantiate directly
 
   constexpr nsTStringRepr(char_type* aData, size_type aLength,
+                          DataFlags aDataFlags, ClassFlags aClassFlags,
+                          const StringTaint& aStringTaint)
+      : mData(aData),
+        mLength(aLength),
+        mDataFlags(aDataFlags),
+        mClassFlags(aClassFlags),
+        mTaint(aStringTaint) {}
+
+  constexpr nsTStringRepr(char_type* aData, size_type aLength,
                           DataFlags aDataFlags, ClassFlags aClassFlags)
       : mData(aData),
         mLength(aLength),
         mDataFlags(aDataFlags),
-        mClassFlags(aClassFlags) {}
+        mClassFlags(aClassFlags),
+        mTaint(EmptyTaint) {}
 
   char_type* mData;
   size_type mLength;
   DataFlags mDataFlags;
   ClassFlags const mClassFlags;
+  StringTaint mTaint;
 };
 
 extern template class nsTStringRepr<char>;

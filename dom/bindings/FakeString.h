@@ -18,7 +18,7 @@ namespace binding_detail {
 // A struct that has the same layout as an nsString but much faster
 // constructor and destructor behavior. FakeString uses inline storage
 // for small strings and a nsStringBuffer for longer strings.
-struct FakeString : public TaintableString {
+struct FakeString {
   FakeString()
       : mDataFlags(nsString::DataFlags::TERMINATED),
         mClassFlags(nsString::ClassFlags(0)) {}
@@ -35,7 +35,7 @@ struct FakeString : public TaintableString {
     mLength = aLength;
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
 
   // Share aString's string buffer, if it has one; otherwise, make this string
@@ -57,7 +57,7 @@ struct FakeString : public TaintableString {
     mLength = 0;
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
 
   void SetIsVoid(bool aValue) {
@@ -67,6 +67,12 @@ struct FakeString : public TaintableString {
   }
 
   const nsString::char_type* Data() const { return mData; }
+
+  // TaintFox: Helper function for Setting the Taint information
+  void AssignTaint(const StringTaint& aTaint)
+  {
+    mTaint = aTaint;
+  }
 
   nsString::char_type* BeginWriting() {
     MOZ_ASSERT(!(mDataFlags & nsString::DataFlags::REFCOUNTED) ||
@@ -100,7 +106,7 @@ struct FakeString : public TaintableString {
     }
 
     // TaintFox: this method should only be called on empty strings it seems.
-    MOZ_ASSERT(!isTainted());
+    MOZ_ASSERT(!mTaint.hasTaint());
 
     mLength = aLength;
     mData[mLength] = char16_t(0);
@@ -126,6 +132,7 @@ operator const nsAString& () const {
   MOZ_INIT_OUTSIDE_CTOR nsString::size_type mLength;
   nsString::DataFlags mDataFlags;
   nsString::ClassFlags mClassFlags;
+  StringTaint mTaint;
 
   static const size_t sInlineCapacity = 64;
   nsString::char_type mInlineStorage[sInlineCapacity];
@@ -138,7 +145,7 @@ operator const nsAString& () const {
     mData = const_cast<nsString::char_type*>(aData);
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
   void AssignFromStringBuffer(already_AddRefed<nsStringBuffer> aBuffer) {
     SetData(static_cast<nsString::char_type*>(aBuffer.take()->Data()));
@@ -170,8 +177,8 @@ operator const nsAString& () const {
       static_assert(offsetof(FakeString, mClassFlags) ==
                         offsetof(StringAsserter, mClassFlags),
                     "Offset of mClassFlags should match");
-      static_assert(offsetof(FakeString, taint_) ==
-                      offsetof(StringAsserter, taint_),
+      static_assert(offsetof(FakeString, mTaint) ==
+                      offsetof(StringAsserter, mTaint),
                     "Offset of taint_ should match");
     }
   };

@@ -242,6 +242,6 @@ if (typeof runTaintTest === 'undefined') {
         }
 
         doTest();         // Will be interpreted
-//        runJITTest(doTest);
+        runJITTest(doTest);
     }
 }

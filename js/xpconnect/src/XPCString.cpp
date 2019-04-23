@@ -74,7 +74,7 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
             return false;
 
         // TaintFox: copy taint information.
-        JS_SetStringTaint(str, readable.taint());
+        JS_SetStringTaint(str, readable.Taint());
 
         vp.setString(str);
         return true;
@@ -100,7 +100,7 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
     // TaintFox: copy taint information.
     // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
     // TODO(samuel) verify readable.taint() is sane
-    JS_SetStringTaint(str, readable.taint());
+    JS_SetStringTaint(str, readable.Taint());
 
     vp.setString(str);
     return true;

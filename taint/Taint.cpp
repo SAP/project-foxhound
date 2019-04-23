@@ -194,7 +194,7 @@ StringTaint& StringTaint::operator=(const StringTaint& other)
     if (this == &other)
         return *this;
 
-    delete ranges_;
+    clear();
 
     if (other.ranges_)
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
@@ -206,9 +206,12 @@ StringTaint& StringTaint::operator=(const StringTaint& other)
 
 StringTaint& StringTaint::operator=(StringTaint&& other)
 {
-    delete ranges_;
+    if (this == &other)
+      return *this;
 
-    ranges_ = other.ranges_;
+    clear();
+
+    ranges_ = std::move(other.ranges_);
     other.ranges_ = nullptr;
 
     return *this;
@@ -220,6 +223,12 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
 }
 
+StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
+{
+    ranges_ = other.ranges_;
+    other.ranges_ = nullptr;
+}
+
 StringTaint::~StringTaint()
 {
     clear();
@@ -227,8 +236,8 @@ StringTaint::~StringTaint()
 
 void StringTaint::clear()
 {
-    delete ranges_;
-    ranges_ = nullptr;
+  delete ranges_;
+  ranges_ = nullptr;
 }
 
 void StringTaint::clearBetween(uint32_t begin, uint32_t end)
@@ -428,11 +437,12 @@ StringTaint StringTaint::extend(const StringTaint& taint, const TaintOperation& 
 
 void StringTaint::assign(std::vector<TaintRange>* ranges)
 {
-    delete ranges_;
+    clear();
     if (ranges->size() > 0) {
         ranges_ = ranges;
     } else {
         ranges_ = nullptr;
+	// XXX is this really correct?
         delete ranges;
     }
 }

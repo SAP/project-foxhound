@@ -1703,7 +1703,7 @@ already_AddRefed<nsStringBuffer> nsAttrValue::GetStringBuffer(
   data[len] = char16_t(0);
 
   // TaintFox: propagate taint.
-  if (aValue.IsTainted())
+  if (aValue.isTainted())
     buf->AssignTaint(aValue.Taint());
 
   return buf.forget();

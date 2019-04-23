@@ -49,7 +49,8 @@ class nsTLiteralString : public mozilla::detail::nsTStringRepr<T> {
   explicit constexpr nsTLiteralString(const char_type (&aStr)[N])
       : base_string_type(const_cast<char_type*>(aStr), N - 1,
                          DataFlags::TERMINATED | DataFlags::LITERAL,
-                         ClassFlags::NULL_TERMINATED) {}
+                         ClassFlags::NULL_TERMINATED,
+                         EmptyTaint) {}
 
   /**
    * For compatibility with existing code that requires const ns[C]String*.

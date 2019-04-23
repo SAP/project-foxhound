@@ -266,7 +266,7 @@ void nsTSubstring<T>::FinishBulkWriteImpl(size_type aLength) {
 template <typename T>
 void nsTSubstring<T>::Finalize() {
   // TaintFox: clear taint.
-  this->ClearTaint();
+  this->mTaint.clear();
   ::ReleaseData(this->mData, this->mDataFlags);
   // this->mData, this->mLength, and this->mDataFlags are purposefully left
   // dangling
@@ -310,8 +310,8 @@ bool nsTSubstring<T>::ReplacePrepInternal(index_type aCutStart,
   }
 
   // TaintFox: remove and adjust taint information.
-  if (this->IsTainted()) {
-    this->ReplaceTaint(aCutStart, aCutStart + aCutLen, aFragLen, EmptyTaint);
+  if (this->isTainted()) {
+    this->mTaint.replace(aCutStart, aCutStart + aCutLen, aFragLen, EmptyTaint);
   }
 
   FinishBulkWriteImpl(aNewLen);
@@ -379,7 +379,7 @@ bool nsTSubstring<T>::Assign(char_type aChar, const fallible_t&) {
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->IsTainted());
+  MOZ_ASSERT(!this->isTainted());
 
   *this->mData = aChar;
   FinishBulkWriteImpl(1);
@@ -421,7 +421,7 @@ bool nsTSubstring<T>::Assign(const char_type* aData, size_type aLength,
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->IsTainted());
+  MOZ_ASSERT(!this->isTainted());
 
   char_traits::copy(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
@@ -453,7 +453,7 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
     return false;
   }
   // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->IsTainted());
+  MOZ_ASSERT(!this->isTainted());
 
   char_traits::copyASCII(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
@@ -462,11 +462,10 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
 
 template <typename T>
 void nsTSubstring<T>::AssignLiteral(const char_type* aData, size_type aLength) {
-  // TaintFox: clear taint here.
-  this->ClearTaint();
   ::ReleaseData(this->mData, this->mDataFlags);
   SetData(const_cast<char_type*>(aData), aLength,
-          DataFlags::TERMINATED | DataFlags::LITERAL, EmptyTaint);
+          DataFlags::TERMINATED | DataFlags::LITERAL);
+  SetTaint(EmptyTaint);
 }
 
 template <typename T>
@@ -502,15 +501,12 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
     ::ReleaseData(this->mData, this->mDataFlags);
 
     SetData(aStr.mData, aStr.mLength,
-            DataFlags::TERMINATED | DataFlags::REFCOUNTED,
-            aStr.taint());
+            DataFlags::TERMINATED | DataFlags::REFCOUNTED);
+
+    this->mTaint = aStr.mTaint;
 
     // get an owning reference to the mData
     nsStringBuffer::FromData(this->mData)->AddRef();
-
-    // TaintFox: propagate taint information.
-    // TODO: check this is already done in SetData?
-    this->setTaint(aStr.Taint());
 
     return true;
   } else if (aStr.mDataFlags & DataFlags::LITERAL) {
@@ -519,7 +515,8 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
     AssignLiteral(aStr.mData, aStr.mLength);
 
     // TaintFox: propagate taint information.
-    this->setTaint(aStr.Taint());
+    // Do we need to move here too?
+    this->mTaint = aStr.mTaint;
 
     return true;
   }
@@ -528,7 +525,7 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
   bool ok = Assign(aStr.Data(), aStr.Length(), aFallible);
 
   // TaintFox: propagate taint information.
-  this->setTaint(aStr.Taint());
+  this->mTaint = aStr.mTaint;
 
   return ok;
 }
@@ -561,7 +558,10 @@ bool nsTSubstring<T>::Assign(self_type&& aStr, const fallible_t& aFallible) {
 
     ::ReleaseData(this->mData, this->mDataFlags);
 
-    SetData(aStr.mData, aStr.mLength, aStr.mDataFlags, aStr.taint());
+    SetData(aStr.mData, aStr.mLength, aStr.mDataFlags);
+    // Taintfox: do not make a new copy, just copy references
+    this->mTaint = std::move(aStr.mTaint);
+
     aStr.SetToEmptyBuffer();
     return true;
   }
@@ -601,7 +601,7 @@ bool nsTSubstring<T>::Assign(const substring_tuple_type& aTuple,
 
 
   // TaintFox: propagate taint.
-  this->setTaint(aTuple.Taint());
+  this->mTaint = aTuple.Taint();
 
   FinishBulkWriteImpl(length);
   return true;
@@ -614,7 +614,7 @@ void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
 
     // TaintFox: remove taint here. Caller is responsible to propagate taint in
     // this case.
-    this->ClearTaint();
+    this->mTaint.clear();
 
     if (aLength == size_type(-1)) {
       aLength = char_traits::length(aData);
@@ -622,7 +622,7 @@ void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
 
     MOZ_RELEASE_ASSERT(CheckCapacity(aLength), "adopting a too-long string");
 
-    SetData(aData, aLength, DataFlags::TERMINATED | DataFlags::OWNED, EmptyTaint);
+    SetData(aData, aLength, DataFlags::TERMINATED | DataFlags::OWNED);
 
     STRING_STAT_INCREMENT(Adopt);
     // Treat this as construction of a "StringAdopt" object for leak
@@ -754,7 +754,7 @@ void nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
     aTuple.WriteTo(this->mData + aCutStart, length);
 
     // TaintFox: propagate taint.
-    this->ReplaceTaint(aCutStart, aCutStart + aCutLength, aTuple.Length(), aTuple.Taint());
+    this->mTaint.replace(aCutStart, aCutStart + aCutLength, aTuple.Length(), aTuple.Taint());
   }
 }
 
@@ -967,13 +967,13 @@ bool nsTSubstring<T>::SetCapacity(size_type aCapacity, const fallible_t&) {
     AssertValid();
 
     // TaintFox: clear taint.
-    this->ClearTaint();
+    this->mTaint.clear();
 
     return true;
   }
 
   // TaintFox: remove taint at the end.
-  this->clearTaintAfter(length);
+  this->mTaint.clearAfter(length);
 
   // FinishBulkWriteImpl with argument zero releases
   // the heap-allocated buffer. However, SetCapacity()
@@ -1164,8 +1164,8 @@ void nsTSubstring<T>::StripChar(char_type aChar) {
       *to++ = theChar;
     } else {
       // TaintFox: remove taint information for the removed character.
-      if (this->IsTainted()) {
-        this->clearTaintAt(from - this->mData - 1);
+      if (this->isTainted()) {
+        this->mTaint.clearAt(from - this->mData - 1);
       }
     }
   }
@@ -1201,8 +1201,8 @@ void nsTSubstring<T>::StripChars(const char_type* aChars) {
       *to++ = theChar;
     } else {
       // TaintFox: remove taint information for the removed character.
-      if (this->IsTainted()) {
-        this->clearTaintAt(from - this->mData - 1);
+      if (this->isTainted()) {
+        this->mTaint.clearAt(from - this->mData - 1);
       }
     }
   }

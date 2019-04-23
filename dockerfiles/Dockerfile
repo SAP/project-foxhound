@@ -49,5 +49,9 @@ CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
 # To run the build
 # docker run -v /sapmnt/home/I505600/workspace/testing/taintfox:/usr/local/src/firefox -it taintfox
 
-# To run the container with a bash terminal and Xterm sharing
+# To run the container with a bash terminal and X sharing
+# See more here: http://wiki.ros.org/docker/Tutorials/GUI
 #  docker run -v /sapmnt/home/I505600/workspace/testing/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it --entrypoint=/bin/bash taintfox
+
+# Enable X sharing and allow gdb to work (ptrace)
+docker run -v /sapmnt/home/I505600/workspace/testing/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -it --entrypoint=/bin/bash taintfox

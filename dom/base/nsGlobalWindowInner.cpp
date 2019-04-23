@@ -5959,7 +5959,7 @@ int32_t nsGlobalWindowInner::SetTimeoutOrInterval(JSContext* aCx,
   }
 
   // TaintFox: setInterval and setTimeout taint sinks.
-  if (aHandler.IsTainted())
+  if (aHandler.isTainted())
     ReportTaintSink(aCx, aHandler, aIsInterval ? "setInterval" : "setTimeout");
 
   nsCOMPtr<nsIScriptTimeoutHandler> handler =

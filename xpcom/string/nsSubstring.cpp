@@ -144,7 +144,8 @@ class nsAStringAccessor : public nsAString {
 
   void set(char_type* aData, size_type aLen, DataFlags aDataFlags, const StringTaint& aTaint) {
     ReleaseData(mData, mDataFlags);
-    SetData(aData, aLen, aDataFlags, aTaint);
+    SetData(aData, aLen, aDataFlags);
+    mTaint = aTaint;
   }
 };
 
@@ -159,7 +160,8 @@ class nsACStringAccessor : public nsACString {
 
   void set(char_type* aData, size_type aLen, DataFlags aDataFlags, const StringTaint& aTaint) {
     ReleaseData(mData, mDataFlags);
-    SetData(aData, aLen, aDataFlags, aTaint);
+    SetData(aData, aLen, aDataFlags);
+    mTaint = aTaint;
   }
 };
 
@@ -272,7 +274,7 @@ nsStringBuffer* nsStringBuffer::FromString(const nsAString& aStr) {
   nsStringBuffer *buf = FromData(accessor->data());
 
   // TaintFox: copy taint into StringBuffer.
-  if (aStr.IsTainted())
+  if (aStr.isTainted())
     buf->AssignTaint(aStr.Taint());
 
   return buf;
@@ -289,7 +291,7 @@ nsStringBuffer* nsStringBuffer::FromString(const nsACString& aStr) {
   nsStringBuffer *buf = FromData(accessor->data());
 
   // TaintFox: copy taint into StringBuffer.
-  if (aStr.IsTainted())
+  if (aStr.isTainted())
     buf->AssignTaint(aStr.Taint());
 
   return buf;

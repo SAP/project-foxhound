@@ -109,7 +109,7 @@ class nsStringContainer;
 struct nsStringContainer_base
 {
 protected:
-  // TaintFox: add taint property.
+  // TaintFox: XXX segfault caused by this? add taint property.
   void* d1;
   uint32_t d2;
   uint32_t d3;

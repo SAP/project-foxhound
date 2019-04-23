@@ -241,7 +241,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   }
 
   // TaintFox: copy taint when converting between JavaScript and Gecko strings.
-  dest.setTaint(JS_GetStringTaint(s));
+  dest.AssignTaint(JS_GetStringTaint(s));
 
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
@@ -253,7 +253,7 @@ inline void AssignJSFlatString(nsAString& dest, JSFlatString* s) {
   dest.SetLength(len);
 
   // TaintFox: copy taint when converting between JavaScript and Gecko strings.
-  dest.setTaint(JS_GetStringTaint(s));
+  dest.AssignTaint(JS_GetStringTaint(s));
 
   js::CopyFlatStringChars(dest.BeginWriting(), s, len);
 }

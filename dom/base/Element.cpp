@@ -200,9 +200,11 @@ namespace dom {
 ASSERT_NODE_SIZE(Element, 128, 80);
 ASSERT_NODE_SIZE(HTMLDivElement, 128, 80);
 ASSERT_NODE_SIZE(HTMLSpanElement, 128, 80);
-// TaintFox: TDOD: check what this value should be
-// This assert is failing (probably because we added something to Text
-// ASSERT_NODE_SIZE(Text, 120, 64);
+// TaintFox:
+// Original: ASSERT_NODE_SIZE(Text, 120, 64);
+// Text is now a taintable string, so contains an
+// additional pointer (ie 120 + 8 or 64 + 4 bytes)
+ASSERT_NODE_SIZE(Text, 128, 68);
 
 #undef ASSERT_NODE_SIZE
 #undef EXTRA_DOM_NODE_BYTES
@@ -2245,7 +2247,7 @@ nsresult Element::SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
   }
 
   // TaintFox: Event handler sink.
-  if (aValue.IsTainted()) {
+  if (aValue.isTainted()) {
     nsCString eventName;
     aEventName->ToUTF8String(eventName);
     ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aValue, eventName.get());
@@ -3599,7 +3601,7 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
   }
 
   // TaintFox: outerHTML sink.
-  if (aOuterHTML.IsTainted())
+  if (aOuterHTML.isTainted())
     ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
 
   if (OwnerDoc()->IsHTMLDocument()) {

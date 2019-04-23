@@ -289,6 +289,7 @@ class BulkWriteHandle final {
  *   nsACString for narrow characters
  *
  * TaintFox: the (internal) XPCOM string classes are taint aware
+ * as a taint member has been added to the nsTStringRepr class.
  */
 template <typename T>
 class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
@@ -541,7 +542,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     // TaintFox: copy taint from replacement string.
     // At this point taint_ will already have been "reshaped" correctly, we just
     // need to insert the new taint.
-    this->InsertTaintAt(aCutStart, aStr.Taint());
+    base_string_type::mTaint.insert(aCutStart, aStr.Taint());
   }
   MOZ_MUST_USE bool Replace(index_type aCutStart, size_type aCutLength,
                             const self_type& aStr,
@@ -549,7 +550,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     return Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length(),
                    aFallible);
     // TaintFox: copy taint from replacement string.
-    this->InsertTaintAt(aCutStart, aStr.Taint());
+    base_string_type::mTaint.insert(aCutStart, aStr.Taint());
   }
   void NS_FASTCALL Replace(index_type aCutStart, size_type aCutLength,
                            const substring_tuple_type& aTuple);
@@ -1045,7 +1046,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
       SetToEmptyBuffer();
 
       // TaintFox: clear taint here.
-      base_string_type::ClearTaint();
+      base_string_type::mTaint.clear();
     }
   }
 
@@ -1107,14 +1108,20 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   // been changed by the Append().
   void AppendTaint(const StringTaint& aTaint)
   {
-    this->AppendTaintAt(base_string_type::Length(), aTaint);
+    base_string_type::mTaint.concat(aTaint, base_string_type::Length());
+  }
+
+  // TaintFox: Helper function for Setting the Taint information
+  void AssignTaint(const StringTaint& aTaint)
+  {
+    base_string_type::mTaint = aTaint;
   }
 
  protected:
   // default initialization
   nsTSubstring()
       : base_string_type(char_traits::sEmptyBuffer, 0, DataFlags::TERMINATED,
-                         ClassFlags(0)) {
+                         ClassFlags(0), EmptyTaint) {
     AssertValid();
   }
 
@@ -1125,14 +1132,15 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
                          aStr.base_string_type::mLength,
                          aStr.base_string_type::mDataFlags &
                              (DataFlags::TERMINATED | DataFlags::VOIDED),
-                         ClassFlags(0)) {
+                         ClassFlags(0),
+                         aStr.base_string_type::mTaint) {
     AssertValid();
   }
 
   // initialization with ClassFlags
   explicit nsTSubstring(ClassFlags aClassFlags)
       : base_string_type(char_traits::sEmptyBuffer, 0, DataFlags::TERMINATED,
-                         aClassFlags) {
+                         aClassFlags, EmptyTaint) {
     AssertValid();
   }
 
@@ -1147,7 +1155,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
       ;
 #else
 #  undef XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-      : base_string_type(aData, aLength, aDataFlags, aClassFlags) {
+  : base_string_type(aData, aLength, aDataFlags, aClassFlags) {
     AssertValid();
     MOZ_RELEASE_ASSERT(CheckCapacity(aLength), "String is too large.");
   }
@@ -1157,16 +1165,19 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     base_string_type::mData = char_traits::sEmptyBuffer;
     base_string_type::mLength = 0;
     base_string_type::mDataFlags = DataFlags::TERMINATED;
-    this->ClearTaint();
+    base_string_type::mTaint.clear();
     AssertValid();
   }
 
-  void SetData(char_type* aData, size_type aLength, DataFlags aDataFlags, const StringTaint& aTaint) {
+  void SetData(char_type* aData, size_type aLength, DataFlags aDataFlags) {
     base_string_type::mData = aData;
     base_string_type::mLength = aLength;
     base_string_type::mDataFlags = aDataFlags;
-    this->setTaint(aTaint);
     AssertValid();
+  }
+
+  void SetTaint(const StringTaint& aTaint) {
+    base_string_type::mTaint = aTaint;
   }
 
   /**

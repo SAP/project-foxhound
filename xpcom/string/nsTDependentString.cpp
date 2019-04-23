@@ -33,7 +33,7 @@ void nsTDependentString<T>::Rebind(const string_type& str, uint32_t startPos) {
   size_type newLen = strLength - startPos;
   DataFlags newDataFlags =
       str.GetDataFlags() & (DataFlags::TERMINATED | DataFlags::LITERAL);
-  this->SetData(newData, newLen, newDataFlags, EmptyTaint);
+  this->SetData(newData, newLen, newDataFlags);
   // TaintFox: propagate taint.
   this->AssignTaint(str.Taint().subtaint(startPos, str.Length()));
 }
