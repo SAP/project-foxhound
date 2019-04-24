@@ -66,44 +66,35 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
 
   uint32_t length = readable.Length();
 
-    if (readable.IsLiteral()) {
-        JSString* str = JS_NewExternalString(cx,
-                                             static_cast<const char16_t*>(readable.BeginReading()),
-                                             length, &sLiteralFinalizer);
-        if (!str)
-            return false;
+  if (readable.IsLiteral()) {
+    return StringLiteralToJSVal(cx, readable.BeginReading(), length, vp);
+  }
 
-        // TaintFox: copy taint information.
-        JS_SetStringTaint(str, readable.Taint());
-
-        vp.setString(str);
-        return true;
+  nsStringBuffer* buf = nsStringBuffer::FromString(readable);
+  if (buf) {
+    bool shared;
+    // TaintFox: StringBufferToJSVal takes care of propagating taint.
+    if (!StringBufferToJSVal(cx, buf, length, vp, &shared)) {
+      return false;
     }
-
-    nsStringBuffer* buf = nsStringBuffer::FromString(readable);
-    if (buf) {
-        bool shared;
-        // TaintFox: StringBufferToJSVal takes care of propagating taint.
-        if (!StringBufferToJSVal(cx, buf, length, vp, &shared))
-            return false;
-        if (shared)
-            *sharedBuffer = buf;
-
-        return true;
+    if (shared) {
+      *sharedBuffer = buf;
     }
-
-    // blech, have to copy.
-    JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
-    if (!str)
-        return false;
-
-    // TaintFox: copy taint information.
-    // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
-    // TODO(samuel) verify readable.taint() is sane
-    JS_SetStringTaint(str, readable.Taint());
-
-    vp.setString(str);
     return true;
+  }
+
+  // blech, have to copy.
+  JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
+  if (!str)
+    return false;
+
+  // TaintFox: copy taint information.
+  // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
+  // TODO(samuel) verify readable.taint() is sane
+  JS_SetStringTaint(str, readable.Taint());
+
+  vp.setString(str);
+  return true;
 }
 
 namespace xpc {

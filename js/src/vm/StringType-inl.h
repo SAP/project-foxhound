@@ -63,6 +63,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     return nullptr;
   }
 
+  // TaintFox: Init taint information.
+  str->initTaint();
+
   mozilla::PodCopy(storage, chars.begin().get(), len);
   storage[len] = 0;
   return str;
@@ -81,8 +84,11 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   }
 
   // TaintFox: Copy taint information.
-  if (base->isTainted())
-    s->setTaint(StringTaint::substr(base->taint(), start, start + length));
+  s->initTaint();
+  if (base->isTainted()) {
+    StringTaint newTaint = base->taint().subtaint(start, start + length);
+    s->setTaint(newTaint);
+  }
 
   JS::AutoCheckCannotGC nogc;
   mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
@@ -96,6 +102,7 @@ static MOZ_ALWAYS_INLINE JSFlatString* TryEmptyOrStaticString(
   // Measurements on popular websites indicate empty strings are pretty common
   // and most strings with length 1 or 2 are in the StaticStrings table. For
   // length 3 strings that's only about 1%, so we check n <= 2.
+  // Taintfox: TODO: check whether we should disable this function
   if (n <= 2) {
     if (n == 0) {
       return cx->emptyString();
@@ -426,6 +433,7 @@ inline JSLinearString* js::StaticStrings::getUnitStringForElement(
   if (c < UNIT_STATIC_LIMIT) {
     return getUnit(c);
   }
+
   return js::NewInlineString<CanGC>(cx, mozilla::Range<const char16_t>(&c, 1));
 }
 

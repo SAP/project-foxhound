@@ -266,6 +266,10 @@ class XPCStringConvert {
     if (!str) {
       return false;
     }
+
+    // TaintFox: empty taint
+    JS_SetStringTaint(str, EmptyTaint);
+
     rval.setString(str);
     return true;
   }

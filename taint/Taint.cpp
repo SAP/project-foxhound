@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
+#define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
+
 TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args) : name_(name), arguments_(args) { }
 
 TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args) : name_(name), arguments_(args) { }
@@ -189,6 +191,24 @@ StringTaint::StringTaint(TaintFlow taint, uint32_t length)
     ranges_->push_back(TaintRange(0, length, taint));
 }
 
+StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
+{
+    if (other.ranges_)
+        ranges_ = new std::vector<TaintRange>(*other.ranges_);
+}
+
+StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
+{
+    ranges_ = other.ranges_;
+    other.ranges_ = nullptr;
+}
+
+
+StringTaint::~StringTaint()
+{
+    clear();
+}
+
 StringTaint& StringTaint::operator=(const StringTaint& other)
 {
     if (this == &other)
@@ -211,27 +231,10 @@ StringTaint& StringTaint::operator=(StringTaint&& other)
 
     clear();
 
-    ranges_ = std::move(other.ranges_);
+    ranges_ = other.ranges_;
     other.ranges_ = nullptr;
 
     return *this;
-}
-
-StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
-{
-    if (other.ranges_)
-        ranges_ = new std::vector<TaintRange>(*other.ranges_);
-}
-
-StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
-{
-    ranges_ = other.ranges_;
-    other.ranges_ = nullptr;
-}
-
-StringTaint::~StringTaint()
-{
-    clear();
 }
 
 void StringTaint::clear()
@@ -337,7 +340,9 @@ StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
     StringTaint newtaint;
     for (auto& range : *this) {
         if (range.begin() < end && range.end() > begin)
-	  newtaint.append(TaintRange(std::max(range.begin(), begin) - begin, std::min(range.end(), end) - begin, range.flow()));
+	  newtaint.append(TaintRange(std::max(range.begin(), begin) - begin,
+				     std::min(range.end(), end) - begin,
+				     range.flow()));
     }
 
     return newtaint;

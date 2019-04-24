@@ -1805,6 +1805,8 @@ void CreateDependentString::generate(MacroAssembler& masm,
     }
     masm.bind(&joins_[kind]);
     masm.store32(Imm32(flags), Address(string_, JSString::offsetOfFlags()));
+    // TaintFox: initialize taint information????
+    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
   };
 
   // Compute the string length.
@@ -1830,6 +1832,12 @@ void CreateDependentString::generate(MacroAssembler& masm,
   masm.jump(&done);
 
   masm.bind(&nonBaseStringMatch);
+
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(base, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 failure_);
 
   Label notInline;
 
@@ -1877,6 +1885,9 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
 
+    // TaintFox: initialize taint information.
+    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
+
     masm.push(string_);
     masm.push(base);
 
@@ -1913,6 +1924,9 @@ void CreateDependentString::generate(MacroAssembler& masm,
     newGCString(FallbackKind::NotInlineString);
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
+
+    // TaintFox: initialize taint information.
+    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
 
     masm.loadNonInlineStringChars(base, temp1_, encoding_);
     masm.load32(startIndexAddress, temp2_);
@@ -8418,6 +8432,9 @@ static void ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs,
   // Store length.
   masm.store32(temp2, Address(output, JSString::offsetOfLength()));
 
+  // TaintFox: initialize taint information.
+  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+
   // Load chars pointer in temp2.
   masm.loadInlineStringCharsForStore(output, temp2);
 
@@ -8501,14 +8518,14 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
   masm.newGCFatInlineString(output, temp, slowPath, stringsCanBeInNursery());
   masm.store32(length, Address(output, JSString::offsetOfLength()));
 
+  // TaintFox: initialize taint information.
+  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+
   auto initializeFatInlineString = [&](CharEncoding encoding) {
     uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
     if (encoding == CharEncoding::Latin1) {
       flags |= JSString::LATIN1_CHARS_BIT;
     }
-
-    // TaintFox: initialize taint information.
-    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 
     masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
     masm.loadInlineStringChars(string, temp, encoding);
@@ -8539,7 +8556,6 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
 
   // TaintFox: initialize taint information.
   masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
-
 
   auto initializeDependentString = [&](CharEncoding encoding) {
     uint32_t flags = JSString::DEPENDENT_FLAGS;
@@ -8629,6 +8645,9 @@ JitCode* JitRealm::generateStringConcatStub(JSContext* cx) {
   // Allocate a new rope, guaranteed to be in the nursery if
   // stringsCanBeInNursery. (As a result, no post barriers are needed below.)
   masm.newGCString(output, temp3, &failure, stringsCanBeInNursery);
+
+  // TaintFox: initialize taint information.
+  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 
   // Store rope length and flags. temp1 still holds the result of AND'ing the
   // lhs and rhs flags, so we just have to clear the other flags and set
@@ -8870,13 +8889,13 @@ void CodeGenerator::visitCharCodeAt(LCharCodeAt* lir) {
 
   OutOfLineCode* ool = oolCallVM(CharCodeAtInfo, lir, ArgList(str, index),
                                  StoreRegisterTo(output));
-    masm.branchIfRope(str, ool->entry());
+  masm.branchIfRope(str, ool->entry());
 
-    // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
-    masm.branchPtr(Assembler::NotEqual,
-                   Address(str, JSString::offsetOfTaint()),
-                   ImmPtr(nullptr),
-                   ool->entry());
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(str, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 ool->entry());
 
   masm.loadStringChar(str, index, output, temp, ool->entry());
   masm.bind(ool->rejoin());

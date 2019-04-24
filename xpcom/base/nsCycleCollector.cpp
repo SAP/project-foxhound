@@ -1831,7 +1831,8 @@ class CCGraphBuilder final : public nsCycleCollectionTraversalCallback,
   nsAutoPtr<NodePool::Enumerator> mCurrNode;
   uint32_t mNoteChildCount;
 
-  struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 491> {
+  // Taintfox: this was 491, reducing to keep CCGraphBuilder size below 4096
+  struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 487> {
     static HashNumber Hash(const void* aKey) { return HashGeneric(aKey); }
     static bool Match(const void* aKey, const PtrInfo* aVal) {
       return aVal->mPointer == aKey;
@@ -1951,9 +1952,7 @@ CCGraphBuilder::CCGraphBuilder(CCGraph& aGraph, CycleCollectorResults& aResults,
       mMergeZones(aMergeZones),
       mNoteChildCount(0) {
   // 4096 is an allocation bucket size.
-  // Taintfox, bumping this up
-  // taintfox: TODO: tom check this is OK...
-  static_assert(sizeof(CCGraphBuilder) <= 8192,
+  static_assert(sizeof(CCGraphBuilder) <= 4096,
                 "Don't create too large CCGraphBuilder objects");
 
   if (aCCRuntime) {

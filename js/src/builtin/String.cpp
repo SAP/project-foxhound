@@ -223,6 +223,9 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 static bool
 construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
 {
+    if (!flow)
+        return false;
+
     bool is_array;
     if (!JS_IsArrayObject(cx, flow_object, &is_array) || !is_array)
         return false;
@@ -245,16 +248,11 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
         RootedString operation(cx, v.toString());
 
         // TODO process arguments as well
+        UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
 
-        char* op_str = JS_EncodeStringToUTF8(cx, operation).get();
-        if (!op_str)
-            return false;
-
-        *flow = new TaintNode(*flow, TaintOperation(op_str));
+        *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
         if ((*flow)->parent())
             (*flow)->parent()->release();
-
-        js_free(op_str);
     }
 
     return true;
@@ -1957,7 +1955,7 @@ bool js::str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
   if (str->isTainted()) {
     str = NewDependentString(cx, str, i, 1);
-    str->setTaint(StringTaint::extend(str->taint(), TaintOperation("charAt", { taintarg(cx, i) })));
+    str->taint().extend(TaintOperation("charAt", { taintarg(cx, i) }));
   } else {
     str = cx->staticStrings().getUnitStringForElement(cx, str, i);
   }

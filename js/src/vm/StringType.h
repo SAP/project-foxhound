@@ -1172,8 +1172,10 @@ class JSFatInlineString : public JSInlineString
 {
   // TaintFox: similar to JSString, add another pointer size of inline characters here for
   // alignment.
-  static const size_t INLINE_EXTENSION_CHARS_LATIN1 = 24 - NUM_INLINE_CHARS_LATIN1 + (sizeof(void*) / sizeof(JS::Latin1Char));
-  static const size_t INLINE_EXTENSION_CHARS_TWO_BYTE = 12 - NUM_INLINE_CHARS_TWO_BYTE + (sizeof(void*) / sizeof(char16_t));
+  static const size_t INLINE_EXTENSION_CHARS_LATIN1 =
+      24 - NUM_INLINE_CHARS_LATIN1 + (sizeof(void*) / sizeof(JS::Latin1Char));
+  static const size_t INLINE_EXTENSION_CHARS_TWO_BYTE =
+      12 - NUM_INLINE_CHARS_TWO_BYTE + (sizeof(void*) / sizeof(char16_t));
 
  protected: /* to fool clang into not warning this is unused */
   union {

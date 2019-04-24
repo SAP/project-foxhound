@@ -1,4 +1,3 @@
-
 function testEncodingFunctions() {
     var str = randomMultiTaintedString(20) + randomMultiTaintedStringWithEscapables(20);
 
@@ -12,13 +11,17 @@ function testEncodingFunctions() {
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
     assertNotHasTaintOperation(encodedStr, 'decodeURI');
+}
 
-    encodedStr = encodeURIComponent(str);
+function testEncodingComponentFunctions() {
+    var str = randomMultiTaintedString(20) + randomMultiTaintedStringWithEscapables(20);
+
+    var encodedStr = encodeURIComponent(str);
     assertLastTaintOperationEquals(encodedStr, 'encodeURIComponent');
     assertTainted(encodedStr);
     assertNotHasTaintOperation(str, 'encodeURIComponent');
 
-    decodedStr = decodeURIComponent(encodedStr);
+    var decodedStr = decodeURIComponent(encodedStr);
     assertLastTaintOperationEquals(decodedStr, 'decodeURIComponent');
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
@@ -32,12 +35,9 @@ function testURLDecode() {
     assertEq(decoded.taint.length, 1);
 }
 
-function runEncodingTests() {
-    testEncodingFunctions();
-    testURLDecode();
-}
-
-runTaintTest(runEncodingTests);
+runTaintTest(testEncodingFunctions);
+runTaintTest(testEncodingComponentFunctions);
+runTaintTest(testURLDecode);
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);

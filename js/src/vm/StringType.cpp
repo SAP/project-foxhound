@@ -784,7 +784,11 @@ JSString* js::ConcatStrings(
       twoByteBuf[wholeLength] = 0;
     }
     // Taintfox
-    str->setTaint(StringTaint::concat(left->taint(), left->length(), right->taint()));
+    if (str->length() > 0) {
+        StringTaint newTaint = left->taint();
+        newTaint.concat(right->taint(), left->length());
+        str->setTaint(newTaint);
+    }
     return str;
   }
 
@@ -1562,15 +1566,14 @@ static JSFlatString* NewStringDeflated(JSContext* cx, const Latin1Char* s,
 template <typename CharT>
 JSFlatString* js::NewStringDontDeflate(JSContext* cx, CharT* chars,
                                        size_t length) {
-  // TaintFox: disabled for now, causes XPConnect string conversion to
+  // TaintFox: TODO disabled for now, causes XPConnect string conversion to
   // fail wrt taint propagation if this function returns a JSAtom.
-  // TODO
-  //  if (JSFlatString* str = TryEmptyOrStaticString(cx, chars, length)) {
-  //  // Free |chars| because we're taking possession of it, but it's no
-  //  // longer needed because we use the static string instead.
-  //  js_free(chars);
-  //  return str;
-  //  }
+  // if (JSFlatString* str = TryEmptyOrStaticString(cx, chars, length)) {
+  //   // Free |chars| because we're taking possession of it, but it's no
+  //   // longer needed because we use the static string instead.
+  //   js_free(chars);
+  //   return str;
+  // }
 
   if (JSInlineString::lengthFits<CharT>(length)) {
     JSInlineString* str =

@@ -382,7 +382,7 @@ inline JSLinearString*
 js::StaticStrings::getUnitStringForElement(JSContext* cx, JSString* str, size_t index)
 {
     MOZ_ASSERT(index < str->length());
-
+    // TaintFox: TODO: do we need to change this?
     char16_t c;
     if (!str->getChar(cx, index, &c))
         return nullptr;

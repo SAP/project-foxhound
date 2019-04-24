@@ -2295,11 +2295,7 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     }
 
     if(str->isTainted()) {
-        StringTaint newTaint = StringTaint::extend(
-            str->taint(),
-            TaintOperation(op_chars.get(), taint_args));
-
-        str->setTaint(newTaint);
+      str->taint().extend(TaintOperation(op_chars.get(), taint_args));
     }
 
     return true;

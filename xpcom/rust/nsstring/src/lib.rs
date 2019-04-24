@@ -370,6 +370,7 @@ macro_rules! define_string_types {
             length: u32,
             dataflags: DataFlags,
             classflags: ClassFlags,
+            taint: *mut c_void,
         }
 
         impl $StringRepr {
@@ -380,6 +381,7 @@ macro_rules! define_string_types {
                     length: 0,
                     dataflags: DataFlags::TERMINATED | DataFlags::LITERAL,
                     classflags: classflags,
+                    taint: ptr::null_mut(),
                 }
             }
         }
@@ -781,6 +783,7 @@ macro_rules! define_string_types {
                         length: s.len() as u32,
                         dataflags: DataFlags::empty(),
                         classflags: ClassFlags::empty(),
+                        taint: ptr::null_mut(),
                     },
                     _marker: PhantomData,
                 }
@@ -948,6 +951,7 @@ macro_rules! define_string_types {
                         length: length,
                         dataflags: DataFlags::OWNED | DataFlags::TERMINATED,
                         classflags: ClassFlags::NULL_TERMINATED,
+                        taint: ptr::null_mut(),
                     }
                 }
             }
