@@ -8,12 +8,12 @@
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
-!define BrandFullNameInternal "Taintfox"
-!define BrandFullName         "Taintfox"
-!define CompanyName           "SAP SE"
-!define URLInfoAbout          "https://github.wdf.sap.corp/WebSecResearch/taintfox"
-!define URLUpdateInfo         "https://github.wdf.sap.corp/WebSecResearch/taintfox/releases/${AppVersion}"
-!define HelpLink              "https://github.wdf.sap.corp/WebSecResearch/taintfox/issues"
+!define BrandFullNameInternal "Mozilla Firefox"
+!define BrandFullName         "Mozilla Firefox"
+!define CompanyName           "Mozilla Corporation"
+!define URLInfoAbout          "https://www.mozilla.org"
+!define URLUpdateInfo         "https://www.mozilla.org/firefox/${AppVersion}/releasenotes"
+!define HelpLink              "https://support.mozilla.org"
 
 ; The OFFICIAL define is a workaround to support different urls for Release and
 ; Beta since they share the same branding when building with other branches that
