@@ -81,7 +81,10 @@ RUN \. "$NVM_DIR/nvm.sh" && \
 RUN \. "$NVM_DIR/nvm.sh" && \
     ./mach package
 
-from taintfox-source as taintfox-build-debug
+CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
+    ./mach run
+
+from taintfox-source as taintfox-debug
 
 RUN \. "$NVM_DIR/nvm.sh" && \
     cp taintfox_mozconfig_ubuntu_debug .mozconfig && \
@@ -90,10 +93,34 @@ RUN \. "$NVM_DIR/nvm.sh" && \
 RUN \. "$NVM_DIR/nvm.sh" && \
     ./mach package
 
+CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
+    ./mach run
+
 from ubuntu:18.04 as taintfox
 
-COPY from=taintfox-build /usr/local/src/taintfox-master/obj-tf-release/dist/taintfox-*-tar.bz2 /tmp
+WORKDIR /opt/taintfox
 
-from ubuntu:18.04 as taintfox-debug
+# A lazy way to get all the taintfox dependencies
+RUN apt-get update &&    \
+    apt-get install -y   \
+    firefox
 
-COPY from=taintfox-build-debug /usr/local/src/taintfox-master/obj-tf-dbg/dist/taintfox-*-tar.bz2 /tmp
+COPY --from=taintfox-build /usr/local/src/taintfox-master/obj-tf-release/dist/taintfox-66.0.3.en-US.linux-x86_64.tar.bz2 /tmp/
+
+RUN tar -xjvf /tmp/taintfox-66.0.3.en-US.linux-x86_64.tar.bz2 -C /opt && \
+    rm -rf /tmp/*.tar.bz && \
+    ln -s /opt/taintfox/taintfox /usr/bin/taintfox
+
+CMD /usr/bin/taintfox
+
+from owasp/zap2docker-weekly as taintfox-zap
+
+USER root
+
+COPY --from=taintfox-build /usr/local/src/taintfox-master/obj-tf-release/dist/taintfox-66.0.3.en-US.linux-x86_64.tar.bz2 /tmp/
+
+RUN tar -xjvf /tmp/taintfox-66.0.3.en-US.linux-x86_64.tar.bz2 -C /opt && \
+    rm -rf /tmp/*.tar.bz && \
+    ln -s /opt/taintfox/taintfox /usr/bin/taintfox
+
+

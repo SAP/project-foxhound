@@ -54,13 +54,24 @@ The `taintfox-build` container compiles the source from `taintfox-source` using 
 docker build --target taintfox-build -t taintfox-build .
 ```
 
+This container is set up to run Taintfox by default:
+
+```bash
+docker run --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it  taintfox-build
+```
+
 ### Debug Build
 
-The `taintfox-build-debug` container compiles the source from `taintfox-source` using the debug configuration.
+The `taintfox-debug` container compiles the source from `taintfox-source` using the debug configuration.
 Debug symbols are provided and optimization is disabled.
 
 ```bash
 docker build --target taintfox-build-debug -t taintfox-build-debug .
+```
+This container can be run with the same command as the release build. To allow debugging and get a terminal:
+
+```bash
+docker run --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it --entrypoint=/bin/bash --cap-add=SYS_PTRACE --security-opt seccomp=unconfined taintfox-build-debug
 ```
 
 ## Binary Containers
@@ -72,9 +83,8 @@ The binary containers provide a minimal Ubuntu baseline plus the taintfox binari
 ```bash
 docker build --target taintfox -t taintfox .
 ```
-
-### Debug Build
+to run:
 
 ```bash
-docker build --target taintfox-debug -t taintfox-debug .
+docker run --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it  taintfox-build
 ```
