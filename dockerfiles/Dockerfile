@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as taintfox-dev
+FROM ubuntu:16.04 as taintfox-dev
 
 ENV SHELL /bin/bash
 
@@ -34,6 +34,20 @@ ENV NVM_DIR="/root/.nvm"
 
 RUN [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
     nvm install node
+
+# Update clang
+RUN wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key && \
+    apt-key add /tmp/llvm-snapshot.gpg.key && \
+    apt-get update && \
+    apt-get install -y software-properties-common && \
+    apt-add-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" && \
+    apt-get update && \
+    apt-get install -y clang-6.0 && \
+    apt-get remove -y clang && \
+    update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-6.0 1000 && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 1000 && \
+    update-alternatives --config clang && \
+    update-alternatives --config clang++
 
 RUN wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O /tmp/bootstrap.py && \
     python /tmp/bootstrap.py --application-choice=browser --no-interactive || true && \
