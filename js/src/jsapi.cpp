@@ -6036,8 +6036,12 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
 
     // Print a message to stdout. Also include the current JS backtrace.
     auto& firstRange = *str->taint().begin();
+
     std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
     DumpBacktrace(cx);
+
+    // Report a warning to show up on the web console
+    JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
 
     // Trigger a custom event that can be caught by an extension.
     // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile

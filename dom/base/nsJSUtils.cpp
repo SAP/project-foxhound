@@ -614,17 +614,6 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
     MOZ_ASSERT(strval.isString());
     JS::RootedString strobj(cx, strval.toString());
 
-    std::ostringstream os;
-    StringTaint taint = JS_GetStringTaint(strobj);
-    os << "Tainted data flow from "
-       << name << " into "
-       << taint.begin()->flow().source().name()
-       << "!!";
-
-    MOZ_LOG(gTaintLog, mozilla::LogLevel::Warning, ("%s", os.str().c_str()));
-
-    nsContentUtils::LogMessageToConsole(os.str().c_str());
-
     JS_ReportTaintSink(cx, strobj, name);
 
     return NS_OK;
