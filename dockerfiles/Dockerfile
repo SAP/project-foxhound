@@ -22,7 +22,8 @@ RUN apt-get update &&    \
 	    nasm \
 	    mercurial \
 	    ccache \
-	    libnspr4-dev
+	    libnspr4-dev \
+	    software-properties-common
 
 RUN cargo install cbindgen
 
@@ -39,8 +40,6 @@ RUN [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
 # Update clang (not needed for Ubuntu 18.04)
 RUN wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key && \
     apt-key add /tmp/llvm-snapshot.gpg.key && \
-    apt-get update && \
-    apt-get install -y software-properties-common && \
     apt-add-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" && \
     apt-get update && \
     apt-get install -y clang-6.0 && \
@@ -116,20 +115,7 @@ RUN \. "$NVM_DIR/nvm.sh" && \
 CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
     ./mach run
 
-from taintfox-source as taintfox-debug
-
-RUN \. "$NVM_DIR/nvm.sh" && \
-    cp taintfox_mozconfig_ubuntu_debug .mozconfig && \
-    ./mach build
-
-RUN \. "$NVM_DIR/nvm.sh" && \
-    ./mach package
-
-# Run taintfox when starting the container
-CMD  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
-    ./mach run
-
-from ubuntu:18.04 as taintfox
+from ubuntu:16.04 as taintfox
 
 WORKDIR /opt/taintfox
 

@@ -11,10 +11,11 @@ sinks (e.g. `eval()`, `.innerHTML()`, ...).
 
 Browse websites as usual and check stdout for tainted flows. Alternatively install an extension to report flows.
 
+For example, following this [link](http://demo.owasp-juice.shop/#/search?q=%3Ciframe%20src%3D%22javascript:alert(%60Hello%20Taintfox!%60)%22%3E) should bring up a pop-up, plus a tainted flow message in the browser console and text console.
 
 ## Building
 
-Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win]" to ".mozconfig".
+Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win|ubuntu]" to ".mozconfig".
 
 The default build settings should now work fine:
 

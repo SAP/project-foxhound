@@ -24,7 +24,7 @@ docker build --target taintfox-dev -t taintfox-dev .
 To run (ie compile) taintfox using the container:
 
 ```bash
-docker run -v /path/to/taintfox:/usr/local/src/taintfox -it taintfox
+docker run -v /path/to/taintfox:/usr/local/src/taintfox -it taintfox-dev
 ```
 
 where `path/to/taintfox` is the path containing a checked-out taintfox source directory. This is mounted inside the container
@@ -66,7 +66,7 @@ The `taintfox-debug` container compiles the source from `taintfox-source` using 
 Debug symbols are provided and optimization is disabled.
 
 ```bash
-docker build --target taintfox-build-debug -t taintfox-build-debug .
+docker build --target taintfox-build -t taintfox-build .
 ```
 This container can be run with the same command as the release build. To allow debugging and get a terminal:
 
@@ -86,5 +86,5 @@ docker build --target taintfox -t taintfox .
 to run:
 
 ```bash
-docker run --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it  taintfox-build
+docker run --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it  taintfox
 ```
