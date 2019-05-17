@@ -1411,6 +1411,13 @@ uint32_t HTMLInputElement::Width() {
 void HTMLInputElement::GetValue(nsAString& aValue, CallerType aCallerType) {
   GetValueInternal(aValue, aCallerType);
 
+  // TaintFox: element.value source
+  //
+  // This will taint *all* input types, including those where the actual values
+  // could be limited. Still, these inputs should still not change the syntax
+  // of any sink calls
+  aValue.AssignTaint(StringTaint(0, aValue.Length(), TaintSource("element.value")));
+
   // Don't return non-sanitized value for types that are experimental on mobile
   // or datetime types
   if (IsExperimentalMobileType(mType) || IsDateTimeInputType(mType)) {
