@@ -386,7 +386,13 @@ nsresult LocalStorageCache::SetItem(const LocalStorage* aStorage,
     return NS_ERROR_DOM_QUOTA_EXCEEDED_ERR;
   }
 
-  if (aValue == aOld && DOMStringIsNull(aValue) == DOMStringIsNull(aOld)) {
+  // Taintfox: if aValue and aOld are the same the taint will not be
+  // copied (the string comparison will be the same but taint is not compared).
+  // taint will be lost if trying to write a tainted string to a key which
+  // is not tainted.
+  if (aValue == aOld &&
+      DOMStringIsNull(aValue) == DOMStringIsNull(aOld) &&
+      !aValue.isTainted()) {
     return NS_SUCCESS_DOM_NO_OPERATION;
   }
 

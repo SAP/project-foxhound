@@ -60,6 +60,14 @@ void PartitionedLocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   }
 
   mCache->GetItem(SessionStorageCache::eSessionSetType, aKey, aResult);
+
+  // TaintFox: localStorage.getItem source
+  if (aResult.isTainted()) {
+    aResult.Taint().extend(TaintOperation("localStorage.getItem"));
+  } else {
+    aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
+  }
+
 }
 
 void PartitionedLocalStorage::GetSupportedNames(nsTArray<nsString>& aKeys) {

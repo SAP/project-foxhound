@@ -211,7 +211,13 @@ nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
   }
 
   bool changed;
-  if (oldValue == aValue && oldValue.IsVoid() == aValue.IsVoid()) {
+
+  // Taintfox: if aValue and oldValue are the same the taint will not be
+  // copied (the string comparison will be the same but taint is not compared).
+  // taint will be lost if trying to write a tainted string to a key which
+  // is not tainted.
+  if (oldValue == aValue && oldValue.IsVoid() == aValue.IsVoid()
+      && !aValue.isTainted()) {
     changed = false;
   } else {
     changed = true;

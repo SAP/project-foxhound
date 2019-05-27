@@ -86,8 +86,13 @@ nsresult SessionStorageCache::SetItem(DataSetType aDataSetType,
   delta += static_cast<int64_t>(aValue.Length()) -
            static_cast<int64_t>(aOldValue.Length());
 
+  // Taintfox: if aValue and aOld are the same the taint will not be
+  // copied (the string comparison will be the same but taint is not compared).
+  // taint will be lost if trying to write a tainted string to a key which
+  // is not tainted.
   if (aValue == aOldValue &&
-      DOMStringIsNull(aValue) == DOMStringIsNull(aOldValue)) {
+      DOMStringIsNull(aValue) == DOMStringIsNull(aOldValue) &&
+      !aValue.isTainted()) {
     return NS_SUCCESS_DOM_NO_OPERATION;
   }
 

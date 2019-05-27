@@ -1137,6 +1137,12 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
 
   // TaintFox: TODO(samuel) Depending on the current context, this might be a sink.
   // On the other hand, should probably just make the JSStructuredCloneWriter taint aware.
+  //
+  // TODO(tom) the structured clone can be used to send messages within the DOM
+  // ie from window.postMessage to window.onMessage (see https://domgo.at/cxss/example/5)
+  // and the taint is getting lost.
+  //
+  // Need to add taint information to this serialization class
 
   JS::AutoCheckCannotGC nogc;
   return linear->hasLatin1Chars()
@@ -2055,6 +2061,13 @@ JSString* JSStructuredCloneReader::readStringImpl(uint32_t nchars) {
       !in.readChars(chars.get(), nchars)) {
     return nullptr;
   }
+
+  // TODO: taintfox: check if MessageEvent.data if the only source relevant
+  // also investigate whether the structured clone should be taint aware
+  //
+  // adding the MessageEvent.data taint here causes a pipe error - I guess
+  // the IPC mechanism isn't taint aware enough?
+
   return chars.toStringDontDeflate(context(), nchars);
 }
 

@@ -99,6 +99,13 @@ void LocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   }
 
   aRv = mCache->GetItem(this, aKey, aResult);
+
+  // TaintFox: localStorage.getItem source
+  if (aResult.isTainted()) {
+    aResult.Taint().extend(TaintOperation("localStorage.getItem"));
+  } else {
+    aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
+  }
 }
 
 void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
