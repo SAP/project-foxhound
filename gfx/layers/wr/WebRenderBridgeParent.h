@@ -47,11 +47,12 @@ class CompositorVsyncScheduler;
 class AsyncImagePipelineManager;
 class WebRenderImageHost;
 
-class WebRenderBridgeParent final : public PWebRenderBridgeParent,
-                                    public CompositorVsyncSchedulerOwner,
-                                    public CompositableParentManager,
-                                    public layers::FrameRecorder,
-                                    public SupportsWeakPtr<WebRenderBridgeParent> {
+class WebRenderBridgeParent final
+    : public PWebRenderBridgeParent,
+      public CompositorVsyncSchedulerOwner,
+      public CompositableParentManager,
+      public layers::FrameRecorder,
+      public SupportsWeakPtr<WebRenderBridgeParent> {
  public:
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebRenderBridgeParent)
   WebRenderBridgeParent(CompositorBridgeParentBase* aCompositorBridge,
@@ -390,7 +391,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   // mActiveAnimations is used to avoid leaking animations when
   // WebRenderBridgeParent is destroyed abnormally and Tab move between
   // different windows.
-  std::unordered_set<uint64_t> mActiveAnimations;
+  std::unordered_map<uint64_t, wr::Epoch> mActiveAnimations;
   std::unordered_map<uint64_t, RefPtr<WebRenderImageHost>> mAsyncCompositables;
   std::unordered_map<uint64_t, CompositableTextureHostRef> mTextureHosts;
   std::unordered_map<uint64_t, wr::ExternalImageId> mSharedSurfaceIds;

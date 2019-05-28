@@ -22,7 +22,8 @@ namespace mozilla {
 
 using image::imgDrawingParams;
 
-/* static */ bool SVGContextPaint::IsAllowedForImageFromURI(nsIURI* aURI) {
+/* static */
+bool SVGContextPaint::IsAllowedForImageFromURI(nsIURI* aURI) {
   static bool sEnabledForContent = false;
   static bool sEnabledForContentCached = false;
 
@@ -72,8 +73,7 @@ using image::imgDrawingParams;
   nsString addonId;
   if (NS_SUCCEEDED(principal->GetAddonId(addonId))) {
     if (StringEndsWith(addonId, NS_LITERAL_STRING("@mozilla.org")) ||
-        StringEndsWith(addonId, NS_LITERAL_STRING("@mozilla.com")) ||
-        StringBeginsWith(addonId, NS_LITERAL_STRING("@testpilot-"))) {
+        StringEndsWith(addonId, NS_LITERAL_STRING("@mozilla.com"))) {
       return true;
     }
   }

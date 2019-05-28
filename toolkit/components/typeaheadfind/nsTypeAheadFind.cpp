@@ -433,7 +433,7 @@ nsresult nsTypeAheadFind::FindItNow(nsIPresShell* aPresShell, bool aIsLinksOnly,
 
   while (true) {    // ----- Outer while loop: go through all docs -----
     while (true) {  // === Inner while loop: go through a single doc ===
-      mFind->Find(mTypeAheadBuffer.get(), mSearchRange, mStartPointRange,
+      mFind->Find(mTypeAheadBuffer, mSearchRange, mStartPointRange,
                   mEndPointRange, getter_AddRefs(returnRange));
       if (!returnRange) {
         break;  // Nothing found in this doc, go to outer loop (try next doc)
@@ -586,14 +586,10 @@ nsresult nsTypeAheadFind::FindItNow(nsIPresShell* aPresShell, bool aIsLinksOnly,
         }
 
         // If we reach here without setting mFoundEditable, then something
-        // besides editable elements can cause us to have an independent
-        // selection controller.  I don't know whether this is possible.
-        // Currently, we simply fall back to grabbing the document's selection
-        // controller in this case.  Perhaps we should reject this find match
-        // and search again.
-        NS_ASSERTION(mFoundEditable,
-                     "Independent selection controller on "
-                     "non-editable element!");
+        // besides editable elements gave us an independent selection
+        // controller. List controls with multiple visible elements can do
+        // this (nsAreaSelectsFrame), and possibly others. We fall back to
+        // grabbing the document's selection controller in this case.
       }
 
       if (!mFoundEditable) {

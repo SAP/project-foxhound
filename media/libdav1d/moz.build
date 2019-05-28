@@ -19,15 +19,56 @@ EXPORTS.dav1d += [
 ]
 
 # entrypoint source files
-SOURCES += [
+entrypoint_source_files = [
     '../../third_party/dav1d/src/lib.c',
     '../../third_party/dav1d/src/thread_task.c',
 ]
+SOURCES += [f for f in entrypoint_source_files]
 
-# Enable ASM build only on Linux for now.
-if CONFIG['OS_TARGET'] == 'Linux' and (CONFIG['CPU_ARCH'] in ('x86', 'x86_64')):
-    # Default stack aligment is 16 bytes
+# Don't export DAV1D_API symbols from libxul
+# see: third_party/dav1d/include/dav1d/common.h
+DEFINES['DAV1D_API'] = ''
+
+if CONFIG['MOZ_DAV1D_ASM']:
     DIRS += ['asm']
+
+    # Store the stack alignment that will be used.
+    stack_alignment = 0
+
+    # Default stack alignment can be 4 bytes on x86.
+    if CONFIG['CPU_ARCH'] == 'x86':
+        if CONFIG['OS_TARGET'] == 'WINNT':
+            # Allow the default to avoid crashes
+            stack_alignment = 4
+        else:
+            # Update stack alignment to 16 bytes.
+            stack_alignment = 16
+            if CONFIG['CC_TYPE'] == 'clang':
+                CFLAGS += ['-mstack-alignment=16']
+                for ep in entrypoint_source_files:
+                    SOURCES[ep].flags += ['-mstackrealign']
+            elif CONFIG['CC_TYPE'] == 'gcc':
+                CFLAGS += ['-mpreferred-stack-boundary=4']
+                for ep in entrypoint_source_files:
+                    SOURCES[ep].flags += ['-mincoming-stack-boundary=2']
+    elif CONFIG['CPU_ARCH'] == 'x86_64':
+        # The default stack alignment in x86_64 is 16 bytes.
+        stack_alignment = 16
+    else:
+        error('Cpu arch %s is not expected' % CONFIG['CPU_ARCH'])
+
+    # Set the macro here instead of config.h
+    if stack_alignment == 0:
+        error('Stack alignment cannot be zero.')
+    DEFINES['STACK_ALIGNMENT'] = stack_alignment
+
+if CONFIG['OS_TARGET'] == 'Linux':
+    # For fuzzing, We only support building on Linux currently.
+    include('/tools/fuzzing/libfuzzer-config.mozbuild')
+    if CONFIG['FUZZING_INTERFACES']:
+        TEST_DIRS += [
+            'test/fuzztest'
+        ]
 
 # common sources
 SOURCES += [
@@ -39,6 +80,7 @@ SOURCES += [
     '../../third_party/dav1d/src/getbits.c',
     '../../third_party/dav1d/src/intra_edge.c',
     '../../third_party/dav1d/src/lf_mask.c',
+    '../../third_party/dav1d/src/log.c',
     '../../third_party/dav1d/src/msac.c',
     '../../third_party/dav1d/src/obu.c',
     '../../third_party/dav1d/src/picture.c',
@@ -63,6 +105,7 @@ EXPORTS.dav1d.src += [
     '../../third_party/dav1d/src/getbits.h',
     '../../third_party/dav1d/src/intra_edge.h',
     '../../third_party/dav1d/src/lf_mask.h',
+    '../../third_party/dav1d/src/log.h',
     '../../third_party/dav1d/src/msac.h',
     '../../third_party/dav1d/src/obu.h',
     '../../third_party/dav1d/src/picture.h',
@@ -156,10 +199,6 @@ if CONFIG['OS_TARGET'] == 'WINNT':
         '../../third_party/dav1d/src/win32/thread.c'
     ]
 
-if CONFIG['CC_TYPE'] == 'msvc':
-    LOCAL_INCLUDES += ['../../third_party/dav1d/include/compat/msvc/']
-    EXPORTS.dav1d += ['../../third_party/dav1d/include/compat/msvc/stdatomic.h']
-
 if CONFIG['CC_TYPE'] == 'gcc':
     LOCAL_INCLUDES += ['../../third_party/dav1d/include/compat/gcc/']
     EXPORTS.dav1d += ['../../third_party/dav1d/include/compat/gcc/stdatomic.h']
@@ -168,6 +207,3 @@ FINAL_LIBRARY = 'gkmedias'
 
 # We allow warnings for third-party code that can be updated from upstream.
 AllowCompilerWarnings()
-
-# And furthermore, don't show warnings.
-DisableCompilerWarnings()

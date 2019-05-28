@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -46,6 +46,6 @@ function run_test()
 
   var chan = make_channel(randomURI);
   chan.notificationCallbacks = new ChannelEventSink(ES_ABORT_REDIRECT);
-  chan.asyncOpen2(new ChannelListener(finish_test, null));
+  chan.asyncOpen(new ChannelListener(finish_test, null));
   do_test_pending();
 }

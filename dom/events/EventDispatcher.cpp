@@ -642,7 +642,8 @@ void EventTargetChainItem::HandleEventTargetChain(
 
 static nsTArray<EventTargetChainItem>* sCachedMainThreadChain = nullptr;
 
-/* static */ void EventDispatcher::Shutdown() {
+/* static */
+void EventDispatcher::Shutdown() {
   delete sCachedMainThreadChain;
   sCachedMainThreadChain = nullptr;
 }
@@ -708,10 +709,13 @@ static bool ShouldClearTargets(WidgetEvent* aEvent) {
   return false;
 }
 
-/* static */ nsresult EventDispatcher::Dispatch(
-    nsISupports* aTarget, nsPresContext* aPresContext, WidgetEvent* aEvent,
-    Event* aDOMEvent, nsEventStatus* aEventStatus,
-    EventDispatchingCallback* aCallback, nsTArray<EventTarget*>* aTargets) {
+/* static */
+nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
+                                   nsPresContext* aPresContext,
+                                   WidgetEvent* aEvent, Event* aDOMEvent,
+                                   nsEventStatus* aEventStatus,
+                                   EventDispatchingCallback* aCallback,
+                                   nsTArray<EventTarget*>* aTargets) {
   AUTO_PROFILER_LABEL("EventDispatcher::Dispatch", OTHER);
 
   NS_ASSERTION(aEvent, "Trying to dispatch without WidgetEvent!");
@@ -1025,7 +1029,7 @@ static bool ShouldClearTargets(WidgetEvent* aEvent) {
           docShell = nsContentUtils::GetDocShellForEventTarget(aEvent->mTarget);
           DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
           profiler_add_marker(
-              "DOMEvent", js::ProfilingStackFrame::Category::DOM,
+              "DOMEvent", JS::ProfilingCategoryPair::DOM,
               MakeUnique<DOMEventMarkerPayload>(
                   typeStr, aEvent->mTimeStamp, "DOMEvent",
                   TRACING_INTERVAL_START, docShellId, docShellHistoryId));
@@ -1034,7 +1038,7 @@ static bool ShouldClearTargets(WidgetEvent* aEvent) {
                                                        aCallback, cd);
 
           profiler_add_marker(
-              "DOMEvent", js::ProfilingStackFrame::Category::DOM,
+              "DOMEvent", JS::ProfilingCategoryPair::DOM,
               MakeUnique<DOMEventMarkerPayload>(
                   typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_END,
                   docShellId, docShellHistoryId));
@@ -1112,9 +1116,12 @@ static bool ShouldClearTargets(WidgetEvent* aEvent) {
   return rv;
 }
 
-/* static */ nsresult EventDispatcher::DispatchDOMEvent(
-    nsISupports* aTarget, WidgetEvent* aEvent, Event* aDOMEvent,
-    nsPresContext* aPresContext, nsEventStatus* aEventStatus) {
+/* static */
+nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
+                                           WidgetEvent* aEvent,
+                                           Event* aDOMEvent,
+                                           nsPresContext* aPresContext,
+                                           nsEventStatus* aEventStatus) {
   if (aDOMEvent) {
     WidgetEvent* innerEvent = aDOMEvent->WidgetEventPtr();
     NS_ENSURE_TRUE(innerEvent, NS_ERROR_ILLEGAL_VALUE);
@@ -1270,8 +1277,9 @@ static bool ShouldClearTargets(WidgetEvent* aEvent) {
     return NS_NewDOMScrollAreaEvent(aOwner, aPresContext, nullptr);
   }
   if (aEventType.LowerCaseEqualsLiteral("touchevent") &&
-      TouchEvent::PrefEnabled(
-          nsContentUtils::GetDocShellForEventTarget(aOwner))) {
+      TouchEvent::LegacyAPIEnabled(
+          nsContentUtils::GetDocShellForEventTarget(aOwner),
+          aCallerType == CallerType::System)) {
     return NS_NewDOMTouchEvent(aOwner, aPresContext, nullptr);
   }
   if (aEventType.LowerCaseEqualsLiteral("hashchangeevent")) {

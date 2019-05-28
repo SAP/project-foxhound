@@ -5,7 +5,7 @@
 
 "use strict";
 
-const { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js", {});
+const { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js");
 
 const { require: browserRequire } = BrowserLoader({
   baseURI: "resource://devtools/client/shared/",
@@ -16,5 +16,6 @@ const variableFileContents = browserRequire("raw!devtools/client/themes/variable
 
 function test() {
   ok(variableFileContents.length > 0, "raw browserRequire worked");
+  delete window.getBrowserLoaderForWindow;
   finish();
 }

@@ -41,7 +41,9 @@ struct RemoteWorkerData
 
   bool isSecureContext;
 
-  OptionalIPCClientInfo clientInfo;
+  IPCClientInfo? clientInfo;
+
+  bool isStorageAccessAllowed;
 
   bool isSharedWorker;
 };

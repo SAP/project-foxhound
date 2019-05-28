@@ -25,9 +25,7 @@
 #include "nsServiceManagerUtils.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "SVGObserverUtils.h"
-#include "mozilla/dom/SVGAnimatedLength.h"
 #include "nsMimeTypes.h"
-#include "DOMSVGLength.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ImageTracker.h"
 
@@ -188,21 +186,19 @@ void SVGDocumentWrapper::TickRefreshDriver() {
 /** nsIStreamListener methods **/
 
 NS_IMETHODIMP
-SVGDocumentWrapper::OnDataAvailable(nsIRequest* aRequest, nsISupports* ctxt,
-                                    nsIInputStream* inStr,
+SVGDocumentWrapper::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* inStr,
                                     uint64_t sourceOffset, uint32_t count) {
-  return mListener->OnDataAvailable(aRequest, ctxt, inStr, sourceOffset, count);
+  return mListener->OnDataAvailable(aRequest, inStr, sourceOffset, count);
 }
 
 /** nsIRequestObserver methods **/
 
 NS_IMETHODIMP
-SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt) {
+SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest) {
   nsresult rv = SetupViewer(aRequest, getter_AddRefs(mViewer),
                             getter_AddRefs(mLoadGroup));
 
-  if (NS_SUCCEEDED(rv) &&
-      NS_SUCCEEDED(mListener->OnStartRequest(aRequest, nullptr))) {
+  if (NS_SUCCEEDED(rv) && NS_SUCCEEDED(mListener->OnStartRequest(aRequest))) {
     mViewer->GetDocument()->SetIsBeingUsedAsImage();
     StopAnimation();  // otherwise animations start automatically in helper doc
 
@@ -215,10 +211,9 @@ SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt) {
 }
 
 NS_IMETHODIMP
-SVGDocumentWrapper::OnStopRequest(nsIRequest* aRequest, nsISupports* ctxt,
-                                  nsresult status) {
+SVGDocumentWrapper::OnStopRequest(nsIRequest* aRequest, nsresult status) {
   if (mListener) {
-    mListener->OnStopRequest(aRequest, ctxt, status);
+    mListener->OnStopRequest(aRequest, status);
     mListener = nullptr;
   }
 

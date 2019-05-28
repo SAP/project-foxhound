@@ -157,6 +157,9 @@ class AccessibilityTest : BaseSessionTest() {
 
             @AssertCalled
             override fun onWinStateChanged(event: AccessibilityEvent) { }
+
+            @AssertCalled
+            override fun onWinContentChanged(event: AccessibilityEvent) { }
         })
 
         if (moveToFirstChild) {
@@ -229,7 +232,7 @@ class AccessibilityTest : BaseSessionTest() {
     }
 
     @Test fun testTextEntryNode() {
-        sessionRule.session.loadString("<input aria-label='Name' value='Tobias'>", "text/html")
+        sessionRule.session.loadString("<input aria-label='Name' aria-describedby='desc' value='Tobias'><div id='desc'>description</div>", "text/html")
         waitForInitialFocus()
 
         mainSession.evaluateJS("$('input').focus()")
@@ -244,8 +247,45 @@ class AccessibilityTest : BaseSessionTest() {
                 if (Build.VERSION.SDK_INT >= 19) {
                     assertThat("Hint has field name",
                             node.extras.getString("AccessibilityNodeInfo.hint"),
-                            equalTo("Name"))
+                            equalTo("Name description"))
                 }
+            }
+        })
+    }
+
+    @Test fun testMoveCaretAccessibilityFocus() {
+        sessionRule.session.loadString("<p>Hello <a href='foo'>sweet</a>, sweet <span>world</span>", "text/html")
+        waitForInitialFocus(false)
+
+        mainSession.evaluateJS("""
+            function select(node, start, end) {
+                let r = new Range();
+                r.setStart(node, start);
+                r.setEnd(node, end);
+                let s = getSelection();
+                s.removeAllRanges();
+                s.addRange(r);
+            }
+            select($('p').childNodes[2], 2, 6);
+        """.trimIndent())
+
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                val node = createNodeInfo(getSourceId(event))
+                assertThat("Text node should match text", node.text as String, equalTo(", sweet "))
+            }
+        })
+
+        mainSession.evaluateJS("""
+            select($('p').lastElementChild.firstChild, 1, 2);
+        """.trimIndent())
+
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                val node = createNodeInfo(getSourceId(event))
+                assertThat("Text node should match text", node.text as String, equalTo("world"))
             }
         })
     }
@@ -514,7 +554,7 @@ class AccessibilityTest : BaseSessionTest() {
 
     @Test fun testCheckbox() {
         var nodeId = AccessibilityNodeProvider.HOST_VIEW_ID;
-        sessionRule.session.loadString("<label><input type='checkbox'>many option</label>", "text/html")
+        sessionRule.session.loadString("<label><input type='checkbox' aria-describedby='desc'>many option</label><div id='desc'>description</div>", "text/html")
         waitForInitialFocus(true)
 
         sessionRule.waitUntilCalled(object : EventDelegate {
@@ -527,6 +567,11 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Checkbox node is focusable", node.isFocusable, equalTo(true))
                 assertThat("Checkbox node is not checked", node.isChecked, equalTo(false))
                 assertThat("Checkbox node has correct role", node.text.toString(), equalTo("many option"))
+                if (Build.VERSION.SDK_INT >= 19) {
+                    assertThat("Hint has description", node.extras.getString("AccessibilityNodeInfo.hint"),
+                            equalTo("description"))
+                }
+
             }
         })
 
@@ -569,6 +614,26 @@ class AccessibilityTest : BaseSessionTest() {
 
         provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_SELECT, null)
         waitUntilSelect(false)
+    }
+
+    @Test fun testMutation() {
+        sessionRule.session.loadString(
+                "<div><p id='to_show'>I will be shown</p></div>","text/html")
+        waitForInitialFocus()
+
+        val rootNode = createNodeInfo(View.NO_ID)
+        assertThat("Document has 1 child", rootNode.childCount, equalTo(1))
+
+        assertThat("Section has 1 child",
+                createNodeInfo(rootNode.getChildId(0)).childCount, equalTo(1))
+        mainSession.evaluateJS("$('#to_show').style.display = 'none';")
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onWinContentChanged(event: AccessibilityEvent) { }
+        })
+
+        assertThat("Section has no children",
+                createNodeInfo(rootNode.getChildId(0)).childCount, equalTo(0))
     }
 
     private fun screenContainsNode(nodeId: Int): Boolean {

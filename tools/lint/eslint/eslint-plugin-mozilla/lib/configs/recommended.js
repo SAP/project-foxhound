@@ -168,11 +168,11 @@ module.exports = {
     "max-nested-callbacks": ["error", 10],
 
     "mozilla/avoid-removeChild": "error",
+    "mozilla/consistent-if-bracing": "error",
     "mozilla/import-browser-window-globals": "error",
     "mozilla/import-globals": "error",
     "mozilla/no-compare-against-boolean-literals": "error",
     "mozilla/no-define-cc-etc": "error",
-    "mozilla/no-import-into-var-and-global": "error",
     "mozilla/no-useless-parameters": "error",
     "mozilla/no-useless-removeEventListener": "error",
     "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
@@ -328,6 +328,9 @@ module.exports = {
 
     // Require object-literal shorthand with ES6 method syntax
     "object-shorthand": ["error", "always", { "avoidQuotes": true }],
+
+    // Prohibit blank lines at the beginning and end of blocks.
+    "padded-blocks": ["error", "never"],
 
     // Require double-quotes everywhere, except where quotes are escaped
     // or template literals are used.

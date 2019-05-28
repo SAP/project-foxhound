@@ -11,24 +11,13 @@ add_task(async function() {
   const EXTENSION_NAME = "Temporary web extension";
   const EXTENSION_ID = "test-devtools@mozilla.org";
 
-  const { document, tab } = await openAboutDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
-  const manifest = {
-    "manifest_version": 2,
-    "name": EXTENSION_NAME,
-    "version": "1.0",
-    "applications": {
-      "gecko": {
-        "id": EXTENSION_ID,
-      },
-    },
-  };
-
-  const tempExt = new TemporaryExtension(EXTENSION_ID);
-  tempExt.writeManifest(manifest);
-
-  info("Install a temporary extension");
-  await AddonManager.installTemporaryAddon(tempExt.sourceDir);
+  await installTemporaryExtensionFromXPI({
+    id: EXTENSION_ID,
+    name: EXTENSION_NAME,
+  }, document);
 
   info("Wait until a debug target item appears");
   await waitUntil(() => findDebugTargetByText(EXTENSION_NAME, document));
@@ -42,10 +31,6 @@ add_task(async function() {
   ok(!!link, "Temporary id link is displayed for temporary extensions");
 
   await removeTemporaryExtension(EXTENSION_NAME, document);
-
-  info("Remove the temporary web extension");
-  tempExt.remove();
-
   await removeTab(tab);
 });
 
@@ -54,9 +39,10 @@ add_task(async function() {
   const PACKAGED_EXTENSION_ID = "packaged-extension@tests";
   const PACKAGED_EXTENSION_NAME = "Packaged extension";
 
-  const { document, tab } = await openAboutDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
-  await installRegularAddon("resources/packaged-extension/packaged-extension.xpi");
+  await installRegularExtension("resources/packaged-extension/packaged-extension.xpi");
 
   info("Wait until extension appears in about:debugging");
   await waitUntil(() => findDebugTargetByText(PACKAGED_EXTENSION_NAME, document));

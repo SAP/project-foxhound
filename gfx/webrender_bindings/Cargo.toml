@@ -9,7 +9,7 @@ rayon = "1"
 thread_profiler = "0.1.1"
 euclid = { version = "0.19.4", features = ["serde"] }
 app_units = "0.7"
-gleam = "0.6.8"
+gleam = "0.6.9"
 log = "0.4"
 nsstring = { path = "../../xpcom/rust/nsstring" } 
 bincode = "1.0"
@@ -18,7 +18,7 @@ fxhash = "0.2.1"
 
 [dependencies.webrender]
 path = "../wr/webrender"
-version = "0.59.0"
+version = "0.60.0"
 default-features = false
 features = ["capture", "serialize_program"]
 

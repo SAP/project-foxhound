@@ -33,8 +33,6 @@ user_pref("browser.contentHandlers.types.5.uri", "http://test1.example.org/rss?u
 // Indicate that the download panel has been shown once so that whichever
 // download test runs first doesn't show the popup inconsistently.
 user_pref("browser.download.panel.shown", true);
-user_pref("browser.firstrun.show.localepicker", false);
-user_pref("browser.firstrun.show.uidiscovery", false);
 user_pref("browser.newtabpage.activity-stream.default.sites", "");
 user_pref("browser.newtabpage.activity-stream.telemetry", false);
 // Make sure PingCentre doesn't hit the network.
@@ -50,7 +48,6 @@ user_pref("browser.safebrowsing.provider.mozilla.gethashURL", "http://{server}/s
 user_pref("browser.safebrowsing.provider.mozilla.updateURL", "http://{server}/safebrowsing-dummy/update");
 user_pref("browser.search.suggest.timeout", 10000); // use a 10s suggestion timeout in tests
 user_pref("browser.shell.checkDefaultBrowser", false);
-user_pref("browser.snippets.firstrunHomepage.enabled", false);
 user_pref("browser.startup.page", 0); // use about:blank, not browser.startup.homepage
 // Don't show a delay when hiding the audio indicator during tests
 user_pref("browser.tabs.delayHidingAudioPlayingIconMS", 0);
@@ -85,9 +82,6 @@ user_pref("captivedetect.canonicalURL", "http://{server}/captive-detect/success.
 user_pref("datareporting.healthreport.documentServerURI", "http://{server}/healthreport/");
 user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("devtools.browsertoolbox.panel", "jsdebugger");
-user_pref("devtools.chrome.enabled", false);
-user_pref("devtools.debugger.prompt-connection", true);
-user_pref("devtools.debugger.remote-enabled", false);
 user_pref("devtools.debugger.remote-port", 6023);
 user_pref("devtools.testing", true);
 // Required to set values in wpt metadata files (bug 1485842)
@@ -134,6 +128,7 @@ user_pref("extensions.update.background.url", "http://{server}/extensions-dummy/
 user_pref("extensions.update.url", "http://{server}/extensions-dummy/updateURL");
 // Make sure opening about:addons won't hit the network
 user_pref("extensions.webservice.discoverURL", "http://{server}/extensions-dummy/discoveryURL");
+user_pref("extensions.privatebrowsing.notification", true);
 user_pref("findbar.highlightAll", false);
 user_pref("findbar.modalHighlight", false);
 // Existing tests assume there is no font size inflation.
@@ -155,8 +150,10 @@ user_pref("gfx.logging.level", 1);
 user_pref("identity.fxaccounts.auth.uri", "https://{server}/fxa-dummy/");
 // Ditto for all the FxA content root URI.
 user_pref("identity.fxaccounts.remote.root", "https://{server}/");
+// Avoid idle-daily notifications, to avoid expensive operations that may
+// cause unexpected test timeouts.
+user_pref("idle.lastDailyNotification", -1);
 user_pref("javascript.options.showInConsole", true);
-user_pref("layout.accessiblecaret.enabled_on_touch", false);
 // Make sure CSS error reporting is enabled for tests
 user_pref("layout.css.report_errors", true);
 // Disable spammy layout warnings because they pollute test logs
@@ -247,3 +244,9 @@ user_pref("ui.caretBlinkTime", -1);
 user_pref("webextensions.tests", true);
 // Disable intermittent telemetry collection
 user_pref("toolkit.telemetry.initDelay", 99999999);
+
+// We use data: to tell the Quitter extension to quit.
+user_pref("security.data_uri.block_toplevel_data_uri_navigations", false);
+
+// We use data: to tell the Quitter extension to quit.
+user_pref("security.data_uri.block_toplevel_data_uri_navigations", false);

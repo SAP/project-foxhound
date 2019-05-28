@@ -5,8 +5,8 @@ const {
   L10nRegistry,
   FileSource,
   IndexedFileSource,
-} = ChromeUtils.import("resource://gre/modules/L10nRegistry.jsm", {});
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+} = ChromeUtils.import("resource://gre/modules/L10nRegistry.jsm");
+const {setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 let fs;
 L10nRegistry.load = async function(url) {
@@ -449,4 +449,13 @@ add_task(async function test_parallel_io() {
   // cleanup
   L10nRegistry.sources.clear();
   L10nRegistry.load = originalLoad;
+});
+
+add_task(async function test_hasSource() {
+  equal(L10nRegistry.hasSource("gobbledygook"), false, "Non-existing source doesn't exist");
+  equal(L10nRegistry.hasSource("app"), false, "hasSource returns true before registering a source");
+  let oneSource = new FileSource("app", ["en-US"], "/{locale}/");
+  L10nRegistry.registerSource(oneSource);
+  equal(L10nRegistry.hasSource("app"), true, "hasSource returns true after registering a source");
+  L10nRegistry.sources.clear();
 });

@@ -8,8 +8,6 @@ ChromeUtils.defineModuleGetter(this, "NewTabUtils",
                                "resource://gre/modules/NewTabUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "PanelMultiView",
                                "resource:///modules/PanelMultiView.jsm");
-ChromeUtils.defineModuleGetter(this, "ScrollbarSampler",
-                               "resource:///modules/ScrollbarSampler.jsm");
 
 /**
  * Maintains the state and dispatches events for the main menu panel.
@@ -49,7 +47,6 @@ const PanelUI = {
 
     this.menuButton.addEventListener("mousedown", this);
     this.menuButton.addEventListener("keypress", this);
-    this._overlayScrollListenerBoundFn = this._overlayScrollListener.bind(this);
 
     Services.obs.addObserver(this, "fullscreen-nav-toolbox");
     Services.obs.addObserver(this, "appMenu-notifications");
@@ -88,7 +85,6 @@ const PanelUI = {
       });
 
     window.addEventListener("activate", this);
-    window.matchMedia("(-moz-overlay-scrollbars)").addListener(this._overlayScrollListenerBoundFn);
     CustomizableUI.addListener(this);
 
     for (let event of this.kEvents) {
@@ -159,9 +155,7 @@ const PanelUI = {
     window.removeEventListener("activate", this);
     this.menuButton.removeEventListener("mousedown", this);
     this.menuButton.removeEventListener("keypress", this);
-    window.matchMedia("(-moz-overlay-scrollbars)").removeListener(this._overlayScrollListenerBoundFn);
     CustomizableUI.removeListener(this);
-    this._overlayScrollListenerBoundFn = null;
     this.libraryView.removeEventListener("ViewShowing", this);
   },
 
@@ -674,12 +668,6 @@ const PanelUI = {
     quitButton.setAttribute("tooltiptext", tooltipString);
   },
 
-  _overlayScrollListenerBoundFn: null,
-  _overlayScrollListener(aMQL) {
-    ScrollbarSampler.resetSystemScrollbarWidth();
-    this._scrollWidth = null;
-  },
-
   _hidePopup() {
     if (this.isNotificationPanelOpen) {
       this.notificationPanel.hidePopup();
@@ -710,7 +698,7 @@ const PanelUI = {
       doorhangers.forEach(n => {
         n.dismissed = true;
         if (n.options.onDismissed) {
-          n.options.onDismissed();
+          n.options.onDismissed(window);
         }
       });
       this._hidePopup();
@@ -791,12 +779,15 @@ const PanelUI = {
       popupnotification.setAttribute("name", desc.name);
       popupnotification.setAttribute("endlabel", desc.end);
     }
+    if (notification.options.onRefresh) {
+      notification.options.onRefresh(window);
+    }
     if (notification.options.popupIconURL) {
       popupnotification.setAttribute("icon", notification.options.popupIconURL);
     }
 
     popupnotification.notification = notification;
-    popupnotification.hidden = false;
+    popupnotification.show();
   },
 
   _showBadge(notification) {
@@ -899,15 +890,9 @@ function getLocale() {
   return Services.locale.appLocaleAsLangTag;
 }
 
+/**
+ * Given a DOM node inside a <popupnotification>, return the parent <popupnotification>.
+ */
 function getNotificationFromElement(aElement) {
-  // Need to find the associated notification object, which is a bit tricky
-  // since it isn't associated with the element directly - this is kind of
-  // gross and very dependent on the structure of the popupnotification
-  // binding's content.
-  let notificationEl;
-  let parent = aElement;
-  while (parent && (parent = aElement.ownerDocument.getBindingParent(parent))) {
-    notificationEl = parent;
-  }
-  return notificationEl;
+  return aElement.closest("popupnotification");
 }

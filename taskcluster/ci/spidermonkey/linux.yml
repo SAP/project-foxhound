@@ -129,6 +129,8 @@ sm-msan-linux64/opt:
         tier: 3
     run:
         spidermonkey-variant: msan
+    # Disable by default by allow try pushes to explicitly request.
+    run-on-projects: []
 
 sm-tsan-linux64/opt:
     description: "Spidermonkey Thread Sanitizer"
@@ -140,6 +142,7 @@ sm-tsan-linux64/opt:
     run:
         spidermonkey-variant: tsan
     toolchains:
+        - linux64-binutils
         - linux64-clang
         - linux64-rust
 

@@ -20,13 +20,10 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
   this);
 
-// Ensure the Changes panel is enabled before running the tests.
-Services.prefs.setBoolPref("devtools.inspector.changes.enabled", true);
 // Ensure the three-pane mode is enabled before running the tests.
 Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
 
 registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.inspector.changes.enabled");
   Services.prefs.clearUserPref("devtools.inspector.three-pane-enabled");
 });
 
@@ -47,7 +44,7 @@ registerCleanupFunction(() => {
  * @return {Array}
  */
 function getDeclarations(panelDoc, selector = "", containerNode = null) {
-  const els = panelDoc.querySelectorAll(`#sidebar-panel-changes .declaration${selector}`);
+  const els = panelDoc.querySelectorAll(`.changes__declaration${selector}`);
 
   return [...els]
     .filter(el => {
@@ -55,8 +52,8 @@ function getDeclarations(panelDoc, selector = "", containerNode = null) {
     })
     .map(el => {
       return {
-        property: el.querySelector(".declaration-name").textContent,
-        value: el.querySelector(".declaration-value").textContent,
+        property: el.querySelector(".changes__declaration-name").textContent,
+        value: el.querySelector(".changes__declaration-value").textContent,
       };
     });
 }
@@ -67,4 +64,27 @@ function getAddedDeclarations(panelDoc, containerNode) {
 
 function getRemovedDeclarations(panelDoc, containerNode) {
   return getDeclarations(panelDoc, ".diff-remove", containerNode);
+}
+
+/**
+ * Get an array of DOM elements for the CSS selectors rendered in the Changes panel.
+ *
+ * @param  {Document} panelDoc
+ *         Host document of the Changes panel.
+ * @param  {String} selector
+ *         Optional selector to filter rendered selector DOM elements.
+ *         One of ".diff-remove" or ".diff-add".
+ *         If omitted, all selectors will be returned.
+ * @return {Array}
+ */
+function getSelectors(panelDoc, selector = "") {
+  return panelDoc.querySelectorAll(`.changes__selector${selector}`);
+}
+
+function getAddedSelectors(panelDoc) {
+  return getSelectors(panelDoc, ".diff-add");
+}
+
+function getRemovedSelectors(panelDoc) {
+  return getSelectors(panelDoc, ".diff-remove");
 }

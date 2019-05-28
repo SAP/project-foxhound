@@ -94,7 +94,7 @@ nsFtpState::nsFtpState()
   LOG_INFO(("FTP:(%p) nsFtpState created", this));
 
   // make sure handler stays around
-  NS_ADDREF(gFtpHandler);
+  mHandler = gFtpHandler;
 }
 
 nsFtpState::~nsFtpState() {
@@ -103,8 +103,7 @@ nsFtpState::~nsFtpState() {
   if (mProxyRequest) mProxyRequest->Cancel(NS_ERROR_FAILURE);
 
   // release reference to handler
-  nsFtpProtocolHandler *handler = gFtpHandler;
-  NS_RELEASE(handler);
+  mHandler = nullptr;
 }
 
 // nsIInputStreamCallback implementation
@@ -1796,14 +1795,13 @@ nsFtpState::OnTransportStatus(nsITransport *transport, nsresult status,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsFtpState::OnStartRequest(nsIRequest *request, nsISupports *context) {
+nsFtpState::OnStartRequest(nsIRequest *request) {
   mStorReplyReceived = false;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFtpState::OnStopRequest(nsIRequest *request, nsISupports *context,
-                          nsresult status) {
+nsFtpState::OnStopRequest(nsIRequest *request, nsresult status) {
   mUploadRequest = nullptr;
 
   // Close() will be called when reply to STOR command is received
@@ -1889,7 +1887,7 @@ static nsresult CreateHTTPProxiedChannel(nsIChannel *channel, nsIProxyInfo *pi,
   nsCOMPtr<nsILoadInfo> loadInfo;
   channel->GetLoadInfo(getter_AddRefs(loadInfo));
 
-  return pph->NewProxiedChannel2(uri, pi, 0, nullptr, loadInfo, newChannel);
+  return pph->NewProxiedChannel(uri, pi, 0, nullptr, loadInfo, newChannel);
 }
 
 NS_IMETHODIMP

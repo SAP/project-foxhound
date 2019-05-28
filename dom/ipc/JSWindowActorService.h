@@ -7,11 +7,15 @@
 #ifndef mozilla_dom_JSWindowActorService_h
 #define mozilla_dom_JSWindowActorService_h
 
-#include "nsDataHashtable.h"
+#include "nsRefPtrHashtable.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace dom {
 struct WindowActorOptions;
+class JSWindowActorInfo;
+class JSWindowActorProtocol;
+class EventTarget;
 
 class JSWindowActorService final {
  public:
@@ -23,11 +27,38 @@ class JSWindowActorService final {
                            const WindowActorOptions& aOptions,
                            ErrorResult& aRv);
 
+  void UnregisterWindowActor(const nsAString& aName);
+
+  // Register child's Window Actor from JSWindowActorInfos for content process.
+  void LoadJSWindowActorInfos(nsTArray<JSWindowActorInfo>& aInfos);
+
+  // Get the named of Window Actor and the child's WindowActorOptions
+  // from mDescriptors to JSWindowActorInfos.
+  void GetJSWindowActorInfos(nsTArray<JSWindowActorInfo>& aInfos);
+
+  // Load the module for the named Window Actor and contruct it.
+  // This method will not initialize the actor or set its manager,
+  // which is handled by callers.
+  void ConstructActor(const nsAString& aName, bool aParentSide,
+                      BrowsingContext* aBrowsingContext,
+                      JS::MutableHandleObject aActor, ErrorResult& aRv);
+
+  void ReceiveMessage(nsISupports* aActor, JS::RootedObject& aObj,
+                      const nsString& aMessageName,
+                      ipc::StructuredCloneData& aData);
+
+  // Register or unregister a WindowRoot object from this JSWindowActorService.
+  void RegisterWindowRoot(EventTarget* aRoot);
+
+  // NOTE: This method is static, as it may be called during shutdown.
+  static void UnregisterWindowRoot(EventTarget* aRoot);
+
  private:
   JSWindowActorService();
   ~JSWindowActorService();
 
-  nsDataHashtable<nsStringHashKey, const WindowActorOptions*> mDescriptors;
+  nsTArray<EventTarget*> mRoots;
+  nsRefPtrHashtable<nsStringHashKey, JSWindowActorProtocol> mDescriptors;
 };
 
 }  // namespace dom

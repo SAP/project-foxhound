@@ -7,16 +7,18 @@
 #ifndef mozilla_dom_DocumentL10n_h
 #define mozilla_dom_DocumentL10n_h
 
+#include "mozIDOMLocalization.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIContentSink.h"
+#include "nsINode.h"
+#include "nsIObserver.h"
+#include "nsWrapperCache.h"
+#include "nsWeakReference.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "mozilla/dom/Document.h"
-#include "nsIContentSink.h"
-#include "nsINode.h"
-#include "mozIDOMLocalization.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 
@@ -57,14 +59,19 @@ enum class DocumentL10nState {
  * instance of mozIDOMLocalization and maintains a single promise
  * which gets resolved the first time the document gets translated.
  */
-class DocumentL10n final : public nsWrapperCache {
+class DocumentL10n final : public nsIObserver,
+                           public nsSupportsWeakReference,
+                           public nsWrapperCache {
  public:
-  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DocumentL10n)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DocumentL10n)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(DocumentL10n,
+                                                         nsIObserver)
+  NS_DECL_NSIOBSERVER
 
  public:
   explicit DocumentL10n(Document* aDocument);
   bool Init(nsTArray<nsString>& aResourceIds);
+  void Destroy();
 
  protected:
   virtual ~DocumentL10n();
@@ -76,6 +83,7 @@ class DocumentL10n final : public nsWrapperCache {
   nsCOMPtr<nsIContentSink> mContentSink;
 
   already_AddRefed<Promise> MaybeWrapPromise(Promise* aPromise);
+  void RegisterObservers();
 
  public:
   Document* GetParentObject() const { return mDocument; };
@@ -116,6 +124,9 @@ class DocumentL10n final : public nsWrapperCache {
   already_AddRefed<Promise> TranslateFragment(nsINode& aNode, ErrorResult& aRv);
   already_AddRefed<Promise> TranslateElements(
       const Sequence<OwningNonNull<Element>>& aElements, ErrorResult& aRv);
+
+  void PauseObserving(ErrorResult& aRv);
+  void ResumeObserving(ErrorResult& aRv);
 
   Promise* Ready();
 

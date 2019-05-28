@@ -29,7 +29,7 @@ class SeenPtrs;
 class ServoElementSnapshotTable;
 class SharedFontList;
 class StyleSheet;
-enum class CSSPseudoElementType : uint8_t;
+enum class PseudoStyleType : uint8_t;
 enum class OriginFlags : uint8_t;
 struct Keyframe;
 
@@ -332,7 +332,7 @@ void Servo_StyleRule_GetSelectorCount(RawServoStyleRuleBorrowed rule,
 
 bool Servo_StyleRule_SelectorMatchesElement(
     RawServoStyleRuleBorrowed, RawGeckoElementBorrowed, uint32_t index,
-    mozilla::CSSPseudoElementType pseudo_type);
+    mozilla::PseudoStyleType pseudo_type);
 
 bool Servo_StyleRule_SetSelectorText(RawServoStyleSheetContentsBorrowed sheet,
                                      RawServoStyleRuleBorrowed rule,
@@ -512,6 +512,8 @@ bool Servo_ParseEasing(const nsAString* easing, RawGeckoURLExtraData* data,
                        nsTimingFunctionBorrowedMut output);
 
 void Servo_SerializeEasing(nsTimingFunctionBorrowed easing, nsAString* output);
+
+void Servo_SerializeBorderRadius(const mozilla::StyleBorderRadius*, nsAString*);
 
 void Servo_GetComputedKeyframeValues(
     RawGeckoKeyframeListBorrowed keyframes, RawGeckoElementBorrowed element,
@@ -780,12 +782,12 @@ bool Servo_CSSSupports(const nsACString* cond);
 // Computed style data
 
 ComputedStyleStrong Servo_ComputedValues_GetForAnonymousBox(
-    ComputedStyleBorrowedOrNull parent_style_or_null, nsAtom* pseudo_tag,
+    ComputedStyleBorrowedOrNull parent_style_or_null, mozilla::PseudoStyleType,
     RawServoStyleSetBorrowed set);
 
 ComputedStyleStrong Servo_ComputedValues_Inherit(
-    RawServoStyleSetBorrowed set, nsAtom* pseudo_tag,
-    ComputedStyleBorrowedOrNull parent_style, mozilla::InheritTarget target);
+    RawServoStyleSetBorrowed, mozilla::PseudoStyleType,
+    ComputedStyleBorrowedOrNull parent_style, mozilla::InheritTarget);
 
 uint8_t Servo_ComputedValues_GetStyleBits(ComputedStyleBorrowed values);
 
@@ -808,9 +810,8 @@ void Servo_InitializeCooperativeThread();
 void Servo_Shutdown();
 
 // Restyle and change hints.
-void Servo_NoteExplicitHints(RawGeckoElementBorrowed element,
-                             nsRestyleHint restyle_hint,
-                             nsChangeHint change_hint);
+void Servo_NoteExplicitHints(RawGeckoElementBorrowed, mozilla::RestyleHint,
+                             nsChangeHint);
 
 // We'd like to return `nsChangeHint` here, but bindgen bitfield enums don't
 // work as return values with the Linux 32-bit ABI at the moment because
@@ -822,7 +823,7 @@ ComputedStyleStrong Servo_ResolveStyle(RawGeckoElementBorrowed element,
                                        RawServoStyleSetBorrowed set);
 
 ComputedStyleStrong Servo_ResolvePseudoStyle(
-    RawGeckoElementBorrowed element, mozilla::CSSPseudoElementType pseudo_type,
+    RawGeckoElementBorrowed element, mozilla::PseudoStyleType pseudo_type,
     bool is_probe, ComputedStyleBorrowedOrNull inherited_style,
     RawServoStyleSetBorrowed set);
 
@@ -834,11 +835,10 @@ ComputedStyleStrong Servo_ComputedValues_ResolveXULTreePseudoStyle(
 void Servo_SetExplicitStyle(RawGeckoElementBorrowed element,
                             ComputedStyleBorrowed primary_style);
 
-bool Servo_HasAuthorSpecifiedRules(ComputedStyleBorrowed style,
+bool Servo_HasAuthorSpecifiedRules(RawServoStyleSetBorrowed set,
+                                   ComputedStyleBorrowed style,
                                    RawGeckoElementBorrowed element,
-                                   mozilla::CSSPseudoElementType pseudo_type,
-                                   uint32_t rule_type_mask,
-                                   bool author_colors_allowed);
+                                   uint32_t rule_type_mask);
 
 // Resolves style for an element or pseudo-element without processing pending
 // restyles first. The Element and its ancestors may be unstyled, have pending
@@ -850,7 +850,7 @@ bool Servo_HasAuthorSpecifiedRules(ComputedStyleBorrowed style,
 // performed, and this function maintains that invariant.
 
 ComputedStyleStrong Servo_ResolveStyleLazily(
-    RawGeckoElementBorrowed element, mozilla::CSSPseudoElementType pseudo_type,
+    RawGeckoElementBorrowed element, mozilla::PseudoStyleType pseudo_type,
     mozilla::StyleRuleInclusion rule_inclusion,
     const mozilla::ServoElementSnapshotTable* snapshots,
     RawServoStyleSetBorrowed set);
@@ -933,11 +933,12 @@ bool Servo_ComputeColor(RawServoStyleSetBorrowedOrNull set,
                         nscolor* result_color, bool* was_current_color,
                         mozilla::css::Loader* loader);
 
-bool Servo_IntersectionObserverRootMargin_Parse(const nsAString* value,
-                                                nsStyleSides* result);
+bool Servo_IntersectionObserverRootMargin_Parse(
+    const nsAString* value,
+    mozilla::StyleIntersectionObserverRootMargin* result);
 
-void Servo_IntersectionObserverRootMargin_ToString(const nsStyleSides* rect,
-                                                   nsAString* result);
+void Servo_IntersectionObserverRootMargin_ToString(
+    const mozilla::StyleIntersectionObserverRootMargin*, nsAString* result);
 
 // Returning false means the parsed transform contains relative lengths or
 // percentage value, so we cannot compute the matrix. In this case, we keep

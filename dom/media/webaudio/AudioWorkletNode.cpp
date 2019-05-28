@@ -21,7 +21,8 @@ AudioWorkletNode::AudioWorkletNode(AudioContext* aAudioContext,
                 ChannelInterpretation::Speakers),
       mNodeName(aName) {}
 
-/* static */ already_AddRefed<AudioWorkletNode> AudioWorkletNode::Constructor(
+/* static */
+already_AddRefed<AudioWorkletNode> AudioWorkletNode::Constructor(
     const GlobalObject& aGlobal, AudioContext& aAudioContext,
     const nsAString& aName, const AudioWorkletNodeOptions& aOptions,
     ErrorResult& aRv) {
@@ -47,6 +48,17 @@ AudioWorkletNode::AudioWorkletNode(AudioContext* aAudioContext,
         return nullptr;
       }
     }
+  }
+  /**
+   * 2. If nodeName does not exists as a key in the BaseAudioContext’s node
+   *    name to parameter descriptor map, throw a NotSupportedError exception
+   *    and abort these steps.
+   */
+  const AudioParamDescriptorMap* parameterDescriptors =
+      aAudioContext.GetParamMapForWorkletName(aName);
+  if (!parameterDescriptors) {
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return nullptr;
   }
 
   RefPtr<AudioWorkletNode> audioWorkletNode =

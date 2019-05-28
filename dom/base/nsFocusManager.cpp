@@ -13,7 +13,7 @@
 #include "nsGkAtoms.h"
 #include "nsGlobalWindow.h"
 #include "nsContentUtils.h"
-#include "nsIContentParent.h"
+#include "ContentParent.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDOMChromeWindow.h"
 #include "nsIHTMLDocument.h"
@@ -1634,7 +1634,7 @@ bool nsFocusManager::Blur(nsPIDOMWindowOuter* aWindowToClear,
     // content
     if (TabParent* remote = TabParent::GetFrom(element)) {
       remote->Deactivate();
-      LOGFOCUS(("Remote browser deactivated"));
+      LOGFOCUS(("Remote browser deactivated %p", remote));
     }
   }
 
@@ -1849,7 +1849,7 @@ void nsFocusManager::Focus(nsPIDOMWindowOuter* aWindow, Element* aElement,
         // content
         if (TabParent* remote = TabParent::GetFrom(aElement)) {
           remote->Activate();
-          LOGFOCUS(("Remote browser activated"));
+          LOGFOCUS(("Remote browser activated %p", remote));
         }
       }
 
@@ -3115,6 +3115,12 @@ nsIContent* nsFocusManager::GetNextTabbableContentInScope(
       break;
     }
 
+    // We've been just trying to find some focusable element, and haven't, so
+    // bail out.
+    if (aIgnoreTabIndex) {
+      break;
+    }
+
     // Continue looking for next highest priority tabindex
     aCurrentTabIndex = GetNextTabIndex(aOwner, aCurrentTabIndex, aForward);
     contentTraversal.Reset();
@@ -3147,6 +3153,8 @@ nsIContent* nsFocusManager::GetNextTabbableContentInAncestorScopes(
     int32_t tabIndex = 0;
     if (IsHostOrSlot(startContent)) {
       tabIndex = HostOrSlotTabIndexValue(startContent);
+    } else if (nsIFrame* frame = startContent->GetPrimaryFrame()) {
+      frame->IsFocusable(&tabIndex);
     } else {
       startContent->IsFocusable(&tabIndex);
     }

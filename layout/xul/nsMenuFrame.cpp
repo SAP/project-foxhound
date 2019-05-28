@@ -142,13 +142,15 @@ class nsMenuAttributeChangedEvent : public Runnable {
 // Wrappers for creating a new menu popup container
 //
 nsIFrame* NS_NewMenuFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  nsMenuFrame* it = new (aPresShell) nsMenuFrame(aStyle);
+  nsMenuFrame* it =
+      new (aPresShell) nsMenuFrame(aStyle, aPresShell->GetPresContext());
   it->SetIsMenu(true);
   return it;
 }
 
 nsIFrame* NS_NewMenuItemFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  nsMenuFrame* it = new (aPresShell) nsMenuFrame(aStyle);
+  nsMenuFrame* it =
+      new (aPresShell) nsMenuFrame(aStyle, aPresShell->GetPresContext());
   it->SetIsMenu(false);
   return it;
 }
@@ -159,8 +161,8 @@ NS_QUERYFRAME_HEAD(nsMenuFrame)
   NS_QUERYFRAME_ENTRY(nsMenuFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsBoxFrame)
 
-nsMenuFrame::nsMenuFrame(ComputedStyle* aStyle)
-    : nsBoxFrame(aStyle, kClassID),
+nsMenuFrame::nsMenuFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsBoxFrame(aStyle, aPresContext, kClassID),
       mIsMenu(false),
       mChecked(false),
       mIgnoreAccelTextChange(false),
@@ -1265,6 +1267,13 @@ NS_IMETHODIMP
 nsMenuFrame::SetActiveChild(dom::Element* aChild) {
   nsMenuPopupFrame* popupFrame = GetPopup();
   if (!popupFrame) return NS_ERROR_FAILURE;
+
+  // Force the child frames within the popup to be generated.
+  AutoWeakFrame weakFrame(popupFrame);
+  popupFrame->GenerateFrames();
+  if (!weakFrame.IsAlive()) {
+    return NS_OK;
+  }
 
   if (!aChild) {
     // Remove the current selection

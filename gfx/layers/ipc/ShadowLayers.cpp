@@ -793,7 +793,8 @@ LayerHandle ShadowLayerForwarder::ConstructShadowFor(ShadowableLayer* aLayer) {
 
 #if !defined(MOZ_HAVE_PLATFORM_SPECIFIC_LAYER_BUFFERS)
 
-/*static*/ void ShadowLayerForwarder::PlatformSyncBeforeUpdate() {}
+/*static*/
+void ShadowLayerForwarder::PlatformSyncBeforeUpdate() {}
 
 #endif  // !defined(MOZ_HAVE_PLATFORM_SPECIFIC_LAYER_BUFFERS)
 
@@ -963,7 +964,7 @@ bool ShadowLayerForwarder::AllocSurfaceDescriptorWithCaps(
       return false;
     }
 
-    bufferDesc = shmem;
+    bufferDesc = std::move(shmem);
   }
 
   // Use an intermediate buffer by default. Skipping the intermediate buffer is
@@ -976,7 +977,8 @@ bool ShadowLayerForwarder::AllocSurfaceDescriptorWithCaps(
   return true;
 }
 
-/* static */ bool ShadowLayerForwarder::IsShmem(SurfaceDescriptor* aSurface) {
+/* static */
+bool ShadowLayerForwarder::IsShmem(SurfaceDescriptor* aSurface) {
   return aSurface &&
          (aSurface->type() == SurfaceDescriptor::TSurfaceDescriptorBuffer) &&
          (aSurface->get_SurfaceDescriptorBuffer().data().type() ==

@@ -3,7 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { createSource } from "../../../reducers/sources";
+// @flow
+
+import { makeMockSource } from "../../../utils/test-mockup";
 
 import {
   addToTree,
@@ -15,23 +17,20 @@ import {
 describe("sources-tree", () => {
   describe("sortEntireTree", () => {
     it("alphabetically sorts children", () => {
-      const source1 = createSource({
-        url: "http://example.com/source1.js",
-        id: "actor1"
-      });
-      const source2 = createSource({
-        url: "http://example.com/foo/b_source2.js",
-        id: "actor2"
-      });
-      const source3 = createSource({
-        url: "http://example.com/foo/a_source3.js",
-        id: "actor3"
-      });
+      const source1 = makeMockSource("http://example.com/source1.js", "actor1");
+      const source2 = makeMockSource(
+        "http://example.com/foo/b_source2.js",
+        "actor2"
+      );
+      const source3 = makeMockSource(
+        "http://example.com/foo/a_source3.js",
+        "actor3"
+      );
       const _tree = createDirectoryNode("root", "", []);
 
-      addToTree(_tree, source1, "http://example.com/");
-      addToTree(_tree, source2, "http://example.com/");
-      addToTree(_tree, source3, "http://example.com/");
+      addToTree(_tree, source1, "http://example.com/", "");
+      addToTree(_tree, source2, "http://example.com/", "");
+      addToTree(_tree, source3, "http://example.com/", "");
       const tree = sortEntireTree(_tree);
 
       const base = tree.contents[0];
@@ -52,35 +51,17 @@ describe("sources-tree", () => {
 
     it("sorts folders first", () => {
       const sources = [
-        createSource({
-          url: "http://example.com/a.js",
-          id: "actor1"
-        }),
-        createSource({
-          url: "http://example.com/b.js/b_source.js",
-          id: "actor2"
-        }),
-        createSource({
-          url: "http://example.com/c.js",
-          id: "actor3"
-        }),
-        createSource({
-          url: "http://example.com",
-          id: "actor4"
-        }),
-        createSource({
-          url: "http://example.com/d/d_source.js",
-          id: "actor5"
-        }),
-        createSource({
-          url: "http://example.com/b2",
-          id: "actor6"
-        })
+        makeMockSource("http://example.com/a.js", "actor1"),
+        makeMockSource("http://example.com/b.js/b_source.js", "actor2"),
+        makeMockSource("http://example.com/c.js", "actor3"),
+        makeMockSource("http://example.com", "actor4"),
+        makeMockSource("http://example.com/d/d_source.js", "actor5"),
+        makeMockSource("http://example.com/b2", "actor6")
       ];
 
       const _tree = createDirectoryNode("root", "", []);
       sources.forEach(source =>
-        addToTree(_tree, source, "http://example.com/")
+        addToTree(_tree, source, "http://example.com/", "")
       );
       const tree = sortEntireTree(_tree);
       const domain = tree.contents[0];
@@ -114,23 +95,14 @@ describe("sources-tree", () => {
 
     it("puts folder at the top of the sort", () => {
       const sources = [
-        createSource({
-          url: "http://example.com/folder/a.js",
-          id: "actor1"
-        }),
-        createSource({
-          url: "http://example.com/folder/b/b.js",
-          id: "actor2"
-        }),
-        createSource({
-          url: "http://example.com/folder/c/",
-          id: "actor3"
-        })
+        makeMockSource("http://example.com/folder/a.js", "actor1"),
+        makeMockSource("http://example.com/folder/b/b.js", "actor2"),
+        makeMockSource("http://example.com/folder/c/", "actor3")
       ];
 
       const _tree = createDirectoryNode("root", "", []);
       sources.forEach(source =>
-        addToTree(_tree, source, "http://example.com/")
+        addToTree(_tree, source, "http://example.com/", "")
       );
       const tree = sortEntireTree(_tree);
       const [
@@ -153,18 +125,9 @@ describe("sources-tree", () => {
 
     it("puts root debugee url at the top of the sort", () => {
       const sources = [
-        createSource({
-          url: "http://api.example.com/a.js",
-          id: "actor1"
-        }),
-        createSource({
-          url: "http://example.com/b.js",
-          id: "actor2"
-        }),
-        createSource({
-          url: "http://demo.com/c.js",
-          id: "actor3"
-        })
+        makeMockSource("http://api.example.com/a.js", "actor1"),
+        makeMockSource("http://example.com/b.js", "actor2"),
+        makeMockSource("http://demo.com/c.js", "actor3")
       ];
 
       const rootA = "http://example.com/path/to/file.html";
@@ -172,8 +135,8 @@ describe("sources-tree", () => {
       const _treeA = createDirectoryNode("root", "", []);
       const _treeB = createDirectoryNode("root", "", []);
       sources.forEach(source => {
-        addToTree(_treeA, source, rootA);
-        addToTree(_treeB, source, rootB);
+        addToTree(_treeA, source, rootA, "");
+        addToTree(_treeB, source, rootB, "");
       });
       const treeA = sortEntireTree(_treeA, rootA);
       const treeB = sortEntireTree(_treeB, rootB);

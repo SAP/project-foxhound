@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 AddonTestUtils.initMochitest(this);
@@ -141,7 +141,7 @@ function assertLocaleOrder(list, locales) {
 }
 
 function assertAvailableLocales(list, locales) {
-  let items = Array.from(list.firstElementChild.children);
+  let items = Array.from(list.menupopup.children);
   let listLocales = items
     .filter(item => item.value && item.value != "search");
   is(listLocales.length, locales.length, "The right number of locales are available");
@@ -171,7 +171,7 @@ function assertTelemetryRecorded(events) {
 }
 
 async function selectLocale(localeCode, available, selected, dialogDoc) {
-  let [locale] = Array.from(available.firstElementChild.children)
+  let [locale] = Array.from(available.menupopup.children)
     .filter(item => item.value == localeCode);
   available.selectedItem = locale;
 
@@ -192,7 +192,7 @@ async function openDialog(doc, search = false) {
   let dialogLoaded = promiseLoadSubDialog(BROWSER_LANGUAGES_URL);
   if (search) {
     doc.getElementById("defaultBrowserLanguageSearch").doCommand();
-    doc.getElementById("defaultBrowserLanguage").firstElementChild.hidePopup();
+    doc.getElementById("defaultBrowserLanguage").menupopup.hidePopup();
   } else {
     doc.getElementById("manageBrowserLanguagesButton").doCommand();
   }
@@ -253,13 +253,13 @@ add_task(async function testDisabledBrowserLanguages() {
   assertAvailableLocales(available, ["fr"]);
 
   // Search for more languages.
-  available.firstElementChild.lastElementChild.doCommand();
-  available.firstElementChild.hidePopup();
+  available.menupopup.lastElementChild.doCommand();
+  available.menupopup.hidePopup();
   await waitForMutation(
-    available.firstElementChild,
+    available.menupopup,
     {childList: true},
     target =>
-      Array.from(available.firstElementChild.children)
+      Array.from(available.menupopup.children)
         .some(locale => locale.value == "pl"));
 
   // pl is now available since it is available remotely.
@@ -490,7 +490,7 @@ add_task(async function testInstallFromAMO() {
 
   if (available.itemCount == 1) {
     await waitForMutation(
-      available.firstElementChild,
+      available.menupopup,
       {childList: true},
       target => available.itemCount > 1);
   }
@@ -551,7 +551,7 @@ add_task(async function testInstallFromAMO() {
   // Wait for the available langpacks to load.
   if (available.itemCount == 1) {
     await waitForMutation(
-      available.firstElementChild,
+      available.menupopup,
       {childList: true},
       target => available.itemCount > 1);
   }
@@ -595,10 +595,10 @@ add_task(async function testDownloadEnabled() {
   let doc = gBrowser.contentDocument;
 
   let defaultMenulist = doc.getElementById("defaultBrowserLanguage");
-  ok(hasSearchOption(defaultMenulist.firstChild), "There's a search option in the General pane");
+  ok(hasSearchOption(defaultMenulist.menupopup), "There's a search option in the General pane");
 
   let { available } = await openDialog(doc, false);
-  ok(hasSearchOption(available.firstChild), "There's a search option in the dialog");
+  ok(hasSearchOption(available.menupopup), "There's a search option in the dialog");
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
@@ -616,10 +616,10 @@ add_task(async function testDownloadDisabled() {
   let doc = gBrowser.contentDocument;
 
   let defaultMenulist = doc.getElementById("defaultBrowserLanguage");
-  ok(!hasSearchOption(defaultMenulist.firstChild), "There's no search option in the General pane");
+  ok(!hasSearchOption(defaultMenulist.menupopup), "There's no search option in the General pane");
 
   let { available } = await openDialog(doc, false);
-  ok(!hasSearchOption(available.firstChild), "There's no search option in the dialog");
+  ok(!hasSearchOption(available.menupopup), "There's no search option in the dialog");
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
@@ -650,7 +650,7 @@ add_task(async function testReorderMainPane() {
   is(messageBar.hidden, true, "The message bar is hidden at first");
 
   let available = doc.getElementById("defaultBrowserLanguage");
-  let availableLocales = Array.from(available.firstElementChild.children);
+  let availableLocales = Array.from(available.menupopup.children);
   let availableCodes = availableLocales.map(item => item.value).sort().join(",");
   is(availableCodes, "en-US,fr,he,pl",
      "All of the available locales are listed");
@@ -659,7 +659,7 @@ add_task(async function testReorderMainPane() {
 
   let hebrew = availableLocales[availableLocales.findIndex(item => item.value == "he")];
   hebrew.click();
-  available.firstElementChild.hidePopup();
+  available.menupopup.hidePopup();
 
   await BrowserTestUtils.waitForCondition(
     () => !messageBar.hidden, "Wait for message bar to show");

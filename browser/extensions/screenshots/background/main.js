@@ -10,6 +10,17 @@ this.main = (function() {
 
   const manifest = browser.runtime.getManifest();
   let backend;
+  let _hasAnyShots = false;
+
+  startBackground.serverStatus.then((status) => {
+    _hasAnyShots = status.hasAny;
+  }).catch((e) => {
+    log.warn("Cannot see server status", e);
+  });
+
+  exports.hasAnyShots = function() {
+    return _hasAnyShots;
+  };
 
   let hasSeenOnboarding = browser.storage.local.get(["hasSeenOnboarding"]).then((result) => {
     const onboarded = !!result.hasSeenOnboarding;
@@ -83,36 +94,7 @@ this.main = (function() {
   // This is called by startBackground.js, where is registered as a click
   // handler for the webextension page action.
   exports.onClicked = catcher.watchFunction((tab) => {
-    catcher.watchPromise(hasSeenOnboarding.then(onboarded => {
-      if (shouldOpenMyShots(tab.url)) {
-        if (!onboarded) {
-          catcher.watchPromise(analytics.refreshTelemetryPref().then(() => {
-            sendEvent("goto-onboarding", "selection-button", {incognito: tab.incognito});
-            return forceOnboarding();
-          }));
-          return;
-        }
-        catcher.watchPromise(analytics.refreshTelemetryPref().then(() => {
-          sendEvent("goto-myshots", "about-newtab", {incognito: tab.incognito});
-        }));
-        catcher.watchPromise(
-          auth.maybeLogin()
-          .then(() => browser.tabs.update({url: backend + "/shots"})));
-      } else {
-        catcher.watchPromise(
-          toggleSelector(tab)
-            .then(active => {
-              const event = active ? "start-shot" : "cancel-shot";
-              sendEvent(event, "toolbar-button", {incognito: tab.incognito});
-            }, (error) => {
-              if ((!onboarded) && error.popupMessage === "UNSHOOTABLE_PAGE") {
-                sendEvent("goto-onboarding", "selection-button", {incognito: tab.incognito});
-                return forceOnboarding();
-              }
-              throw error;
-            }));
-      }
-    }));
+    _startShotFlow(tab, "toolbar-button");
   });
 
   function forceOnboarding() {
@@ -120,6 +102,23 @@ this.main = (function() {
   }
 
   exports.onClickedContextMenu = catcher.watchFunction((info, tab) => {
+    _startShotFlow(tab, "context-menu");
+  });
+
+  exports.onCommand = catcher.watchFunction((tab) => {
+    _startShotFlow(tab, "keyboard-shortcut");
+  });
+
+  const _openMyShots = (tab, inputType) => {
+    catcher.watchPromise(analytics.refreshTelemetryPref().then(() => {
+      sendEvent("goto-myshots", inputType, {incognito: tab.incognito});
+    }));
+    catcher.watchPromise(
+      auth.maybeLogin()
+      .then(() => browser.tabs.update({url: backend + "/shots"})));
+  };
+
+  const _startShotFlow = (tab, inputType) => {
     catcher.watchPromise(hasSeenOnboarding.then(onboarded => {
       if (!tab) {
         // Not in a page/tab context, ignore
@@ -127,7 +126,8 @@ this.main = (function() {
       }
       if (!urlEnabled(tab.url)) {
         if (!onboarded) {
-          sendEvent("goto-onboarding", "selection-button", {incognito: tab.incognito});
+          // Updated generic "selection-button" event data to inputType
+          sendEvent("goto-onboarding", inputType, {incognito: tab.incognito});
           forceOnboarding();
           return;
         }
@@ -135,13 +135,24 @@ this.main = (function() {
           popupMessage: "UNSHOOTABLE_PAGE",
         });
         return;
+      } else if (shouldOpenMyShots(tab.url)) {
+        _openMyShots(tab, inputType);
+        return;
       }
       // No need to catch() here because of watchPromise().
       // eslint-disable-next-line promise/catch-or-return
       toggleSelector(tab)
-        .then(() => sendEvent("start-shot", "context-menu", {incognito: tab.incognito}));
+        .then(active => {
+          let event = "start-shot";
+          if (inputType !== "context-menu") {
+            event = active ? "start-shot" : "cancel-shot";
+          }
+          sendEvent(event, inputType, {incognito: tab.incognito});
+        }).catch((error) => {
+        throw error;
+      });
     }));
-  });
+  };
 
   function urlEnabled(url) {
     if (shouldOpenMyShots(url)) {
@@ -178,7 +189,7 @@ this.main = (function() {
     // Discussion: https://bugzilla.mozilla.org/show_bug.cgi?id=1310082
     // List of domains copied from: https://dxr.mozilla.org/mozilla-central/source/browser/app/permissions#18-19
     // Note we disable it here to be informative, the security check is done in WebExtension code
-    const badDomains = ["addons.mozilla.org", "testpilot.firefox.com"];
+    const badDomains = ["testpilot.firefox.com"];
     let domain = url.replace(/^https?:\/\//i, "");
     domain = domain.replace(/\/.*/, "").replace(/:.*/, "");
     domain = domain.toLowerCase();

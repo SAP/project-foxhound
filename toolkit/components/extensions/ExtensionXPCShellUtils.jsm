@@ -7,9 +7,9 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionTestUtils"];
 
-ChromeUtils.import("resource://gre/modules/ActorManagerParent.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {ActorManagerParent} = ChromeUtils.import("resource://gre/modules/ActorManagerParent.jsm");
+const {ExtensionUtils} = ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // Windowless browsers can create documents that rely on XUL Custom Elements:
 ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm", null);
@@ -20,8 +20,8 @@ ChromeUtils.defineModuleGetter(this, "AddonTestUtils",
                                "resource://testing-common/AddonTestUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "ContentTask",
                                "resource://testing-common/ContentTask.jsm");
-ChromeUtils.defineModuleGetter(this, "Extension",
-                               "resource://gre/modules/Extension.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionTestCommon",
+                               "resource://testing-common/ExtensionTestCommon.jsm");
 ChromeUtils.defineModuleGetter(this, "FileUtils",
                                "resource://gre/modules/FileUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "MessageChannel",
@@ -34,7 +34,7 @@ ChromeUtils.defineModuleGetter(this, "TestUtils",
                                "resource://testing-common/TestUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "Management", () => {
-  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
   return Management;
 });
 
@@ -67,8 +67,8 @@ let BASE_MANIFEST = Object.freeze({
 
 
 function frameScript() {
-  ChromeUtils.import("resource://gre/modules/MessageChannel.jsm");
-  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  const {MessageChannel} = ChromeUtils.import("resource://gre/modules/MessageChannel.jsm");
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   Services.obs.notifyObservers(this, "tab-content-frameloader-created");
 
@@ -255,7 +255,6 @@ class ExtensionWrapper {
 
     if (extension) {
       this.id = extension.id;
-      this.uuid = extension.uuid;
       this.attachExtension(extension);
     }
   }
@@ -278,6 +277,7 @@ class ExtensionWrapper {
       this.extension.off("test-message", this.handleMessage);
       this.clearMessageQueues();
     }
+    this.uuid = extension.uuid;
     this.extension = extension;
 
     extension.on("test-eq", this.handleResult);
@@ -340,11 +340,13 @@ class ExtensionWrapper {
     return this.startupPromise;
   }
 
-  startup() {
+  async startup() {
     if (this.state != "uninitialized") {
       throw new Error("Extension already started");
     }
     this.state = "pending";
+
+    await ExtensionTestCommon.setIncognitoOverride(this.extension);
 
     this.startupPromise = this.extension.startup().then(
       result => {
@@ -575,7 +577,7 @@ class AOMExtensionWrapper extends ExtensionWrapper {
 
     await this._flushCache();
 
-    let xpiFile = Extension.generateXPI(data);
+    let xpiFile = ExtensionTestCommon.generateXPI(data);
 
     this.cleanupFiles.push(xpiFile);
 
@@ -584,12 +586,13 @@ class AOMExtensionWrapper extends ExtensionWrapper {
 }
 
 class InstallableWrapper extends AOMExtensionWrapper {
-  constructor(testScope, xpiFile, installType, installTelemetryInfo) {
+  constructor(testScope, xpiFile, addonData = {}) {
     super(testScope);
 
     this.file = xpiFile;
-    this.installType = installType;
-    this.installTelemetryInfo = installTelemetryInfo;
+    this.addonData = addonData;
+    this.installType = addonData.useAddonManager || "temporary";
+    this.installTelemetryInfo = addonData.amInstallTelemetryInfo;
 
     this.cleanupFiles = [xpiFile];
   }
@@ -615,7 +618,26 @@ class InstallableWrapper extends AOMExtensionWrapper {
     }
   }
 
-  _install(xpiFile) {
+  _setIncognitoOverride() {
+    // this.id is not set yet so grab it from the manifest data to set
+    // the incognito permission.
+    let {addonData} = this;
+    if (addonData && addonData.incognitoOverride) {
+      try {
+        let {id} = addonData.manifest.applications.gecko;
+        if (id) {
+          return ExtensionTestCommon.setIncognitoOverride({id, addonData});
+        }
+      } catch (e) {}
+      throw new Error("Extension ID is required for setting incognito permission.");
+    }
+  }
+
+  async _install(xpiFile) {
+    // Timing here is different than in MockExtension so we need to handle
+    // incognitoOverride early.
+    await this._setIncognitoOverride();
+
     if (this.installType === "temporary") {
       return AddonManager.installTemporaryAddon(xpiFile).then(addon => {
         this.id = addon.id;
@@ -758,7 +780,7 @@ var ExtensionTestUtils = {
   addonManagerStarted: false,
 
   mockAppInfo() {
-    const {updateAppInfo} = ChromeUtils.import("resource://testing-common/AppInfo.jsm", {});
+    const {updateAppInfo} = ChromeUtils.import("resource://testing-common/AppInfo.jsm");
     updateAppInfo({
       ID: "xpcshell@tests.mozilla.org",
       name: "XPCShell",
@@ -781,18 +803,23 @@ var ExtensionTestUtils = {
 
   loadExtension(data) {
     if (data.useAddonManager) {
-      let xpiFile = Extension.generateXPI(data);
+      // If we're using incognitoOverride, we'll need to ensure
+      // an ID is available before generating the XPI.
+      if (data.incognitoOverride) {
+        ExtensionTestCommon.setExtensionID(data);
+      }
+      let xpiFile = ExtensionTestCommon.generateXPI(data);
 
-      return this.loadExtensionXPI(xpiFile, data.useAddonManager, data.amInstallTelemetryInfo);
+      return this.loadExtensionXPI(xpiFile, data);
     }
 
-    let extension = Extension.generate(data);
+    let extension = ExtensionTestCommon.generate(data);
 
     return new ExtensionWrapper(this.currentScope, extension);
   },
 
-  loadExtensionXPI(xpiFile, useAddonManager = "temporary", installTelemetryInfo) {
-    return new InstallableWrapper(this.currentScope, xpiFile, useAddonManager, installTelemetryInfo);
+  loadExtensionXPI(xpiFile, data) {
+    return new InstallableWrapper(this.currentScope, xpiFile, data);
   },
 
   // Create a wrapper for a webextension that will be installed

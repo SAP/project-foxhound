@@ -2,9 +2,8 @@
  * Test for the "CacheEntryId" under several cases.
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
@@ -53,10 +52,10 @@ function fetch(preferredDataType = null)
 
     if (preferredDataType) {
       var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-      cc.preferAlternativeDataType(altContentType, "");
+      cc.preferAlternativeDataType(altContentType, "", true);
     }
 
-    chan.asyncOpen2(new ChannelListener((request,
+    chan.asyncOpen(new ChannelListener((request,
                                          buffer,
                                          ctx,
                                          isFromCache,

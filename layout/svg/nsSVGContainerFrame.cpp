@@ -31,8 +31,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGContainerFrame)
 
 nsIFrame* NS_NewSVGContainerFrame(nsIPresShell* aPresShell,
                                   ComputedStyle* aStyle) {
-  nsIFrame* frame = new (aPresShell)
-      nsSVGContainerFrame(aStyle, nsSVGContainerFrame::kClassID);
+  nsIFrame* frame = new (aPresShell) nsSVGContainerFrame(
+      aStyle, aPresShell->GetPresContext(), nsSVGContainerFrame::kClassID);
   // If we were called directly, then the frame is for a <defs> or
   // an unknown element type. In both cases we prevent the content
   // from displaying directly.
@@ -97,8 +97,8 @@ bool nsSVGContainerFrame::ComputeCustomOverflow(
  * frames and marks them NS_FRAME_IS_DIRTY so that the next time that they
  * are painted their anonymous kid will first get the necessary reflow.
  */
-/* static */ void nsSVGContainerFrame::ReflowSVGNonDisplayText(
-    nsIFrame* aContainer) {
+/* static */
+void nsSVGContainerFrame::ReflowSVGNonDisplayText(nsIFrame* aContainer) {
   if (!(aContainer->GetStateBits() & NS_FRAME_IS_DIRTY)) {
     return;
   }
@@ -188,7 +188,7 @@ void nsSVGDisplayContainerFrame::RemoveFrame(ChildListID aListID,
   // need to schedule a repaint and schedule an update to our overflow rects.
   SchedulePaint();
   PresContext()->RestyleManager()->PostRestyleEvent(
-      mContent->AsElement(), nsRestyleHint(0), nsChangeHint_UpdateOverflow);
+      mContent->AsElement(), RestyleHint{0}, nsChangeHint_UpdateOverflow);
 
   nsSVGContainerFrame::RemoveFrame(aListID, aOldFrame);
 }

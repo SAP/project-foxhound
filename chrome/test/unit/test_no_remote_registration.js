@@ -10,8 +10,6 @@ var manifests = [
 ];
 registerManifests(manifests);
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 function ProtocolHandler(aScheme, aFlags) {
   this.scheme = aScheme;
   this.protocolFlags = aFlags;
@@ -32,7 +30,6 @@ ProtocolHandler.prototype =
     }
     return mutator.finalize();
   },
-  newChannel2() { throw Cr.NS_ERROR_NOT_IMPLEMENTED; },
   newChannel() { throw Cr.NS_ERROR_NOT_IMPLEMENTED; },
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsIProtocolHandler,
@@ -120,7 +117,6 @@ function run_test() {
   // Make sure the class ID has not already been registered
   let old_factory = {CID: "", factory: null};
   if (!registrar.isCIDRegistered(XULAppInfoFactory.CID)) {
-
     // Check to see if a contract was already registered and
     // register it if it is not. Otherwise, store the previous one
     // to be restored later and register the new one.
@@ -128,7 +124,6 @@ function run_test() {
       dump(XULAppInfoFactory.scheme + " is already registered. Storing currently registered object for restoration later.");
       old_factory.CID = registrar.contractIDToCID(XULAppInfoFactory.contractID);
       old_factory.factory = Components.manager.getClassObject(Cc[XULAppInfoFactory.contractID], Ci.nsIFactory);
-      registrar.unregisterFactory(old_factory.CID, old_factory.factory);
     } else {
       dump(XULAppInfoFactory.scheme + " has never been registered. Registering...");
     }
@@ -217,6 +212,6 @@ function run_test() {
   // Unregister XULAppInfoFactory
   registrar.unregisterFactory(XULAppInfoFactory.CID, XULAppInfoFactory);
   if (old_factory.factory != null) {
-    registrar.registerFactory(old_factory.CID, "", XULAppInfoFactory.contractID, old_factory.factory);
+    registrar.registerFactory(old_factory.CID, "", XULAppInfoFactory.contractID, null);
   }
 }

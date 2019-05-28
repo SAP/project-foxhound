@@ -1,7 +1,7 @@
 
 var CC = Components.Constructor;
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const ServerSocket = CC("@mozilla.org/network/server-socket;1",
                         "nsIServerSocket",
@@ -67,14 +67,14 @@ var requestListenerObserver = {
 };
 
 var listener = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
   },
 
   onDataAvailable: function test_ODA() {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     executeSoon(run_next_test);
   }
 };
@@ -92,7 +92,7 @@ add_test(function testNoConnectChannelCanceledEarly() {
     uri:"http://localhost:" + serv.port,
     loadUsingSystemPrincipal: true
   });
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   registerCleanupFunction(function(){ serv.stop(); });
 });

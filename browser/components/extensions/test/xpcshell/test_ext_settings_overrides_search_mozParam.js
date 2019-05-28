@@ -3,7 +3,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -16,7 +16,7 @@ let {
 
 add_task(async function setup() {
   await promiseStartupManager();
-  Services.search.init();
+  await Services.search.init();
   registerCleanupFunction(async () => {
     await promiseShutdownManager();
   });
@@ -60,6 +60,7 @@ add_task(async function test_extension_setting_moz_params() {
     useAddonManager: "permanent",
   });
   await extension.startup();
+  await AddonTestUtils.waitForSearchProviderStartup(extension);
   equal(extension.extension.isPrivileged, true, "extension is priviledged");
 
   let engine = Services.search.getEngineByName("MozParamsTest");
@@ -113,6 +114,7 @@ add_task(async function test_extension_setting_moz_params_fail() {
     useAddonManager: "permanent",
   });
   await extension.startup();
+  await AddonTestUtils.waitForSearchProviderStartup(extension);
   equal(extension.extension.isPrivileged, false, "extension is not priviledged");
   let engine = Services.search.getEngineByName("MozParamsTest");
   let expectedURL = engine.getSubmission("test", null, "contextmenu").uri.spec;

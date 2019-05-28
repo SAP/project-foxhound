@@ -1195,17 +1195,19 @@ class SourceUnits {
         ptr(units) {}
 
   bool atStart() const {
-    MOZ_ASSERT(ptr, "shouldn't be using if poisoned");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't be using if poisoned");
     return ptr == base_;
   }
 
   bool atEnd() const {
+    MOZ_ASSERT(!isPoisoned(), "shouldn't be using if poisoned");
     MOZ_ASSERT(ptr <= limit_, "shouldn't have overrun");
     return ptr >= limit_;
   }
 
   size_t remaining() const {
-    MOZ_ASSERT(ptr, "can't get a count of remaining code units if poisoned");
+    MOZ_ASSERT(!isPoisoned(),
+               "can't get a count of remaining code units if poisoned");
     return mozilla::PointerRangeSize(ptr, limit_);
   }
 
@@ -1216,6 +1218,7 @@ class SourceUnits {
   }
 
   const Unit* codeUnitPtrAt(size_t offset) const {
+    MOZ_ASSERT(!isPoisoned(), "shouldn't be using if poisoned");
     MOZ_ASSERT(startOffset_ <= offset);
     MOZ_ASSERT(offset - startOffset_ <=
                mozilla::PointerRangeSize(base_, limit_));
@@ -1227,7 +1230,7 @@ class SourceUnits {
   const Unit* limit() const { return limit_; }
 
   Unit previousCodeUnit() {
-    MOZ_ASSERT(ptr, "can't get previous code unit if poisoned");
+    MOZ_ASSERT(!isPoisoned(), "can't get previous code unit if poisoned");
     MOZ_ASSERT(!atStart(), "must have a previous code unit to get");
     return *(ptr - 1);
   }
@@ -1283,7 +1286,7 @@ class SourceUnits {
 
   /** Match |n| hexadecimal digits and store their value in |*out|. */
   bool matchHexDigits(uint8_t n, char16_t* out) {
-    MOZ_ASSERT(ptr, "shouldn't peek into poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't peek into poisoned SourceUnits");
     MOZ_ASSERT(n <= 4, "hexdigit value can't overflow char16_t");
     if (n > remaining()) {
       return false;
@@ -1305,7 +1308,7 @@ class SourceUnits {
   }
 
   bool matchCodeUnits(const char* chars, uint8_t length) {
-    MOZ_ASSERT(ptr, "shouldn't match into poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't match into poisoned SourceUnits");
     if (length > remaining()) {
       return false;
     }
@@ -1323,13 +1326,13 @@ class SourceUnits {
   }
 
   void skipCodeUnits(uint32_t n) {
-    MOZ_ASSERT(ptr, "shouldn't use poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't use poisoned SourceUnits");
     MOZ_ASSERT(n <= remaining(), "shouldn't skip beyond end of SourceUnits");
     ptr += n;
   }
 
   void unskipCodeUnits(uint32_t n) {
-    MOZ_ASSERT(ptr, "shouldn't use poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't use poisoned SourceUnits");
     MOZ_ASSERT(n <= mozilla::PointerRangeSize(base_, ptr),
                "shouldn't unskip beyond start of SourceUnits");
     ptr -= n;
@@ -1339,7 +1342,7 @@ class SourceUnits {
   friend class TokenStreamCharsBase<Unit>;
 
   bool internalMatchCodeUnit(Unit c) {
-    MOZ_ASSERT(ptr, "shouldn't use poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't use poisoned SourceUnits");
     if (MOZ_LIKELY(!atEnd()) && *ptr == c) {
       ptr++;
       return true;
@@ -1349,7 +1352,7 @@ class SourceUnits {
 
  public:
   void consumeKnownCodeUnit(Unit c) {
-    MOZ_ASSERT(ptr, "shouldn't use poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(), "shouldn't use poisoned SourceUnits");
     MOZ_ASSERT(*ptr == c, "consuming the wrong code unit");
     ptr++;
   }
@@ -1360,7 +1363,8 @@ class SourceUnits {
    * '\r', do nothing.
    */
   void ungetOptionalCRBeforeLF() {
-    MOZ_ASSERT(ptr, "shouldn't unget a '\\r' from poisoned SourceUnits");
+    MOZ_ASSERT(!isPoisoned(),
+               "shouldn't unget a '\\r' from poisoned SourceUnits");
     MOZ_ASSERT(*ptr == Unit('\n'),
                "function should only be called when a '\\n' was just "
                "ungotten, and any '\\r' preceding it must also be "
@@ -1374,13 +1378,13 @@ class SourceUnits {
   inline void ungetLineOrParagraphSeparator();
 
   void ungetCodeUnit() {
+    MOZ_ASSERT(!isPoisoned(), "can't unget from poisoned units");
     MOZ_ASSERT(!atStart(), "can't unget if currently at start");
-    MOZ_ASSERT(ptr);  // make sure it hasn't been poisoned
     ptr--;
   }
 
   const Unit* addressOfNextCodeUnit(bool allowPoisoned = false) const {
-    MOZ_ASSERT_IF(!allowPoisoned, ptr);  // make sure it hasn't been poisoned
+    MOZ_ASSERT_IF(!allowPoisoned, !isPoisoned());
     return ptr;
   }
 
@@ -1397,6 +1401,19 @@ class SourceUnits {
 #endif
   }
 
+ private:
+  bool isPoisoned() const {
+#ifdef DEBUG
+    // |ptr| can be null for unpoisoned SourceUnits if this was initialized with
+    // |units == nullptr| and |length == 0|.  In that case, for lack of any
+    // better options, consider this to not be poisoned.
+    return ptr == nullptr && ptr != limit_;
+#else
+    return false;
+#endif
+  }
+
+ public:
   /**
    * Consume the rest of a single-line comment (but not the EOL/EOF that
    * terminates it).
@@ -1921,6 +1938,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
  protected:
   using CharsBase::addLineOfContext;
   using CharsBase::fillCharBufferFromSourceNormalizingAsciiLineBreaks;
+  using CharsBase::matchCodeUnit;
   using CharsBase::matchLineTerminator;
   using TokenStreamCharsShared::drainCharBufferIntoAtom;
   using TokenStreamCharsShared::isAsciiCodePoint;
@@ -1981,12 +1999,10 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     token->setNumber(dval, decimalPoint);
   }
 
-#ifdef ENABLE_BIGINT
   void newBigIntToken(TokenStart start, TokenStreamShared::Modifier modifier,
                       TokenKind* out) {
     newToken(TokenKind::BigInt, start, modifier, out);
   }
-#endif
 
   // TODO:  taintfox: atoms are not allowed
   void newAtomToken(TokenKind kind, JSAtom* atom, TokenStart start,
@@ -2109,6 +2125,13 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
   }
 
  public:
+  /**
+   * Consume any hashbang comment at the start of a Script or Module, if one is
+   * present.  Stops consuming just before any terminating LineTerminator or
+   * before an encoding error is encountered.
+   */
+  void consumeOptionalHashbangComment();
+
   JSAtom* getRawTemplateStringAtom() {
     TokenStreamAnyChars& anyChars = anyCharsAccess();
 
@@ -2424,6 +2447,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   using CharsBase::fillCharBufferFromSourceNormalizingAsciiLineBreaks;
   using CharsBase::matchCodeUnit;
   using CharsBase::matchLineTerminator;
+  using CharsBase::peekCodeUnit;
   using GeneralCharsBase::computeColumn;
   using GeneralCharsBase::fillExceptingContext;
   using GeneralCharsBase::getCodeUnit;
@@ -2433,20 +2457,17 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   using GeneralCharsBase::matchUnicodeEscapeIdStart;
   // Taintfox: no Atoms
   using GeneralCharsBase::newAtomToken;
+  using GeneralCharsBase::newBigIntToken;
   using GeneralCharsBase::newNameToken;
   using GeneralCharsBase::newNumberToken;
   using GeneralCharsBase::newPrivateNameToken;
+  using GeneralCharsBase::newRegExpToken;
+  using GeneralCharsBase::newSimpleToken;
   using SpecializedChars::getNonAsciiCodePoint;
   using SpecializedChars::getNonAsciiCodePointDontNormalize;
   using TokenStreamCharsShared::copyCharBufferTo;
   using TokenStreamCharsShared::drainCharBufferIntoAtom;
   using TokenStreamCharsShared::isAsciiCodePoint;
-#ifdef ENABLE_BIGINT
-  using GeneralCharsBase::newBigIntToken;
-#endif
-  using CharsBase::peekCodeUnit;
-  using GeneralCharsBase::newRegExpToken;
-  using GeneralCharsBase::newSimpleToken;
   // Deliberately don't |using| |sourceUnits| because of bug 1472569.  :-(
   using CharsBase::toUnit;
   using GeneralCharsBase::ungetCodeUnit;

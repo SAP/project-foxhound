@@ -1,6 +1,6 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+var {Services} = ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 var running_single_process = false;
 
@@ -426,15 +426,15 @@ function prefetchHandler(metadata, response) {
 }
 
 var prefetchListener = {
-  onStartRequest: function(request, ctx) {
+  onStartRequest: function(request) {
     Assert.equal(request.status, Cr.NS_OK);
   },
 
-  onDataAvailable: function(request, cx, stream, offset, cnt) {
+  onDataAvailable: function(request, stream, offset, cnt) {
     read_stream(stream, cnt);
   },
 
-  onStopRequest: function(request, ctx, status) {
+  onStopRequest: function(request, status) {
     run_next_test();
   }
 };
@@ -504,7 +504,7 @@ function test_prefetch_prime() {
     }).QueryInterface(Ci.nsIHttpChannel);
     channel.requestMethod = "GET";
     channel.referrer = prefetch_tluri;
-    channel.asyncOpen2(prefetchListener);
+    channel.asyncOpen(prefetchListener);
   });
 }
 

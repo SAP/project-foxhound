@@ -151,7 +151,8 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "xpinstall.enabled": false,
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr": false,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
     },
   },
 
@@ -226,13 +227,45 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: CaptivePortal
+  {
+    policies: {
+      "CaptivePortal": false,
+    },
+    lockedPrefs: {
+      "network.captive-portal-service.enabled": false,
+    },
+  },
+
+  // POLICY: NetworkPrediction
+  {
+    policies: {
+      "NetworkPrediction": false,
+    },
+    lockedPrefs: {
+      "network.dns.disablePrefetch": true,
+      "network.dns.disablePrefetchFromHTTPS": true,
+    },
+  },
+
+  // POLICY: ExtensionUpdate
+  {
+    policies: {
+      "ExtensionUpdate": false,
+    },
+    lockedPrefs: {
+      "extensions.update.enabled": false,
+    },
+  },
+
   // POLICY: DisableShield
   {
     policies: {
       "DisableFirefoxStudies": true,
     },
     lockedPrefs: {
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr": false,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
     },
   },
 ];

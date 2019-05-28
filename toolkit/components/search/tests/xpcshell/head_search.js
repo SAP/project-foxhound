@@ -1,19 +1,27 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et: */
 
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://testing-common/AppInfo.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.defineModuleGetter(this, "TestUtils",
-                               "resource://testing-common/TestUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "NetUtil",
-                               "resource://gre/modules/NetUtil.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.jsm",
+  NetUtil: "resource://gre/modules/NetUtil.jsm",
+  RemoteSettings: "resource://services-settings/remote-settings.js",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+  TestUtils: "resource://testing-common/TestUtils.jsm",
+});
+
+var {OS, require} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+var {getAppInfo, newAppInfo, updateAppInfo} = ChromeUtils.import("resource://testing-common/AppInfo.jsm");
+var {HTTP_400, HTTP_401, HTTP_402, HTTP_403, HTTP_404, HTTP_405, HTTP_406, HTTP_407,
+     HTTP_408, HTTP_409, HTTP_410, HTTP_411, HTTP_412, HTTP_413, HTTP_414, HTTP_415,
+     HTTP_417, HTTP_500, HTTP_501, HTTP_502, HTTP_503, HTTP_504, HTTP_505, HttpError,
+     HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
 
 const BROWSER_SEARCH_PREF = "browser.search.";
+const PREF_SEARCH_URL = "geoSpecificDefaults.url";
 const NS_APP_SEARCH_DIR = "SrchPlugns";
 
 const MODE_RDONLY = FileUtils.MODE_RDONLY;
@@ -136,12 +144,10 @@ function installDistributionEngine() {
   });
 }
 
-function promiseCacheData() {
-  return new Promise(resolve => (async function() {
-    let path = OS.Path.join(OS.Constants.Path.profileDir, CACHE_FILENAME);
-    let bytes = await OS.File.read(path, {compression: "lz4"});
-    resolve(JSON.parse(new TextDecoder().decode(bytes)));
-  })());
+async function promiseCacheData() {
+  let path = OS.Path.join(OS.Constants.Path.profileDir, CACHE_FILENAME);
+  let bytes = await OS.File.read(path, {compression: "lz4"});
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 function promiseSaveCacheData(data) {
@@ -150,40 +156,32 @@ function promiseSaveCacheData(data) {
                              {compression: "lz4"});
 }
 
-function promiseEngineMetadata() {
-  return new Promise(resolve => (async function() {
-    let cache = await promiseCacheData();
-    let data = {};
-    for (let engine of cache.engines) {
-      data[engine._shortName] = engine._metaData;
-    }
-    resolve(data);
-  })());
+async function promiseEngineMetadata() {
+  let cache = await promiseCacheData();
+  let data = {};
+  for (let engine of cache.engines) {
+    data[engine._shortName] = engine._metaData;
+  }
+  return data;
 }
 
-function promiseGlobalMetadata() {
-  return new Promise(resolve => (async function() {
-    let cache = await promiseCacheData();
-    resolve(cache.metaData);
-  })());
+async function promiseGlobalMetadata() {
+  return (await promiseCacheData()).metaData;
 }
 
-function promiseSaveGlobalMetadata(globalData) {
-  return new Promise(resolve => (async function() {
-    let data = await promiseCacheData();
-    data.metaData = globalData;
-    await promiseSaveCacheData(data);
-    resolve();
-  })());
+async function promiseSaveGlobalMetadata(globalData) {
+  let data = await promiseCacheData();
+  data.metaData = globalData;
+  await promiseSaveCacheData(data);
 }
 
-var forceExpiration = async function() {
+async function forceExpiration() {
   let metadata = await promiseGlobalMetadata();
 
   // Make the current geodefaults expire 1s ago.
   metadata.searchDefaultExpir = Date.now() - 1000;
   await promiseSaveGlobalMetadata(metadata);
-};
+}
 
 /**
  * Clean the profile of any cache file left from a previous run.
@@ -229,7 +227,7 @@ function getDefaultEngineName(isUS) {
     uri: "resource://search-plugins/list.json",
     loadUsingSystemPrincipal: true,
   });
-  let searchSettings = parseJsonFromStream(chan.open2());
+  let searchSettings = parseJsonFromStream(chan.open());
   let defaultEngineName = searchSettings.default.searchDefault;
 
   if (isUS === undefined)
@@ -248,7 +246,7 @@ function getDefaultEngineList(isUS) {
     uri: "resource://search-plugins/list.json",
     loadUsingSystemPrincipal: true,
   });
-  let json = parseJsonFromStream(chan.open2());
+  let json = parseJsonFromStream(chan.open());
   let visibleDefaultEngines = json.default.visibleDefaultEngines;
 
   if (isUS === undefined)
@@ -281,7 +279,7 @@ function getDefaultEngineList(isUS) {
  * @return {Promise} Resolved when the cache file is saved.
  */
 function promiseAfterCache() {
-  return waitForSearchNotification("write-cache-to-disk-complete");
+  return SearchTestUtils.promiseSearchNotification("write-cache-to-disk-complete");
 }
 
 function parseJsonFromStream(aInputStream) {
@@ -363,6 +361,79 @@ function useHttpServer() {
   return httpServer;
 }
 
+async function withGeoServer(testFn, {cohort = null, intval200 = 86400 * 365,
+                                      intval503 = 86400, delay = 0, path = "lookup_defaults"} = {}) {
+  let srv = new HttpServer();
+  let gRequests = [];
+  srv.registerPathHandler("/lookup_defaults", (metadata, response) => {
+    let data = {
+      interval: intval200,
+      settings: {searchDefault: kTestEngineName},
+    };
+    if (cohort)
+      data.cohort = cohort;
+    response.processAsync();
+    setTimeout(() => {
+      response.setStatusLine("1.1", 200, "OK");
+      response.write(JSON.stringify(data));
+      response.finish();
+      gRequests.push(metadata);
+    }, delay);
+  });
+
+  srv.registerPathHandler("/lookup_fail", (metadata, response) => {
+    response.processAsync();
+    setTimeout(() => {
+      response.setStatusLine("1.1", 404, "Not Found");
+      response.finish();
+      gRequests.push(metadata);
+    }, delay);
+  });
+
+  srv.registerPathHandler("/lookup_unavailable", (metadata, response) => {
+    response.processAsync();
+    setTimeout(() => {
+      response.setStatusLine("1.1", 503, "Service Unavailable");
+      response.setHeader("Retry-After", intval503.toString());
+      response.finish();
+      gRequests.push(metadata);
+    }, delay);
+  });
+
+  srv.start(-1);
+
+  let url = `http://localhost:${srv.identity.primaryPort}/${path}?`;
+  let defaultBranch = Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF);
+  let originalURL = defaultBranch.getCharPref(PREF_SEARCH_URL);
+  defaultBranch.setCharPref(PREF_SEARCH_URL, url);
+  // Set a bogus user value so that running the test ensures we ignore it.
+  Services.prefs.setCharPref(BROWSER_SEARCH_PREF + PREF_SEARCH_URL, "about:blank");
+  Services.prefs.setCharPref("browser.search.geoip.url",
+                             'data:application/json,{"country_code": "FR"}');
+
+  try {
+    await testFn(gRequests);
+  } catch (ex) {
+    throw ex;
+  } finally {
+    srv.stop(() => {});
+    defaultBranch.setCharPref(PREF_SEARCH_URL, originalURL);
+    Services.prefs.clearUserPref(BROWSER_SEARCH_PREF + PREF_SEARCH_URL);
+    Services.prefs.clearUserPref("browser.search.geoip.url");
+  }
+}
+
+function checkNoRequest(requests) {
+  Assert.equal(requests.length, 0);
+}
+
+function checkRequest(requests, cohort = "") {
+  Assert.equal(requests.length, 1);
+  let req = requests.pop();
+  Assert.equal(req._method, "GET");
+  Assert.equal(req._queryString, cohort ? "/" + cohort : "");
+}
+
 /**
  * Adds test engines and returns a promise resolved when they are installed.
  *
@@ -424,43 +495,21 @@ function installTestEngine() {
   ]);
 }
 
-/**
- * Returns a promise that is resolved when an observer notification from the
- * search service fires with the specified data.
- *
- * @param aExpectedData
- *        The value the observer notification sends that causes us to resolve
- *        the promise.
- */
-function waitForSearchNotification(aExpectedData) {
-  return new Promise(resolve => {
-    const SEARCH_SERVICE_TOPIC = "browser-search-service";
-    Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
-      if (aData != aExpectedData)
-        return;
-
-      Services.obs.removeObserver(observer, SEARCH_SERVICE_TOPIC);
-      resolve(aSubject);
-    }, SEARCH_SERVICE_TOPIC);
-  });
+async function asyncInit() {
+  await Services.search.init();
+  Assert.ok(Services.search.isInitialized);
 }
 
-function asyncInit() {
-  return new Promise(resolve => {
-    Services.search.init(function() {
-      Assert.ok(Services.search.isInitialized);
-      resolve();
-    });
-  });
-}
-
-function asyncReInit() {
-  let promise = waitForSearchNotification("reinit-complete");
+async function asyncReInit({ waitForRegionFetch = false } = {}) {
+  let promises = [SearchTestUtils.promiseSearchNotification("reinit-complete")];
+  if (waitForRegionFetch) {
+    promises.push(SearchTestUtils.promiseSearchNotification("ensure-known-region-done"));
+  }
 
   Services.search.QueryInterface(Ci.nsIObserver)
-          .observe(null, TOPIC_LOCALES_CHANGE, null);
+          .observe(null, TOPIC_LOCALES_CHANGE, "test");
 
-  return promise;
+  await Promise.all(promises);
 }
 
 // This "enum" from nsSearchService.js
@@ -488,3 +537,37 @@ function checkCountryResultTelemetry(aExpectedValue) {
     deepEqual(snapshot.values, {});
   }
 }
+
+/**
+ * Provides a basic set of remote settings for use in tests.
+ */
+async function setupRemoteSettings() {
+  const collection = await RemoteSettings("hijack-blocklists").openCollection();
+  await collection.clear();
+  await collection.create({
+    "id": "submission-urls",
+    "matches": [
+      "ignore=true",
+    ],
+  }, { synced: true });
+  await collection.create({
+    "id": "load-paths",
+    "matches": [
+      "[other]addEngineWithDetails:searchignore@mozilla.com",
+    ],
+  }, { synced: true });
+  await collection.db.saveLastModified(42);
+}
+
+/**
+ * Some tests might trigger initialisation which will trigger the search settings
+ * update. We need to make sure we wait for that to finish before we exit, otherwise
+ * it may cause shutdown issues.
+ */
+let updatePromise = SearchTestUtils.promiseSearchNotification("settings-update-complete");
+
+registerCleanupFunction(async () => {
+  if (!isChild && Services.search.isInitialized) {
+    await updatePromise;
+  }
+});

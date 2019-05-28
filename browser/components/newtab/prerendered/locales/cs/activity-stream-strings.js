@@ -53,7 +53,7 @@ window.gActivityStreamStrings = {
   "prefs_highlights_options_visited_label": "Navštívené stránky",
   "prefs_highlights_options_download_label": "Nedávná stahování",
   "prefs_highlights_options_pocket_label": "Stránky uložené do služby Pocket",
-  "prefs_snippets_description": "Informace od Mozilly a o Firefoxu",
+  "prefs_snippets_description": "Aktuální informace od Mozilly a Firefoxu",
   "settings_pane_button_label": "Přizpůsobení stránky nového panelu",
   "settings_pane_topsites_header": "Top stránky",
   "settings_pane_highlights_header": "Vybrané",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Ukládejte si články do služby Pocket a užívejte si skvělé čtení.",
   "highlights_empty_state": "Začněte prohlížet a my vám zde ukážeme některé skvělé články, videa a další stránky, které jste nedávno viděli nebo uložili do záložek.",
   "topstories_empty_state": "Už jste všechno přečetli. Další články ze služby {provider} tu najdete zase později. Ale pokud se nemůžete dočkat, vyberte své oblíbené téma a podívejte se na další velké články z celého webu.",
-  "manual_migration_explanation2": "Vyzkoušejte Firefox se záložkami, historií a hesly z jiného vašeho prohlížeče.",
-  "manual_migration_cancel_button": "Ne, děkuji",
-  "manual_migration_import_button": "Importovat nyní",
   "error_fallback_default_info": "Jejda, při načítání tohoto obsahu se něco pokazilo.",
   "error_fallback_default_refresh_suggestion": "Obnovte prosím stránku a zkuste to znovu.",
   "section_menu_action_remove_section": "Odebrat sekci",
@@ -100,7 +97,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_privacy_notice": "Zásady ochrany osobních údajů",
   "firstrun_title": "Vezměte si Firefox s sebou",
   "firstrun_content": "Mějte své záložky, historii i uložená hesla s sebou na všech svých zařízeních.",
-  "firstrun_learn_more_link": "Zjistěte více o účtech Firefoxu",
+  "firstrun_learn_more_link": "Zjistit více o účtech Firefoxu",
   "firstrun_form_header": "Zadejte svoji e-mailovou adresu",
   "firstrun_form_sub_header": "a používejte službu Firefox Sync.",
   "firstrun_email_input_placeholder": "E-mail",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Zásadami ochrany osobních údajů",
   "firstrun_continue_to_login": "Pokračovat",
   "firstrun_skip_login": "Přeskočit tento krok",
-  "context_menu_title": "Otevře nabídku"
+  "context_menu_title": "Otevře nabídku",
+  "manual_migration_explanation2": "Vyzkoušejte Firefox se záložkami, historií a hesly z jiného vašeho prohlížeče.",
+  "manual_migration_cancel_button": "Ne, děkuji",
+  "manual_migration_import_button": "Importovat nyní"
 };

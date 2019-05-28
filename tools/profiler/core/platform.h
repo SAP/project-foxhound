@@ -29,29 +29,26 @@
 #ifndef TOOLS_PLATFORM_H_
 #define TOOLS_PLATFORM_H_
 
-#include <stdint.h>
-#include <math.h>
-#include "MainThreadUtils.h"
-#include "ThreadResponsiveness.h"
-#include "mozilla/Logging.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/StaticMutex.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "PlatformMacros.h"
-#include <vector>
 
-// We need a definition of gettid(), but glibc doesn't provide a
+#include "mozilla/Logging.h"
+#include "mozilla/UniquePtr.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+
+#include <functional>
+#include <stdint.h>
+
+// We need a definition of gettid(), but old glibc versions don't provide a
 // wrapper for it.
 #if defined(__GLIBC__)
 #  include <unistd.h>
 #  include <sys/syscall.h>
-static inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
+#  define gettid() static_cast<pid_t>(syscall(SYS_gettid))
 #elif defined(GP_OS_darwin)
 #  include <unistd.h>
 #  include <sys/syscall.h>
-static inline pid_t gettid() { return (pid_t)syscall(SYS_thread_selfid); }
+#  define gettid() static_cast<pid_t>(syscall(SYS_thread_selfid))
 #elif defined(GP_OS_android)
 #  include <unistd.h>
 #elif defined(GP_OS_windows)
@@ -116,11 +113,22 @@ void AppendSharedLibraries(mozilla::JSONWriter& aWriter);
 uint32_t ParseFeaturesFromStringArray(const char** aFeatures,
                                       uint32_t aFeatureCount);
 
+void profiler_get_profile_json_into_lazily_allocated_buffer(
+    const std::function<char*(size_t)>& aAllocator, double aSinceTime,
+    bool aIsShuttingDown);
+
 // Flags to conveniently track various JS features.
 enum class JSSamplingFlags {
   StackSampling = 0x1,
   TrackOptimizations = 0x2,
   TraceLogging = 0x4
 };
+
+// Record an exit profile from a child process.
+void profiler_received_exit_profile(const nsCString& aExitProfile);
+
+// Extract all received exit profiles that have not yet expired (i.e., they
+// still intersect with this process' buffer range).
+nsTArray<nsCString> profiler_move_exit_profiles();
 
 #endif /* ndef TOOLS_PLATFORM_H_ */

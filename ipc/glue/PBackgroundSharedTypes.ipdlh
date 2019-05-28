@@ -30,7 +30,12 @@ struct ContentPrincipalInfo
 
   nsCString spec;
 
+  nsCString? domain;
+
   ContentSecurityPolicy[] securityPolicies;
+
+  // Like originNoSuffix, baseDomain is used out of the main-thread.
+  nsCString baseDomain;
 };
 
 struct SystemPrincipalInfo
@@ -54,12 +59,6 @@ union PrincipalInfo
   SystemPrincipalInfo;
   NullPrincipalInfo;
   ExpandedPrincipalInfo;
-};
-
-union OptionalPrincipalInfo
-{
-  void_t;
-  PrincipalInfo;
 };
 
 } // namespace ipc

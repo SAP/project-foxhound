@@ -99,7 +99,7 @@
 #include "mozilla/Preferences.h"
 #include "nsIStyleSheetService.h"
 #include "nsContentPermissionHelper.h"
-#include "nsCSSPseudoElements.h"  // for CSSPseudoElementType
+#include "nsCSSPseudoElements.h"  // for PseudoStyleType
 #include "nsNetUtil.h"
 #include "HTMLImageElement.h"
 #include "HTMLCanvasElement.h"
@@ -183,7 +183,8 @@ NativeInputRunnable::NativeInputRunnable(already_AddRefed<nsIRunnable>&& aEvent)
     : PrioritizableRunnable(std::move(aEvent),
                             nsIRunnablePriority::PRIORITY_INPUT) {}
 
-/* static */ already_AddRefed<nsIRunnable> NativeInputRunnable::Create(
+/* static */
+already_AddRefed<nsIRunnable> NativeInputRunnable::Create(
     already_AddRefed<nsIRunnable>&& aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIRunnable> event(new NativeInputRunnable(std::move(aEvent)));
@@ -434,10 +435,18 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
     return NS_ERROR_INVALID_ARG;
   }
 
-  DisplayPortPropertyData* currentData = static_cast<DisplayPortPropertyData*>(
-      aElement->GetProperty(nsGkAtoms::DisplayPort));
-  if (currentData && currentData->mPriority > aPriority) {
-    return NS_OK;
+  bool hadDisplayPort = false;
+  nsRect oldDisplayPort;
+  {
+    DisplayPortPropertyData* currentData = static_cast<DisplayPortPropertyData*>(
+        aElement->GetProperty(nsGkAtoms::DisplayPort));
+    if (currentData) {
+      if (currentData->mPriority > aPriority) {
+        return NS_OK;
+      }
+      hadDisplayPort = true;
+      oldDisplayPort = currentData->mRect;
+    }
   }
 
   nsRect displayport(nsPresContext::CSSPixelsToAppUnits(aXPx),
@@ -460,8 +469,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
   }
 
   nsLayoutUtils::InvalidateForDisplayPortChange(
-      aElement, !!currentData, currentData ? currentData->mRect : nsRect(),
-      displayport);
+      aElement, hadDisplayPort, oldDisplayPort, displayport);
 
   nsIFrame* rootFrame = presShell->GetRootFrame();
   if (rootFrame) {
@@ -1196,14 +1204,9 @@ nsDOMWindowUtils::GetTranslationNodes(nsINode* aRoot,
       if (child->IsText() && child->GetAsText()->HasTextForTranslation()) {
         translationNodesHash.PutEntry(content);
 
-        bool isBlockFrame = false;
         nsIFrame* frame = content->GetPrimaryFrame();
-        if (frame) {
-          isBlockFrame = frame->IsFrameOfType(nsIFrame::eBlockFrame);
-        }
-
-        bool isTranslationRoot = isBlockFrame;
-        if (!isBlockFrame) {
+        bool isTranslationRoot = frame && frame->IsBlockFrameOrSubclass();
+        if (!isTranslationRoot) {
           // If an element is not a block element, it still
           // can be considered a translation root if the parent
           // of this element didn't make into the list of nodes
@@ -1395,7 +1398,8 @@ nsDOMWindowUtils::GetScrollXYFloat(bool aFlushLayout, float* aScrollX,
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY) {
+nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY,
+                                 int32_t aUpdateType) {
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
@@ -1405,12 +1409,20 @@ nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY) {
   // This should only be called on the root content document.
   NS_ENSURE_TRUE(presContext->IsRootContentDocument(), NS_ERROR_INVALID_ARG);
 
-  // Use |eRestore| as the priority for now, as it's the conservative choice.
-  // If a JS call site needs higher priority, we can expose the update type
-  // as a parameter.
+  FrameMetrics::ScrollOffsetUpdateType updateType;
+  switch (aUpdateType) {
+    case UPDATE_TYPE_RESTORE:
+      updateType = FrameMetrics::eRestore;
+      break;
+    case UPDATE_TYPE_MAIN_THREAD:
+      updateType = FrameMetrics::eMainThread;
+      break;
+    default:
+      return NS_ERROR_INVALID_ARG;
+  }
+
   presContext->PresShell()->SetPendingVisualScrollUpdate(
-      CSSPoint::ToAppUnits(CSSPoint(aOffsetX, aOffsetY)),
-      FrameMetrics::eRestore);
+      CSSPoint::ToAppUnits(CSSPoint(aOffsetX, aOffsetY)), updateType);
 
   return NS_OK;
 }
@@ -3451,7 +3463,8 @@ nsDOMWindowUtils::GetOMTCTransform(Element* aElement,
   }
 
   DisplayItemType itemType = DisplayItemType::TYPE_TRANSFORM;
-  if (nsLayoutUtils::HasEffectiveAnimation(frame, eCSSProperty_opacity) &&
+  if (nsLayoutUtils::HasEffectiveAnimation(
+          frame, nsCSSPropertyIDSet::OpacityProperties()) &&
       !frame->IsTransformed()) {
     itemType = DisplayItemType::TYPE_OPACITY;
   }
@@ -3626,7 +3639,8 @@ nsDOMWindowUtils::PostRestyleSelfEvent(Element* aElement) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsLayoutUtils::PostRestyleEvent(aElement, eRestyle_Self, nsChangeHint(0));
+  nsLayoutUtils::PostRestyleEvent(aElement, StyleRestyleHint_RESTYLE_SELF,
+                                  nsChangeHint(0));
   return NS_OK;
 }
 

@@ -3,24 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {NewTabUtils} = ChromeUtils.import("resource://gre/modules/NewTabUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
-ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "perfService", "resource://activity-stream/common/PerfService.jsm");
 
-const {actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
-const {PersistentCache} = ChromeUtils.import("resource://activity-stream/lib/PersistentCache.jsm", {});
+const {actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
+const {PersistentCache} = ChromeUtils.import("resource://activity-stream/lib/PersistentCache.jsm");
 
 const CACHE_KEY = "discovery_stream";
 const LAYOUT_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const STARTUP_CACHE_EXPIRE_TIME = 7 * 24 * 60 * 60 * 1000; // 1 week
 const COMPONENT_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const SPOCS_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
-const CONFIG_PREF_NAME = "browser.newtabpage.activity-stream.discoverystream.config";
-const SPOC_IMPRESSION_TRACKING_PREF = "browser.newtabpage.activity-stream.discoverystream.spoc.impressions";
-const REC_IMPRESSION_TRACKING_PREF = "browser.newtabpage.activity-stream.discoverystream.rec.impressions";
 const DEFAULT_RECS_EXPIRE_TIME = 60 * 60 * 1000; // 1 hour
 const MAX_LIFETIME_CAP = 500; // Guard against misconfiguration on the server
+const PREF_CONFIG = "discoverystream.config";
+const PREF_ENDPOINTS = "discoverystream.endpoints";
+const PREF_OPT_OUT = "discoverystream.optOut.0";
+const PREF_SHOW_SPONSORED = "showSponsored";
+const PREF_SPOC_IMPRESSIONS = "discoverystream.spoc.impressions";
+const PREF_REC_IMPRESSIONS = "discoverystream.rec.impressions";
 
 this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   constructor() {
@@ -45,45 +49,39 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       return this._prefCache.config;
     }
     try {
-      this._prefCache.config = JSON.parse(Services.prefs.getStringPref(CONFIG_PREF_NAME, ""));
+      this._prefCache.config = JSON.parse(this.store.getState().Prefs.values[PREF_CONFIG]);
       const layoutUrl = this._prefCache.config.layout_endpoint;
       const apiKeyPref = this._prefCache.config.api_key_pref;
       if (layoutUrl && apiKeyPref) {
         const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
         this._prefCache.config.layout_endpoint = this.finalLayoutEndpoint(layoutUrl, apiKey);
       }
+
+      // Modify the cached config with the user set opt-out for other consumers
+      this._prefCache.config.enabled = this._prefCache.config.enabled &&
+        !this.store.getState().Prefs.values[PREF_OPT_OUT];
     } catch (e) {
       // istanbul ignore next
       this._prefCache.config = {};
       // istanbul ignore next
-      Cu.reportError(`Could not parse preference. Try resetting ${CONFIG_PREF_NAME} in about:config. ${e}`);
+      Cu.reportError(`Could not parse preference. Try resetting ${PREF_CONFIG} in about:config. ${e}`);
     }
     return this._prefCache.config;
   }
 
   get showSpocs() {
-    // showSponsored is generally a use set spoc opt out,
-    // show_spocs is generally a mozilla set value.
-    return this.store.getState().Prefs.values.showSponsored && this.config.show_spocs;
+    // Combine user-set sponsored opt-out with Mozilla-set config
+    return this.store.getState().Prefs.values[PREF_SHOW_SPONSORED] && this.config.show_spocs;
   }
 
   setupPrefs() {
-    Services.prefs.addObserver(CONFIG_PREF_NAME, this);
     // Send the initial state of the pref on our reducer
     this.store.dispatch(ac.BroadcastToContent({type: at.DISCOVERY_STREAM_CONFIG_SETUP, data: this.config}));
   }
 
   uninitPrefs() {
-    Services.prefs.removeObserver(CONFIG_PREF_NAME, this);
     // Reset in-memory cache
     this._prefCache = {};
-  }
-
-  observe(aSubject, aTopic, aPrefName) {
-    if (aPrefName === CONFIG_PREF_NAME) {
-      this._prefCache.config = null;
-      this.store.dispatch(ac.BroadcastToContent({type: at.DISCOVERY_STREAM_CONFIG_CHANGE, data: this.config}));
-    }
   }
 
   async fetchFromEndpoint(endpoint) {
@@ -92,17 +90,20 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       return null;
     }
     try {
+      // Make sure the requested endpoint is allowed
+      const allowed = this.store.getState().Prefs.values[PREF_ENDPOINTS].split(",");
+      if (!allowed.some(prefix => endpoint.startsWith(prefix))) {
+        throw new Error(`Not one of allowed prefixes (${allowed})`);
+      }
+
       const response = await fetch(endpoint, {credentials: "omit"});
       if (!response.ok) {
-        // istanbul ignore next
-        throw new Error(`${endpoint} returned unexpected status: ${response.status}`);
+        throw new Error(`Unexpected status (${response.status})`);
       }
       return response.json();
     } catch (error) {
-      // istanbul ignore next
       Cu.reportError(`Failed to fetch ${endpoint}: ${error.message}`);
     }
-    // istanbul ignore next
     return null;
   }
 
@@ -123,7 +124,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     const EXPIRATION_TIME = isStartup ? STARTUP_CACHE_EXPIRE_TIME : updateTimePerComponent[key];
     switch (key) {
       case "layout":
-        return (!layout || !(Date.now() - layout._timestamp < EXPIRATION_TIME));
+        return (!layout || !(Date.now() - layout.lastUpdated < EXPIRATION_TIME));
       case "spocs":
         return (!spocs || !(Date.now() - spocs.lastUpdated < EXPIRATION_TIME));
       case "feed":
@@ -156,32 +157,33 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
   async loadLayout(sendUpdate, isStartup) {
     const cachedData = await this.cache.get() || {};
-    let {layout: layoutResponse} = cachedData;
+    let {layout} = cachedData;
     if (this.isExpired({cachedData, key: "layout", isStartup})) {
       const start = perfService.absNow();
-      layoutResponse = await this.fetchFromEndpoint(this.config.layout_endpoint);
+      const layoutResponse = await this.fetchFromEndpoint(this.config.layout_endpoint);
       if (layoutResponse && layoutResponse.layout) {
         this.layoutRequestTime = Math.round(perfService.absNow() - start);
-        layoutResponse._timestamp = Date.now();
-        await this.cache.set("layout", layoutResponse);
+        layout = {
+          lastUpdated: Date.now(),
+          spocs: layoutResponse.spocs,
+          layout: layoutResponse.layout,
+        };
+        await this.cache.set("layout", layout);
       } else {
         Cu.reportError("No response for response.layout prop");
       }
     }
 
-    if (layoutResponse && layoutResponse.layout) {
+    if (layout && layout.layout) {
       sendUpdate({
         type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
-        data: {
-          layout: layoutResponse.layout,
-          lastUpdated: layoutResponse._timestamp,
-        },
+        data: layout,
       });
     }
-    if (layoutResponse && layoutResponse.spocs && layoutResponse.spocs.url) {
+    if (layout && layout.spocs && layout.spocs.url) {
       sendUpdate({
         type: at.DISCOVERY_STREAM_SPOCS_ENDPOINT,
-        data: layoutResponse.spocs.url,
+        data: layout.spocs.url,
       });
     }
   }
@@ -203,11 +205,9 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         // We initially stub this out so we don't fetch dupes,
         // we then fill in with the proper object inside the promise.
         newFeeds[url] = {};
-
         const feedPromise = this.getComponentFeed(url, isStartup);
-
-        feedPromise.then(data => {
-          newFeeds[url] = data;
+        feedPromise.then(feed => {
+          newFeeds[url] = this.filterRecommendations(feed);
         }).catch(/* istanbul ignore next */ error => {
           Cu.reportError(`Error trying to load component feed ${url}: ${error}`);
         });
@@ -215,6 +215,13 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         newFeedsPromises.push(feedPromise);
       }
     };
+  }
+
+  filterRecommendations(feed) {
+    if (feed && feed.data && feed.data.recommendations && feed.data.recommendations.length) {
+      return {data: this.filterBlocked(feed.data, "recommendations")};
+    }
+    return feed;
   }
 
   /**
@@ -312,16 +319,53 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
       data: {
         lastUpdated: spocs.lastUpdated,
-        spocs: this.filterSpocs(spocs.data),
+        spocs: this.transform(this.frequencyCapSpocs(spocs.data)),
       },
     });
   }
 
+  filterBlocked(data, type) {
+    if (data && data[type] && data[type].length) {
+      const filteredItems = data[type].filter(item => !NewTabUtils.blockedLinks.isBlocked({"url": item.url}));
+      return {
+        ...data,
+        [type]: filteredItems,
+      };
+    }
+    return data;
+  }
+
+  transform(spocs) {
+    const data = this.filterBlocked(spocs, "spocs");
+    if (data && data.spocs && data.spocs.length) {
+      const spocsPerDomain = this.store.getState().DiscoveryStream.spocs.spocs_per_domain || 1;
+      const campaignMap = {};
+      return {
+        ...data,
+        spocs: data.spocs
+          .map(s => ({...s, score: s.item_score}))
+          .filter(s => s.score >= s.min_score)
+          .sort((a, b) => b.score - a.score)
+          .filter(s => {
+            if (!campaignMap[s.campaign_id]) {
+              campaignMap[s.campaign_id] = 1;
+              return true;
+            } else if (campaignMap[s.campaign_id] < spocsPerDomain) {
+              campaignMap[s.campaign_id]++;
+              return true;
+            }
+            return false;
+          }),
+      };
+    }
+    return data;
+  }
+
   // Filter spocs based on frequency caps
-  filterSpocs(data) {
+  frequencyCapSpocs(data) {
     if (data && data.spocs && data.spocs.length) {
       const {spocs} = data;
-      const impressions = this.readImpressionsPref(SPOC_IMPRESSION_TRACKING_PREF);
+      const impressions = this.readImpressionsPref(PREF_SPOC_IMPRESSIONS);
       return {
         ...data,
         spocs: spocs.filter(s => this.isBelowFrequencyCap(impressions, s)),
@@ -439,7 +483,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     const {recommendations} = feedResponse;
 
     const maxImpressionAge = Math.max(feedResponse.settings.recsExpireTime * 1000 || DEFAULT_RECS_EXPIRE_TIME, DEFAULT_RECS_EXPIRE_TIME);
-    const impressions = this.readImpressionsPref(REC_IMPRESSION_TRACKING_PREF);
+    const impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
     const expired = [];
     const active = [];
     for (const item of recommendations) {
@@ -461,9 +505,9 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     let cacheAge = Date.now();
     let updated = false;
 
-    if (layout && layout._timestamp && layout._timestamp < cacheAge) {
+    if (layout && layout.lastUpdated && layout.lastUpdated < cacheAge) {
       updated = true;
-      cacheAge = layout._timestamp;
+      cacheAge = layout.lastUpdated;
     }
 
     if (spocs && spocs.lastUpdated && spocs.lastUpdated < cacheAge) {
@@ -554,8 +598,8 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   clearImpressionPrefs() {
-    this.writeImpressionsPref(SPOC_IMPRESSION_TRACKING_PREF, {});
-    this.writeImpressionsPref(REC_IMPRESSION_TRACKING_PREF, {});
+    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, {});
+    this.writeImpressionsPref(PREF_REC_IMPRESSIONS, {});
   }
 
   async onPrefChange() {
@@ -574,27 +618,27 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   recordCampaignImpression(campaignId) {
-    let impressions = this.readImpressionsPref(SPOC_IMPRESSION_TRACKING_PREF);
+    let impressions = this.readImpressionsPref(PREF_SPOC_IMPRESSIONS);
 
     const timeStamps = impressions[campaignId] || [];
     timeStamps.push(Date.now());
     impressions = {...impressions, [campaignId]: timeStamps};
 
-    this.writeImpressionsPref(SPOC_IMPRESSION_TRACKING_PREF, impressions);
+    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, impressions);
   }
 
   recordTopRecImpressions(recId) {
-    let impressions = this.readImpressionsPref(REC_IMPRESSION_TRACKING_PREF);
+    let impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
     if (!impressions[recId]) {
       impressions = {...impressions, [recId]: Date.now()};
-      this.writeImpressionsPref(REC_IMPRESSION_TRACKING_PREF, impressions);
+      this.writeImpressionsPref(PREF_REC_IMPRESSIONS, impressions);
     }
   }
 
   cleanUpCampaignImpressionPref(data) {
     if (data.spocs && data.spocs.length) {
       const campaignIds = data.spocs.map(s => `${s.campaign_id}`);
-      this.cleanUpImpressionPref(id => !campaignIds.includes(id), SPOC_IMPRESSION_TRACKING_PREF);
+      this.cleanUpImpressionPref(id => !campaignIds.includes(id), PREF_SPOC_IMPRESSIONS);
     }
   }
 
@@ -606,15 +650,15 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       const {recommendations} = newFeeds[currentValue].data;
       return accumulator.concat(recommendations.map(i => `${i.id}`));
     }, []);
-    this.cleanUpImpressionPref(id => !activeStories.includes(id), REC_IMPRESSION_TRACKING_PREF);
+    this.cleanUpImpressionPref(id => !activeStories.includes(id), PREF_REC_IMPRESSIONS);
   }
 
   writeImpressionsPref(pref, impressions) {
-    Services.prefs.setStringPref(pref, JSON.stringify(impressions));
+    this.store.dispatch(ac.SetPref(pref, JSON.stringify(impressions)));
   }
 
   readImpressionsPref(pref) {
-    const prefVal = Services.prefs.getStringPref(pref, "");
+    const prefVal = this.store.getState().Prefs.values[pref];
     return prefVal ? JSON.parse(prefVal) : {};
   }
 
@@ -654,11 +698,24 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         }
         break;
       case at.DISCOVERY_STREAM_CONFIG_SET_VALUE:
-        Services.prefs.setStringPref(CONFIG_PREF_NAME, JSON.stringify({...this.config, [action.data.name]: action.data.value}));
+        // Disable opt-out if we're explicitly trying to enable
+        if (action.data.name === "enabled" && action.data.value) {
+          this.store.dispatch(ac.SetPref(PREF_OPT_OUT, false));
+        }
+
+        // Use the original string pref to then set a value instead of
+        // this.config which has some modifications
+        this.store.dispatch(ac.SetPref(PREF_CONFIG, JSON.stringify({
+          ...JSON.parse(this.store.getState().Prefs.values[PREF_CONFIG]),
+          [action.data.name]: action.data.value,
+        })));
         break;
       case at.DISCOVERY_STREAM_CONFIG_CHANGE:
         // When the config pref changes, load or unload data as needed.
         await this.onPrefChange();
+        break;
+      case at.DISCOVERY_STREAM_OPT_OUT:
+        this.store.dispatch(ac.SetPref(PREF_OPT_OUT, true));
         break;
       case at.DISCOVERY_STREAM_IMPRESSION_STATS:
         if (action.data.tiles && action.data.tiles[0] && action.data.tiles[0].id) {
@@ -676,7 +733,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
             type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
             data: {
               lastUpdated: spocs.lastUpdated,
-              spocs: this.filterSpocs(spocs.data),
+              spocs: this.transform(this.frequencyCapSpocs(spocs.data)),
             },
           }));
         }
@@ -686,9 +743,20 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         this.uninitPrefs();
         break;
       case at.PREF_CHANGED:
-        // Check if spocs was disabled. Remove them if they were.
-        if (action.data.name === "showSponsored") {
-          await this.loadSpocs(update => this.store.dispatch(ac.BroadcastToContent(update)));
+        switch (action.data.name) {
+          case PREF_CONFIG:
+          case PREF_OPT_OUT:
+            // Clear the cached config and broadcast the newly computed value
+            this._prefCache.config = null;
+            this.store.dispatch(ac.BroadcastToContent({
+              type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
+              data: this.config,
+            }));
+            break;
+          // Check if spocs was disabled. Remove them if they were.
+          case PREF_SHOW_SPONSORED:
+            await this.loadSpocs(update => this.store.dispatch(ac.BroadcastToContent(update)));
+            break;
         }
         break;
     }

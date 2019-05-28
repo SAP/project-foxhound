@@ -4,7 +4,7 @@
 "use strict";
 
 const {ChromeMigrationUtils} =
-  ChromeUtils.import("resource:///modules/ChromeMigrationUtils.jsm", null);
+  ChromeUtils.import("resource:///modules/ChromeMigrationUtils.jsm");
 
 const SOURCE_PROFILE_DIR = "Library/Application Support/Google/Chrome/Default/";
 

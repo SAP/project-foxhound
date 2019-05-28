@@ -21,12 +21,14 @@ using mozilla::dom::Document;
 using mozilla::dom::Element;
 using mozilla::dom::HTMLInputElement;
 
-nsColorControlFrame::nsColorControlFrame(ComputedStyle* aStyle)
-    : nsHTMLButtonControlFrame(aStyle, kClassID) {}
+nsColorControlFrame::nsColorControlFrame(ComputedStyle* aStyle,
+                                         nsPresContext* aPresContext)
+    : nsHTMLButtonControlFrame(aStyle, aPresContext, kClassID) {}
 
 nsIFrame* NS_NewColorControlFrame(nsIPresShell* aPresShell,
                                   ComputedStyle* aStyle) {
-  return new (aPresShell) nsColorControlFrame(aStyle);
+  return new (aPresShell)
+      nsColorControlFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsColorControlFrame)
@@ -55,7 +57,7 @@ nsresult nsColorControlFrame::CreateAnonymousContent(
     nsTArray<ContentInfo>& aElements) {
   RefPtr<Document> doc = mContent->GetComposedDoc();
   mColorContent = doc->CreateHTMLElement(nsGkAtoms::div);
-  mColorContent->SetPseudoElementType(CSSPseudoElementType::mozColorSwatch);
+  mColorContent->SetPseudoElementType(PseudoStyleType::mozColorSwatch);
 
   // Mark the element to be native anonymous before setting any attributes.
   mColorContent->SetIsNativeAnonymousRoot();

@@ -106,31 +106,6 @@ module.exports = {
       "strict": "off",
     }
   }, {
-    "files": [
-      // Note: Bug 1403938 may be removing canvasdebugger, check before
-      // doing more work on enabling these rules.
-      "client/canvasdebugger/**",
-      // Note: Bug 1342237 may be removing shadereditor, check before
-      // doing more work on enabling these rules.
-      "client/shadereditor/**",
-      // Note: Bug 1403944 may be removing webaudioeditor, check before
-      // doing more work on enabling these rules.
-      "client/webaudioeditor/**",
-    ],
-    "rules": {
-      "consistent-return": "off",
-      "max-len": "off",
-      "mozilla/no-aArgs": "off",
-      "mozilla/var-only-at-top-level": "off",
-      "no-redeclare": "off",
-      "no-return-assign": "off",
-      "no-shadow": "off",
-      "no-undef": "off",
-      "no-unused-vars": "off",
-      "no-useless-call": "off",
-      "strict": "off",
-    }
-  }, {
     // For all head*.js files, turn off no-unused-vars at a global level
     "files": [
       "**/head*.js",
@@ -178,7 +153,6 @@ module.exports = {
 
     // Rules from the mozilla plugin
     "mozilla/no-aArgs": "error",
-    "mozilla/no-single-arg-cu-import": "error",
     // See bug 1224289.
     "mozilla/reject-importGlobalProperties": ["error", "everything"],
     // devtools/shared/platform is special; see the README.md in that
@@ -379,8 +353,6 @@ module.exports = {
     "object-shorthand": "off",
     // Allow more than one variable declaration per function.
     "one-var": "off",
-    // Disallow padding within blocks.
-    "padded-blocks": ["error", "never"],
     // Enforce using `let` only when variables are reassigned.
     "prefer-const": ["error", { "destructuring": "all" }],
     // Don't require quotes around object literal property names.

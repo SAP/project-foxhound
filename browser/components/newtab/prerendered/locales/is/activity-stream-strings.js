@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Allt í lagi, ég skil",
   "prefs_home_header": "Upphafssíða Firefox",
   "prefs_home_description": "Veldu hvaða efni þú vilt á Firefox heimaskjánum þínum.",
-  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_header": "Upphafssíða Firefox",
   "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_button": "Slökkva á efnisveitu",
   "prefs_section_rows_option": "{num} röð;{num} raðir",
   "prefs_search_header": "Vefleit",
   "prefs_topsites_description": "Mest heimsóttu vefsíður",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Vistaðu sögurnar sem þú elskar í Pocket og fáðu innblástur í huga þinn með heillandi lesningu.",
   "highlights_empty_state": "Byrjaðu að vafra og við sýnum þér frábærar greinar, myndbönd og önnur vefsvæði sem þú hefur nýverið heimsótt eða bókarmerkt.",
   "topstories_empty_state": "Þú hefur lesið allt. Athugaðu aftur síðar eftir fleiri fréttum frá {provider}. Geturðu ekki beðið? Veldu vinsælt umfjöllunarefni til að finna fleiri áhugaverðar greinar hvaðanæva að af vefnum.",
-  "manual_migration_explanation2": "Reyndu Firefox með bókamerkjum, sögu og lykilorðum úr öðrum vafra.",
-  "manual_migration_cancel_button": "Nei takk",
-  "manual_migration_import_button": "Yfirfæra núna",
   "error_fallback_default_info": "Úbbs, eitthvað fór úrskeiðis við að hlaða þessu efni inn.",
   "error_fallback_default_refresh_suggestion": "Endurhlaðið síðu til að reyna aftur.",
   "section_menu_action_remove_section": "Fjarlægja kafla",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Tilkynning um friðhelgi",
   "firstrun_continue_to_login": "Áfram",
   "firstrun_skip_login": "Sleppa þessu skrefi",
-  "context_menu_title": "Opna valmynd"
+  "context_menu_title": "Opna valmynd",
+  "manual_migration_explanation2": "Reyndu Firefox með bókamerkjum, sögu og lykilorðum úr öðrum vafra.",
+  "manual_migration_cancel_button": "Nei takk",
+  "manual_migration_import_button": "Yfirfæra núna"
 };

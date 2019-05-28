@@ -6,8 +6,6 @@
 
 "use strict";
 
-// To disable all Web Replay tests, see browser.ini
-
 // Basic test for saving a recording and then replaying it in a new tab.
 add_task(async function() {
   const recordingFile = newRecordingFile();
@@ -27,16 +25,18 @@ add_task(async function() {
   gBrowser.selectedTab = replayingTab;
   await once(Services.ppmm, "HitRecordingEndpoint");
 
-  const toolbox = await attachDebugger(replayingTab), client = toolbox.threadClient;
+  const { target, toolbox } = await attachDebugger(replayingTab);
+  const client = toolbox.threadClient;
   await client.interrupt();
-  await setBreakpoint(client, "doc_rr_basic.html", 21);
+  const bp = await setBreakpoint(client, "doc_rr_basic.html", 21);
   await rewindToLine(client, 21);
-  await checkEvaluateInTopFrame(client, "number", 10);
+  await checkEvaluateInTopFrame(target, "number", 10);
   await rewindToLine(client, 21);
-  await checkEvaluateInTopFrame(client, "number", 9);
+  await checkEvaluateInTopFrame(target, "number", 9);
   await resumeToLine(client, 21);
-  await checkEvaluateInTopFrame(client, "number", 10);
+  await checkEvaluateInTopFrame(target, "number", 10);
 
+  await client.removeBreakpoint(bp);
   await toolbox.destroy();
   await gBrowser.removeTab(recordingTab);
   await gBrowser.removeTab(replayingTab);

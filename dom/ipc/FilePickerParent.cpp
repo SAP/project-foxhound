@@ -128,7 +128,7 @@ void FilePickerParent::IORunnable::Destroy() { mFilePickerParent = nullptr; }
 
 void FilePickerParent::SendFilesOrDirectories(
     const nsTArray<BlobImplOrString>& aData) {
-  nsIContentParent* parent = TabParent::GetFrom(Manager())->Manager();
+  ContentParent* parent = TabParent::GetFrom(Manager())->Manager();
 
   if (mMode == nsIFilePicker::modeGetFolder) {
     MOZ_ASSERT(aData.Length() <= 1);
@@ -241,9 +241,8 @@ mozilla::ipc::IPCResult FilePickerParent::RecvOpen(
     const nsString& aDefaultFile, const nsString& aDefaultExtension,
     InfallibleTArray<nsString>&& aFilters,
     InfallibleTArray<nsString>&& aFilterNames,
-    InfallibleTArray<nsString>&& aRawFilters,
-    const nsString& aDisplayDirectory, const nsString& aDisplaySpecialDirectory,
-    const nsString& aOkButtonLabel) {
+    InfallibleTArray<nsString>&& aRawFilters, const nsString& aDisplayDirectory,
+    const nsString& aDisplaySpecialDirectory, const nsString& aOkButtonLabel) {
   if (!CreateFilePicker()) {
     Unused << Send__delete__(this, void_t(), nsIFilePicker::returnCancel);
     return IPC_OK();

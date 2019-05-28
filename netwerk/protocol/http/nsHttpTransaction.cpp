@@ -444,12 +444,6 @@ nsresult nsHttpTransaction::Init(
                    nsIOService::gDefaultSegmentCount);
   if (NS_FAILED(rv)) return rv;
 
-#ifdef WIN32  // bug 1153929
-  MOZ_DIAGNOSTIC_ASSERT(mPipeOut);
-  uint32_t *vtable = (uint32_t *)mPipeOut.get();
-  MOZ_DIAGNOSTIC_ASSERT(*vtable != 0);
-#endif  // WIN32
-
   nsCOMPtr<nsIAsyncInputStream> tmp(mPipeIn);
   tmp.forget(responseBody);
   return NS_OK;
@@ -461,8 +455,7 @@ nsAHttpConnection *nsHttpTransaction::Connection() {
   return mConnection.get();
 }
 
-already_AddRefed<nsAHttpConnection>
-nsHttpTransaction::GetConnectionReference() {
+void nsHttpTransaction::SetH2WSConnRefTaken() {
   if (mH2WSTransaction) {
     // Need to let the websocket transaction/connection know we've reached
     // this point so it can stop forwarding information through us and
@@ -470,9 +463,6 @@ nsHttpTransaction::GetConnectionReference() {
     mH2WSTransaction->SetConnRefTaken();
     mH2WSTransaction = nullptr;
   }
-  MutexAutoLock lock(mLock);
-  RefPtr<nsAHttpConnection> connection(mConnection);
-  return connection.forget();
 }
 
 nsHttpResponseHead *nsHttpTransaction::TakeResponseHead() {
@@ -881,6 +871,22 @@ bool nsHttpTransaction::ShouldThrottle() {
   return true;
 }
 
+void nsHttpTransaction::DontReuseConnection() {
+  LOG(("nsHttpTransaction::DontReuseConnection %p\n", this));
+  if (!OnSocketThread()) {
+    LOG(("DontReuseConnection %p not on socket thread\n", this));
+    nsCOMPtr<nsIRunnable> event =
+        NewRunnableMethod("nsHttpTransaction::DontReuseConnection", this,
+                          &nsHttpTransaction::DontReuseConnection);
+    gSocketTransportService->Dispatch(event, NS_DISPATCH_NORMAL);
+    return;
+  }
+
+  if (mConnection) {
+    mConnection->DontReuse();
+  }
+}
+
 nsresult nsHttpTransaction::WriteSegments(nsAHttpSegmentWriter *writer,
                                           uint32_t count,
                                           uint32_t *countWritten) {
@@ -918,12 +924,6 @@ nsresult nsHttpTransaction::WriteSegments(nsAHttpSegmentWriter *writer,
   }
 
   mWriter = writer;
-
-#ifdef WIN32  // bug 1153929
-  MOZ_DIAGNOSTIC_ASSERT(mPipeOut);
-  uint32_t *vtable = (uint32_t *)mPipeOut.get();
-  MOZ_DIAGNOSTIC_ASSERT(*vtable != 0);
-#endif  // WIN32
 
   if (!mPipeOut) {
     return NS_ERROR_UNEXPECTED;
@@ -1146,7 +1146,21 @@ void nsHttpTransaction::Close(nsresult reason) {
     }
 
     // honor the sticky connection flag...
-    if (mCaps & NS_HTTP_STICKY_CONNECTION) relConn = false;
+    if (mCaps & NS_HTTP_STICKY_CONNECTION) {
+      LOG(("  keeping the connection because of STICKY_CONNECTION flag"));
+      relConn = false;
+    }
+
+    // if the proxy connection has failed, we want the connection be held
+    // to allow the upper layers (think nsHttpChannel) to close it when
+    // the failure is unrecoverable.
+    // we can't just close it here, because mProxyConnectFailed is to a general
+    // flag and is also set for e.g. 407 which doesn't mean to kill the
+    // connection, specifically when connection oriented auth may be involved.
+    if (mProxyConnectFailed) {
+      LOG(("  keeping the connection because of mProxyConnectFailed"));
+      relConn = false;
+    }
   }
 
   // mTimings.responseEnd is normally recorded based on the end of a
@@ -1180,13 +1194,6 @@ void nsHttpTransaction::Close(nsresult reason) {
 
   // closing this pipe triggers the channel's OnStopRequest method.
   mPipeOut->CloseWithStatus(reason);
-
-#ifdef WIN32  // bug 1153929
-  MOZ_DIAGNOSTIC_ASSERT(mPipeOut);
-  uint32_t *vtable = (uint32_t *)mPipeOut.get();
-  MOZ_DIAGNOSTIC_ASSERT(*vtable != 0);
-  mPipeOut = nullptr;  // just in case
-#endif                 // WIN32
 }
 
 nsHttpConnectionInfo *nsHttpTransaction::ConnectionInfo() {

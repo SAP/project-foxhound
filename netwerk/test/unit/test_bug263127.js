@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var server;
 const BUGID = "263127";
@@ -55,7 +55,7 @@ function run_test() {
   downloader.init(listener, targetFile);
 
   // Start download
-  channel.asyncOpen2(downloader);
+  channel.asyncOpen(downloader);
 
   do_test_pending();
 }

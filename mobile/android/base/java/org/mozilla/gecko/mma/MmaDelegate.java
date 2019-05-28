@@ -11,7 +11,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
-import android.text.TextUtils;
 
 import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.BrowserApp;
@@ -45,6 +44,8 @@ public class MmaDelegate {
     public static final String SAVED_BOOKMARK = "E_Saved_Bookmark";
     public static final String OPENED_BOOKMARK = "E_Opened_Bookmark";
     public static final String INTERACT_WITH_SEARCH_URL_AREA = "E_Interact_With_Search_URL_Area";
+    public static final String INTERACT_WITH_SEARCH_WIDGET_URL_AREA = "E_Interact_With_Search_Widget";
+    public static final String ADDED_SEARCH_WIDGET = "E_Search_Widget_Added";
     public static final String SCREENSHOT = "E_Screenshot";
     public static final String SAVED_LOGIN_AND_PASSWORD = "E_Saved_Login_And_Password";
     public static final String RESUMED_FROM_BACKGROUND = "E_Resumed_From_Background";
@@ -52,6 +53,9 @@ public class MmaDelegate {
     public static final String DISMISS_ONBOARDING = "E_Dismiss_Onboarding";
     public static final String ONBOARDING_DEFAULT_VALUES = "E_Onboarding_With_Default_Values";
     public static final String ONBOARDING_REMOTE_VALUES = "E_Onboarding_With_Remote_Values";
+
+    public static final String USER_SIGNED_IN_TO_FXA = "E_User_Signed_In_To_FxA";
+    public static final String USER_FINISHED_SYNC = "E_User_Finished_Sync";
 
     private static final String LAUNCH_BUT_NOT_DEFAULT_BROWSER = "E_Launch_But_Not_Default_Browser";
     private static final String LAUNCH_BROWSER = "E_Launch_Browser";
@@ -106,7 +110,7 @@ public class MmaDelegate {
         // above two config setup required to be invoked before mmaHelper.init.
         mmaHelper.init(activity, attributes);
 
-        if (!isDefaultBrowser(activity)) {
+        if (!PackageUtil.isDefaultBrowser(activity)) {
             mmaHelper.event(MmaDelegate.LAUNCH_BUT_NOT_DEFAULT_BROWSER);
         }
         mmaHelper.event(MmaDelegate.LAUNCH_BROWSER);
@@ -140,7 +144,7 @@ public class MmaDelegate {
         attributes.put(USER_ATT_FOCUS_INSTALLED, ContextUtils.isPackageInstalled(context, PACKAGE_NAME_FOCUS));
         attributes.put(USER_ATT_KLAR_INSTALLED, ContextUtils.isPackageInstalled(context, PACKAGE_NAME_KLAR));
         attributes.put(USER_ATT_POCKET_INSTALLED, ContextUtils.isPackageInstalled(context, PACKAGE_NAME_POCKET));
-        attributes.put(USER_ATT_DEFAULT_BROWSER, isDefaultBrowser(context));
+        attributes.put(USER_ATT_DEFAULT_BROWSER, PackageUtil.isDefaultBrowser(context));
         attributes.put(USER_ATT_SIGNED_IN, FirefoxAccounts.firefoxAccountsExist(context));
         attributes.put(USER_ATT_POCKET_TOP_SITES, ActivityStreamConfiguration.isPocketRecommendingTopSites(context));
 
@@ -153,7 +157,7 @@ public class MmaDelegate {
         }
 
         final SharedPreferences prefs = activity.getPreferences(Context.MODE_PRIVATE);
-        final boolean isFennecDefaultBrowser = isDefaultBrowser(activity);
+        final boolean isFennecDefaultBrowser = PackageUtil.isDefaultBrowser(activity);
 
         // Only if this is not the first run of LeanPlum and we previously tracked default browser status
         // we can check for changes
@@ -263,11 +267,6 @@ public class MmaDelegate {
         final boolean isInPrivateBrowsing = selectedTab != null && selectedTab.isPrivate();
 
         return isMmaAvailable && !isInPrivateBrowsing;
-    }
-
-    public static boolean isDefaultBrowser(Context context) {
-        final String defaultBrowserPackageName = PackageUtil.getDefaultBrowserPackage(context);
-        return (TextUtils.equals(defaultBrowserPackageName, context.getPackageName()));
     }
 
     // Always use pass-in context. Do not use applicationContext here. applicationContext will be null if MmaDelegate.init() is not called.

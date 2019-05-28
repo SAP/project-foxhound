@@ -12,9 +12,8 @@ from collections import defaultdict
 import mozpack.path as mozpath
 from moztest.resolve import TestResolver
 
-from .. import preset
 from ..cli import BaseTryParser
-from ..push import push_to_try
+from ..push import build, push_to_try
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -24,6 +23,7 @@ class SyntaxParser(BaseTryParser):
     arguments = [
         [['paths'],
          {'nargs': '*',
+          'default': [],
           'help': 'Paths to search for tests to run on try.',
           }],
         [['-b', '--build'],
@@ -310,10 +310,9 @@ class AutoTry(object):
         "xpcshell",
     ]
 
-    def __init__(self, topsrcdir, mach_context):
-        self.topsrcdir = topsrcdir
+    def __init__(self):
+        self.topsrcdir = build.topsrcdir
         self._resolver = None
-        self.mach_context = mach_context
 
     @property
     def resolver(self):
@@ -321,7 +320,8 @@ class AutoTry(object):
             self._resolver = TestResolver.from_environment(cwd=here)
         return self._resolver
 
-    def split_try_string(self, data):
+    @classmethod
+    def split_try_string(cls, data):
         return re.findall(r'(?:\[.*?\]|\S)+', data)
 
     def paths_by_flavor(self, paths=None, tags=None):
@@ -544,22 +544,6 @@ class AutoTry(object):
         return kwargs["builds"], platforms, tests, talos, jobs, paths, tags, extra_args
 
     def run(self, **kwargs):
-        if kwargs["mod_presets"]:
-            getattr(preset, kwargs["mod_presets"])(section='try')
-            sys.exit()
-
-        if kwargs["preset"]:
-            value = preset.load(kwargs["preset"], section='try')[0]
-            defaults = vars(SyntaxParser().parse_args(self.split_try_string(value)))
-
-            if defaults is None:
-                print("No saved configuration called %s found in autotry.ini" % kwargs["preset"],
-                      file=sys.stderr)
-
-            for key, value in kwargs.iteritems():
-                if value in (None, []) and key in defaults:
-                    kwargs[key] = defaults[key]
-
         if not any(kwargs[item] for item in ("paths", "tests", "tags")):
             if kwargs['detect_paths']:
                 res = self.resolver.get_outgoing_metadata()
@@ -622,7 +606,7 @@ class AutoTry(object):
         push_to_try('syntax', kwargs["message"].format(msg=msg), push=kwargs['push'],
                     closed_tree=kwargs["closed_tree"])
 
-        if kwargs["save"]:
-            assert msg.startswith("try: ")
-            msg = msg[len("try: "):]
-            preset.save('try', kwargs["save"], msg)
+
+def run(**kwargs):
+    at = AutoTry()
+    return at.run(**kwargs)

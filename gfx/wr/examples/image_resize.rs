@@ -14,6 +14,7 @@ mod image_helper;
 
 use boilerplate::{Example, HandyDandyRectBuilder};
 use webrender::api::*;
+use webrender::api::units::*;
 
 struct App {
     image_key: ImageKey,
@@ -25,7 +26,7 @@ impl Example for App {
         _api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        _framebuffer_size: DeviceIntSize,
+        _framebuffer_size: FramebufferIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {

@@ -1,5 +1,6 @@
 const TESTPAGE = `${SECURE_TESTROOT}webapi_checkavailable.html`;
 const XPI_URL = `${SECURE_TESTROOT}../xpinstall/amosigned.xpi`;
+const XPI_ADDON_ID = "amosigned-xpi@tests.mozilla.org";
 
 const XPI_SHA = "sha256:91121ed2c27f670f2307b9aebdd30979f147318c7fb9111c254c14ddbb84e4b0";
 
@@ -26,7 +27,8 @@ function waitForClear() {
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.webapi.testing", true],
-          ["extensions.install.requireBuiltInCerts", false]],
+          ["extensions.install.requireBuiltInCerts", false],
+          ["extensions.allowPrivateBrowsingByDefault", false]],
   });
   info("added preferences");
 });
@@ -39,10 +41,6 @@ add_task(async function setup() {
 // with properties that the AddonInstall object is expected to have when
 // that event is triggered.
 async function testInstall(browser, args, steps, description) {
-  promisePopupNotificationShown("addon-webext-permissions").then(panel => {
-    panel.button.click();
-  });
-
   let success = await ContentTask.spawn(browser, {args, steps}, async function(opts) {
     let { args, steps } = opts;
     let install = await content.navigator.mozAddonManager.createInstall(args);
@@ -202,9 +200,16 @@ function makeRegularTest(options, what) {
       },
     ];
 
-    let promptPromise = acceptAppMenuNotificationWhenShown("addon-installed");
+    let installPromptPromise =
+      promisePopupNotificationShown("addon-webext-permissions").then(panel => {
+        panel.button.click();
+      });
+
+    let promptPromise = acceptAppMenuNotificationWhenShown("addon-installed", options.addonId);
 
     await testInstall(browser, options, steps, what);
+
+    await installPromptPromise;
 
     await promptPromise;
 
@@ -226,10 +231,11 @@ function makeRegularTest(options, what) {
   });
 }
 
-add_task(makeRegularTest({url: XPI_URL}, "a basic install works"));
-add_task(makeRegularTest({url: XPI_URL, hash: null}, "install with hash=null works"));
-add_task(makeRegularTest({url: XPI_URL, hash: ""}, "install with empty string for hash works"));
-add_task(makeRegularTest({url: XPI_URL, hash: XPI_SHA}, "install with hash works"));
+let addonId = XPI_ADDON_ID;
+add_task(makeRegularTest({url: XPI_URL, addonId}, "a basic install works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: null}, "install with hash=null works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: ""}, "install with empty string for hash works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: XPI_SHA}, "install with hash works"));
 
 add_task(makeInstallTest(async function(browser) {
   let steps = [
@@ -328,3 +334,24 @@ add_task(async function test_permissions() {
                    "not permitted",
                    "Installing from non-approved URL fails");
 });
+
+add_task(makeInstallTest(async function(browser) {
+  let xpiURL = `${SECURE_TESTROOT}../xpinstall/incompatible.xpi`;
+  let id = "incompatible-xpi@tests.mozilla.org";
+
+  let steps = [
+    {action: "install", expectError: true},
+    {
+      event: "onDownloadStarted",
+      props: {state: "STATE_DOWNLOADING"},
+    },
+    {event: "onDownloadProgress"},
+    {event: "onDownloadEnded"},
+    {event: "onDownloadCancelled"},
+  ];
+
+  await testInstall(browser, {url: xpiURL}, steps, "install of an incompatible XPI fails");
+
+  let addons = await promiseAddonsByIDs([id]);
+  is(addons[0], null, "The addon was not installed");
+}));

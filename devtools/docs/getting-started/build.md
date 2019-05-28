@@ -35,7 +35,7 @@ You will also need a lot of disk space (about ~40Gb free).
 
 ```bash
 cd ~ # or the folder where you store your projects, for example ~/projects
-hg clone http://hg.mozilla.org/mozilla-central
+hg clone https://hg.mozilla.org/mozilla-central
 ```
 
 ## Building and running locally
@@ -52,6 +52,8 @@ Try building Firefox and downloading dependencies by running the following comma
 
 This script might ask you questions, so it's recommended to keep an eye on the terminal while it's running—otherwise it will never finish!
 
+*Please note, when you are prompted for your name and add unicode characters this can crash the process. The workaround here is to use ascii-friendly characters and later on edit your `~/.hgrc` file manually to use the unicode characters in your name.*
+
 After it finishes, you might be asked to add some lines to a `mozconfig` file. Create this file in the repository folder (i.e. in `~/mozilla-central`), then add the lines.
 
 Then run this:
@@ -60,6 +62,8 @@ Then run this:
 ./mach configure
 ./mach build
 ```
+
+Please note, if this fails it might be possible you need to run the `bootstrap.py` script first. Download the [bootstrap.py script](https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py) and save it in your project directory. Then run `python bootstrap.py` and follow the prompted steps.
 
 **Note:** if using Windows, you might need to type the commands without the `./`:
 

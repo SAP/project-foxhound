@@ -40,11 +40,15 @@ public final class DynamicToolbarAnimator {
 
     public interface ToolbarChromeProxy {
         @UiThread
-        public @Nullable Bitmap getBitmapOfToolbarChrome();
+        @Nullable default Bitmap getBitmapOfToolbarChrome() {
+            return null;
+        }
         @UiThread
-        public boolean isToolbarChromeVisible();
+        default boolean isToolbarChromeVisible() {
+            return false;
+        }
         @UiThread
-        public void toggleToolbarChrome(boolean aShow);
+        default void toggleToolbarChrome(boolean aShow) {}
     }
 
     private final Set<PinReason> mPinFlags = EnumSet.noneOf(PinReason.class);
@@ -64,12 +68,12 @@ public final class DynamicToolbarAnimator {
         return mToolbarChromeProxy;
     }
 
-    public void setToolbarChromeProxy(@Nullable ToolbarChromeProxy aToolbarChromeProxy) {
+    public void setToolbarChromeProxy(@Nullable final ToolbarChromeProxy aToolbarChromeProxy) {
         ThreadUtils.assertOnUiThread();
         mToolbarChromeProxy = aToolbarChromeProxy;
     }
 
-    public void setMaxToolbarHeight(int maxToolbarHeight) {
+    public void setMaxToolbarHeight(final int maxToolbarHeight) {
         ThreadUtils.assertOnUiThread();
 
         mMaxToolbarHeight = maxToolbarHeight;
@@ -100,7 +104,7 @@ public final class DynamicToolbarAnimator {
         return !mPinFlags.isEmpty();
     }
 
-    public boolean isPinnedBy(@NonNull PinReason reason) {
+    public boolean isPinnedBy(@NonNull final PinReason reason) {
         ThreadUtils.assertOnUiThread();
 
         return mPinFlags.contains(reason);
@@ -120,7 +124,7 @@ public final class DynamicToolbarAnimator {
         }
     }
 
-    public void showToolbar(boolean immediately) {
+    public void showToolbar(final boolean immediately) {
         ThreadUtils.assertOnUiThread();
 
         if (mCompositor.isReady()) {
@@ -130,7 +134,7 @@ public final class DynamicToolbarAnimator {
         }
     }
 
-    public void hideToolbar(boolean immediately) {
+    public void hideToolbar(final boolean immediately) {
         ThreadUtils.assertOnUiThread();
 
         if (mCompositor.isReady()) {

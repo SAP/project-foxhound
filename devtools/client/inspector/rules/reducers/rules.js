@@ -4,14 +4,24 @@
 
 "use strict";
 
+const Services = require("Services");
+
 const {
-  UPDATE_RULES,
+  UPDATE_ADD_RULE_ENABLED,
   UPDATE_HIGHLIGHTED_SELECTOR,
+  UPDATE_RULES,
+  UPDATE_SOURCE_LINK_ENABLED,
+  UPDATE_SOURCE_LINK,
 } = require("../actions/index");
 
 const INITIAL_RULES = {
   // The selector of the node that is highlighted by the selector highlighter.
   highlightedSelector: "",
+  // Whether or not the add new rule button should be enabled.
+  isAddRuleEnabled: false,
+  // Whether or not the source links are enabled. This is determined by
+  // whether or not the style editor is registered.
+  isSourceLinkEnabled: Services.prefs.getBoolPref("devtools.styleeditor.enabled"),
   // Array of CSS rules.
   rules: [],
 };
@@ -37,12 +47,17 @@ function getDeclarationState(declaration, ruleId) {
     isDeclarationValid: declaration.isValid(),
     // Whether or not the declaration is enabled.
     isEnabled: declaration.enabled,
+    // Whether or not the declaration is invisible. In an inherited rule, only the
+    // inherited declarations are shown and the rest are considered invisible.
+    isInvisible: declaration.invisible,
     // Whether or not the declaration's property name is known.
     isKnownProperty: declaration.isKnownProperty,
     // Whether or not the property name is valid.
     isNameValid: declaration.isNameValid(),
     // Whether or not the the declaration is overridden.
     isOverridden: !!declaration.overridden,
+    // Whether or not the declaration is changed by the user.
+    isPropertyChanged: declaration.isPropertyChanged,
     // The declaration's property name.
     name: declaration.name,
     // The declaration's priority (either "important" or an empty string).
@@ -89,6 +104,13 @@ function getRuleState(rule) {
 
 const reducers = {
 
+  [UPDATE_ADD_RULE_ENABLED](rules, { enabled }) {
+    return {
+      ...rules,
+      isAddRuleEnabled: enabled,
+    };
+  },
+
   [UPDATE_HIGHLIGHTED_SELECTOR](rules, { highlightedSelector }) {
     return {
       ...rules,
@@ -99,7 +121,34 @@ const reducers = {
   [UPDATE_RULES](rules, { rules: newRules }) {
     return {
       highlightedSelector: rules.highlightedSelector,
+      isAddRuleEnabled: rules.isAddRuleEnabled,
+      isSourceLinkEnabled: rules.isSourceLinkEnabled,
       rules: newRules.map(rule => getRuleState(rule)),
+    };
+  },
+
+  [UPDATE_SOURCE_LINK_ENABLED](rules, { enabled }) {
+    return {
+      ...rules,
+      isSourceLinkEnabled: enabled,
+    };
+  },
+
+  [UPDATE_SOURCE_LINK](rules, { ruleId, sourceLink }) {
+    return {
+      highlightedSelector: rules.highlightedSelector,
+      isAddRuleEnabled: rules.isAddRuleEnabled,
+      isSourceLinkEnabled: rules.isSourceLinkEnabled,
+      rules: rules.rules.map(rule => {
+        if (rule.id !== ruleId) {
+          return rule;
+        }
+
+        return {
+          ...rule,
+          sourceLink,
+        };
+      }),
     };
   },
 

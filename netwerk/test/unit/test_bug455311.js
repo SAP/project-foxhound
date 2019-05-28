@@ -1,4 +1,4 @@
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function getLinkFile()
 {
@@ -65,7 +65,7 @@ RequestObserver.prototype = {
     }
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
-  onStartRequest: function (req, ctx)
+  onStartRequest: function (req)
   {
     var chan = req.QueryInterface(Ci.nsIChannel);
     Assert.equal(chan.URI.spec, this._origURI.spec);
@@ -73,11 +73,11 @@ RequestObserver.prototype = {
     Assert.equal(chan.originalURI.spec, this._origURI.spec);
     Assert.equal(chan.originalURI, this._origURI);
   },
-  onDataAvailable: function(req, ctx, stream, offset, count)
+  onDataAvailable: function(req, stream, offset, count)
   {
     do_throw("Unexpected call to onDataAvailable");
   },
-  onStopRequest: function (req, ctx, status)
+  onStopRequest: function (req, status)
   {
     var chan = req.QueryInterface(Ci.nsIChannel);
     try {
@@ -100,7 +100,7 @@ function test_cancel()
   });
   Assert.equal(chan.URI, linkURI);
   Assert.equal(chan.originalURI, linkURI);
-  chan.asyncOpen2(new RequestObserver(linkURI, newURI, do_test_finished));
+  chan.asyncOpen(new RequestObserver(linkURI, newURI, do_test_finished));
   Assert.ok(chan.isPending());
   chan.cancel(Cr.NS_ERROR_ABORT);
   Assert.ok(chan.isPending());
@@ -123,6 +123,6 @@ function run_test()
   Assert.equal(chan.URI, linkURI);
   Assert.equal(chan.originalURI, linkURI);
   chan.notificationCallbacks = new NotificationCallbacks(linkURI, newURI);
-  chan.asyncOpen2(new RequestObserver(linkURI, newURI, test_cancel));
+  chan.asyncOpen(new RequestObserver(linkURI, newURI, test_cancel));
   Assert.ok(chan.isPending());
 }

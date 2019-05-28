@@ -38,9 +38,9 @@ add_task(async function() {
   await ensureFocusedUrlbar();
 
   let tabStripRect = gBrowser.tabContainer.arrowScrollbox.getBoundingClientRect();
-  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar,
+  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar.textbox,
     "anonid", "moz-input-box").getBoundingClientRect();
-  let urlbarDropmarkerRect = document.getAnonymousElementByAttribute(gURLBar,
+  let urlbarDropmarkerRect = document.getAnonymousElementByAttribute(gURLBar.textbox,
     "anonid", "historydropmarker").getBoundingClientRect();
 
   let ignoreTabstripRects = {
@@ -75,8 +75,7 @@ add_task(async function() {
   await withPerfObserver(async function() {
     let switchDone = BrowserTestUtils.waitForEvent(window, "TabSwitchDone");
     BrowserOpenTab();
-    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "transitionend",
-        false, e => e.propertyName === "max-width");
+    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "TabAnimationEnd");
     await switchDone;
     await BrowserTestUtils.waitForCondition(() => {
       return gBrowser.tabContainer.arrowScrollbox.hasAttribute("scrolledtoend");

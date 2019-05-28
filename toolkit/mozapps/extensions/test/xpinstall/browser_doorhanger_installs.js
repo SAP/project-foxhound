@@ -2,12 +2,27 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+
 const SECUREROOT = "https://example.com/browser/toolkit/mozapps/extensions/test/xpinstall/";
 const PROGRESS_NOTIFICATION = "addon-progress";
 
 const CHROMEROOT = extractChromeRoot(gTestPath);
 
 var gApp = document.getElementById("bundle_brand").getString("brandShortName");
+
+AddonTestUtils.initMochitest(this);
+AddonTestUtils.hookAMTelemetryEvents();
+
+// Assert on the expected "addonsManager.action" telemetry events (and optional filter events to verify
+// by using a given actionType).
+function assertActionAMTelemetryEvent(expectedActionEvents, assertMessage, {actionType} = {}) {
+  const events = AddonTestUtils.getAMTelemetryEvents().filter(({method, extra}) => {
+    return method === "action" && (!actionType ? true : extra && extra.action === actionType);
+  });
+
+  Assert.deepEqual(events, expectedActionEvents, assertMessage);
+}
 
 function waitForTick() {
   return new Promise(resolve => executeSoon(resolve));
@@ -73,8 +88,8 @@ async function waitForProgressNotification(aPanelOpen = false, aExpectedCount = 
   return PopupNotifications.panel;
 }
 
-function acceptAppMenuNotificationWhenShown(id, dismiss = false) {
-  ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
+function acceptAppMenuNotificationWhenShown(id, {dismiss = false, checkIncognito = false} = {}) {
+  const {AppMenuNotifications} = ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
   return new Promise(resolve => {
     function appMenuPopupHidden() {
       PanelUI.panel.removeEventListener("popuphidden", appMenuPopupHidden);
@@ -95,6 +110,14 @@ function acceptAppMenuNotificationWhenShown(id, dismiss = false) {
       ok(PanelUI.isNotificationPanelOpen, "notification panel open");
 
       PanelUI.notificationPanel.removeEventListener("popupshown", popupshown);
+
+      let allowPrivate = Services.prefs.getBoolPref("extensions.allowPrivateBrowsingByDefault", true);
+      let checkbox = document.getElementById("addon-incognito-checkbox");
+      is(checkbox.hidden, allowPrivate && !checkIncognito, "checkbox visibility is correct");
+      is(checkbox.checked, false, "checkbox is not initially checked");
+      if (checkIncognito) {
+        checkbox.checked = true;
+      }
 
       if (dismiss) {
         // Dismiss the panel by clicking on the appMenu button.
@@ -282,6 +305,7 @@ async function test_blockedInstall() {
 },
 
 async function test_whitelistedInstall() {
+  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
   let originalTab = gBrowser.selectedTab;
   let tab;
   gBrowser.selectedTab = originalTab;
@@ -302,7 +326,7 @@ async function test_whitelistedInstall() {
   is(gBrowser.selectedTab, tab,
      "tab selected in response to the addon-install-confirmation notification");
 
-  let notificationPromise = acceptAppMenuNotificationWhenShown("addon-installed", true);
+  let notificationPromise = acceptAppMenuNotificationWhenShown("addon-installed", {dismiss: true});
   acceptInstallDialog(installDialog);
   await notificationPromise;
 
@@ -310,9 +334,18 @@ async function test_whitelistedInstall() {
   is(installs.length, 0, "Should be no pending installs");
 
   let addon = await AddonManager.getAddonByID("amosigned-xpi@tests.mozilla.org");
+
+  // Test that the addon does not have permission. Reload it to ensure it would
+  // have been set if possible.
+  await addon.reload();
+  let policy = WebExtensionPolicy.getByID(addon.id);
+  ok(!policy.privateBrowsingAllowed, "private browsing permission was not granted");
+
   addon.uninstall();
 
   Services.perms.remove(makeURI("http://example.com/"), "install");
+
+  Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
   await removeTabAndWaitForNotificationClose();
 },
 
@@ -375,9 +408,11 @@ async function test_incompatible() {
   let panel = await failPromise;
 
   let notification = panel.childNodes[0];
+  let brandBundle = Services.strings.createBundle("chrome://branding/locale/brand.properties");
+  let brandShortName = brandBundle.GetStringFromName("brandShortName");
+  let message = `XPI Test could not be installed because it is not compatible with ${brandShortName} ${Services.appinfo.version}.`;
   is(notification.getAttribute("label"),
-     "The add-on downloaded from this site could not be installed " +
-     "because it appears to be corrupt.",
+     message,
      "Should have seen the right message");
 
   Services.perms.remove(makeURI("http://example.com/"), "install");
@@ -418,6 +453,7 @@ async function test_localFile() {
 },
 
 async function test_urlBar() {
+  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
   let progressPromise = waitForProgressNotification();
   let dialogPromise = waitForInstallDialog();
 
@@ -430,7 +466,7 @@ async function test_urlBar() {
   await progressPromise;
   let installDialog = await dialogPromise;
 
-  let notificationPromise = acceptAppMenuNotificationWhenShown("addon-installed");
+  let notificationPromise = acceptAppMenuNotificationWhenShown("addon-installed", {checkIncognito: true});
   installDialog.button.click();
   await notificationPromise;
 
@@ -438,7 +474,32 @@ async function test_urlBar() {
   is(installs.length, 0, "Should be no pending installs");
 
   let addon = await AddonManager.getAddonByID("amosigned-xpi@tests.mozilla.org");
+  // The panel is reloading the addon due to the permission change, we need some way
+  // to wait for the reload to finish. addon.startupPromise doesn't do it for
+  // us, so we'll just restart again.
+  await addon.reload();
+
+  // This addon should have private browsing permission.
+  let policy = WebExtensionPolicy.getByID(addon.id);
+  ok(policy.privateBrowsingAllowed, "private browsing permission granted");
+
+  // Verify that the expected telemetry event has been collected for the extension allowed on
+  // PB windows from the "post install" notification doorhanger.
+  assertActionAMTelemetryEvent([{
+    method: "action",
+    object: "doorhanger",
+    value: "on",
+    extra: {
+      action: "privateBrowsingAllowed",
+      view: "postInstall",
+      addonId: addon.id,
+      type: "extension",
+    },
+  }], "Expect telemetry events for privateBrowsingAllowed action", {actionType: "privateBrowsingAllowed"});
+
   addon.uninstall();
+
+  Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
 
   await removeTabAndWaitForNotificationClose();
 },
@@ -623,6 +684,7 @@ add_task(async function() {
     Services.prefs.clearUserPref("extensions.strictCompatibility");
     Services.prefs.clearUserPref("extensions.install.requireSecureOrigin");
     Services.prefs.clearUserPref("security.dialog_enable_delay");
+    Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
 
     Services.obs.removeObserver(XPInstallObserver, "addon-install-started");
     Services.obs.removeObserver(XPInstallObserver, "addon-install-blocked");
@@ -641,5 +703,10 @@ add_task(async function() {
     info("Running " + TESTS[i].name);
     gTestStart = Date.now();
     await TESTS[i]();
+
+    // Check that no unexpected telemetry events for the privateBrowsingAllowed action has been
+    // collected while running the test case.
+    assertActionAMTelemetryEvent([], "Expect no telemetry events for privateBrowsingAllowed actions",
+                                 {actionType: "privateBrowsingAllowed"});
   }
 });

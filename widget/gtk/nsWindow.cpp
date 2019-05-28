@@ -399,6 +399,10 @@ nsWindow::nsWindow() {
   mXDepth = 0;
 #endif /* MOZ_X11 */
 
+#ifdef MOZ_WAYLAND
+  mNeedsUpdatingEGLSurface = false;
+#endif
+
   if (!gGlobalsInitialized) {
     gGlobalsInitialized = true;
 
@@ -450,7 +454,8 @@ nsWindow::~nsWindow() {
   Destroy();
 }
 
-/* static */ void nsWindow::ReleaseGlobals() {
+/* static */
+void nsWindow::ReleaseGlobals() {
   for (auto &cursor : gCursorCache) {
     if (cursor) {
       g_object_unref(cursor);
@@ -674,6 +679,12 @@ void nsWindow::Destroy() {
     LOGFOCUS(("automatically losing focus...\n"));
     gFocusWindow = nullptr;
   }
+
+#ifdef MOZ_WAYLAND
+  if (mContainer) {
+    moz_container_set_initial_draw_callback(mContainer, nullptr);
+  }
+#endif
 
   GtkWidget *owningWidget = GetMozContainerWidget();
   if (mShell) {
@@ -1233,7 +1244,8 @@ static void SetUserTimeAndStartupIDForActivatedWindow(GtkWidget *aWindow) {
   GTKToolkit->SetDesktopStartupID(EmptyCString());
 }
 
-/* static */ guint32 nsWindow::GetLastUserInputTime() {
+/* static */
+guint32 nsWindow::GetLastUserInputTime() {
   // gdk_x11_display_get_user_time/gtk_get_current_event_time tracks
   // button and key presses, DESKTOP_STARTUP_ID used to start the app,
   // drop events from external drags,
@@ -1859,6 +1871,25 @@ static bool ExtractExposeRegion(LayoutDeviceIntRegion &aRegion, cairo_t *cr) {
   cairo_rectangle_list_destroy(rects);
   return true;
 }
+
+#ifdef MOZ_WAYLAND
+void nsWindow::WaylandEGLSurfaceForceRedraw() {
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+
+  if (mIsDestroyed || !mNeedsUpdatingEGLSurface) {
+    return;
+  }
+
+  if (CompositorBridgeChild *remoteRenderer = GetRemoteRenderer()) {
+    MOZ_ASSERT(mCompositorWidgetDelegate);
+    if (mCompositorWidgetDelegate) {
+      mNeedsUpdatingEGLSurface = false;
+      mCompositorWidgetDelegate->RequestsUpdatingEGLSurface();
+    }
+    remoteRenderer->SendForcePresent();
+  }
+}
+#endif
 
 gboolean nsWindow::OnExposeEvent(cairo_t *cr) {
   // Send any pending resize events so that layout can update.
@@ -3211,6 +3242,12 @@ nsresult nsWindow::Create(nsIWidget *aParent, nsNativeWidget aNativeParent,
   mBounds = aRect;
   ConstrainSize(&mBounds.width, &mBounds.height);
 
+  // eWindowType_child is not supported on Wayland. Just switch to toplevel
+  // as a workaround.
+  if (!mIsX11Display && mWindowType == eWindowType_child) {
+    mWindowType = eWindowType_toplevel;
+  }
+
   // figure out our parent window
   GtkWidget *parentMozContainer = nullptr;
   GtkContainer *parentGtkContainer = nullptr;
@@ -3324,6 +3361,11 @@ nsresult nsWindow::Create(nsIWidget *aParent, nsNativeWidget aNativeParent,
         auto screen = gtk_widget_get_screen(mShell);
         int screenNumber = GDK_SCREEN_XNUMBER(screen);
         int visualId = 0;
+        if (useWebRender) {
+          // WebRender rquests AlphaVisual for making readback to work
+          // correctly.
+          needsAlphaVisual = true;
+        }
         if (GLContextGLX::FindVisual(display, screenNumber, useWebRender,
                                      needsAlphaVisual, &visualId)) {
           // If we're using CSD, rendering will go through mContainer, but
@@ -3443,9 +3485,22 @@ nsresult nsWindow::Create(nsIWidget *aParent, nsNativeWidget aNativeParent,
         g_object_unref(group);
       }
 
+      if (aInitData->mAlwaysOnTop) {
+        gtk_window_set_keep_above(GTK_WINDOW(mShell), TRUE);
+      }
+
       // Create a container to hold child windows and child GtkWidgets.
       GtkWidget *container = moz_container_new();
       mContainer = MOZ_CONTAINER(container);
+#ifdef MOZ_WAYLAND
+      if (!mIsX11Display && ComputeShouldAccelerate()) {
+        RefPtr<nsWindow> self(this);
+        moz_container_set_initial_draw_callback(mContainer, [self]() -> void {
+          self->mNeedsUpdatingEGLSurface = true;
+          self->WaylandEGLSurfaceForceRedraw();
+        });
+      }
+#endif
 
       // "csd" style is set when widget is realized so we need to call
       // it explicitly now.
@@ -3595,6 +3650,8 @@ nsresult nsWindow::Create(nsIWidget *aParent, nsNativeWidget aNativeParent,
     g_signal_connect_after(default_settings, "notify::gtk-font-name",
                            G_CALLBACK(settings_changed_cb), this);
     g_signal_connect_after(default_settings, "notify::gtk-enable-animations",
+                           G_CALLBACK(settings_changed_cb), this);
+    g_signal_connect_after(default_settings, "notify::gtk-decoration-layout",
                            G_CALLBACK(settings_changed_cb), this);
   }
 
@@ -4635,8 +4692,8 @@ class FullscreenTransitionData {
   RefPtr<FullscreenTransitionWindow> mWindow;
 };
 
-/* static */ gboolean FullscreenTransitionData::TimeoutCallback(
-    gpointer aData) {
+/* static */
+gboolean FullscreenTransitionData::TimeoutCallback(gpointer aData) {
   bool finishing = false;
   auto data = static_cast<FullscreenTransitionData *>(aData);
   gdouble opacity = (TimeStamp::Now() - data->mStartTime) / data->mDuration;
@@ -4657,8 +4714,8 @@ class FullscreenTransitionData {
   return FALSE;
 }
 
-/* virtual */ bool nsWindow::PrepareForFullscreenTransition(
-    nsISupports **aData) {
+/* virtual */
+bool nsWindow::PrepareForFullscreenTransition(nsISupports **aData) {
   GdkScreen *screen = gtk_widget_get_screen(mShell);
   if (!gdk_screen_is_composited(screen)) {
     return false;
@@ -4667,9 +4724,11 @@ class FullscreenTransitionData {
   return true;
 }
 
-/* virtual */ void nsWindow::PerformFullscreenTransition(
-    FullscreenTransitionStage aStage, uint16_t aDuration, nsISupports *aData,
-    nsIRunnable *aCallback) {
+/* virtual */
+void nsWindow::PerformFullscreenTransition(FullscreenTransitionStage aStage,
+                                           uint16_t aDuration,
+                                           nsISupports *aData,
+                                           nsIRunnable *aCallback) {
   auto data = static_cast<FullscreenTransitionWindow *>(aData);
   // This will be released at the end of the last timeout callback for it.
   auto transitionData =
@@ -6011,6 +6070,9 @@ void nsWindow::SetCompositorWidgetDelegate(CompositorWidgetDelegate *delegate) {
     MOZ_ASSERT(mCompositorWidgetDelegate,
                "nsWindow::SetCompositorWidgetDelegate called with a "
                "non-PlatformCompositorWidgetDelegate");
+#ifdef MOZ_WAYLAND
+    WaylandEGLSurfaceForceRedraw();
+#endif
   } else {
     mCompositorWidgetDelegate = nullptr;
   }
@@ -6496,8 +6558,7 @@ nsWindow::CSDSupportLevel nsWindow::GetSystemCSDSupportLevel() {
 // Check for Mutter regression on X.org (Bug 1530252). In that case we
 // don't hide system titlebar by default as we can't draw transparent
 // corners reliably.
-bool nsWindow::TitlebarCanUseShapeMask()
-{
+bool nsWindow::TitlebarCanUseShapeMask() {
   static int canUseShapeMask = -1;
   if (canUseShapeMask != -1) {
     return canUseShapeMask;
@@ -6527,7 +6588,8 @@ bool nsWindow::HideTitlebarByDefault() {
   // When user defined widget.default-hidden-titlebar don't do any
   // heuristics and just follow it.
   if (Preferences::HasUserValue("widget.default-hidden-titlebar")) {
-    hideTitlebar = Preferences::GetBool("widget.default-hidden-titlebar", false);
+    hideTitlebar =
+        Preferences::GetBool("widget.default-hidden-titlebar", false);
     return hideTitlebar;
   }
 
@@ -6752,7 +6814,6 @@ void nsWindow::ForceTitlebarRedraw(void) {
   frame = FindTitlebarFrame(frame);
   if (frame) {
     nsLayoutUtils::PostRestyleEvent(frame->GetContent()->AsElement(),
-                                    nsRestyleHint(0),
-                                    nsChangeHint_RepaintFrame);
+                                    RestyleHint{0}, nsChangeHint_RepaintFrame);
   }
 }

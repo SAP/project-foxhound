@@ -155,16 +155,16 @@ class StereoPannerNodeEngine final : public AudioNodeEngine {
 
 StereoPannerNode::StereoPannerNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Clamped_max,
-                ChannelInterpretation::Speakers),
-      mPan(new AudioParam(this, StereoPannerNodeEngine::PAN, "pan", 0.f, -1.f,
-                          1.f)) {
+                ChannelInterpretation::Speakers) {
+  CreateAudioParam(mPan, StereoPannerNodeEngine::PAN, "pan", 0.f, -1.f, 1.f);
   StereoPannerNodeEngine* engine =
       new StereoPannerNodeEngine(this, aContext->Destination());
   mStream = AudioNodeStream::Create(
       aContext, engine, AudioNodeStream::NO_STREAM_FLAGS, aContext->Graph());
 }
 
-/* static */ already_AddRefed<StereoPannerNode> StereoPannerNode::Create(
+/* static */
+already_AddRefed<StereoPannerNode> StereoPannerNode::Create(
     AudioContext& aAudioContext, const StereoPannerOptions& aOptions,
     ErrorResult& aRv) {
   if (aAudioContext.CheckClosed(aRv)) {

@@ -661,7 +661,7 @@ void ServiceWorkerGlobalScope::SetOnfetch(
   if (aCallback) {
     if (mWorkerPrivate->WorkerScriptExecutedSuccessfully()) {
       RefPtr<Runnable> r = new ReportFetchListenerWarningRunnable(mScope);
-      mWorkerPrivate->DispatchToMainThread(r.forget());
+      mWorkerPrivate->DispatchToMainThreadForMessaging(r.forget());
     }
     mWorkerPrivate->SetFetchHandlerWasAdded();
   }
@@ -678,7 +678,7 @@ void ServiceWorkerGlobalScope::EventListenerAdded(nsAtom* aType) {
 
   if (mWorkerPrivate->WorkerScriptExecutedSuccessfully()) {
     RefPtr<Runnable> r = new ReportFetchListenerWarningRunnable(mScope);
-    mWorkerPrivate->DispatchToMainThread(r.forget());
+    mWorkerPrivate->DispatchToMainThreadForMessaging(r.forget());
   }
 
   mWorkerPrivate->SetFetchHandlerWasAdded();
@@ -876,8 +876,11 @@ void WorkerDebuggerGlobalScope::LoadSubScript(
 
   Maybe<JSAutoRealm> ar;
   if (aSandbox.WasPassed()) {
-    JS::Rooted<JSObject*> sandbox(aCx, js::CheckedUnwrap(aSandbox.Value()));
-    if (!IsWorkerDebuggerSandbox(sandbox)) {
+    // We only care about worker debugger sandbox objects here, so
+    // CheckedUnwrapStatic is fine.
+    JS::Rooted<JSObject*> sandbox(aCx,
+                                  js::CheckedUnwrapStatic(aSandbox.Value()));
+    if (!sandbox || !IsWorkerDebuggerSandbox(sandbox)) {
       aRv.Throw(NS_ERROR_INVALID_ARG);
       return;
     }
@@ -971,6 +974,18 @@ void WorkerDebuggerGlobalScope::Dump(JSContext* aCx,
   if (scope) {
     scope->Dump(aString);
   }
+}
+
+void WorkerDebuggerGlobalScope::Atob(const nsAString& aAtob, nsAString& aOutput,
+                                     ErrorResult& aRv) const {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  aRv = nsContentUtils::Atob(aAtob, aOutput);
+}
+
+void WorkerDebuggerGlobalScope::Btoa(const nsAString& aBtoa, nsAString& aOutput,
+                                     ErrorResult& aRv) const {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  aRv = nsContentUtils::Btoa(aBtoa, aOutput);
 }
 
 nsresult WorkerDebuggerGlobalScope::Dispatch(

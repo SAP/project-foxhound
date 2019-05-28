@@ -1,8 +1,7 @@
 // test for networkactivity
 //
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var results = [];
@@ -57,6 +56,6 @@ function run_test() {
   httpserver.registerPathHandler("/ok", handler);
   httpserver.start(-1);
   var channel = createChannel();
-  channel.asyncOpen2(new ChannelListener(checkValueAndTrigger, null));
+  channel.asyncOpen(new ChannelListener(checkValueAndTrigger, null));
 }
 

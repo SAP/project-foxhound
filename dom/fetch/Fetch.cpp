@@ -38,6 +38,7 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/URLSearchParams.h"
+#include "mozilla/net/CookieSettings.h"
 #include "mozilla/Telemetry.h"
 
 #include "BodyExtractor.h"
@@ -389,6 +390,7 @@ class MainThreadFetchRunnable : public Runnable {
       // so pass false as the last argument to FetchDriver().
       fetch = new FetchDriver(mRequest, principal, loadGroup,
                               workerPrivate->MainThreadEventTarget(),
+                              workerPrivate->CookieSettings(),
                               workerPrivate->GetPerformanceStorage(), false);
       nsAutoCString spec;
       if (proxy->GetWorkerPrivate()->GetBaseURI()) {
@@ -462,6 +464,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
     nsCOMPtr<Document> doc;
     nsCOMPtr<nsILoadGroup> loadGroup;
+    nsCOMPtr<nsICookieSettings> cookieSettings;
     nsIPrincipal* principal;
     bool isTrackingFetch = false;
     if (window) {
@@ -472,6 +475,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       }
       principal = doc->NodePrincipal();
       loadGroup = doc->GetDocumentLoadGroup();
+      cookieSettings = doc->CookieSettings();
 
       nsAutoCString fileNameString;
       if (nsJSUtils::GetCallingLocation(cx, fileNameString)) {
@@ -488,6 +492,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
         aRv.Throw(rv);
         return nullptr;
       }
+
+      cookieSettings = mozilla::net::CookieSettings::Create();
     }
 
     Telemetry::Accumulate(Telemetry::FETCH_IS_MAINTHREAD, 1);
@@ -496,7 +502,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
         p, observer, signalImpl, request->MozErrors());
     RefPtr<FetchDriver> fetch = new FetchDriver(
         r, principal, loadGroup, aGlobal->EventTargetFor(TaskCategory::Other),
-        nullptr,  // PerformanceStorage
+        cookieSettings, nullptr,  // PerformanceStorage
         isTrackingFetch);
     fetch->SetDocument(doc);
     resolver->SetLoadGroup(loadGroup);
@@ -1066,6 +1072,8 @@ void FetchBody<Derived>::SetBodyUsed(JSContext* aCx, ErrorResult& aRv) {
   if (mReadableStreamBody) {
     aRv.MightThrowJSException();
 
+    JSAutoRealm ar(aCx, mOwner->GetGlobalJSObject());
+
     JS::Rooted<JSObject*> readableStreamObj(aCx, mReadableStreamBody);
 
     JS::ReadableStreamMode mode;
@@ -1359,6 +1367,8 @@ void FetchBody<Derived>::MaybeTeeReadableStreamBody(
   }
 
   aRv.MightThrowJSException();
+
+  JSAutoRealm ar(aCx, mOwner->GetGlobalJSObject());
 
   JS::Rooted<JSObject*> stream(aCx, mReadableStreamBody);
 

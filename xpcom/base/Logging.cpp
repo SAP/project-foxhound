@@ -59,8 +59,6 @@ LazyLogModule::operator LogModule*() {
     mLog = tmp;
   }
 
-  mCanary.Check();
-
   return tmp;
 }
 
@@ -82,7 +80,7 @@ LogLevel ToLogLevel(int32_t aLevel) {
   return static_cast<LogLevel>(aLevel);
 }
 
-const char* ToLogStr(LogLevel aLevel) {
+static const char* ToLogStr(LogLevel aLevel) {
   switch (aLevel) {
     case LogLevel::Error:
       return "E";
@@ -129,7 +127,8 @@ class LogFile {
   LogFile* mNextToRelease;
 };
 
-const char* ExpandPIDMarker(const char* aFilename, char (&buffer)[2048]) {
+static const char* ExpandPIDMarker(const char* aFilename,
+                                   char (&buffer)[2048]) {
   MOZ_ASSERT(aFilename);
   static const char kPIDToken[] = "%PID";
   const char* pidTokenPtr = strstr(aFilename, kPIDToken);
@@ -412,7 +411,7 @@ class LogModuleManager {
 #ifdef MOZ_GECKO_PROFILER
     if (mAddProfilerMarker && profiler_is_active()) {
       profiler_add_marker(
-          "LogMessages", js::ProfilingStackFrame::Category::OTHER,
+          "LogMessages", JS::ProfilingCategoryPair::OTHER,
           MakeUnique<LogMarkerPayload>(aName, buffToWrite, TimeStamp::Now()));
     }
 #endif

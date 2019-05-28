@@ -18,13 +18,12 @@
 const kDumpAllStacks = false;
 
 const whitelist = {
-  components: new Set([
-    "ContentProcessSingleton.js",
-  ]),
   modules: new Set([
     "chrome://mochikit/content/ShutdownLeaksCollector.jsm",
     "resource://specialpowers/specialpowers.js",
     "resource://specialpowers/specialpowersAPI.js",
+
+    "resource://gre/modules/ContentProcessSingleton.jsm",
 
     // General utilities
     "resource://gre/modules/AppConstants.jsm",
@@ -42,16 +41,11 @@ const whitelist = {
     "resource:///modules/sessionstore/ContentSessionStore.jsm",
     "resource://gre/modules/sessionstore/SessionHistory.jsm",
 
-    // Forms and passwords
-    "resource://formautofill/FormAutofill.jsm",
-    "resource://formautofill/FormAutofillContent.jsm",
-
     // Browser front-end
     "resource:///actors/AboutReaderChild.jsm",
     "resource:///actors/BrowserTabChild.jsm",
     "resource:///modules/ContentMetaHandler.jsm",
     "resource:///actors/LinkHandlerChild.jsm",
-    "resource:///actors/PageStyleChild.jsm",
     "resource:///actors/SearchTelemetryChild.jsm",
     "resource://gre/modules/ActorChild.jsm",
     "resource://gre/modules/ActorManagerChild.jsm",
@@ -89,10 +83,8 @@ const whitelist = {
     "chrome://global/content/process-content.js",
     "resource:///modules/ContentObservers.js",
     "data:,ChromeUtils.import('resource://gre/modules/ExtensionProcessScript.jsm')",
-    "chrome://satchel/content/formSubmitListener.js",
     "resource://devtools/client/jsonview/converter-observer.js",
     "resource://gre/modules/WebRequestContent.js",
-    "data:,new function() {\n      ChromeUtils.import(\"resource://formautofill/FormAutofillContent.jsm\");\n    }",
   ]),
 };
 
@@ -100,14 +92,20 @@ const whitelist = {
 // required, as opposed to items in the main whitelist,
 // which are all required.
 const intermittently_loaded_whitelist = {
-  components: new Set([
-    "nsAsyncShutdown.js",
-  ]),
   modules: new Set([
+    "resource://gre/modules/nsAsyncShutdown.jsm",
     "resource://gre/modules/sessionstore/Utils.jsm",
+
+    // Webcompat about:config front-end. This is presently nightly-only and
+    // part of a system add-on which may not load early enough for the test.
+    "resource://webcompat/AboutCompat.jsm",
   ]),
   frameScripts: new Set([]),
-  processScripts: new Set([]),
+  processScripts: new Set([
+    // Webcompat about:config front-end. This is presently nightly-only and
+    // part of a system add-on which may not load early enough for the test.
+    "resource://webcompat/aboutPageProcessScript.js",
+  ]),
 };
 
 const blacklist = {
@@ -132,7 +130,7 @@ add_task(async function() {
     /* eslint-env mozilla/frame-script */
     const Cm = Components.manager;
     Cm.QueryInterface(Ci.nsIServiceManager);
-    ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+    const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
     let collectStacks = AppConstants.NIGHTLY_BUILD || AppConstants.DEBUG;
     let components = {};
     for (let component of Cu.loadedComponents) {

@@ -215,6 +215,8 @@ class TabChild final : public TabChildBase,
       SetAllowedTouchBehaviorCallback;
   typedef mozilla::layers::TouchBehaviorFlags TouchBehaviorFlags;
 
+  friend class PBrowserChild;
+
  public:
   /**
    * Find TabChild of aTabId in the same content process of the
@@ -229,16 +231,18 @@ class TabChild final : public TabChildBase,
   /**
    * Create a new TabChild object.
    */
-  TabChild(nsIContentChild* aManager, const TabId& aTabId, TabGroup* aTabGroup,
-           const TabContext& aContext, uint32_t aChromeFlags);
+  TabChild(ContentChild* aManager, const TabId& aTabId, TabGroup* aTabGroup,
+           const TabContext& aContext, BrowsingContext* aBrowsingContext,
+           uint32_t aChromeFlags);
 
   nsresult Init(mozIDOMWindowProxy* aParent);
 
   /** Return a TabChild with the given attributes. */
-  static already_AddRefed<TabChild> Create(nsIContentChild* aManager,
+  static already_AddRefed<TabChild> Create(ContentChild* aManager,
                                            const TabId& aTabId,
                                            const TabId& aSameTabGroupAs,
                                            const TabContext& aContext,
+                                           BrowsingContext* aBrowsingContext,
                                            uint32_t aChromeFlags);
 
   // Let managees query if it is safe to send messages.
@@ -309,7 +313,7 @@ class TabChild final : public TabChildBase,
 
   mozilla::ipc::IPCResult RecvDeactivate();
 
-  MOZ_CAN_RUN_SCRIPT
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual mozilla::ipc::IPCResult RecvMouseEvent(
       const nsString& aType, const float& aX, const float& aY,
       const int32_t& aButton, const int32_t& aClickCount,
@@ -393,6 +397,7 @@ class TabChild final : public TabChildBase,
   virtual mozilla::ipc::IPCResult RecvNormalPrioritySelectionEvent(
       const mozilla::WidgetSelectionEvent& aEvent) override;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual mozilla::ipc::IPCResult RecvPasteTransferable(
       const IPCDataTransfer& aDataTransfer, const bool& aIsPrivateData,
       const IPC::Principal& aRequestingPrincipal,
@@ -466,7 +471,7 @@ class TabChild final : public TabChildBase,
   void MakeHidden();
   bool IsVisible();
 
-  nsIContentChild* Manager() const { return mManager; }
+  ContentChild* Manager() const { return mManager; }
 
   static inline TabChild* GetFrom(nsIDocShell* aDocShell) {
     if (!aDocShell) {
@@ -574,13 +579,13 @@ class TabChild final : public TabChildBase,
                                  bool aPreventDefault) const;
   void SetTargetAPZC(uint64_t aInputBlockId,
                      const nsTArray<ScrollableLayerGuid>& aTargets) const;
-  MOZ_CAN_RUN_SCRIPT
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvHandleTap(
       const layers::GeckoContentController::TapType& aType,
       const LayoutDevicePoint& aPoint, const Modifiers& aModifiers,
       const ScrollableLayerGuid& aGuid, const uint64_t& aInputBlockId) override;
 
-  MOZ_CAN_RUN_SCRIPT
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvNormalPriorityHandleTap(
       const layers::GeckoContentController::TapType& aType,
       const LayoutDevicePoint& aPoint, const Modifiers& aModifiers,
@@ -667,6 +672,12 @@ class TabChild final : public TabChildBase,
       const WindowGlobalInit& aInit) override;
 
   virtual bool DeallocPWindowGlobalChild(PWindowGlobalChild* aActor) override;
+
+  virtual PBrowserBridgeChild* AllocPBrowserBridgeChild(
+      const nsString& aName, const nsString& aRemoteType,
+      BrowsingContext* aBrowsingContext) override;
+
+  virtual bool DeallocPBrowserBridgeChild(PBrowserBridgeChild* aActor) override;
 
   virtual mozilla::ipc::IPCResult RecvDestroy() override;
 
@@ -796,7 +807,8 @@ class TabChild final : public TabChildBase,
   RefPtr<mozilla::dom::TabGroup> mTabGroup;
   RefPtr<PuppetWidget> mPuppetWidget;
   nsCOMPtr<nsIURI> mLastURI;
-  RefPtr<nsIContentChild> mManager;
+  RefPtr<ContentChild> mManager;
+  RefPtr<BrowsingContext> mBrowsingContext;
   uint32_t mChromeFlags;
   uint32_t mMaxTouchPoints;
   layers::LayersId mLayersId;

@@ -1654,7 +1654,7 @@ PeerConnectionWrapper.prototype = {
     let attempts = 0;
     // Time-units are MS
     const waitPeriod = 500;
-    const maxTime = 15000;
+    const maxTime = 20000;
     for (let totalTime = maxTime; totalTime > 0; totalTime -= waitPeriod) {
       try {
         let syncedStats = await ensureSyncedRtcp();
@@ -1854,9 +1854,9 @@ PeerConnectionWrapper.prototype = {
               }
               ok(rem.jitter !== undefined, "Rtcp jitter");
               if (rem.roundTripTime) {
-                ok(rem.roundTripTime > 0,
+                ok(rem.roundTripTime >= 0,
                    "Rtcp rtt " + rem.roundTripTime + " >= 0");
-                ok(rem.roundTripTime < 60000,
+                ok(rem.roundTripTime < 60,
                    "Rtcp rtt " + rem.roundTripTime + " < 1 min");
               }
             } else {

@@ -7,7 +7,6 @@
 
 include protocol PColorPicker;
 include protocol PContent;
-include protocol PContentBridge;
 include protocol PDocAccessible;
 include protocol PFilePicker;
 include protocol PIndexedDBPermissionRequest;
@@ -19,6 +18,7 @@ include protocol PFileDescriptorSet;
 include protocol PIPCBlobInputStream;
 include protocol PPaymentRequest;
 include protocol PWindowGlobal;
+include protocol PBrowserBridge;
 
 include DOMTypes;
 include IPCBlob;
@@ -87,7 +87,7 @@ using class mozilla::NativeEventData from "ipc/nsGUIEventIPC.h";
 using mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
-using mozilla::dom::BrowsingContextId from "mozilla/dom/ipc/IdType.h";
+using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
 
 namespace mozilla {
 namespace dom {
@@ -133,7 +133,7 @@ union OptionalShmem
 
 nested(upto inside_cpow) sync protocol PBrowser
 {
-    manager PContent or PContentBridge;
+    manager PContent;
 
     manages PColorPicker;
     manages PDocAccessible;
@@ -142,6 +142,7 @@ nested(upto inside_cpow) sync protocol PBrowser
     manages PPluginWidget;
     manages PPaymentRequest;
     manages PWindowGlobal;
+    manages PBrowserBridge;
 
 both:
     async AsyncMessage(nsString aMessage, CpowEntry[] aCpows,
@@ -173,6 +174,12 @@ parent:
      * BrowsingContext and with the given principal.
      */
     async PWindowGlobal(WindowGlobalInit init);
+
+    /**
+     * Construct a new Remote iframe actor.
+     */
+    async PBrowserBridge(nsString aPresentationURL, nsString aRemoteType,
+                         BrowsingContext aBrowsingContext);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -614,8 +621,6 @@ parent:
     sync SetPrefersReducedMotionOverrideForTest(bool aValue);
     sync ResetPrefersReducedMotionOverrideForTest();
 
-    async RootBrowsingContext(BrowsingContextId aId);
-
 child:
     /**
      * Notify the remote browser that it has been Show()n on this
@@ -929,7 +934,7 @@ child:
 
 parent:
     /** Records a history visit. */
-    async VisitURI(URIParams aURI, OptionalURIParams aLastVisitedURI,
+    async VisitURI(URIParams aURI, URIParams? aLastVisitedURI,
                    uint32_t aFlags);
 
     /** Fetches the visited status for an array of URIs (Android-only). */

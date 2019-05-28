@@ -33,7 +33,7 @@ using namespace JS;
 using namespace mozilla;
 
 using js::BaseProxyHandler;
-using js::CheckedUnwrap;
+using js::CheckedUnwrapStatic;
 using js::IsCrossCompartmentWrapper;
 using js::UncheckedUnwrap;
 using js::Wrapper;
@@ -187,7 +187,7 @@ bool OpaqueXrayTraits::resolveOwnProperty(
 
 bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
                          const char* reason) {
-  CompartmentPrivate* priv = CompartmentPrivate::Get(CurrentGlobalOrNull(cx));
+  RealmPrivate* priv = RealmPrivate::Get(CurrentGlobalOrNull(cx));
   bool alreadyWarnedOnce = priv->wrapperDenialWarnings[type];
   priv->wrapperDenialWarnings[type] = true;
 
@@ -1476,7 +1476,8 @@ const JSClass* XrayTraits::getExpandoClass(JSContext* cx,
 
 static const size_t JSSLOT_XRAY_HOLDER = 0;
 
-/* static */ JSObject* XrayTraits::getHolder(JSObject* wrapper) {
+/* static */
+JSObject* XrayTraits::getHolder(JSObject* wrapper) {
   MOZ_ASSERT(WrapperFactory::IsXrayWrapper(wrapper));
   js::Value v = js::GetProxyReservedSlot(wrapper, JSSLOT_XRAY_HOLDER);
   return v.isObject() ? &v.toObject() : nullptr;
@@ -1871,14 +1872,6 @@ bool XrayWrapper<Base, Traits>::isExtensible(JSContext* cx,
 }
 
 template <typename Base, typename Traits>
-bool XrayWrapper<Base, Traits>::getPropertyDescriptor(
-    JSContext* cx, HandleObject wrapper, HandleId id,
-    JS::MutableHandle<PropertyDescriptor> desc) const {
-  MOZ_CRASH("Shouldn't be called: we return true for hasPrototype()");
-  return false;
-}
-
-template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::getOwnPropertyDescriptor(
     JSContext* cx, HandleObject wrapper, HandleId id,
     JS::MutableHandle<PropertyDescriptor> desc) const {
@@ -1942,13 +1935,15 @@ static bool RecreateLostWaivers(JSContext* cx, const PropertyDescriptor* orig,
     wrapped.value().set(ObjectValue(*rewaived));
   }
   if (getterWasWaived && !IsCrossCompartmentWrapper(wrapped.getterObject())) {
-    MOZ_ASSERT(CheckedUnwrap(wrapped.getterObject()));
+    // We can't end up with WindowProxy or Location as getters.
+    MOZ_ASSERT(CheckedUnwrapStatic(wrapped.getterObject()));
     rewaived = WrapperFactory::WaiveXray(cx, wrapped.getterObject());
     NS_ENSURE_TRUE(rewaived, false);
     wrapped.setGetterObject(rewaived);
   }
   if (setterWasWaived && !IsCrossCompartmentWrapper(wrapped.setterObject())) {
-    MOZ_ASSERT(CheckedUnwrap(wrapped.setterObject()));
+    // We can't end up with WindowProxy or Location as setters.
+    MOZ_ASSERT(CheckedUnwrapStatic(wrapped.setterObject()));
     rewaived = WrapperFactory::WaiveXray(cx, wrapped.setterObject());
     NS_ENSURE_TRUE(rewaived, false);
     wrapped.setSetterObject(rewaived);
@@ -2132,10 +2127,9 @@ bool XrayWrapper<Base, Traits>::getOwnEnumerablePropertyKeys(
 }
 
 template <typename Base, typename Traits>
-JSObject* XrayWrapper<Base, Traits>::enumerate(JSContext* cx,
-                                               HandleObject wrapper) const {
+bool XrayWrapper<Base, Traits>::enumerate(JSContext* cx, HandleObject wrapper,
+                                          JS::AutoIdVector& props) const {
   MOZ_CRASH("Shouldn't be called: we return true for hasPrototype()");
-  return nullptr;
 }
 
 template <typename Base, typename Traits>

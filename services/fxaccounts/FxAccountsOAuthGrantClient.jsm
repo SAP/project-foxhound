@@ -10,10 +10,10 @@
 
 var EXPORTED_SYMBOLS = ["FxAccountsOAuthGrantClient", "FxAccountsOAuthGrantClientError"];
 
-ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-ChromeUtils.import("resource://services-common/rest.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {ERRNO_NETWORK, ERRNO_PARSE, ERRNO_UNKNOWN_ERROR, ERROR_CODE_METHOD_NOT_ALLOWED, ERROR_MSG_METHOD_NOT_ALLOWED, ERROR_NETWORK, ERROR_PARSE, ERROR_UNKNOWN, OAUTH_SERVER_ERRNO_OFFSET, log} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+const {RESTRequest} = ChromeUtils.import("resource://services-common/rest.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
@@ -36,7 +36,6 @@ const ALLOW_HTTP_PREF = "identity.fxaccounts.allowHttp";
  * @constructor
  */
 var FxAccountsOAuthGrantClient = function(options) {
-
   this._validateOptions(options);
   this.parameters = options;
 
@@ -78,6 +77,41 @@ this.FxAccountsOAuthGrantClient.prototype = {
       response_type: "token",
     };
 
+    return this._createRequest(AUTH_ENDPOINT, "POST", params);
+  },
+
+  /**
+   * Retrieves an OAuth authorization code using an assertion
+   *
+   * @param {Object} assertion BrowserID assertion
+   * @param {Object} options
+   * @param options.client_id
+   * @param options.state
+   * @param options.scope
+   * @param options.access_type
+   * @param options.code_challenge_method
+   * @param options.code_challenge
+   * @param [options.keys_jwe]
+   * @returns {Promise<Object>} Object containing "code" and "state" properties.
+   */
+  authorizeCodeFromAssertion(assertion, options) {
+    if (!assertion) {
+      throw new Error("Missing 'assertion' parameter");
+    }
+    const {client_id, state, scope, access_type, code_challenge, code_challenge_method, keys_jwe} = options;
+    const params = {
+      assertion,
+      client_id,
+      response_type: "code",
+      state,
+      scope,
+      access_type,
+      code_challenge,
+      code_challenge_method,
+    };
+    if (keys_jwe) {
+      params.keys_jwe = keys_jwe;
+    }
     return this._createRequest(AUTH_ENDPOINT, "POST", params);
   },
 

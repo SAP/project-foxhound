@@ -54,7 +54,6 @@ class DocGroup;
 class Document;
 class TabGroup;
 class Element;
-class MozIdleObserver;
 class Navigator;
 class Performance;
 class Report;
@@ -343,11 +342,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
     return mChromeEventHandler;
   }
 
-  virtual nsresult RegisterIdleObserver(
-      mozilla::dom::MozIdleObserver& aIdleObserver) = 0;
-  virtual nsresult UnregisterIdleObserver(
-      mozilla::dom::MozIdleObserver& aIdleObserver) = 0;
-
   mozilla::dom::EventTarget* GetParentTarget() {
     if (!mParentTarget) {
       UpdateParentTarget();
@@ -387,19 +381,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
    * Get the docshell in this window.
    */
   inline nsIDocShell* GetDocShell() const;
-
-  /**
-   * Set a new document in the window. Calling this method will in most cases
-   * create a new inner window. The call will be forewarded to the outer window,
-   * if the inner window is not the current inner window an
-   * NS_ERROR_NOT_AVAILABLE error code will be returned. This may be called with
-   * a pointer to the current document, in that case the document remains
-   * unchanged, but a new inner window will be created.
-   *
-   * aDocument must not be null.
-   */
-  virtual nsresult SetNewDocument(Document* aDocument, nsISupports* aState,
-                                  bool aForceReuseInnerWindow) = 0;
 
   /**
    * Call this to indicate that some node (this window, its document,

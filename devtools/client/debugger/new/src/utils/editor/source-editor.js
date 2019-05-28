@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 /**
  * CodeMirror source editor utils
  * @module utils/source-editor
@@ -9,6 +11,7 @@
 
 const CodeMirror = require("codemirror");
 
+// $FlowIgnore
 require("codemirror/lib/codemirror.css");
 require("codemirror/mode/javascript/javascript");
 require("codemirror/mode/htmlmixed/htmlmixed");
@@ -25,6 +28,7 @@ require("codemirror/addon/fold/foldgutter");
 require("codemirror/addon/runmode/runmode");
 require("codemirror/addon/selection/active-line");
 require("codemirror/addon/edit/matchbrackets");
+require("codemirror/addon/display/placeholder");
 require("codemirror/mode/clike/clike");
 require("codemirror/mode/rust/rust");
 

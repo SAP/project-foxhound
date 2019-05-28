@@ -12,8 +12,7 @@ const { remoteClientManager } =
 const { l10n } = require("../modules/l10n");
 
 const {
-  debugLocalAddon,
-  debugRemoteAddon,
+  debugAddon,
   openTemporaryExtension,
   uninstallAddon,
 } = require("../modules/extensions-helper");
@@ -40,8 +39,10 @@ const {
   RUNTIMES,
 } = require("../constants");
 
+const Actions = require("./index");
+
 function inspectDebugTarget(type, id) {
-  return async (_, getState) => {
+  return async (dispatch, getState) => {
     const runtime = getCurrentRuntime(getState().runtimes);
     const { runtimeDetails, type: runtimeType } = runtime;
 
@@ -59,12 +60,7 @@ function inspectDebugTarget(type, id) {
         break;
       }
       case DEBUG_TARGETS.EXTENSION: {
-        if (runtimeType === RUNTIMES.NETWORK || runtimeType === RUNTIMES.USB) {
-          const devtoolsClient = runtimeDetails.clientWrapper.client;
-          await debugRemoteAddon(id, devtoolsClient);
-        } else if (runtimeType === RUNTIMES.THIS_FIREFOX) {
-          debugLocalAddon(id);
-        }
+        await debugAddon(id, runtimeDetails.clientWrapper.client);
         break;
       }
       case DEBUG_TARGETS.WORKER: {
@@ -74,12 +70,16 @@ function inspectDebugTarget(type, id) {
         gDevToolsBrowser.openWorkerToolbox(front);
         break;
       }
-
       default: {
         console.error("Failed to inspect the debug target of " +
                       `type: ${ type } id: ${ id }`);
       }
     }
+
+    dispatch(Actions.recordTelemetryEvent("inspect", {
+      "target_type": type,
+      "runtime_type": runtimeType,
+    }));
   };
 }
 
@@ -234,6 +234,16 @@ function startServiceWorker(registrationFront) {
   };
 }
 
+function unregisterServiceWorker(registrationFront) {
+  return async (_, getState) => {
+    try {
+      await registrationFront.unregister();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+}
+
 module.exports = {
   inspectDebugTarget,
   installTemporaryExtension,
@@ -244,4 +254,5 @@ module.exports = {
   requestExtensions,
   requestWorkers,
   startServiceWorker,
+  unregisterServiceWorker,
 };

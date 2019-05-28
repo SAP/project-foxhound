@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -46,15 +46,15 @@ Canceler.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     request.QueryInterface(Ci.nsIChannel)
            .cancel(Cr.NS_BINDING_ABORTED);
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(status, Cr.NS_BINDING_ABORTED);
     this.continueFn();
   }
@@ -67,13 +67,13 @@ function finish_test() {
 function start_cache_read() {
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
-  chan.asyncOpen2(new ChannelListener(finish_test, null));
+  chan.asyncOpen(new ChannelListener(finish_test, null));
 }
 
 function start_canceler() {
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
-  chan.asyncOpen2(new Canceler(start_cache_read));
+  chan.asyncOpen(new Canceler(start_cache_read));
 }
 
 function run_test() {
@@ -83,6 +83,6 @@ function run_test() {
 
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
-  chan.asyncOpen2(new ChannelListener(start_canceler, null));
+  chan.asyncOpen(new ChannelListener(start_canceler, null));
   do_test_pending();
 }

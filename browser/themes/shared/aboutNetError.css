@@ -59,10 +59,6 @@ body:not(.neterror) #netErrorButtonContainer {
   display: none;
 }
 
-#moreInformationButton {
-  display: none;
-}
-
 #errorTryAgain {
   margin-top: 1.2em;
 }
@@ -159,6 +155,8 @@ span#hostname {
   font-family: monospace;
   white-space: pre-wrap;
   padding: 1em 0;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 #cert_domain_link:not([href]) {
@@ -175,33 +173,6 @@ span#hostname {
 
 .exceptionDialogButtonContainer[hidden] {
   display: none;
-}
-
-.illustrated #errorPageContainer {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-}
-
-.illustrated[dir="rtl"] #errorPageContainer {
-  background-position: right center;
-}
-
-.illustrated .title {
-  background: none;
-  padding-inline-start: 0;
-  margin-inline-start: 0;
-}
-
-.illustrated #text-container {
-  margin: auto;
-  padding-inline-start: 38%;
-}
-
-.illustrated #errorPageContainer {
-  background-repeat: no-repeat;
-  background-size: 38%;
 }
 
 .connectionFailure #errorPageContainer,

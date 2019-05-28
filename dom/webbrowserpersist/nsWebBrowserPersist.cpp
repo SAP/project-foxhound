@@ -62,6 +62,7 @@
 #include "nsIMIMEInfo.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSharedElement.h"
+#include "mozilla/net/CookieSettings.h"
 #include "mozilla/Printf.h"
 
 using namespace mozilla;
@@ -512,7 +513,7 @@ nsresult nsWebBrowserPersist::StartUpload(nsIInputStream *aInputStream,
   // NOTE: ALL data must be available in "inputstream"
   nsresult rv = uploadChannel->SetUploadStream(aInputStream, aContentType, -1);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-  rv = destChannel->AsyncOpen2(this);
+  rv = destChannel->AsyncOpen(this);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   // add this to the upload list
@@ -734,8 +735,7 @@ nsWebBrowserPersist::OnWrite::OnFinish(nsIWebBrowserPersistDocument *aDoc,
 // nsWebBrowserPersist::nsIRequestObserver
 //*****************************************************************************
 
-NS_IMETHODIMP nsWebBrowserPersist::OnStartRequest(nsIRequest *request,
-                                                  nsISupports *ctxt) {
+NS_IMETHODIMP nsWebBrowserPersist::OnStartRequest(nsIRequest *request) {
   if (mProgressListener) {
     uint32_t stateFlags = nsIWebProgressListener::STATE_START |
                           nsIWebProgressListener::STATE_IS_REQUEST;
@@ -830,7 +830,6 @@ NS_IMETHODIMP nsWebBrowserPersist::OnStartRequest(nsIRequest *request,
 }
 
 NS_IMETHODIMP nsWebBrowserPersist::OnStopRequest(nsIRequest *request,
-                                                 nsISupports *ctxt,
                                                  nsresult status) {
   nsCOMPtr<nsISupports> keyPtr = do_QueryInterface(request);
   OutputData *data = mOutputMap.Get(keyPtr);
@@ -869,7 +868,7 @@ NS_IMETHODIMP nsWebBrowserPersist::OnStopRequest(nsIRequest *request,
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsWebBrowserPersist::OnDataAvailable(nsIRequest *request, nsISupports *aContext,
+nsWebBrowserPersist::OnDataAvailable(nsIRequest *request,
                                      nsIInputStream *aIStream, uint64_t aOffset,
                                      uint32_t aLength) {
   bool cancel = mCancel;
@@ -1175,8 +1174,9 @@ nsresult nsWebBrowserPersist::GetValidURIFromObject(nsISupports *aObject,
   return NS_ERROR_FAILURE;
 }
 
-/* static */ nsresult nsWebBrowserPersist::GetLocalFileFromURI(
-    nsIURI *aURI, nsIFile **aLocalFile) {
+/* static */
+nsresult nsWebBrowserPersist::GetLocalFileFromURI(nsIURI *aURI,
+                                                  nsIFile **aLocalFile) {
   nsresult rv;
 
   nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(aURI, &rv);
@@ -1192,8 +1192,10 @@ nsresult nsWebBrowserPersist::GetValidURIFromObject(nsISupports *aObject,
   return NS_OK;
 }
 
-/* static */ nsresult nsWebBrowserPersist::AppendPathToURI(
-    nsIURI *aURI, const nsAString &aPath, nsCOMPtr<nsIURI> &aOutURI) {
+/* static */
+nsresult nsWebBrowserPersist::AppendPathToURI(nsIURI *aURI,
+                                              const nsAString &aPath,
+                                              nsCOMPtr<nsIURI> &aOutURI) {
   NS_ENSURE_ARG_POINTER(aURI);
 
   nsAutoCString newPath;
@@ -1233,11 +1235,16 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
     loadFlags |= nsIRequest::LOAD_FROM_CACHE;
   }
 
+  // Create a new cookieSettings for this download in order to send cookies
+  // based on the current state of the prefs/permissions.
+  nsCOMPtr<nsICookieSettings> cookieSettings =
+      mozilla::net::CookieSettings::Create();
+
   // Open a channel to the URI
   nsCOMPtr<nsIChannel> inputChannel;
   rv = NS_NewChannel(getter_AddRefs(inputChannel), aURI, aTriggeringPrincipal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD,
+                     aContentPolicyType, cookieSettings,
                      nullptr,  // aPerformanceStorage
                      nullptr,  // aLoadGroup
                      static_cast<nsIInterfaceRequestor *>(this), loadFlags);
@@ -1339,8 +1346,8 @@ nsresult nsWebBrowserPersist::SaveChannelInternal(nsIChannel *aChannel,
 
   if (fc && !fu) {
     nsCOMPtr<nsIInputStream> fileInputStream, bufferedInputStream;
-    nsresult rv = NS_MaybeOpenChannelUsingOpen2(
-        aChannel, getter_AddRefs(fileInputStream));
+    nsresult rv =
+        NS_MaybeOpenChannelUsingOpen(aChannel, getter_AddRefs(fileInputStream));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedInputStream),
                                    fileInputStream.forget(),
@@ -1358,7 +1365,7 @@ nsresult nsWebBrowserPersist::SaveChannelInternal(nsIChannel *aChannel,
   }
 
   // Read from the input channel
-  nsresult rv = NS_MaybeOpenChannelUsingAsyncOpen2(aChannel, this);
+  nsresult rv = NS_MaybeOpenChannelUsingAsyncOpen(aChannel, this);
   if (rv == NS_ERROR_NO_CONTENT) {
     // Assume this is a protocol such as mailto: which does not feed out
     // data and just ignore it.

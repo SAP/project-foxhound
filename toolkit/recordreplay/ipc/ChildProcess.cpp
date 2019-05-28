@@ -23,8 +23,8 @@ static size_t gNumChannels;
 // Whether children might be debugged and should not be treated as hung.
 static bool gChildrenAreDebugging;
 
-/* static */ void ChildProcessInfo::SetIntroductionMessage(
-    IntroductionMessage* aMessage) {
+/* static */
+void ChildProcessInfo::SetIntroductionMessage(IntroductionMessage* aMessage) {
   gIntroductionMessage = aMessage;
 }
 
@@ -94,12 +94,16 @@ void ChildProcessInfo::OnIncomingMessage(const Message& aMsg,
     case MessageType::MiddlemanCallRequest: {
       const MiddlemanCallRequestMessage& nmsg =
           static_cast<const MiddlemanCallRequestMessage&>(aMsg);
-      Message::UniquePtr response(ProcessMiddlemanCallMessage(nmsg));
+      InfallibleVector<char> outputData;
+      ProcessMiddlemanCall(GetId(), nmsg.BinaryData(), nmsg.BinaryDataSize(),
+                           &outputData);
+      Message::UniquePtr response(MiddlemanCallResponseMessage::New(
+          outputData.begin(), outputData.length()));
       SendMessage(*response);
       break;
     }
     case MessageType::ResetMiddlemanCalls:
-      ResetMiddlemanCalls();
+      ResetMiddlemanCalls(GetId());
       break;
     default:
       break;
@@ -341,7 +345,8 @@ Message::UniquePtr ChildProcessInfo::WaitUntilPaused() {
 
 // Runnable created on the main thread to handle any tasks sent by the replay
 // message loop thread which were not handled while the main thread was blocked.
-/* static */ void ChildProcessInfo::MaybeProcessPendingMessageRunnable() {
+/* static */
+void ChildProcessInfo::MaybeProcessPendingMessageRunnable() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   MonitorAutoLock lock(*gMonitor);
   MOZ_RELEASE_ASSERT(gHasPendingMessageRunnable);

@@ -7,7 +7,7 @@ function delay(time) {
   });
 }
 
-ChromeUtils.import("resource://gre/modules/Extension.jsm");
+const {Extension} = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
 add_task(async function test_startup_request_handler() {
   const ID = "request-startup@xpcshell.mozilla.org";

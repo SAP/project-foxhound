@@ -7,12 +7,14 @@
 // 1 day default
 const DEFAULT_SECONDS_BETWEEN_CHECKS = 60 * 60 * 24;
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/GMPUtils.jsm");
-ChromeUtils.import("resource://gre/modules/addons/ProductAddonChecker.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {PromiseUtils} = ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+// These symbols are, unfortunately, accessed via the module global from
+// tests, and therefore cannot be lexical definitions.
+var {GMPPrefs, GMPUtils, GMP_PLUGIN_IDS} = ChromeUtils.import("resource://gre/modules/GMPUtils.jsm");
+const {ProductAddonChecker} = ChromeUtils.import("resource://gre/modules/addons/ProductAddonChecker.jsm");
 
 var EXPORTED_SYMBOLS = ["GMPInstallManager", "GMPExtractor", "GMPDownloader",
                         "GMPAddon"];
@@ -428,7 +430,9 @@ GMPDownloader.prototype = {
         // Remember our ABI, so that if the profile is migrated to another
         // platform or from 32 -> 64 bit, we notice and don't try to load the
         // unexecutable plugin library.
-        GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_ABI, UpdateUtils.ABI, gmpAddon.id);
+        let abi = GMPUtils._expectedABI(gmpAddon);
+        log.info("Setting ABI to '" + abi + "' for " + gmpAddon.id);
+        GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_ABI, abi, gmpAddon.id);
         // Setting the version pref signals installation completion to consumers,
         // if you need to set other prefs etc. do it before this.
         GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_VERSION, gmpAddon.version,

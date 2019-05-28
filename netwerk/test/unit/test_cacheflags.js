@@ -1,6 +1,6 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+var {Services} = ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -65,16 +65,16 @@ Test.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     var cachingChannel = request.QueryInterface(Ci.nsICacheInfoChannel);
     this._isFromCache = request.isPending() && cachingChannel.isFromCache();
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     this._buffer = this._buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(Components.isSuccessCode(status), this.expectSuccess);
     Assert.equal(this._isFromCache, this.readFromCache);
     Assert.equal(gHitServer, this.hitServer);
@@ -91,7 +91,7 @@ Test.prototype = {
          "\n  " + this.hitServer + "\n");
     gHitServer = false;
     var channel = make_channel(this.path, this.flags, this.usePrivateBrowsing);
-    channel.asyncOpen2(this);
+    channel.asyncOpen(this);
   }
 };
 

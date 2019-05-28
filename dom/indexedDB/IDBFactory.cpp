@@ -133,6 +133,11 @@ nsresult IDBFactory::CreateForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(principalInfo->type() == PrincipalInfo::TContentPrincipalInfo ||
              principalInfo->type() == PrincipalInfo::TSystemPrincipalInfo);
 
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*principalInfo))) {
+    IDB_REPORT_INTERNAL_ERR();
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+
   nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(aWindow);
   nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
 
@@ -167,6 +172,10 @@ nsresult IDBFactory::CreateForMainThreadJS(JSContext* aCx,
   nsresult rv = PrincipalToPrincipalInfo(principal, principalInfo);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
+  }
+
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*principalInfo))) {
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
   rv = CreateForMainThreadJSInternal(aCx, aOwningObject, principalInfo,
@@ -584,6 +593,12 @@ already_AddRefed<IDBOpenDBRequest> IDBFactory::OpenInternal(
       aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
       return nullptr;
     }
+
+    if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(principalInfo))) {
+      IDB_REPORT_INTERNAL_ERR();
+      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+      return nullptr;
+    }
   } else {
     principalInfo = *mPrincipalInfo;
   }
@@ -800,21 +815,6 @@ nsresult IDBFactory::InitiateRequest(IDBOpenDBRequest* aRequest,
              "The event target shall be inherited from its manager actor.");
 
   return NS_OK;
-}
-
-void IDBFactory::RebindToNewWindow(nsPIDOMWindowInner* aNewWindow) {
-  MOZ_DIAGNOSTIC_ASSERT(aNewWindow);
-  MOZ_DIAGNOSTIC_ASSERT(mWindow);
-  MOZ_DIAGNOSTIC_ASSERT(aNewWindow != mWindow);
-
-  mWindow->UpdateActiveIndexedDBTransactionCount(-1 * mActiveTransactionCount);
-  mWindow->UpdateActiveIndexedDBDatabaseCount(-1 * mActiveDatabaseCount);
-
-  mWindow = aNewWindow;
-
-  mInnerWindowID = aNewWindow->WindowID();
-  mWindow->UpdateActiveIndexedDBTransactionCount(mActiveTransactionCount);
-  mWindow->UpdateActiveIndexedDBDatabaseCount(mActiveDatabaseCount);
 }
 
 void IDBFactory::DisconnectFromWindow(nsPIDOMWindowInner* aOldWindow) {

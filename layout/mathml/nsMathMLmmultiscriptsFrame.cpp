@@ -21,7 +21,8 @@ using namespace mozilla;
 
 nsIFrame* NS_NewMathMLmmultiscriptsFrame(nsIPresShell* aPresShell,
                                          ComputedStyle* aStyle) {
-  return new (aPresShell) nsMathMLmmultiscriptsFrame(aStyle);
+  return new (aPresShell)
+      nsMathMLmmultiscriptsFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmmultiscriptsFrame)
@@ -83,8 +84,10 @@ nsMathMLmmultiscriptsFrame::TransmitAutomaticData() {
   return NS_OK;
 }
 
-/* virtual */ nsresult nsMathMLmmultiscriptsFrame::Place(
-    DrawTarget* aDrawTarget, bool aPlaceOrigin, ReflowOutput& aDesiredSize) {
+/* virtual */
+nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
+                                           bool aPlaceOrigin,
+                                           ReflowOutput& aDesiredSize) {
   nscoord subScriptShift = 0;
   nscoord supScriptShift = 0;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);

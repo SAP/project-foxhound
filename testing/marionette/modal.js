@@ -4,7 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 this.EXPORTED_SYMBOLS = ["modal"];
 
@@ -143,11 +143,19 @@ modal.Dialog = class {
     return null;
   }
 
-  get ui() {
+  get tabModal() {
     let win = this.window;
     if (win) {
-      return win.Dialog.ui;
+      return win.Dialog;
     }
-    return this.curBrowser_.getTabModalUI();
+    return this.curBrowser_.getTabModal();
+  }
+
+  get args() {
+    return this.tabModal.args;
+  }
+
+  get ui() {
+    return this.tabModal.ui;
   }
 };

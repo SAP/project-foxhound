@@ -1,4 +1,4 @@
-/* Copyright 2018 Mozilla Foundation
+/* Copyright 2019 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,27 +22,25 @@
 "use strict";
 var EXPORTED_SYMBOLS = ["PdfJsDefaultPreferences"];
 var PdfJsDefaultPreferences = Object.freeze({
- "showPreviousViewOnLoad": true,
- "defaultZoomValue": "",
- "sidebarViewOnLoad": 0,
  "cursorToolOnLoad": 0,
+ "defaultZoomValue": "",
+ "disablePageLabels": false,
+ "enablePrintAutoRotate": false,
  "enableWebGL": false,
  "eventBusDispatchToDOM": false,
- "pdfBugEnabled": false,
- "disableRange": false,
- "disableStream": false,
- "disableAutoFetch": false,
- "disableFontFace": false,
- "textLayerMode": 1,
- "useOnlyCssZoom": false,
  "externalLinkTarget": 0,
+ "historyUpdateUrl": false,
+ "pdfBugEnabled": false,
  "renderer": "canvas",
  "renderInteractiveForms": false,
- "enablePrintAutoRotate": false,
- "disableOpenActionDestination": true,
- "disablePageMode": false,
- "disablePageLabels": false,
- "historyUpdateUrl": false,
- "scrollModeOnLoad": 0,
- "spreadModeOnLoad": 0
+ "sidebarViewOnLoad": -1,
+ "scrollModeOnLoad": -1,
+ "spreadModeOnLoad": -1,
+ "textLayerMode": 1,
+ "useOnlyCssZoom": false,
+ "viewOnLoad": 0,
+ "disableAutoFetch": false,
+ "disableFontFace": false,
+ "disableRange": false,
+ "disableStream": false
 });

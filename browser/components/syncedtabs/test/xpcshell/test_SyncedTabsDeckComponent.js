@@ -1,12 +1,11 @@
 "use strict";
 
-let { SyncedTabs } = ChromeUtils.import("resource://services-sync/SyncedTabs.jsm", {});
-let { SyncedTabsDeckComponent } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckComponent.js", {});
-let { TabListComponent } = ChromeUtils.import("resource:///modules/syncedtabs/TabListComponent.js", {});
-let { SyncedTabsListStore } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsListStore.js", {});
-let { SyncedTabsDeckStore } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckStore.js", {});
-let { TabListView } = ChromeUtils.import("resource:///modules/syncedtabs/TabListView.js", {});
-let { DeckView } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckView.js", {});
+let { SyncedTabs } = ChromeUtils.import("resource://services-sync/SyncedTabs.jsm");
+let { SyncedTabsDeckComponent } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckComponent.js");
+let { TabListComponent } = ChromeUtils.import("resource:///modules/syncedtabs/TabListComponent.js");
+let { SyncedTabsListStore } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsListStore.js");
+let { SyncedTabsDeckStore } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckStore.js");
+let { TabListView } = ChromeUtils.import("resource:///modules/syncedtabs/TabListView.js");
 
 
 add_task(async function testInitUninit() {
@@ -18,7 +17,7 @@ add_task(async function testInitUninit() {
   let view = {render: sinon.spy(), destroy: sinon.spy(), container: {}};
   ViewMock.returns(view);
 
-  sinon.stub(SyncedTabs, "syncTabs", () => Promise.resolve());
+  sinon.stub(SyncedTabs, "syncTabs").callsFake(() => Promise.resolve());
 
   sinon.spy(deckStore, "on");
   sinon.stub(deckStore, "setPanels");
@@ -86,7 +85,7 @@ add_task(async function testObserver() {
   let view = {render: sinon.spy(), destroy: sinon.spy(), container: {}};
   ViewMock.returns(view);
 
-  sinon.stub(SyncedTabs, "syncTabs", () => Promise.resolve());
+  sinon.stub(SyncedTabs, "syncTabs").callsFake(() => Promise.resolve());
 
   sinon.spy(deckStore, "on");
   sinon.stub(deckStore, "setPanels");
@@ -163,7 +162,7 @@ add_task(async function testPanelStatus() {
   });
 
   let account = null;
-  sinon.stub(fxAccounts, "getSignedInUser", () => Promise.resolve(account));
+  sinon.stub(fxAccounts, "getSignedInUser").callsFake(() => Promise.resolve(account));
   let result = await component.getPanelStatus();
   Assert.equal(result, component.PANELS.NOT_AUTHED_INFO);
 
@@ -192,7 +191,7 @@ add_task(async function testPanelStatus() {
   SyncedTabsMock.hasSyncedThisSession = true;
 
   let clients = [];
-  sinon.stub(SyncedTabsMock, "getTabClients", () => Promise.resolve(clients));
+  sinon.stub(SyncedTabsMock, "getTabClients").callsFake(() => Promise.resolve(clients));
   result = await component.getPanelStatus();
   Assert.equal(result, component.PANELS.SINGLE_DEVICE_INFO);
 
@@ -201,11 +200,11 @@ add_task(async function testPanelStatus() {
   Assert.equal(result, component.PANELS.TABS_CONTAINER);
 
   fxAccounts.getSignedInUser.restore();
-  sinon.stub(fxAccounts, "getSignedInUser", () => Promise.reject("err"));
+  sinon.stub(fxAccounts, "getSignedInUser").callsFake(() => Promise.reject("err"));
   result = await component.getPanelStatus();
   Assert.equal(result, component.PANELS.NOT_AUTHED_INFO);
 
-  sinon.stub(component, "getPanelStatus", () => Promise.resolve("mock-panelId"));
+  sinon.stub(component, "getPanelStatus").callsFake(() => Promise.resolve("mock-panelId"));
   sinon.spy(deckStore, "selectPanel");
   await component.updatePanel();
   Assert.ok(deckStore.selectPanel.calledWith("mock-panelId"));

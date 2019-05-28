@@ -24,8 +24,11 @@
 //! address in the GPU cache of a given resource slot
 //! for this frame.
 
-use api::{DebugFlags, DocumentId, PremultipliedColorF, IdNamespace, TexelRect};
-use euclid::TypedRect;
+use api::{DebugFlags, DocumentId, PremultipliedColorF};
+#[cfg(test)]
+use api::IdNamespace;
+use api::units::TexelRect;
+use euclid::{HomogeneousVector, TypedRect};
 use internal_types::{FastHashMap};
 use profiler::GpuCacheProfileCounters;
 use render_backend::{FrameStamp, FrameId};
@@ -107,6 +110,19 @@ impl<P> From<TypedRect<f32, P>> for GpuBlockData {
                 r.origin.y,
                 r.size.width,
                 r.size.height,
+            ],
+        }
+    }
+}
+
+impl<P> From<HomogeneousVector<f32, P>> for GpuBlockData {
+    fn from(v: HomogeneousVector<f32, P>) -> Self {
+        GpuBlockData {
+            data: [
+                v.x,
+                v.y,
+                v.z,
+                v.w,
             ],
         }
     }
@@ -695,7 +711,7 @@ impl GpuCache {
     /// Creates a GpuCache and sets it up with a valid `FrameStamp`, which
     /// is useful for avoiding panics when instantiating the `GpuCache`
     /// directly from unit test code.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new_for_testing() -> Self {
         let mut cache = Self::new();
         let mut now = FrameStamp::first(DocumentId(IdNamespace(1), 1));

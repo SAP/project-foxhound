@@ -110,8 +110,8 @@ static const char kPrintingPromptService[] =
 
 #include "nsFocusManager.h"
 #include "nsRange.h"
-#include "nsCDefaultURIFixup.h"
 #include "nsIURIFixup.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLFrameElement.h"
 #include "nsContentList.h"
@@ -298,7 +298,7 @@ static void GetDocumentTitleAndURL(Document* aDoc, nsAString& aTitle,
   nsIURI* url = aDoc->GetDocumentURI();
   if (!url) return;
 
-  nsCOMPtr<nsIURIFixup> urifixup(do_GetService(NS_URIFIXUP_CONTRACTID));
+  nsCOMPtr<nsIURIFixup> urifixup(components::URIFixup::Service());
   if (!urifixup) return;
 
   nsCOMPtr<nsIURI> exposableURI;
@@ -2269,10 +2269,6 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   PR_PL(("In DV::ReflowPrintObject PO: %p pS: %p (%9s) Setting w,h to %d,%d\n",
          aPO.get(), aPO->mPresShell.get(), gFrameTypesStr[aPO->mFrameType],
          adjSize.width, adjSize.height));
-
-  // This docshell stuff is weird; will go away when we stop having multiple
-  // presentations per document
-  aPO->mPresContext->SetContainer(aPO->mDocShell);
 
   aPO->mPresShell->BeginObservingDocument();
 

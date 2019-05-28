@@ -28,8 +28,11 @@ Please note that some targeting attributes require stricter controls on the tele
 * [sync](#sync)
 * [topFrecentSites](#topfrecentsites)
 * [totalBookmarksCount](#totalbookmarkscount)
+* [trailheadInterrupt](#trailheadinterrupt)
+* [trailheadTriplet](#trailheadtriplet)
 * [usesFirefoxSync](#usesfirefoxsync)
 * [xpinstallEnabled](#xpinstallEnabled)
+* [hasPinnedTabs](#haspinnedtabs)
 
 ## Detailed usage
 
@@ -423,6 +426,14 @@ Total number of bookmarks.
 declare const totalBookmarksCount: number;
 ```
 
+### `trailheadInterrupt`
+
+(67.05+ only) Experiment branch for "interrupt" study
+
+### `trailheadTriplet`
+
+(67.05+ only) Experiment branch for "triplet" study
+
 ### `usesFirefoxSync`
 
 Does the user use Firefox sync?
@@ -441,4 +452,14 @@ Pref used by system administrators to disallow add-ons from installed altogether
 
 ```ts
 declare const xpinstallEnabled: boolean;
+```
+
+### `hasPinnedTabs`
+
+Does the user have any pinned tabs in any windows.
+
+#### Definition
+
+```ts
+declare const hasPinnedTabs: boolean;
 ```

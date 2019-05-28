@@ -1,12 +1,11 @@
 add_task(async function() {
-  await BrowserTestUtils.withNewTab({gBrowser, url: "about:config"}, async function(browser) {
+  await BrowserTestUtils.withNewTab({gBrowser, url: "about:preferences"}, async function(browser) {
     let newTabURL = "http://www.example.com/";
     await ContentTask.spawn(browser, newTabURL, async function(newTabURL) {
       let doc = content.document;
-      let label = doc.createElement("label");
+      let label = doc.createXULElement("label", {is: "text-link"});
       label.href = newTabURL;
       label.id = "textlink-test";
-      label.className = "text-link";
       label.textContent = "click me";
       doc.documentElement.append(label);
     });

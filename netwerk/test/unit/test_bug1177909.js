@@ -1,9 +1,7 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {MockRegistrar} = ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gProxyService",
                                    "@mozilla.org/network/protocol-proxy-service;1",
@@ -110,14 +108,14 @@ add_task(async function testDirectProxy() {
   let ioService = Cc["@mozilla.org/network/io-service;1"].
                     getService(Ci.nsIIOService);
   let chan = ioService.
-    newChannelFromURIWithProxyFlags2(uri,
-                                     proxyURI,
-                                     0,
-                                     null,
-                                     Services.scriptSecurityManager.getSystemPrincipal(),
-                                     null,
-                                     Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                                     Ci.nsIContentPolicy.TYPE_OTHER);
+    newChannelFromURIWithProxyFlags(uri,
+                                    proxyURI,
+                                    0,
+                                    null,
+                                    Services.scriptSecurityManager.getSystemPrincipal(),
+                                    null,
+                                    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                                    Ci.nsIContentPolicy.TYPE_OTHER);
 
   let pi = await TestProxyType(chan, 0);
   equal(pi, null, "Expected proxy host to be null");
@@ -139,14 +137,14 @@ add_task(async function testWebSocketProxy() {
   let ioService = Cc["@mozilla.org/network/io-service;1"].
                     getService(Ci.nsIIOService);
   let chan = ioService.
-    newChannelFromURIWithProxyFlags2(uri,
-                                     proxyURI,
-                                     proxyFlags,
-                                     null,
-                                     Services.scriptSecurityManager.getSystemPrincipal(),
-                                     null,
-                                     Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                                     Ci.nsIContentPolicy.TYPE_OTHER);
+    newChannelFromURIWithProxyFlags(uri,
+                                    proxyURI,
+                                    proxyFlags,
+                                    null,
+                                    Services.scriptSecurityManager.getSystemPrincipal(),
+                                    null,
+                                    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                                    Ci.nsIContentPolicy.TYPE_OTHER);
 
   let pi = await TestProxyType(chan, proxyFlags);
   equal(pi.host, "localhost", "Expected proxy host to be localhost");

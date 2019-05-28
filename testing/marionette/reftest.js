@@ -4,14 +4,14 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-ChromeUtils.import("chrome://marionette/content/assert.js");
-ChromeUtils.import("chrome://marionette/content/capture.js");
-const {InvalidArgumentError} = ChromeUtils.import("chrome://marionette/content/error.js", {});
-const {Log} = ChromeUtils.import("chrome://marionette/content/log.js", {});
+const {assert} = ChromeUtils.import("chrome://marionette/content/assert.js");
+const {capture} = ChromeUtils.import("chrome://marionette/content/capture.js");
+const {InvalidArgumentError} = ChromeUtils.import("chrome://marionette/content/error.js");
+const {Log} = ChromeUtils.import("chrome://marionette/content/log.js");
 
 XPCOMUtils.defineLazyGetter(this, "logger", Log.get);
 
@@ -128,7 +128,7 @@ reftest.Runner = class {
     let reftestWin = this.parentWindow.open(
         "chrome://marionette/content/reftest.xul",
         "reftest",
-        `chrome,height=${width},width=${height}`);
+        `chrome,height=${height},width=${width}`);
 
     await new Promise(resolve => {
       reftestWin.addEventListener("load", resolve, {once: true});
@@ -228,7 +228,6 @@ max-width: ${width}px; max-height: ${height}px`;
   async run(testUrl, references, expected, timeout,
       width = DEFAULT_REFTEST_WIDTH,
       height = DEFAULT_REFTEST_HEIGHT) {
-
     let timeoutHandle;
 
     let timeoutPromise = new Promise(resolve => {
@@ -350,7 +349,6 @@ max-width: ${width}px; max-height: ${height}px`;
         }
       });
       logger.debug(`Canvas pool (${cacheKey}) is of length ${canvasPool.length}`);
-
     }
 
     if (screenshotData.length) {
@@ -403,8 +401,6 @@ max-width: ${width}px; max-height: ${height}px`;
           break;
         default:
           throw new InvalidArgumentError("Reftest operator should be '==' or '!='");
-
-
       }
     }
     return {lhs, rhs, passed, error};
@@ -464,16 +460,21 @@ max-width: ${width}px; max-height: ${height}px`;
 
       let ctxInterface = win.CanvasRenderingContext2D;
       let flags = ctxInterface.DRAWWINDOW_DRAW_CARET |
-          ctxInterface.DRAWWINDOW_DRAW_VIEW;
+          ctxInterface.DRAWWINDOW_DRAW_VIEW |
+          ctxInterface.DRAWWINDOW_USE_WIDGET_LAYERS;
 
-      if (0 <= browserRect.left &&
-          0 <= browserRect.top &&
-          win.innerWidth >= browserRect.width &&
-          win.innerHeight >= browserRect.height) {
-        logger.debug("Using DRAWWINDOW_USE_WIDGET_LAYERS");
-        flags |= ctxInterface.DRAWWINDOW_USE_WIDGET_LAYERS;
-      } else {
-        logger.debug("Not using DRAWWINDOW_USE_WIDGET_LAYERS");
+      if (!(0 <= browserRect.left &&
+            0 <= browserRect.top &&
+            win.innerWidth >= browserRect.width &&
+            win.innerHeight >= browserRect.height)) {
+        logger.error(`Invalid window dimensions:
+browserRect.left: ${browserRect.left}
+browserRect.top: ${browserRect.top}
+win.innerWidth: ${win.innerWidth}
+browserRect.width: ${browserRect.width}
+win.innerHeight: ${win.innerHeight}
+browserRect.height: ${browserRect.height}`);
+        throw new Error("Window has incorrect dimensions");
       }
 
       url = new URL(url).href; // normalize the URL

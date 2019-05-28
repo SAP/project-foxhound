@@ -13,7 +13,7 @@ var gNeedReset;
 var gSecHistogram;
 var gNsISecTel;
 
-ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+const {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 function initExceptionDialog() {
   gNeedReset = false;
@@ -74,6 +74,9 @@ function initExceptionDialog() {
   }
 
   document.l10n.translateElements(l10nUpdatedElements).then(() => window.sizeToContent());
+
+  document.addEventListener("dialogextra1", addException);
+  document.addEventListener("dialogextra2", checkCert);
 }
 
 /**

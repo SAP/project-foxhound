@@ -62,9 +62,9 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
 
   // If there are some good name to create non-virtual Undo()/Redo() methods,
   // we should create them and those methods should just run them.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD Undo(uint32_t aCount) final;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD Redo(uint32_t aCount) final;
 
   NS_IMETHOD Cut() override;
@@ -73,6 +73,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
   NS_IMETHOD CanCopy(bool* aCanCopy) override;
   NS_IMETHOD CanDelete(bool* aCanDelete) override;
   NS_IMETHOD CanPaste(int32_t aSelectionType, bool* aCanPaste) override;
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD PasteTransferable(nsITransferable* aTransferable) override;
 
   NS_IMETHOD OutputToString(const nsAString& aFormatType, uint32_t aFlags,
@@ -119,6 +120,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult PasteAsAction(int32_t aClipboardType, bool aDispatchPasteEvent);
 
   /**
@@ -141,6 +143,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult PasteAsQuotationAsAction(int32_t aClipboardType,
                                             bool aDispatchPasteEvent);
 
@@ -233,8 +236,12 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
     if (NS_WARN_IF(!editActionData.CanHandle())) {
       return NS_ERROR_NOT_INITIALIZED;
     }
-    return ComputeValueInternal(NS_LITERAL_STRING("text/plain"),
-                                aDocumentEncoderFlags, aOutputString);
+    nsresult rv = ComputeValueInternal(NS_LITERAL_STRING("text/plain"),
+                                       aDocumentEncoderFlags, aOutputString);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return EditorBase::ToGenericNSResult(rv);
+    }
+    return NS_OK;
   }
 
  protected:  // May be called by friends.
@@ -401,23 +408,6 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
   nsresult InsertTextAt(const nsAString& aStringToInsert,
                         const EditorDOMPoint& aPointToInsert,
                         bool aDoDeleteSelection);
-
-  /**
-   * InsertFromDataTransfer() inserts the data in aDataTransfer at aIndex.
-   * This is intended to handle "drop" event.
-   *
-   * @param aDataTransfer       Dropped data transfer.
-   * @param aIndex              Index of the data which should be inserted.
-   * @param aSourceDoc          The document which the source comes from.
-   * @param aDroppedAt          The dropped position.
-   * @param aDoDeleteSelection  true if this should delete selected content.
-   *                            false otherwise.
-   */
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult InsertFromDataTransfer(dom::DataTransfer* aDataTransfer,
-                                          int32_t aIndex, Document* aSourceDoc,
-                                          const EditorDOMPoint& aDroppedAt,
-                                          bool aDoDeleteSelection);
 
   /**
    * InsertWithQuotationsAsSubAction() inserts aQuotedText with appending ">"

@@ -10,9 +10,13 @@
 #include "nsIRunnable.h"
 #include "nsIXPConnect.h"
 
+#include "jsapi.h"  // JS::AutoValueArray
 #include "jsfriendapi.h"
-#include "js/TracingAPI.h"
+#include "js/ArrayBuffer.h"  // JS::Is{,Detached}ArrayBufferObject
 #include "js/GCPolicyAPI.h"
+#include "js/RootingAPI.h"  // JS::{Handle,Heap},PersistentRooted
+#include "js/TracingAPI.h"
+#include "js/Value.h"  // JS::{Undefined,}Value
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Event.h"
@@ -39,7 +43,8 @@
 namespace mozilla {
 namespace dom {
 
-/* static */ void XMLHttpRequestWorker::StateData::trace(JSTracer* aTrc) {
+/* static */
+void XMLHttpRequestWorker::StateData::trace(JSTracer* aTrc) {
   JS::TraceEdge(aTrc, &mResponse, "XMLHttpRequestWorker::StateData::mResponse");
 }
 
@@ -774,6 +779,7 @@ bool Proxy::Init() {
   mXHR = new XMLHttpRequestMainThread();
   mXHR->Construct(mWorkerPrivate->GetPrincipal(),
                   ownerWindow ? ownerWindow->AsGlobal() : nullptr,
+                  mWorkerPrivate->CookieSettings(),
                   mWorkerPrivate->GetBaseURI(), mWorkerPrivate->GetLoadGroup(),
                   mWorkerPrivate->GetPerformanceStorage(),
                   mWorkerPrivate->CSPEventListener());
@@ -1033,14 +1039,14 @@ bool EventRunnable::PreDispatch(WorkerPrivate* /* unused */) {
         JS::Rooted<JS::Value> transferable(cx);
         JS::Rooted<JSObject*> obj(
             cx, response.isObject() ? &response.toObject() : nullptr);
-        if (obj && JS_IsArrayBufferObject(obj)) {
+        if (obj && JS::IsArrayBufferObject(obj)) {
           // Use cached response if the arraybuffer has been transfered.
           if (mProxy->mArrayBufferResponseWasTransferred) {
-            MOZ_ASSERT(JS_IsDetachedArrayBufferObject(obj));
+            MOZ_ASSERT(JS::IsDetachedArrayBufferObject(obj));
             mUseCachedArrayBufferResponse = true;
             doClone = false;
           } else {
-            MOZ_ASSERT(!JS_IsDetachedArrayBufferObject(obj));
+            MOZ_ASSERT(!JS::IsDetachedArrayBufferObject(obj));
             JS::AutoValueArray<1> argv(cx);
             argv[0].set(response);
             obj = JS_NewArrayObject(cx, argv);
@@ -1220,8 +1226,7 @@ bool EventRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) {
 
   target->DispatchEvent(*event);
 
-  // After firing the event set mResponse to JSVAL_NULL for chunked response
-  // types.
+  // After firing the event set mResponse to null for chunked response types.
   if (StringBeginsWith(mResponseType, NS_LITERAL_STRING("moz-chunked-"))) {
     xhr->NullResponseText();
   }
@@ -1460,7 +1465,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(XMLHttpRequestWorker,
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mStateData.mResponse)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-/* static */ already_AddRefed<XMLHttpRequest> XMLHttpRequestWorker::Construct(
+/* static */
+already_AddRefed<XMLHttpRequest> XMLHttpRequestWorker::Construct(
     const GlobalObject& aGlobal, const MozXMLHttpRequestParameters& aParams,
     ErrorResult& aRv) {
   JSContext* cx = aGlobal.Context();
@@ -1584,6 +1590,12 @@ void XMLHttpRequestWorker::MaybeDispatchPrematureAbortEvents(ErrorResult& aRv) {
 
     DispatchPrematureAbortEvent(this, NS_LITERAL_STRING("loadend"), false, aRv);
     if (aRv.Failed()) {
+      return;
+    }
+
+    // Similarly to null check in ::Open, mProxy may have been cleared here.
+    if (!mProxy) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
     }
 
@@ -2206,7 +2218,7 @@ void XMLHttpRequestWorker::UpdateState(const StateData& aStateData,
                                        bool aUseCachedArrayBufferResponse) {
   if (aUseCachedArrayBufferResponse) {
     MOZ_ASSERT(mStateData.mResponse.isObject() &&
-               JS_IsArrayBufferObject(&mStateData.mResponse.toObject()));
+               JS::IsArrayBufferObject(&mStateData.mResponse.toObject()));
 
     JS::Rooted<JS::Value> response(mWorkerPrivate->GetJSContext(),
                                    mStateData.mResponse);

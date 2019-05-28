@@ -5,26 +5,28 @@
 /* import-globals-from extensionControlled.js */
 /* import-globals-from preferences.js */
 
-/* FIXME: ESlint globals workaround should be removed once bug 1395426 gets fixed */
-/* globals DownloadUtils, LoadContextInfo */
+var {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/PluralForm.jsm");
-
-ChromeUtils.defineModuleGetter(this, "PluralForm",
-  "resource://gre/modules/PluralForm.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadUtils",
+  "resource://gre/modules/DownloadUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm");
 ChromeUtils.defineModuleGetter(this, "SiteDataManager",
   "resource:///modules/SiteDataManager.jsm");
 
-ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+var {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 const PREF_UPLOAD_ENABLED = "datareporting.healthreport.uploadEnabled";
 
 const TRACKING_PROTECTION_KEY = "websites.trackingProtectionMode";
 const TRACKING_PROTECTION_PREFS = ["privacy.trackingprotection.enabled",
                                    "privacy.trackingprotection.pbmode.enabled"];
+const CONTENT_BLOCKING_PREFS = ["privacy.trackingprotection.enabled",
+                                "privacy.trackingprotection.pbmode.enabled",
+                                "network.cookie.cookieBehavior",
+                                "privacy.trackingprotection.fingerprinting.enabled",
+                                "privacy.trackingprotection.cryptomining.enabled",
+                                "urlclassifier.trackingTable"];
 
 const PREF_OPT_OUT_STUDIES_ENABLED = "app.shield.optoutstudies.enabled";
 const PREF_NORMANDY_ENABLED = "app.normandy.enabled";
@@ -45,9 +47,14 @@ XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
 });
 
 Preferences.addAll([
-  // Tracking Protection
+  // Content blocking / Tracking Protection
   { id: "privacy.trackingprotection.enabled", type: "bool" },
   { id: "privacy.trackingprotection.pbmode.enabled", type: "bool" },
+  { id: "privacy.trackingprotection.fingerprinting.enabled", type: "bool" },
+  { id: "privacy.trackingprotection.cryptomining.enabled", type: "bool" },
+
+  // Tracker list
+  { id: "urlclassifier.trackingTable", type: "string"},
 
   // Button prefs
   { id: "pref.privacy.disable_button.cookie_exceptions", type: "bool" },
@@ -180,25 +187,28 @@ var gPrivacyPane = {
    * Update the tracking protection UI to deal with extension control.
    */
   _updateTrackingProtectionUI() {
-    let isLocked = TRACKING_PROTECTION_PREFS.some(
+    let cBPrefisLocked = CONTENT_BLOCKING_PREFS.some(
+      pref => Services.prefs.prefIsLocked(pref));
+    let tPPrefisLocked = TRACKING_PROTECTION_PREFS.some(
       pref => Services.prefs.prefIsLocked(pref));
 
     function setInputsDisabledState(isControlled) {
-      let disabled = isLocked || isControlled;
+      let tpDisabled = tPPrefisLocked || isControlled;
+      let disabled = cBPrefisLocked || isControlled;
       let tpCheckbox =
         document.getElementById("contentBlockingTrackingProtectionCheckbox");
       // Only enable the TP menu if Detect All Trackers is enabled.
-      document.getElementById("trackingProtectionMenu").disabled = disabled ||
+      document.getElementById("trackingProtectionMenu").disabled = tpDisabled ||
         !tpCheckbox.checked;
-      tpCheckbox.disabled = disabled;
+      tpCheckbox.disabled = tpDisabled;
 
-      document.getElementById("standardRadio").disabled = isControlled;
-      document.getElementById("strictRadio").disabled = isControlled;
-      document.getElementById("contentBlockingOptionStrict").classList.toggle("disabled", isControlled);
-      document.getElementById("contentBlockingOptionStandard").classList.toggle("disabled", isControlled);
+      document.getElementById("standardRadio").disabled = disabled;
+      document.getElementById("strictRadio").disabled = disabled;
+      document.getElementById("contentBlockingOptionStrict").classList.toggle("disabled", disabled);
+      document.getElementById("contentBlockingOptionStandard").classList.toggle("disabled", disabled);
       let arrowButtons = document.querySelectorAll("button.arrowhead");
       for (let button of arrowButtons) {
-        button.disabled = isControlled;
+        button.disabled = disabled;
       }
 
       // Notify observers that the TP UI has been updated.
@@ -214,7 +224,12 @@ var gPrivacyPane = {
     document.getElementById("contentBlockingCategories").toggleAttribute("fallback-ui",
       defaults.getIntPref("network.cookie.cookieBehavior") === Ci.nsICookieService.BEHAVIOR_ACCEPT);
 
-    if (isLocked) {
+    let policy = Services.policies.getActivePolicies();
+    if (policy && ((policy.EnableTrackingProtection && policy.EnableTrackingProtection.Locked) ||
+        (policy.Cookies && policy.Cookies.Locked))) {
+      setInputsDisabledState(true);
+    }
+    if (tPPrefisLocked) {
       // An extension can't control this setting if either pref is locked.
       hideControllingExtension(TRACKING_PROTECTION_KEY);
       setInputsDisabledState(false);
@@ -387,19 +402,6 @@ var gPrivacyPane = {
       Services.urlFormatter.formatURLPref("app.support.baseURL") + "push";
     document.getElementById("notificationPermissionsLearnMore").setAttribute("href",
       notificationInfoURL);
-    let drmInfoURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") + "drm-content";
-    document.getElementById("playDRMContentLink").setAttribute("href", drmInfoURL);
-    let emeUIEnabled = Services.prefs.getBoolPref("browser.eme.ui.enabled");
-    // Force-disable/hide on WinXP:
-    if (navigator.platform.toLowerCase().startsWith("win")) {
-      emeUIEnabled = emeUIEnabled && parseFloat(Services.sysinfo.get("version")) >= 6;
-    }
-    if (!emeUIEnabled) {
-      // Don't want to rely on .hidden for the toplevel groupbox because
-      // of the pane hiding/showing code potentially interfering:
-      document.getElementById("drmGroup").setAttribute("style", "display: none !important");
-    }
 
     if (AppConstants.MOZ_DATA_REPORTING) {
       this.initDataCollection();
@@ -464,6 +466,23 @@ var gPrivacyPane = {
       gPrivacyPane.readBlockCookies.bind(gPrivacyPane));
     Preferences.get("browser.contentblocking.category").on("change",
       gPrivacyPane.highlightCBCategory);
+
+    // If any relevant content blocking pref changes, show a warning that the changes will
+    // not be implemented until they refresh their tabs.
+    for (let pref of CONTENT_BLOCKING_PREFS) {
+      Preferences.get(pref).on("change", gPrivacyPane.notifyUserToReload);
+    }
+    for (let button of document.querySelectorAll(".reload-tabs-button")) {
+      button.addEventListener("command", gPrivacyPane.reloadAllTabs);
+    }
+
+    let cryptoMinersOption = document.getElementById("contentBlockingCryptominersOption");
+    let fingerprintersOption = document.getElementById("contentBlockingFingerprintersOption");
+
+    cryptoMinersOption.hidden =
+      !Services.prefs.getBoolPref("browser.contentblocking.cryptomining.preferences.ui.enabled");
+    fingerprintersOption.hidden =
+      !Services.prefs.getBoolPref("browser.contentblocking.fingerprinting.preferences.ui.enabled");
 
     this.highlightCBCategory();
     this.readBlockCookies();
@@ -609,6 +628,7 @@ var gPrivacyPane = {
     let carat = e.target;
     carat.classList.toggle("up");
     carat.closest(".content-blocking-category").classList.toggle("expanded");
+    carat.setAttribute("aria-expanded", carat.getAttribute("aria-expanded") === "false");
   },
 
   // HISTORY MODE
@@ -667,15 +687,16 @@ var gPrivacyPane = {
     let mode;
     let getVal = aPref => Preferences.get(aPref).value;
 
-    if (getVal("privacy.history.custom"))
+    if (getVal("privacy.history.custom")) {
       mode = "custom";
-    else if (this._checkHistoryValues(this.prefsForKeepingHistory)) {
+    } else if (this._checkHistoryValues(this.prefsForKeepingHistory)) {
       if (getVal("browser.privatebrowsing.autostart"))
         mode = "dontremember";
       else
         mode = "remember";
-    } else
+    } else {
       mode = "custom";
+    }
 
     document.getElementById("historyMode").value = mode;
   },
@@ -1004,6 +1025,25 @@ var gPrivacyPane = {
   },
 
   /**
+   * Reload all tabs in all windows.
+   */
+  reloadAllTabs() {
+    for (let win of window.BrowserWindowTracker.orderedWindows) {
+      let tabbrowser = win.getBrowser();
+      tabbrowser.reloadTabs(tabbrowser.tabs);
+    }
+  },
+
+  /**
+   * Show a warning to the user that they need to reload their tabs to apply the setting.
+   */
+  notifyUserToReload() {
+    for (let notification of document.querySelectorAll(".reload-tabs")) {
+      notification.hidden = false;
+    }
+  },
+
+  /**
    * Displays fine-grained, per-site preferences for cookies.
    */
   showCookieExceptions() {
@@ -1100,11 +1140,6 @@ var gPrivacyPane = {
 
     gSubDialog.open("chrome://browser/content/preferences/sitePermissions.xul",
       "resizable=yes", params);
-
-    try {
-      Services.telemetry
-        .getHistogramById("WEB_NOTIFICATION_EXCEPTIONS_OPENED").add();
-    } catch (e) { }
   },
 
 
@@ -1269,6 +1304,10 @@ var gPrivacyPane = {
  * information.
  */
   showPasswords() {
+    if (LoginHelper.managementURI) {
+      window.docShell.messageManager.sendAsyncMessage("PasswordManager:OpenPreferences", {});
+      return;
+    }
     gSubDialog.open("chrome://passwordmgr/content/passwordManager.xul");
   },
 

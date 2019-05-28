@@ -10,6 +10,11 @@
 #include "ParentInternal.h"
 
 #include "chrome/common/mach_ipc_mac.h"
+#include "jsapi.h"  // JSAutoRealm
+#include "js/ArrayBuffer.h"  // JS::{DetachArrayBuffer,NewArrayBufferWithUserOwnedContents}
+#include "js/RootingAPI.h"  // JS::Rooted
+#include "js/Value.h"       // JS::{,Object}Value
+#include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/TabChild.h"
@@ -163,16 +168,23 @@ void UpdateGraphicsInUIProcess(const PaintMessage* aMsg) {
   AutoSafeJSContext cx;
   JSAutoRealm ar(cx, xpc::PrivilegedJunkScope());
 
-  JSObject* bufferObject =
-      JS_NewArrayBufferWithExternalContents(cx, width * height * 4, memory);
+  // Create an ArrayBuffer whose contents are the externally-provided |memory|.
+  JS::Rooted<JSObject*> bufferObject(cx);
+  bufferObject =
+      JS::NewArrayBufferWithUserOwnedContents(cx, width * height * 4, memory);
   MOZ_RELEASE_ASSERT(bufferObject);
 
-  JS::RootedValue buffer(cx, ObjectValue(*bufferObject));
+  JS::Rooted<JS::Value> buffer(cx, JS::ObjectValue(*bufferObject));
 
   // Call into the graphics module to update the canvas it manages.
   if (NS_FAILED(gGraphics->UpdateCanvas(buffer, width, height, hadFailure))) {
     MOZ_CRASH("UpdateGraphicsInUIProcess");
   }
+
+  // Manually detach this ArrayBuffer once this update completes, as the
+  // JS::NewArrayBufferWithUserOwnedContents API mandates.  (The API also
+  // guarantees that this call always succeeds.)
+  MOZ_ALWAYS_TRUE(JS::DetachArrayBuffer(cx, bufferObject));
 }
 
 static void MaybeTriggerExplicitPaint() {

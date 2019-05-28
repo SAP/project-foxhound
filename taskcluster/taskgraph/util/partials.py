@@ -8,6 +8,9 @@ import requests
 import redo
 
 import logging
+
+from taskgraph.util.scriptworker import BALROG_SCOPE_ALIAS_TO_PROJECT, BALROG_SERVER_SCOPES
+
 logger = logging.getLogger(__name__)
 
 PLATFORM_RENAMES = {
@@ -94,7 +97,7 @@ def get_builds(release_history, platform, locale):
     return release_history.get(platform, {}).get(locale, {})
 
 
-def get_partials_artifacts(release_history, platform, locale):
+def get_partials_artifacts_from_params(release_history, platform, locale):
     platform = _sanitize_platform(platform)
     return [
         (artifact, details.get('previousVersion', None))
@@ -102,7 +105,7 @@ def get_partials_artifacts(release_history, platform, locale):
     ]
 
 
-def get_partials_artifact_map(release_history, platform, locale):
+def get_partials_info_from_params(release_history, platform, locale):
     platform = _sanitize_platform(platform)
 
     artifact_map = {}
@@ -170,10 +173,20 @@ def get_release_builds(release, branch):
 
 
 def _get_balrog_api_root(branch):
-    if branch in ('mozilla-central', 'mozilla-beta', 'mozilla-release') or 'mozilla-esr' in branch:
-        return 'https://aus5.mozilla.org/api/v1'
+    # Query into the scopes scriptworker uses to make sure we check against the same balrog server
+    # That our jobs would use.
+    scope = None
+    for alias, projects in BALROG_SCOPE_ALIAS_TO_PROJECT:
+        if branch in projects and alias in BALROG_SERVER_SCOPES:
+            scope = BALROG_SERVER_SCOPES[alias]
+            break
     else:
+        scope = BALROG_SERVER_SCOPES['default']
+
+    if scope == u'balrog:server:dep':
         return 'https://aus5.stage.mozaws.net/api/v1'
+    else:
+        return 'https://aus5.mozilla.org/api/v1'
 
 
 def find_localtest(fileUrls):

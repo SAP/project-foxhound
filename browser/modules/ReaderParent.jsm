@@ -7,7 +7,7 @@
 
 var EXPORTED_SYMBOLS = [ "ReaderParent" ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "PlacesUtils", "resource://gre/modules/PlacesUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "ReaderMode", "resource://gre/modules/ReaderMode.jsm");
@@ -15,7 +15,7 @@ ChromeUtils.defineModuleGetter(this, "ReaderMode", "resource://gre/modules/Reade
 const gStringBundle = Services.strings.createBundle("chrome://global/locale/aboutReader.properties");
 
 var ReaderParent = {
-  // Listeners are added in nsBrowserGlue.js
+  // Listeners are added in BrowserGlue.jsm
   receiveMessage(message) {
     switch (message.name) {
       case "Reader:FaviconRequest": {

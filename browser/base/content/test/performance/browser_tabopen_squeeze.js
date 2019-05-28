@@ -34,14 +34,13 @@ add_task(async function() {
   await ensureFocusedUrlbar();
 
   let tabStripRect = gBrowser.tabContainer.arrowScrollbox.getBoundingClientRect();
-  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar,
+  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar.textbox,
     "anonid", "moz-input-box").getBoundingClientRect();
 
   await withPerfObserver(async function() {
     let switchDone = BrowserTestUtils.waitForEvent(window, "TabSwitchDone");
     BrowserOpenTab();
-    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "transitionend",
-      false, e => e.propertyName === "max-width");
+    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "TabAnimationEnd");
     await switchDone;
   }, {expectedReflows: EXPECTED_REFLOWS,
       frames: {

@@ -36,7 +36,7 @@ using namespace mozilla::layout;
 
 nsInlineFrame* NS_NewInlineFrame(nsIPresShell* aPresShell,
                                  ComputedStyle* aStyle) {
-  return new (aPresShell) nsInlineFrame(aStyle);
+  return new (aPresShell) nsInlineFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsInlineFrame)
@@ -75,12 +75,13 @@ void nsInlineFrame::InvalidateFrameWithRect(const nsRect& aRect,
                                             aRebuildDisplayItems);
 }
 
-static inline bool IsMarginZero(const nsStyleCoord& aCoord) {
-  return aCoord.GetUnit() == eStyleUnit_Auto ||
-         nsLayoutUtils::IsMarginZero(aCoord);
+static inline bool IsMarginZero(const LengthPercentageOrAuto& aLength) {
+  return aLength.IsAuto() ||
+         nsLayoutUtils::IsMarginZero(aLength.AsLengthPercentage());
 }
 
-/* virtual */ bool nsInlineFrame::IsSelfEmpty() {
+/* virtual */
+bool nsInlineFrame::IsSelfEmpty() {
 #if 0
   // I used to think inline frames worked this way, but it seems they
   // don't.  At least not in our codebase.
@@ -96,23 +97,21 @@ static inline bool IsMarginZero(const nsStyleCoord& aCoord) {
   // ZeroEffectiveSpanBox, anymore, so what should this really be?
   WritingMode wm = GetWritingMode();
   bool haveStart, haveEnd;
+
+  auto HaveSide = [&](mozilla::Side aSide) -> bool {
+    return border->GetComputedBorderWidth(aSide) != 0 ||
+           !nsLayoutUtils::IsPaddingZero(padding->mPadding.Get(aSide)) ||
+           !IsMarginZero(margin->mMargin.Get(aSide));
+  };
   // Initially set up haveStart and haveEnd in terms of visual (LTR/TTB)
   // coordinates; we'll exchange them later if bidi-RTL is in effect to
   // get logical start and end flags.
   if (wm.IsVertical()) {
-    haveStart = border->GetComputedBorderWidth(eSideTop) != 0 ||
-                !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetTop()) ||
-                !IsMarginZero(margin->mMargin.GetTop());
-    haveEnd = border->GetComputedBorderWidth(eSideBottom) != 0 ||
-              !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetBottom()) ||
-              !IsMarginZero(margin->mMargin.GetBottom());
+    haveStart = HaveSide(eSideTop);
+    haveEnd = HaveSide(eSideBottom);
   } else {
-    haveStart = border->GetComputedBorderWidth(eSideLeft) != 0 ||
-                !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetLeft()) ||
-                !IsMarginZero(margin->mMargin.GetLeft());
-    haveEnd = border->GetComputedBorderWidth(eSideRight) != 0 ||
-              !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetRight()) ||
-              !IsMarginZero(margin->mMargin.GetRight());
+    haveStart = HaveSide(eSideLeft);
+    haveEnd = HaveSide(eSideRight);
   }
   if (haveStart || haveEnd) {
     // We skip this block and return false for box-decoration-break:clone since
@@ -228,13 +227,15 @@ void nsInlineFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 //////////////////////////////////////////////////////////////////////
 // Reflow methods
 
-/* virtual */ void nsInlineFrame::AddInlineMinISize(
-    gfxContext* aRenderingContext, nsIFrame::InlineMinISizeData* aData) {
+/* virtual */
+void nsInlineFrame::AddInlineMinISize(gfxContext* aRenderingContext,
+                                      nsIFrame::InlineMinISizeData* aData) {
   DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::MIN_ISIZE);
 }
 
-/* virtual */ void nsInlineFrame::AddInlinePrefISize(
-    gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData) {
+/* virtual */
+void nsInlineFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
+                                       nsIFrame::InlinePrefISizeData* aData) {
   DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::PREF_ISIZE);
   aData->mLineIsEmpty = false;
 }
@@ -409,7 +410,8 @@ bool nsInlineFrame::DrainSelfOverflowListInternal(bool aInFirstLine) {
   return true;
 }
 
-/* virtual */ bool nsInlineFrame::DrainSelfOverflowList() {
+/* virtual */
+bool nsInlineFrame::DrainSelfOverflowList() {
   nsIFrame* lineContainer = nsLayoutUtils::FindNearestBlockAncestor(this);
   // Add the eInFirstLine flag if we have a ::first-line ancestor frame.
   // No need to look further than the nearest line container though.
@@ -423,12 +425,14 @@ bool nsInlineFrame::DrainSelfOverflowListInternal(bool aInFirstLine) {
   return DrainSelfOverflowListInternal(inFirstLine);
 }
 
-/* virtual */ bool nsInlineFrame::CanContinueTextRun() const {
+/* virtual */
+bool nsInlineFrame::CanContinueTextRun() const {
   // We can continue a text run through an inline frame
   return true;
 }
 
-/* virtual */ void nsInlineFrame::PullOverflowsFromPrevInFlow() {
+/* virtual */
+void nsInlineFrame::PullOverflowsFromPrevInFlow() {
   nsInlineFrame* prevInFlow = static_cast<nsInlineFrame*>(GetPrevInFlow());
   if (prevInFlow) {
     nsPresContext* presContext = PresContext();
@@ -642,7 +646,8 @@ void nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
 }
 
 // Returns whether there's any remaining frame to pull.
-/* static */ bool nsInlineFrame::HasFramesToPull(nsInlineFrame* aNextInFlow) {
+/* static */
+bool nsInlineFrame::HasFramesToPull(nsInlineFrame* aNextInFlow) {
   while (aNextInFlow) {
     if (!aNextInFlow->mFrames.IsEmpty()) {
       return true;
@@ -886,7 +891,7 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
   // ComputedStyle.
   RefPtr<ComputedStyle> newContext =
       aRestyleState.StyleSet().ResolveInheritingAnonymousBoxStyle(
-          nsCSSAnonBoxes::mozBlockInsideInlineWrapper(), ourStyle);
+          PseudoStyleType::mozBlockInsideInlineWrapper, ourStyle);
 
   // We're guaranteed that newContext only differs from the old ComputedStyle on
   // the block in things they might inherit from us.  And changehint processing
@@ -898,8 +903,8 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
     MOZ_ASSERT(!blockFrame->GetPrevContinuation(),
                "Must be first continuation");
 
-    MOZ_ASSERT(blockFrame->Style()->GetPseudo() ==
-                   nsCSSAnonBoxes::mozBlockInsideInlineWrapper(),
+    MOZ_ASSERT(blockFrame->Style()->GetPseudoType() ==
+                   PseudoStyleType::mozBlockInsideInlineWrapper,
                "Unexpected kind of ComputedStyle");
 
     for (nsIFrame* cont = blockFrame; cont;
@@ -931,7 +936,8 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
 
 nsFirstLineFrame* NS_NewFirstLineFrame(nsIPresShell* aPresShell,
                                        ComputedStyle* aStyle) {
-  return new (aPresShell) nsFirstLineFrame(aStyle);
+  return new (aPresShell)
+      nsFirstLineFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsFirstLineFrame)
@@ -940,13 +946,13 @@ void nsFirstLineFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                             nsIFrame* aPrevInFlow) {
   nsInlineFrame::Init(aContent, aParent, aPrevInFlow);
   if (!aPrevInFlow) {
-    MOZ_ASSERT(Style()->GetPseudo() == nsCSSPseudoElements::firstLine());
+    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::firstLine);
     return;
   }
 
   // This frame is a continuation - fixup the computed style if aPrevInFlow
   // is the first-in-flow (the only one with a ::first-line pseudo).
-  if (aPrevInFlow->Style()->GetPseudo() == nsCSSPseudoElements::firstLine()) {
+  if (aPrevInFlow->Style()->GetPseudoType() == PseudoStyleType::firstLine) {
     MOZ_ASSERT(FirstInFlow() == aPrevInFlow);
     // Create a new ComputedStyle that is a child of the parent
     // ComputedStyle thus removing the ::first-line style. This way
@@ -955,12 +961,12 @@ void nsFirstLineFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     ComputedStyle* parentContext = aParent->Style();
     RefPtr<ComputedStyle> newSC =
         PresContext()->StyleSet()->ResolveInheritingAnonymousBoxStyle(
-            nsCSSAnonBoxes::mozLineFrame(), parentContext);
+            PseudoStyleType::mozLineFrame, parentContext);
     SetComputedStyle(newSC);
   } else {
     MOZ_ASSERT(FirstInFlow() != aPrevInFlow);
-    MOZ_ASSERT(aPrevInFlow->Style()->GetPseudo() ==
-               nsCSSAnonBoxes::mozLineFrame());
+    MOZ_ASSERT(aPrevInFlow->Style()->GetPseudoType() ==
+               PseudoStyleType::mozLineFrame);
   }
 }
 
@@ -1053,7 +1059,8 @@ void nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
   // Note: the line layout code will properly compute our overflow state for us
 }
 
-/* virtual */ void nsFirstLineFrame::PullOverflowsFromPrevInFlow() {
+/* virtual */
+void nsFirstLineFrame::PullOverflowsFromPrevInFlow() {
   nsFirstLineFrame* prevInFlow =
       static_cast<nsFirstLineFrame*>(GetPrevInFlow());
   if (prevInFlow) {
@@ -1069,7 +1076,8 @@ void nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
   }
 }
 
-/* virtual */ bool nsFirstLineFrame::DrainSelfOverflowList() {
+/* virtual */
+bool nsFirstLineFrame::DrainSelfOverflowList() {
   AutoFrameListPtr overflowFrames(PresContext(), StealOverflowFrames());
   if (overflowFrames) {
     bool result = !overflowFrames->IsEmpty();

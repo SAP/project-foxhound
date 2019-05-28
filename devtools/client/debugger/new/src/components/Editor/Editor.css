@@ -5,10 +5,9 @@
 .editor-wrapper {
   --debug-line-border: rgb(145, 188, 219);
   --debug-expression-background: rgba(202, 227, 255, 0.5);
-  --editor-searchbar-height: 27px;
   --debug-line-error-border: rgb(255, 0, 0);
   --debug-expression-error-background: rgba(231, 116, 113, 0.3);
-  --editor-header-height: 30px;
+  --highlight-line-duration: 1500ms;
 }
 
 .theme-dark .editor-wrapper {
@@ -25,7 +24,9 @@
   min-width: 0 !important;
 }
 
-.CodeMirror.cm-s-mozilla, .CodeMirror-scroll, .CodeMirror-sizer {
+.CodeMirror.cm-s-mozilla,
+.CodeMirror-scroll,
+.CodeMirror-sizer {
   overflow-anchor: none;
 }
 
@@ -39,7 +40,7 @@
 
 /**
  * There's a known codemirror flex issue with chrome that this addresses.
- * BUG https://github.com/devtools-html/debugger.html/issues/63
+ * BUG https://github.com/firefox-devtools/debugger/issues/63
  */
 .editor-wrapper {
   position: absolute;
@@ -47,27 +48,10 @@
   width: calc(100% - 1px);
   top: var(--editor-header-height);
   left: 0px;
-  --editor-footer-height: 24px;
 }
 
 html[dir="rtl"] .editor-mount {
   direction: ltr;
-}
-
-.theme-light {
-  --gutter-hover-background-color: #dde1e4;
-  --breakpoint-fill: var(--blue-50);
-  --breakpoint-stroke: var(--blue-60);
-  --breakpoint-fill-disabled: var(--blue-50);
-  --breakpoint-stroke-disabled: var(--blue-40);
-}
-
-.theme-dark {
-  --gutter-hover-background-color: #414141;
-  --breakpoint-fill: var(--blue-55);
-  --breakpoint-stroke: var(--blue-40);
-  --breakpoint-fill-disabled: var(--blue-50);
-  --breakpoint-stroke-disabled: var(--blue-60);
 }
 
 .theme-light .cm-s-mozilla .empty-line .CodeMirror-linenumber {
@@ -76,40 +60,6 @@ html[dir="rtl"] .editor-mount {
 
 .theme-dark .cm-s-mozilla .empty-line .CodeMirror-linenumber {
   color: var(--grey-50);
-}
-
-:not(.empty-line):not(.new-breakpoint)
-  > .CodeMirror-gutter-wrapper:hover
-  > .CodeMirror-linenumber {
-  height: 13px;
-  color: var(--theme-body-color);
-  /* Add 1px offset to the background to match it
-    with the actual breakpoint image dimensions */
-  background: linear-gradient(
-    to bottom,
-    transparent 1px,
-    var(--gutter-hover-background-color) 0
-  );
-}
-
-:not(.empty-line):not(.new-breakpoint)
-  > .CodeMirror-gutter-wrapper:hover
-  > .CodeMirror-linenumber::after {
-  content: "";
-  position: absolute;
-  top: 1px;
-  height: 12px;
-  width: 9px;
-  background-color: var(--gutter-hover-background-color);
-  mask: url(/images/breakpoint.svg) no-repeat;
-  mask-size: auto 12px;
-  mask-position: right;
-}
-
-.editor-wrapper .breakpoints {
-  position: absolute;
-  top: 0;
-  left: 0;
 }
 
 .function-search {
@@ -122,67 +72,11 @@ html[dir="rtl"] .editor-mount {
 }
 
 .editor.hit-marker {
-  height: 14px;
+  height: 15px;
 }
 
 .editor-wrapper .highlight-lines {
   background: var(--theme-selection-background-hover);
-}
-
-.editor.new-breakpoint svg {
-  fill: var(--breakpoint-fill);
-  stroke: var(--breakpoint-stroke);
-  width: 60px;
-  height: 14px;
-  position: absolute;
-  top: 0px;
-  right: -4px;
-}
-
-.inline-bp {
-  background-color: #9ddfff;
-  width: 20px;
-  padding: 0px 5px;
-  margin: 0px 4px;
-  border-radius: 5px;
-  border-color: blue;
-  border: 1px solid #00b6ff;
-}
-
-.editor .breakpoint {
-  position: absolute;
-  right: -2px;
-}
-
-.editor.new-breakpoint.folding-enabled svg {
-  right: -16px;
-}
-
-.new-breakpoint.has-condition .CodeMirror-gutter-wrapper svg {
-  fill: var(--theme-graphs-yellow);
-  stroke: var(--theme-graphs-orange);
-}
-
-.new-breakpoint.has-condition.log .CodeMirror-gutter-wrapper svg {
-  fill: var(--theme-graphs-orange);
-  stroke: var(--theme-graphs-yellow);
-}
-
-.editor.new-breakpoint.breakpoint-disabled svg {
-  fill: var(--breakpoint-fill-disabled);
-  stroke: var(--breakpoint-stroke-disabled);
-  fill-opacity: 0.5;
-}
-
-.editor.column-breakpoint svg {
-  fill: var(--theme-selection-background);
-  vertical-align: middle;
-  width: 17px;
-  height: 14px;
-}
-
-.editor.column-breakpoint.breakpoint-disabled svg {
-  opacity: 0.3;
 }
 
 .CodeMirror {
@@ -193,11 +87,8 @@ html[dir="rtl"] .editor-mount {
 .editor-wrapper .editor-mount {
   width: 100%;
   background-color: var(--theme-body-background);
-}
-
-.CodeMirror-linenumber {
-  font-size: 11px;
-  line-height: 14px;
+  font-size: var(--theme-code-font-size);
+  line-height: var(--theme-code-line-height);
 }
 
 .folding-enabled .CodeMirror-linenumber {
@@ -218,16 +109,12 @@ html[dir="rtl"] .editor-mount {
   z-index: 0;
 }
 
-.editor-wrapper .CodeMirror-line {
-  font-size: 11px;
-}
-
 .theme-dark .editor-wrapper .CodeMirror-line .cm-comment {
   color: var(--theme-comment);
 }
 
 .debug-expression,
-.new-debug-line .column-breakpoint {
+.debug-expression ~ .CodeMirror-widget {
   background-color: var(--debug-expression-background);
 }
 
@@ -257,7 +144,7 @@ debug-expression-error {
   display: none;
 }
 .highlight-line .CodeMirror-line {
-  animation: fade-highlight-out 1.5s normal forwards;
+  animation: fade-highlight-out var(--highlight-line-duration) normal forwards;
 }
 
 @keyframes fade-highlight-out {

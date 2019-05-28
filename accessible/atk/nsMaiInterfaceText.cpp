@@ -287,7 +287,7 @@ static gint getCaretOffsetCB(AtkText* aText) {
   if (accWrap) {
     HyperTextAccessible* text = accWrap->AsHyperText();
     if (!text || !text->IsTextRole()) {
-      return 0;
+      return -1;
     }
 
     return static_cast<gint>(text->CaretOffset());
@@ -297,7 +297,7 @@ static gint getCaretOffsetCB(AtkText* aText) {
     return static_cast<gint>(proxy->CaretOffset());
   }
 
-  return 0;
+  return -1;
 }
 
 static AtkAttributeSet* getRunAttributesCB(AtkText* aText, gint aOffset,
@@ -591,9 +591,8 @@ static gboolean setCaretOffsetCB(AtkText* aText, gint aOffset) {
   return FALSE;
 }
 
-static gboolean scrollSubstringToCB(AtkText* aText,
-                                    gint aStartOffset, gint aEndOffset,
-                                    AtkScrollType aType) {
+static gboolean scrollSubstringToCB(AtkText* aText, gint aStartOffset,
+                                    gint aEndOffset, AtkScrollType aType) {
   AtkObject* atkObject = ATK_OBJECT(aText);
   AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
   if (accWrap) {
@@ -615,9 +614,8 @@ static gboolean scrollSubstringToCB(AtkText* aText,
   return FALSE;
 }
 
-static gboolean scrollSubstringToPointCB(AtkText* aText,
-                                         gint aStartOffset, gint aEndOffset,
-                                         AtkCoordType aCoords,
+static gboolean scrollSubstringToPointCB(AtkText* aText, gint aStartOffset,
+                                         gint aEndOffset, AtkCoordType aCoords,
                                          gint aX, gint aY) {
   AtkObject* atkObject = ATK_OBJECT(aText);
   AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);

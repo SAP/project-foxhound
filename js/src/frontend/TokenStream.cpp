@@ -763,9 +763,9 @@ MOZ_COLD void TokenStreamChars<Utf8Unit, AnyCharsAccess>::internalEncodingError(
     uint32_t line, column;
     computeLineAndColumn(offset, &line, &column);
 
-    if (!notes->addNoteASCII(anyChars.cx, anyChars.getFilename(), line, column,
-                             GetErrorMessage, nullptr, JSMSG_BAD_CODE_UNITS,
-                             badUnitsStr)) {
+    if (!notes->addNoteASCII(anyChars.cx, anyChars.getFilename(), 0, line,
+                             column, GetErrorMessage, nullptr,
+                             JSMSG_BAD_CODE_UNITS, badUnitsStr)) {
       break;
     }
 
@@ -1279,6 +1279,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::advance(size_t position) {
   TokenStreamAnyChars& anyChars = anyCharsAccess();
   Token* cur = const_cast<Token*>(&anyChars.currentToken());
   cur->pos.begin = this->sourceUnits.offset();
+  cur->pos.end = cur->pos.begin;
   MOZ_MAKE_MEM_UNDEFINED(&cur->type, sizeof(cur->type));
   anyChars.lookahead = 0;
   return true;
@@ -1996,9 +1997,10 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
                "Private identifier starts with #");
     newPrivateNameToken(atom->asPropertyName(), start, modifier, out);
 
-    // TODO(khypera): Delete the below once private names are supported.
-    errorAt(start.offset(), JSMSG_FIELDS_NOT_SUPPORTED);
-    return false;
+    if (!anyCharsAccess().options().fieldsEnabledOption) {
+      errorAt(start.offset(), JSMSG_FIELDS_NOT_SUPPORTED);
+      return false;
+    }
   } else {
     newNameToken(atom->asPropertyName(), start, modifier, out);
   }
@@ -2146,12 +2148,9 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
 
   // Numbers contain no escapes, so we can read directly from |sourceUnits|.
   double dval;
-#ifdef ENABLE_BIGINT
   bool isBigInt = false;
-#endif
   DecimalPoint decimalPoint = NoDecimal;
-  if (unit != '.' && unit != 'e' && unit != 'E' &&
-      IF_BIGINT(unit != 'n', true)) {
+  if (unit != '.' && unit != 'e' && unit != 'E' && unit != 'n') {
     // NOTE: |unit| may be EOF here.
     ungetCodeUnit(unit);
 
@@ -2161,14 +2160,10 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
                            this->sourceUnits.addressOfNextCodeUnit(), &dval)) {
       return false;
     }
-  }
-#ifdef ENABLE_BIGINT
-  else if (unit == 'n' && anyCharsAccess().options().bigIntEnabledOption) {
+  } else if (unit == 'n' && anyCharsAccess().options().bigIntEnabledOption) {
     isBigInt = true;
     unit = peekCodeUnit();
-  }
-#endif
-  else {
+  } else {
     // Consume any decimal dot and fractional component.
     if (unit == '.') {
       decimalPoint = HasDecimal;
@@ -2230,11 +2225,9 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
 
   noteBadToken.release();
 
-#ifdef ENABLE_BIGINT
   if (isBigInt) {
     return bigIntLiteral(start, modifier, out);
   }
-#endif
 
   newNumberToken(dval, decimalPoint, start, modifier, out);
   return true;
@@ -2365,7 +2358,6 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::regexpLiteral(
   return true;
 }
 
-#ifdef ENABLE_BIGINT
 template <typename Unit, class AnyCharsAccess>
 MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::bigIntLiteral(
     TokenStart start, Modifier modifier, TokenKind* out) {
@@ -2390,7 +2382,34 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::bigIntLiteral(
   newBigIntToken(start, modifier, out);
   return true;
 }
-#endif
+
+template <typename Unit, class AnyCharsAccess>
+void GeneralTokenStreamChars<Unit,
+                             AnyCharsAccess>::consumeOptionalHashbangComment() {
+  MOZ_ASSERT(this->sourceUnits.atStart(),
+             "HashBangComment can only appear immediately at the start of a "
+             "Script or Module");
+
+  // HashbangComment ::
+  //   #!  SingleLineCommentChars_opt
+
+  if (!matchCodeUnit('#')) {
+    // HashbangComment is optional at start of Script or Module.
+    return;
+  }
+
+  if (!matchCodeUnit('!')) {
+    // # not followed by ! at start of Script or Module is an error, but normal
+    // parsing code will handle that error just fine if we let it.
+    ungetCodeUnit('#');
+    return;
+  }
+
+  // This doesn't consume a concluding LineTerminator, and it stops consuming
+  // just before any encoding error.  The subsequent |getToken| call will call
+  // |getTokenInternal| below which will handle these possibilities.
+  this->sourceUnits.consumeRestOfSingleLineComment();
+}
 
 template <typename Unit, class AnyCharsAccess>
 MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
@@ -2556,10 +2575,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
     if (c1kind == ZeroDigit) {
       TokenStart start(this->sourceUnits, -1);
       int radix;
-#ifdef ENABLE_BIGINT
       bool isLegacyOctalOrNoctal = false;
       bool isBigInt = false;
-#endif
       const Unit* numStart;
       unit = getCodeUnit();
       if (unit == 'x' || unit == 'X') {
@@ -2612,9 +2629,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         }
       } else if (IsAsciiDigit(unit)) {
         radix = 8;
-#ifdef ENABLE_BIGINT
         isLegacyOctalOrNoctal = true;
-#endif
         // one past the '0'
         numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
 
@@ -2649,7 +2664,6 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         return decimalNumber(unit, start, numStart, modifier, ttp);
       }
 
-#ifdef ENABLE_BIGINT
       if (unit == 'n' && anyCharsAccess().options().bigIntEnabledOption) {
         if (isLegacyOctalOrNoctal) {
           error(JSMSG_BIGINT_INVALID_SYNTAX);
@@ -2660,9 +2674,6 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
       } else {
         ungetCodeUnit(unit);
       }
-#else
-      ungetCodeUnit(unit);
-#endif
 
       // Error if an identifier-start code point appears immediately
       // after the number.  Somewhat surprisingly, if we don't check
@@ -2683,11 +2694,9 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         }
       }
 
-#ifdef ENABLE_BIGINT
       if (isBigInt) {
         return bigIntLiteral(start, modifier, ttp);
       }
-#endif
 
       double dval;
       if (!GetFullInteger(anyCharsAccess().cx, numStart,

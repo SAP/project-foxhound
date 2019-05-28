@@ -14,7 +14,7 @@ function createObjectClient(grip: Grip) {
   return DebuggerClient.createObjectClient(grip);
 }
 
-export async function onConnect(connection: any, actions: Object): Object {
+export async function onConnect(connection: any, actions: Object) {
   const {
     tabConnection: { tabTarget, threadClient, debuggerClient }
   } = connection;
@@ -22,28 +22,27 @@ export async function onConnect(connection: any, actions: Object): Object {
   DebuggerClient = debuggerClient;
 
   if (!tabTarget || !threadClient || !debuggerClient) {
-    return { bpClients: {} };
+    return;
   }
 
   const supportsWasm =
     features.wasm && !!debuggerClient.mainRoot.traits.wasmBinarySource;
 
-  const { bpClients } = setupCommands({
+  setupCommands({
     threadClient,
     tabTarget,
     debuggerClient,
     supportsWasm
   });
 
-  if (actions) {
-    setupEvents({ threadClient, actions, supportsWasm });
-  }
+  setupEvents({ threadClient, tabTarget, actions, supportsWasm });
 
   tabTarget.on("will-navigate", actions.willNavigate);
   tabTarget.on("navigate", actions.navigated);
 
   await threadClient.reconfigure({
     observeAsmJS: true,
+    pauseWorkersUntilAttach: true,
     wasmBinarySource: supportsWasm,
     skipBreakpoints: prefs.skipPausing
   });
@@ -55,7 +54,7 @@ export async function onConnect(connection: any, actions: Object): Object {
   // bfcache) so explicity fire `newSource` events for all returned
   // sources.
   const sources = await clientCommands.fetchSources();
-  const traits = tabTarget.activeTab ? tabTarget.activeTab.traits : null;
+  const traits = tabTarget.traits;
   await actions.connect(
     tabTarget.url,
     threadClient.actor,
@@ -69,8 +68,6 @@ export async function onConnect(connection: any, actions: Object): Object {
   if (pausedPacket) {
     clientEvents.paused(threadClient, "paused", pausedPacket);
   }
-
-  return { bpClients };
 }
 
 export { createObjectClient, clientCommands, clientEvents };

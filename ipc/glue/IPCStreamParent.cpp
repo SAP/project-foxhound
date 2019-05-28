@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IPCStreamDestination.h"
-#include "mozilla/dom/nsIContentParent.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/PChildToParentStreamParent.h"
 #include "mozilla/ipc/PParentToChildStreamParent.h"
@@ -64,8 +64,9 @@ class IPCStreamSourceParent final : public PParentToChildStreamParent,
 
 }  // anonymous namespace
 
-/* static */ PParentToChildStreamParent* IPCStreamSource::Create(
-    nsIAsyncInputStream* aInputStream, dom::nsIContentParent* aManager) {
+/* static */
+PParentToChildStreamParent* IPCStreamSource::Create(
+    nsIAsyncInputStream* aInputStream, dom::ContentParent* aManager) {
   MOZ_ASSERT(aInputStream);
   MOZ_ASSERT(aManager);
 
@@ -86,7 +87,8 @@ class IPCStreamSourceParent final : public PParentToChildStreamParent,
   return source;
 }
 
-/* static */ PParentToChildStreamParent* IPCStreamSource::Create(
+/* static */
+PParentToChildStreamParent* IPCStreamSource::Create(
     nsIAsyncInputStream* aInputStream, PBackgroundParent* aManager) {
   MOZ_ASSERT(aInputStream);
   MOZ_ASSERT(aManager);
@@ -105,8 +107,8 @@ class IPCStreamSourceParent final : public PParentToChildStreamParent,
   return source;
 }
 
-/* static */ IPCStreamSource* IPCStreamSource::Cast(
-    PParentToChildStreamParent* aActor) {
+/* static */
+IPCStreamSource* IPCStreamSource::Cast(PParentToChildStreamParent* aActor) {
   MOZ_ASSERT(aActor);
   return static_cast<IPCStreamSourceParent*>(aActor);
 }
@@ -167,7 +169,8 @@ void DeallocPChildToParentStreamParent(PChildToParentStreamParent* aActor) {
   delete aActor;
 }
 
-/* static */ IPCStreamDestination* IPCStreamDestination::Cast(
+/* static */
+IPCStreamDestination* IPCStreamDestination::Cast(
     PChildToParentStreamParent* aActor) {
   MOZ_ASSERT(aActor);
   return static_cast<IPCStreamDestinationParent*>(aActor);

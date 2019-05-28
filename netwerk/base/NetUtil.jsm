@@ -17,7 +17,7 @@ var EXPORTED_SYMBOLS = [
 
 const PR_UINT32_MAX = 0xffffffff;
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const BinaryInputStream = Components.Constructor("@mozilla.org/binaryinputstream;1",
                                                  "nsIBinaryInputStream", "setInputStream");
@@ -65,8 +65,8 @@ var NetUtil = {
         var observer;
         if (aCallback) {
             observer = {
-                onStartRequest(aRequest, aContext) {},
-                onStopRequest(aRequest, aContext, aStatusCode) {
+                onStartRequest(aRequest) {},
+                onStopRequest(aRequest, aStatusCode) {
                     aCallback(aStatusCode);
                 },
             };
@@ -117,8 +117,8 @@ var NetUtil = {
         let listener = Cc["@mozilla.org/network/simple-stream-listener;1"].
                        createInstance(Ci.nsISimpleStreamListener);
         listener.init(pipe.outputStream, {
-            onStartRequest(aRequest, aContext) {},
-            onStopRequest(aRequest, aContext, aStatusCode) {
+            onStartRequest(aRequest) {},
+            onStopRequest(aRequest, aStatusCode) {
                 pipe.outputStream.close();
                 aCallback(pipe.inputStream, aStatusCode, aRequest);
             },
@@ -139,21 +139,7 @@ var NetUtil = {
         }
 
         try {
-            // Open the channel using asyncOpen2() if the loadinfo contains one
-            // of the security mode flags, otherwise fall back to use asyncOpen().
-            if (channel.loadInfo &&
-                channel.loadInfo.securityMode != 0) {
-                channel.asyncOpen2(listener);
-            } else {
-                // Log deprecation warning to console to make sure all channels
-                // are created providing the correct security flags in the loadinfo.
-                // See nsILoadInfo for all available security flags and also the API
-                // of NetUtil.newChannel() for details above.
-                Cu.reportError("NetUtil.jsm: asyncFetch() requires the channel to have " +
-                    "one of the security flags set in the loadinfo (see nsILoadInfo). " +
-                    "Please create channel using NetUtil.newChannel()");
-                channel.asyncOpen(listener, null);
-            }
+            channel.asyncOpen(listener);
         } catch (e) {
             let exception = new Components.Exception(
                 "Failed to open input source '" + channel.originalURI.spec + "'",
@@ -315,12 +301,12 @@ var NetUtil = {
             contentPolicyType = Ci.nsIContentPolicy.TYPE_OTHER;
         }
 
-        return Services.io.newChannelFromURI2(uri,
-                                              loadingNode || null,
-                                              loadingPrincipal || null,
-                                              triggeringPrincipal || null,
-                                              securityFlags,
-                                              contentPolicyType);
+        return Services.io.newChannelFromURI(uri,
+                                             loadingNode || null,
+                                             loadingPrincipal || null,
+                                             triggeringPrincipal || null,
+                                             securityFlags,
+                                             contentPolicyType);
     },
 
     /**

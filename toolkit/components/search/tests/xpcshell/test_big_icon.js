@@ -9,7 +9,10 @@ add_task(async function test_big_icon() {
   await asyncInit();
 
   let promiseChanged = TestUtils.topicObserved("browser-search-engine-modified",
-    (engine, verb) => verb == "engine-changed" && engine.name == "BigIcon" && engine.iconURI);
+    (engine, verb) => {
+      engine.QueryInterface(Ci.nsISearchEngine);
+      return verb == "engine-changed" && engine.name == "BigIcon" && engine.iconURI;
+    });
 
   let iconUrl = gDataUrl + "big_icon.ico";
   await addTestEngines([
@@ -21,6 +24,7 @@ add_task(async function test_big_icon() {
   await promiseAfterCache();
 
   let [engine] = await promiseChanged;
+  engine.QueryInterface(Ci.nsISearchEngine);
   Assert.ok(engine.iconURI.spec.startsWith("data:image/png"),
             "The icon is saved as a PNG data url");
 });

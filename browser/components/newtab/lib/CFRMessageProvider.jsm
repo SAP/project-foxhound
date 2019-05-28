@@ -37,12 +37,21 @@ const REDDIT_ENHANCEMENT_PARAMS = {
   sumo_path: "extensionrecommendations",
   min_frecency: 10000,
 };
+const PINNED_TABS_TARGET_SITES = [
+  "docs.google.com", "www.docs.google.com", "calendar.google.com",
+  "messenger.com", "www.messenger.com", "web.whatsapp.com", "mail.google.com",
+  "outlook.live.com", "facebook.com", "www.facebook.com", "twitter.com", "www.twitter.com",
+  "reddit.com", "www.reddit.com", "github.com", "www.github.com", "youtube.com", "www.youtube.com",
+  "feedly.com", "www.feedly.com", "drive.google.com", "amazon.com", "www.amazon.com",
+  "messages.android.com",
+];
 
 const CFR_MESSAGES = [
   {
     id: "FACEBOOK_CONTAINER_3",
     template: "cfr_doorhanger",
     content: {
+      category: "cfrAddons",
       bucket_id: "CFR_M1",
       notification_text: {string_id: "cfr-doorhanger-extension-notification"},
       heading_text: {string_id: "cfr-doorhanger-extension-heading"},
@@ -77,7 +86,7 @@ const CFR_MESSAGES = [
           label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
           action: {
             type: "OPEN_PREFERENCES_PAGE",
-            data: {category: "general-cfr", origin: "CFR"},
+            data: {category: "general-cfraddons", origin: "CFR"},
           },
         }],
       },
@@ -94,6 +103,7 @@ const CFR_MESSAGES = [
     id: "GOOGLE_TRANSLATE_3",
     template: "cfr_doorhanger",
     content: {
+      category: "cfrAddons",
       bucket_id: "CFR_M1",
       notification_text: {string_id: "cfr-doorhanger-extension-notification"},
       heading_text: {string_id: "cfr-doorhanger-extension-heading"},
@@ -128,7 +138,7 @@ const CFR_MESSAGES = [
           label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
           action: {
             type: "OPEN_PREFERENCES_PAGE",
-            data: {category: "general-cfr", origin: "CFR"},
+            data: {category: "general-cfraddons", origin: "CFR"},
           },
         }],
       },
@@ -145,6 +155,7 @@ const CFR_MESSAGES = [
     id: "YOUTUBE_ENHANCE_3",
     template: "cfr_doorhanger",
     content: {
+      category: "cfrAddons",
       bucket_id: "CFR_M1",
       notification_text: {string_id: "cfr-doorhanger-extension-notification"},
       heading_text: {string_id: "cfr-doorhanger-extension-heading"},
@@ -179,7 +190,7 @@ const CFR_MESSAGES = [
           label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
           action: {
             type: "OPEN_PREFERENCES_PAGE",
-            data: {category: "general-cfr", origin: "CFR"},
+            data: {category: "general-cfraddons", origin: "CFR"},
           },
         }],
       },
@@ -197,6 +208,7 @@ const CFR_MESSAGES = [
     template: "cfr_doorhanger",
     exclude: true,
     content: {
+      category: "cfrAddons",
       bucket_id: "CFR_M1",
       notification_text: {string_id: "cfr-doorhanger-extension-notification"},
       heading_text: {string_id: "cfr-doorhanger-extension-heading"},
@@ -231,7 +243,7 @@ const CFR_MESSAGES = [
           label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
           action: {
             type: "OPEN_PREFERENCES_PAGE",
-            data: {category: "general-cfr", origin: "CFR"},
+            data: {category: "general-cfraddons", origin: "CFR"},
           },
         }],
       },
@@ -249,6 +261,7 @@ const CFR_MESSAGES = [
     template: "cfr_doorhanger",
     exclude: true,
     content: {
+      category: "cfrAddons",
       bucket_id: "CFR_M1",
       notification_text: {string_id: "cfr-doorhanger-extension-notification"},
       heading_text: {string_id: "cfr-doorhanger-extension-heading"},
@@ -283,7 +296,7 @@ const CFR_MESSAGES = [
           label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
           action: {
             type: "OPEN_PREFERENCES_PAGE",
-            data: {category: "general-cfr", origin: "CFR"},
+            data: {category: "general-cfraddons", origin: "CFR"},
           },
         }],
       },
@@ -295,6 +308,51 @@ const CFR_MESSAGES = [
       (${JSON.stringify(REDDIT_ENHANCEMENT_PARAMS.existing_addons)} intersect addonsInfo.addons|keys)|length == 0 &&
       (${JSON.stringify(REDDIT_ENHANCEMENT_PARAMS.open_urls)} intersect topFrecentSites[.frecency >= ${REDDIT_ENHANCEMENT_PARAMS.min_frecency}]|mapToProperty('host'))|length > 0`,
     trigger: {id: "openURL", params: REDDIT_ENHANCEMENT_PARAMS.open_urls},
+  },
+  {
+    id: "PIN_TAB",
+    template: "cfr_doorhanger",
+    content: {
+      category: "cfrFeatures",
+      bucket_id: "CFR_PIN_TAB",
+      notification_text: {string_id: "cfr-doorhanger-extension-notification"},
+      heading_text: {string_id: "cfr-doorhanger-pintab-heading"},
+      info_icon: {
+        label: {string_id: "cfr-doorhanger-extension-sumo-link"},
+        sumo_path: REDDIT_ENHANCEMENT_PARAMS.sumo_path,
+      },
+      text: {string_id: "cfr-doorhanger-pintab-description"},
+      descriptionDetails: {
+        steps: [
+          {"string_id": "cfr-doorhanger-pintab-step1"},
+          {"string_id": "cfr-doorhanger-pintab-step2"},
+          {"string_id": "cfr-doorhanger-pintab-step3"},
+        ],
+      },
+      buttons: {
+        primary: {
+          label: {string_id: "cfr-doorhanger-pintab-ok-button"},
+          action: {
+            type: "PIN_CURRENT_TAB",
+          },
+        },
+        secondary: [{
+          label: {string_id: "cfr-doorhanger-extension-cancel-button"},
+          action: {type: "CANCEL"},
+        }, {
+          label: {string_id: "cfr-doorhanger-extension-never-show-recommendation"},
+        }, {
+          label: {string_id: "cfr-doorhanger-extension-manage-settings-button"},
+          action: {
+            type: "OPEN_PREFERENCES_PAGE",
+            data: {category: "general-cfrfeatures", origin: "CFR"},
+          },
+        }],
+      },
+    },
+    targeting: `locale == "en-US" && !hasPinnedTabs && recentVisits[.timestamp > (currentDate|date - 3600 * 1000 * 1)]|length >= 3`,
+    frequency: {lifetime: 3},
+    trigger: {id: "frequentVisits", params: PINNED_TABS_TARGET_SITES},
   },
 ];
 

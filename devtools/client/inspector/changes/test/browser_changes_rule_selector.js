@@ -4,8 +4,8 @@
 
 "use strict";
 
-// Test that renaming the selector of a CSS declaration in the Rule view is tracked as
-// one rule removal with the old selector and one rule addition with the new selector.
+// Test that renaming the selector of a CSS rule is tracked.
+// Expect a selector removal followed by a selector addition and no changed declarations
 
 const TEST_URI = `
   <style type='text/css'>
@@ -30,7 +30,7 @@ add_task(async function() {
   info("Entering a new selector name");
   editor.input.value = ".test";
 
-  // Expect two "TRACK_CHANGE" actions: one for rule removal, one for rule addition.
+  // Expect two "TRACK_CHANGE" actions: one for removal, one for addition.
   const onTrackChange = waitUntilAction(store, "TRACK_CHANGE", 2);
   const onRuleViewChanged = once(ruleView, "ruleview-changed");
   info("Pressing Enter key to commit the change");
@@ -40,30 +40,20 @@ add_task(async function() {
   info("Wait for the change to be tracked");
   await onTrackChange;
 
-  const rules = panel.querySelectorAll(".rule");
-  is(rules.length, 2, "Two rules were tracked as changed");
+  const rules = panel.querySelectorAll(".changes__rule");
+  is(rules.length, 1, "One rule was tracked as changed");
 
-  const firstSelector = rules.item(0).querySelector(".selector");
-  is(firstSelector.title, "div", "Old selector name was tracked.");
-  ok(firstSelector.classList.contains("diff-remove"), "Old selector was removed.");
+  info("Expect old selector to be removed and new selector to be added");
+  const addedSelectors = getAddedSelectors(panel);
+  const removedSelectors = getRemovedSelectors(panel);
+  is(addedSelectors.length, 1, "One new selector was tracked as added");
+  is(addedSelectors.item(0).title, ".test", "New selector is correct");
+  is(removedSelectors.length, 1, "One old selector was tracked as removed");
+  is(removedSelectors.item(0).title, "div", "Old selector is correct");
 
-  const secondSelector = rules.item(1).querySelector(".selector");
-  is(secondSelector.title, ".test", "New selector name was tracked.");
-  ok(secondSelector.classList.contains("diff-add"), "New selector was added.");
-
-  info("Get removed declarations from first rule");
+  info("Expect no declarations to have been added or removed during selector change");
   const removeDecl = getRemovedDeclarations(doc, rules.item(0));
-  is(removeDecl.length, 1, "First rule has correct number of declarations removed");
-
-  info("Get added declarations from second rule");
-  const addDecl = getAddedDeclarations(doc, rules.item(1));
-  is(addDecl.length, 1, "Second rule has correct number of declarations added");
-
-  info("Checking that the two rules have identical declarations");
-  for (let i = 0; i < removeDecl.length; i++) {
-    is(removeDecl[i].property, addDecl[i].property,
-      `Declaration names match at index ${i}`);
-    is(removeDecl[i].value, addDecl[i].value,
-      `Declaration values match at index ${i}`);
-  }
+  is(removeDecl.length, 0, "No declarations removed");
+  const addDecl = getAddedDeclarations(doc, rules.item(0));
+  is(addDecl.length, 0, "No declarations added");
 });

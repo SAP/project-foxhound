@@ -11,7 +11,6 @@ import os
 import re
 import sys
 import subprocess
-import time
 
 from shutil import copyfile
 
@@ -57,9 +56,13 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
           }],
         [["--app"],
          {"default": "firefox",
-          "choices": ["firefox", "chrome", "geckoview", "fennec"],
+          "choices": ["firefox", "chrome", "geckoview", "fennec", "refbrow", "fenix"],
           "dest": "app",
           "help": "name of the application we are testing (default: firefox)"
+          }],
+        [["--activity"],
+         {"dest": "activity",
+          "help": "name of the android activity used to launch the android app"
           }],
         [["--is-release-build"],
          {"action": "store_true",
@@ -180,10 +183,16 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             # check each cmd line arg individually
             self.app = "firefox"
             if 'raptor_cmd_line_args' in self.config:
-                for app in ['chrome', 'geckoview', 'fennec']:
+                for app in ['chrome', 'geckoview', 'fennec', 'refbrow', 'fenix']:
                     for next_arg in self.config['raptor_cmd_line_args']:
                         if app in next_arg:
                             self.app = app
+                            break
+                # repeat and get 'activity' argument
+                for activity in ['GeckoViewActivity', 'BrowserTestActivity']:
+                    for next_arg in self.config['raptor_cmd_line_args']:
+                        if activity in next_arg:
+                            self.activity = activity
                             break
         else:
             # raptor initiated in production via mozharness
@@ -209,6 +218,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         self.power_test = self.config.get('power_test')
         self.is_release_build = self.config.get('is_release_build')
         self.debug_mode = self.config.get('debug_mode', False)
+        self.firefox_android_browsers = ["fennec", "geckoview", "refbrow", "fenix"]
 
     # We accept some configuration options from the try commit message in the
     # format mozharness: <options>. Example try commit message: mozharness:
@@ -240,7 +250,8 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         return self.abs_dirs
 
     def install_chrome(self):
-        # temporary hack to install google chrome in production; until chrome is in our CI
+        '''install google chrome in production; installation
+        requirements depend on the platform'''
         if self.app != "chrome":
             self.info("Google Chrome is not required")
             return
@@ -249,74 +260,21 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             self.info("expecting Google Chrome to be pre-installed locally")
             return
 
-        # in production we can put the chrome build in mozharness/mozilla/testing/chrome
-        self.chrome_dest = os.path.join(here, 'chrome')
-
-        # mozharness/base/script.py.self.platform_name will return one of:
-        # 'linux64', 'linux', 'macosx', 'win64', 'win32'
-
-        base_url = "http://commondatastorage.googleapis.com/chromium-browser-snapshots"
-
-        # note: temporarily use a specified chromium revision number to download; however
-        # in the future we will be using a fetch task to get a new chromium (Bug 1476372)
+        self.info("Getting fetched chromium build")
+        self.chrome_dest = os.path.normpath(os.path.abspath(os.environ['MOZ_FETCHES_DIR']))
 
         if 'mac' in self.platform_name():
-            # for now hardcoding a revision; but change this to update to newer version; from:
-            # http://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/LAST_CHANGE
-
-            # Note: Using an older version of Chromium on OSX b/c of an issue with a pop-up
-            # dialog appearing with newer Chromium on OSX; please see:
-            # Bug 1520523 - Update Chromium version running with Raptor in production
-            chromium_rev = "575625"
-            chrome_archive_file = "chrome-mac.zip"
-            chrome_url = "%s/Mac/%s/%s" % (base_url, chromium_rev, chrome_archive_file)
             self.chrome_path = os.path.join(self.chrome_dest, 'chrome-mac', 'Chromium.app',
                                             'Contents', 'MacOS', 'Chromium')
 
         elif 'linux' in self.platform_name():
-            # for now hardcoding a revision; but change this to update to newer version; from:
-            # http://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/LAST_CHANGE
-            chromium_rev = "624137"
-            chrome_archive_file = "chrome-linux.zip"
-            chrome_url = "%s/Linux_x64/%s/%s" % (base_url, chromium_rev, chrome_archive_file)
             self.chrome_path = os.path.join(self.chrome_dest, 'chrome-linux', 'chrome')
 
         else:
-            # windows 7/10
-            # for now hardcoding a revision; but change this to update to newer version; from:
-            # http://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE
-            chromium_rev = "624131"
-            chrome_archive_file = "chrome-win.zip"  # same zip name for win32/64
-
-            # one url for Win x64/32
-            chrome_url = "%s/Win_x64/%s/%s" % (base_url, chromium_rev, chrome_archive_file)
-
             self.chrome_path = os.path.join(self.chrome_dest, 'chrome-win', 'Chrome.exe')
 
-        chrome_archive = os.path.join(self.chrome_dest, chrome_archive_file)
-
-        self.info("installing google chrome - temporary install hack")
-        self.info("chrome archive is: %s" % chrome_archive)
         self.info("chrome dest is: %s" % self.chrome_dest)
-
-        if os.path.exists(self.chrome_path):
-            self.info("google chrome binary already exists at: %s" % self.chrome_path)
-            return
-
-        if not os.path.exists(chrome_archive):
-            # download the chrome installer
-            self.download_file(chrome_url, parent_dir=self.chrome_dest)
-
-        commands = []
-        commands.append(['unzip', '-q', '-o', chrome_archive_file, '-d', self.chrome_dest])
-
-        # now run the commands to unpack / install google chrome
-        for next_command in commands:
-            return_code = self.run_command(next_command, cwd=self.chrome_dest)
-            time.sleep(30)
-            if return_code not in [0]:
-                self.info("abort: failed to install %s to %s with command: %s"
-                          % (chrome_archive_file, self.chrome_dest, next_command))
+        self.info("chrome path is: %s" % self.chrome_path)
 
         # now ensure chrome binary exists
         if os.path.exists(self.chrome_path):
@@ -332,12 +290,13 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         # binary path; if testing on firefox the binary path already came from mozharness/pro;
         # otherwise the binary path is forwarded from cmd line arg (raptor_cmd_line_args)
         kw_options['app'] = self.app
-        if self.app == "firefox" or (self.app in["geckoview", "fennec"] and not self.run_local):
+        if self.app == "firefox" or (self.app in self.firefox_android_browsers and
+                                     not self.run_local):
             binary_path = self.binary_path or self.config.get('binary_path')
             if not binary_path:
                 self.fatal("Raptor requires a path to the binary.")
             kw_options['binary'] = binary_path
-            if self.app in["geckoview", "fennec"]:
+            if self.app in self.firefox_android_browsers:
                 # in production ensure we have correct app name,
                 # i.e. fennec_aurora or fennec_release etc.
                 kw_options['binary'] = self.query_package_name()
@@ -461,7 +420,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             self._install_view_gecko_profile_req()
 
     def install(self):
-        if self.app in ["geckoview", "fennec"]:
+        if self.app in self.firefox_android_browsers:
             self.install_apk(self.installer_path)
         else:
             super(Raptor, self).install()
@@ -582,7 +541,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
 
             return bool(debug_opts.intersection(cmdline))
 
-        if self.app in ["geckoview", "fennec"]:
+        if self.app in self.firefox_android_browsers:
             self.logcat_start()
 
         command = [python, run_tests] + options + mozlog_opts
@@ -595,7 +554,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
                                                 output_parser=parser,
                                                 env=env)
 
-        if self.app in ["geckoview", "fennec"]:
+        if self.app in self.firefox_android_browsers:
             self.logcat_stop()
 
         if parser.minidump_output:

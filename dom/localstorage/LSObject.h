@@ -66,12 +66,16 @@ class LSObject final : public Storage {
   RefPtr<LSObserver> mObserver;
 
   uint32_t mPrivateBrowsingId;
+  Maybe<nsID> mClientId;
   nsCString mOrigin;
+  nsCString mOriginKey;
   nsString mDocumentURI;
 
   bool mInExplicitSnapshot;
 
  public:
+  static void Initialize();
+
   /**
    * The normal creation path invoked by nsGlobalWindowInner.
    */

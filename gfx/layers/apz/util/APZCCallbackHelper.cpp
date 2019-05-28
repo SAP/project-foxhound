@@ -173,11 +173,13 @@ static ScreenMargin ScrollFrame(nsIContent* aContent,
     sf->ResetScrollInfoIfGeneration(aRequest.GetScrollGeneration());
     sf->SetScrollableByAPZ(!aRequest.IsScrollInfoLayer());
     if (sf->IsRootScrollFrameOfDocument()) {
-      if (nsCOMPtr<nsIPresShell> shell = GetPresShell(aContent)) {
-        if (shell->SetVisualViewportOffset(
-                CSSPoint::ToAppUnits(aRequest.GetScrollOffset()),
-                shell->GetLayoutViewportOffset())) {
-          sf->MarkEverScrolled();
+      if (!APZCCallbackHelper::IsScrollInProgress(sf)) {
+        if (nsCOMPtr<nsIPresShell> shell = GetPresShell(aContent)) {
+          if (shell->SetVisualViewportOffset(
+                  CSSPoint::ToAppUnits(aRequest.GetScrollOffset()),
+                  shell->GetLayoutViewportOffset())) {
+            sf->MarkEverScrolled();
+          }
         }
       }
     }
@@ -275,6 +277,20 @@ static void SetPaintRequestTime(nsIContent* aContent,
   aContent->SetProperty(nsGkAtoms::paintRequestTime,
                         new TimeStamp(aPaintRequestTime),
                         nsINode::DeleteProperty<TimeStamp>);
+}
+
+void APZCCallbackHelper::NotifyLayerTransforms(
+    const nsTArray<MatrixMessage>& aTransforms) {
+  MOZ_ASSERT(NS_IsMainThread());
+  for (const MatrixMessage& msg : aTransforms) {
+    TabParent* parent = TabParent::GetTabParentFromLayersId(msg.GetLayersId());
+    if (parent) {
+      parent->SetChildToParentConversionMatrix(
+          ViewAs<LayoutDeviceToLayoutDeviceMatrix4x4>(
+              msg.GetMatrix(),
+              PixelCastJustification::ContentProcessIsLayerInUiProcess));
+    }
+  }
 }
 
 void APZCCallbackHelper::UpdateRootFrame(const RepaintRequest& aRequest) {
@@ -855,6 +871,9 @@ void APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(
     nsIWidget* aWidget, dom::Document* aDocument,
     const WidgetTouchEvent& aEvent, uint64_t aInputBlockId,
     const SetAllowedTouchBehaviorCallback& aCallback) {
+  if (!aWidget || !aDocument) {
+    return;
+  }
   if (nsIPresShell* shell = aDocument->GetShell()) {
     if (nsIFrame* rootFrame = shell->GetRootFrame()) {
       rootFrame = UpdateRootFrameForTouchTargetDocument(rootFrame);
@@ -902,14 +921,15 @@ void APZCCallbackHelper::NotifyFlushComplete(nsIPresShell* aShell) {
   observerService->NotifyObservers(nullptr, "apz-repaints-flushed", nullptr);
 }
 
-/* static */ bool APZCCallbackHelper::IsScrollInProgress(
-    nsIScrollableFrame* aFrame) {
+/* static */
+bool APZCCallbackHelper::IsScrollInProgress(nsIScrollableFrame* aFrame) {
   return aFrame->IsProcessingAsyncScroll() ||
          nsLayoutUtils::CanScrollOriginClobberApz(aFrame->LastScrollOrigin()) ||
          aFrame->LastSmoothScrollOrigin();
 }
 
-/* static */ void APZCCallbackHelper::NotifyAsyncScrollbarDragInitiated(
+/* static */
+void APZCCallbackHelper::NotifyAsyncScrollbarDragInitiated(
     uint64_t aDragBlockId, const ScrollableLayerGuid::ViewID& aScrollId,
     ScrollDirection aDirection) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -919,7 +939,8 @@ void APZCCallbackHelper::NotifyFlushComplete(nsIPresShell* aShell) {
   }
 }
 
-/* static */ void APZCCallbackHelper::NotifyAsyncScrollbarDragRejected(
+/* static */
+void APZCCallbackHelper::NotifyAsyncScrollbarDragRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
   MOZ_ASSERT(NS_IsMainThread());
   if (nsIScrollableFrame* scrollFrame =
@@ -928,7 +949,8 @@ void APZCCallbackHelper::NotifyFlushComplete(nsIPresShell* aShell) {
   }
 }
 
-/* static */ void APZCCallbackHelper::NotifyAsyncAutoscrollRejected(
+/* static */
+void APZCCallbackHelper::NotifyAsyncAutoscrollRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIObserverService> observerService =
@@ -941,7 +963,8 @@ void APZCCallbackHelper::NotifyFlushComplete(nsIPresShell* aShell) {
                                    data.get());
 }
 
-/* static */ void APZCCallbackHelper::CancelAutoscroll(
+/* static */
+void APZCCallbackHelper::CancelAutoscroll(
     const ScrollableLayerGuid::ViewID& aScrollId) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIObserverService> observerService =
@@ -954,7 +977,8 @@ void APZCCallbackHelper::NotifyFlushComplete(nsIPresShell* aShell) {
                                    data.get());
 }
 
-/* static */ void APZCCallbackHelper::NotifyPinchGesture(
+/* static */
+void APZCCallbackHelper::NotifyPinchGesture(
     PinchGestureInput::PinchGestureType aType, LayoutDeviceCoord aSpanChange,
     Modifiers aModifiers, nsIWidget* aWidget) {
   EventMessage msg;

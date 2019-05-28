@@ -7,7 +7,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIBrowserDOMWindow.h"
-#include "nsIFrameLoaderOwner.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIReferrerInfo.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -21,15 +22,14 @@ class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams {
   NS_DECL_NSIOPENURIINFRAMEPARAMS
 
   explicit nsOpenURIInFrameParams(
-      const mozilla::OriginAttributes& aOriginAttributes,
-      nsIFrameLoaderOwner* aOpener);
+      const mozilla::OriginAttributes& aOriginAttributes, Element* aOpener);
 
  private:
   ~nsOpenURIInFrameParams();
 
   mozilla::OriginAttributes mOpenerOriginAttributes;
-  nsCOMPtr<nsIFrameLoaderOwner> mOpenerBrowser;
-  nsString mReferrer;
-  uint32_t mReferrerPolicy;
+  RefPtr<Element> mOpenerBrowser;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
+  nsCOMPtr<nsIContentSecurityPolicy> mCsp;
 };

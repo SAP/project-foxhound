@@ -61,7 +61,7 @@
     </popupnotification>
 
 
-    <popupnotification id="addon-progress-notification" hidden="true">
+    <popupnotification id="addon-progress-notification" is="addon-progress-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
         <html:progress id="addon-progress-notification-progressmeter" max="100"/>
         <label id="addon-progress-notification-progresstext" crop="end"/>
@@ -77,6 +77,9 @@
         <description id="addon-webext-perm-text" class="addon-webext-perm-text"/>
         <label id="addon-webext-perm-intro" class="addon-webext-perm-text"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
+        <hbox>
+          <label id="addon-webext-perm-info" is="text-link" class="popup-notification-learnmore-link"/>
+        </hbox>
       </popupnotificationcontent>
     </popupnotification>
 
@@ -84,7 +87,7 @@
       <popupnotificationheader id="cfr-notification-header">
         <stack id="cfr-notification-header-stack">
           <description id="cfr-notification-header-label"></description>
-          <label id="cfr-notification-header-link" class="text-link">
+          <label id="cfr-notification-header-link" is="text-link">
             <xul:image id="cfr-notification-header-image"/>
           </label>
         </stack>
@@ -93,14 +96,16 @@
         <description id="cfr-notification-author"></description>
       </popupnotificationcontent>
       <popupnotificationfooter id="cfr-notification-footer" orient="vertical">
-        <description id="cfr-notification-footer-text"/>
-        <hbox id="cfr-notification-footer-addon-info">
-          <hbox id="cfr-notification-footer-filled-stars"/>
-          <hbox id="cfr-notification-footer-empty-stars"/>
-          <label id="cfr-notification-footer-users"/>
-          <spacer id="cfr-notification-footer-spacer" hidden="true"/>
-          <label id="cfr-notification-footer-learn-more-link" class="text-link"/>
-        </hbox>
+        <vbox id="cfr-notification-footer-text-and-addon-info">
+          <description id="cfr-notification-footer-text"/>
+          <hbox id="cfr-notification-footer-addon-info">
+            <hbox id="cfr-notification-footer-filled-stars"/>
+            <hbox id="cfr-notification-footer-empty-stars"/>
+            <label id="cfr-notification-footer-users"/>
+            <spacer id="cfr-notification-footer-spacer" hidden="true"/>
+            <label id="cfr-notification-footer-learn-more-link" is="text-link"/>
+          </hbox>
+        </vbox>
       </popupnotificationfooter>
     </popupnotification>
 

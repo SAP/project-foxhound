@@ -8,13 +8,11 @@ var EXPORTED_SYMBOLS = [
   "TokenAuthenticatedRESTRequest",
 ];
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
-ChromeUtils.import("resource://services-common/utils.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {PromiseUtils} = ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+const {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
 
 ChromeUtils.defineModuleGetter(this, "CryptoUtils",
                                "resource://services-crypto/utils.js");
@@ -95,7 +93,6 @@ RESTRequest.prototype = {
   _logName: "Services.Common.RESTRequest",
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIBadCertListener2,
     Ci.nsIInterfaceRequestor,
     Ci.nsIChannelEventSink,
   ]),
@@ -328,7 +325,7 @@ RESTRequest.prototype = {
 
     // Blast off!
     try {
-      channel.asyncOpen2(this);
+      channel.asyncOpen(this);
     } catch (ex) {
       // asyncOpen can throw in a bunch of cases -- e.g., a forbidden port.
       this._log.warn("Caught an error in asyncOpen", ex);
@@ -388,7 +385,7 @@ RESTRequest.prototype = {
     this.delayTimeout();
   },
 
-  onStopRequest(channel, context, statusCode) {
+  onStopRequest(channel, statusCode) {
     if (this.timeoutTimer) {
       // Clear the abort timer now that the channel is done.
       this.timeoutTimer.clear();
@@ -453,7 +450,7 @@ RESTRequest.prototype = {
     this._deferred.resolve(this.response);
   },
 
-  onDataAvailable(channel, cb, stream, off, count) {
+  onDataAvailable(channel, stream, off, count) {
     // We get an nsIRequest, which doesn't have contentCharset.
     try {
       channel.QueryInterface(Ci.nsIHttpChannel);
@@ -486,15 +483,6 @@ RESTRequest.prototype = {
     return this.QueryInterface(aIID);
   },
 
-  /** nsIBadCertListener2 **/
-
-  notifyCertProblem(socketInfo, secInfo, targetHost) {
-    this._log.warn("Invalid HTTPS certificate encountered!");
-    // Suppress invalid HTTPS certificate warnings in the UI.
-    // (The request will still fail.)
-    return true;
-  },
-
   /**
    * Returns true if headers from the old channel should be
    * copied to the new channel. Invoked when a channel redirect
@@ -510,7 +498,6 @@ RESTRequest.prototype = {
 
   /** nsIChannelEventSink **/
   asyncOnChannelRedirect(oldChannel, newChannel, flags, callback) {
-
     let oldSpec = (oldChannel && oldChannel.URI) ? oldChannel.URI.spec : "<undefined>";
     let newSpec = (newChannel && newChannel.URI) ? newChannel.URI.spec : "<undefined>";
     this._log.debug("Channel redirect: " + oldSpec + ", " + newSpec + ", " + flags);

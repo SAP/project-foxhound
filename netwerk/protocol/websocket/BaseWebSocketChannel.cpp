@@ -121,6 +121,7 @@ BaseWebSocketChannel::SetLoadGroup(nsILoadGroup *aLoadGroup) {
 
 NS_IMETHODIMP
 BaseWebSocketChannel::SetLoadInfo(nsILoadInfo *aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   mLoadInfo = aLoadInfo;
   return NS_OK;
 }
@@ -199,14 +200,29 @@ BaseWebSocketChannel::SetPingTimeout(uint32_t aSeconds) {
 }
 
 NS_IMETHODIMP
+BaseWebSocketChannel::InitLoadInfoNative(nsINode *aLoadingNode,
+                                         nsIPrincipal *aLoadingPrincipal,
+                                         nsIPrincipal *aTriggeringPrincipal,
+                                         nsICookieSettings *aCookieSettings,
+                                         uint32_t aSecurityFlags,
+                                         uint32_t aContentPolicyType) {
+  mLoadInfo = new LoadInfo(aLoadingPrincipal, aTriggeringPrincipal,
+                           aLoadingNode, aSecurityFlags, aContentPolicyType);
+  if (aCookieSettings) {
+    mLoadInfo->SetCookieSettings(aCookieSettings);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 BaseWebSocketChannel::InitLoadInfo(nsINode *aLoadingNode,
                                    nsIPrincipal *aLoadingPrincipal,
                                    nsIPrincipal *aTriggeringPrincipal,
                                    uint32_t aSecurityFlags,
                                    uint32_t aContentPolicyType) {
-  mLoadInfo = new LoadInfo(aLoadingPrincipal, aTriggeringPrincipal,
-                           aLoadingNode, aSecurityFlags, aContentPolicyType);
-  return NS_OK;
+  return InitLoadInfoNative(aLoadingNode, aLoadingPrincipal,
+                            aTriggeringPrincipal, nullptr, aSecurityFlags,
+                            aContentPolicyType);
 }
 
 NS_IMETHODIMP
@@ -293,14 +309,8 @@ BaseWebSocketChannel::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::NewChannel2(nsIURI *aURI, nsILoadInfo *aLoadInfo,
-                                  nsIChannel **outChannel) {
-  LOG(("BaseWebSocketChannel::NewChannel2() %p\n", this));
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-BaseWebSocketChannel::NewChannel(nsIURI *aURI, nsIChannel **_retval) {
+BaseWebSocketChannel::NewChannel(nsIURI *aURI, nsILoadInfo *aLoadInfo,
+                                 nsIChannel **outChannel) {
   LOG(("BaseWebSocketChannel::NewChannel() %p\n", this));
   return NS_ERROR_NOT_IMPLEMENTED;
 }

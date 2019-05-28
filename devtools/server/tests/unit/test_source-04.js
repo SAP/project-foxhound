@@ -27,11 +27,10 @@ add_task(threadClientTest(async ({ threadClient, server }) => {
 
   // We want to set a breakpoint and make sure that the breakpoint is properly
   // set on _both_ files backed
-  const source = await getSource(
-    threadClient,
-    SOURCE_URL
-  );
-  await source.setBreakpoint({ line: 4 });
+  await setBreakpoint(threadClient, {
+    sourceUrl: SOURCE_URL,
+    line: 4,
+  });
 
   const { sources } = await getSources(threadClient);
   Assert.equal(sources.length, 1);

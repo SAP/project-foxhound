@@ -15,25 +15,27 @@
 namespace mozilla {
 namespace dom {
 
-/* static */ TestFunctions* TestFunctions::Constructor(GlobalObject& aGlobal,
-                                                       ErrorResult& aRv) {
+/* static */
+TestFunctions* TestFunctions::Constructor(GlobalObject& aGlobal,
+                                          ErrorResult& aRv) {
   return new TestFunctions;
 }
 
-/* static */ void TestFunctions::ThrowUncatchableException(
-    GlobalObject& aGlobal, ErrorResult& aRv) {
+/* static */
+void TestFunctions::ThrowUncatchableException(GlobalObject& aGlobal,
+                                              ErrorResult& aRv) {
   aRv.ThrowUncatchableException();
 }
 
-/* static */ Promise* TestFunctions::PassThroughPromise(GlobalObject& aGlobal,
-                                                        Promise& aPromise) {
+/* static */
+Promise* TestFunctions::PassThroughPromise(GlobalObject& aGlobal,
+                                           Promise& aPromise) {
   return &aPromise;
 }
 
-/* static */ already_AddRefed<Promise>
-TestFunctions::PassThroughCallbackPromise(GlobalObject& aGlobal,
-                                          PromiseReturner& aCallback,
-                                          ErrorResult& aRv) {
+/* static */
+already_AddRefed<Promise> TestFunctions::PassThroughCallbackPromise(
+    GlobalObject& aGlobal, PromiseReturner& aCallback, ErrorResult& aRv) {
   return aCallback.Call(aRv);
 }
 
@@ -101,7 +103,7 @@ bool TestFunctions::ObjectFromAboutBlank(JSContext* aCx, JSObject* aObj) {
   // We purposefully don't use WindowOrNull here, because we want to
   // demonstrate the incorrect behavior we get, not just fail some asserts.
   RefPtr<nsGlobalWindowInner> win;
-  UNWRAP_OBJECT(Window, aObj, win);
+  UNWRAP_MAYBE_CROSS_ORIGIN_OBJECT(Window, aObj, win, aCx);
   if (!win) {
     return false;
   }

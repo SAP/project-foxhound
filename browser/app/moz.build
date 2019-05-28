@@ -62,7 +62,7 @@ if CONFIG['LIBFUZZER']:
 if CONFIG['ENABLE_GECKODRIVER']:
     DEFINES['MOZ_GECKODRIVER'] = True
 
-if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
+if CONFIG['CC_TYPE'] == 'clang-cl':
     # Always enter a Windows program through wmain, whether or not we're
     # a console application.
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
@@ -82,6 +82,8 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     DELAYLOAD_DLLS += [
         'oleaut32.dll',
         'ole32.dll',
+        'rpcrt4.dll',
+        'version.dll',
     ]
 
 if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_ARCH'] == 'Darwin':
@@ -104,11 +106,6 @@ if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_ARCH'] == 'WINNT':
         'winmm.dll',
         'user32.dll',
     ]
-
-    if CONFIG['CC_TYPE'] == "msvc":
-        CFLAGS += ['-guard:cf']
-        CXXFLAGS += ['-guard:cf']
-        LDFLAGS += ['-guard:cf']
 
 # Control the default heap size.
 # This is the heap returned by GetProcessHeap().

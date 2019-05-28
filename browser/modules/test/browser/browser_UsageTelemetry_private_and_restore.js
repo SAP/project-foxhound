@@ -1,7 +1,6 @@
 "use strict";
-
-const {Utils} = ChromeUtils.import("resource://gre/modules/sessionstore/Utils.jsm", {});
-const triggeringPrincipal_base64 = Utils.SERIALIZED_SYSTEMPRINCIPAL;
+const {E10SUtils} = ChromeUtils.import("resource://gre/modules/E10SUtils.jsm");
+const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
 const TAB_EVENT_COUNT = "browser.engagement.tab_open_event_count";
@@ -30,8 +29,7 @@ add_task(async function test_privateMode() {
   await BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
 
   // Check that tab and window count is recorded.
-  const scalars = TelemetryTestUtils.getParentProcessScalars(
-    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+  const scalars = TelemetryTestUtils.getProcessScalars("parent");
 
   ok(!(TOTAL_URI_COUNT in scalars), "We should not track URIs in private mode.");
   ok(!(UNFILTERED_URI_COUNT in scalars), "We should not track URIs in private mode.");
@@ -80,8 +78,7 @@ add_task(async function test_sessionRestore() {
   await tabRestored;
 
   // Check that the URI is not recorded.
-  const scalars = TelemetryTestUtils.getParentProcessScalars(
-    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+  const scalars = TelemetryTestUtils.getProcessScalars("parent");
 
   ok(!(TOTAL_URI_COUNT in scalars), "We should not track URIs from restored sessions.");
   ok(!(UNFILTERED_URI_COUNT in scalars), "We should not track URIs from restored sessions.");

@@ -246,7 +246,7 @@ void WebRenderLayerManager::EndTransaction(DrawPaintedLayerCallback aCallback,
 
 void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsDisplayList* aDisplayList, nsDisplayListBuilder* aDisplayListBuilder,
-    nsTArray<wr::FilterOp>&& aFilters, WebRenderBackgroundData* aBackground) {
+    WrFiltersHolder&& aFilters, WebRenderBackgroundData* aBackground) {
   AUTO_PROFILER_TRACING("Paint", "RenderLayers", GRAPHICS);
 
   // Since we don't do repeat transactions right now, just set the time
@@ -457,6 +457,10 @@ void WebRenderLayerManager::SetLayersObserverEpoch(LayersObserverEpoch aEpoch) {
 void WebRenderLayerManager::DidComposite(
     TransactionId aTransactionId, const mozilla::TimeStamp& aCompositeStart,
     const mozilla::TimeStamp& aCompositeEnd) {
+  if (IsDestroyed()) {
+    return;
+  }
+
   MOZ_ASSERT(mWidget);
 
   // Notifying the observers may tick the refresh driver which can cause

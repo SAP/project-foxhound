@@ -13,9 +13,7 @@ from distutils.spawn import find_executable
 
 from mozboot.util import get_state_dir
 from mozterm import Terminal
-from six import string_types
 
-from .. import preset as pset
 from ..cli import BaseTryParser
 from ..tasks import generate_tasks, filter_tasks_by_paths
 from ..push import check_working_directory, push_to_try, vcs
@@ -93,6 +91,20 @@ class FuzzyParser(BaseTryParser):
                   "from the interface. Specifying multiple times schedules "
                   "the union of computed tasks.",
           }],
+        [['-x', '--and'],
+         {'dest': 'intersection',
+          'action': 'store_true',
+          'default': False,
+          'help': "When specifying queries on the command line with -q/--query, "
+                  "use the intersection of tasks rather than the union. This is "
+                  "especially useful for post filtering presets.",
+          }],
+        [['-e', '--exact'],
+         {'action': 'store_true',
+          'default': False,
+          'help': "Enable exact match mode. Terms will use an exact match "
+                  "by default, and terms prefixed with ' will become fuzzy."
+          }],
         [['-u', '--update'],
          {'action': 'store_true',
           'default': False,
@@ -103,7 +115,7 @@ class FuzzyParser(BaseTryParser):
     templates = ['artifact', 'path', 'env', 'rebuild', 'chemspill-prio', 'gecko-profile']
 
 
-def run(cmd, cwd=None):
+def run_cmd(cmd, cwd=None):
     is_win = platform.system() == 'Windows'
     return subprocess.call(cmd, cwd=cwd, shell=True if is_win else False)
 
@@ -114,7 +126,7 @@ def run_fzf_install_script(fzf_path):
     else:
         cmd = ['./install', '--bin']
 
-    if run(cmd, cwd=fzf_path):
+    if run_cmd(cmd, cwd=fzf_path):
         print(FZF_INSTALL_FAILED)
         sys.exit(1)
 
@@ -130,7 +142,7 @@ def fzf_bootstrap(update=False):
     if fzf_bin and not update:
         return fzf_bin
 
-    fzf_path = os.path.join(get_state_dir()[0], 'fzf')
+    fzf_path = os.path.join(get_state_dir(), 'fzf')
     if update and not os.path.isdir(fzf_path):
         print("fzf installed somewhere other than {}, please update manually".format(fzf_path))
         sys.exit(1)
@@ -139,7 +151,7 @@ def fzf_bootstrap(update=False):
         return find_executable('fzf', os.path.join(fzf_path, 'bin'))
 
     if update:
-        ret = run(['git', 'pull'], cwd=fzf_path)
+        ret = run_cmd(['git', 'pull'], cwd=fzf_path)
         if ret:
             print("Update fzf failed.")
             sys.exit(1)
@@ -198,12 +210,9 @@ def filter_target_task(task):
     return not any(re.search(pattern, task) for pattern in TARGET_TASK_FILTERS)
 
 
-def run_fuzzy_try(update=False, query=None, templates=None, full=False, parameters=None,
-                  save=False, preset=None, mod_presets=False, push=True, message='{msg}',
-                  paths=None, **kwargs):
-    if mod_presets:
-        return getattr(pset, mod_presets)(section='fuzzy')
-
+def run(update=False, query=None, intersect_query=None, templates=None, full=False,
+        parameters=None, save_query=False, push=True, message='{msg}',
+        test_paths=None, exact=False, closed_tree=False):
     fzf = fzf_bootstrap(update)
 
     if not fzf:
@@ -217,8 +226,8 @@ def run_fuzzy_try(update=False, query=None, templates=None, full=False, paramete
     if not full:
         all_tasks = filter(filter_target_task, all_tasks)
 
-    if paths:
-        all_tasks = filter_tasks_by_paths(all_tasks, paths)
+    if test_paths:
+        all_tasks = filter_tasks_by_paths(all_tasks, test_paths)
         if not all_tasks:
             return 1
 
@@ -234,43 +243,47 @@ def run_fuzzy_try(update=False, query=None, templates=None, full=False, paramete
         '--print-query',
     ]
 
-    query = query or []
-    if isinstance(query, string_types):
-        query = [query]
+    if exact:
+        base_cmd.append('--exact')
 
-    if preset:
-        query.append(pset.load(preset, section='fuzzy')[0])
-
-    commands = []
-    if query:
-        for q in query:
-            commands.append(base_cmd + ['-f', q])
-    else:
-        commands.append(base_cmd)
-
-    queries = []
     selected = set()
-    for command in commands:
-        query, tasks = run_fzf(command, all_tasks)
-        if tasks:
-            queries.append(query)
-            selected.update(tasks)
+    queries = []
+
+    def get_tasks(query_arg=None):
+        cmd = base_cmd[:]
+        if query_arg:
+            cmd.extend(['-f', query_arg])
+
+        query_str, tasks = run_fzf(cmd, all_tasks)
+        queries.append(query_str)
+        return set(tasks)
+
+    for q in query or []:
+        selected |= get_tasks(q)
+
+    for q in intersect_query or []:
+        tasks = get_tasks(q)
+        if not selected:
+            selected |= tasks
+        else:
+            selected &= tasks
+
+    if not queries:
+        selected = get_tasks()
 
     if not selected:
         print("no tasks selected")
         return
 
-    if save:
-        pset.save('fuzzy', save, queries[0])
+    if save_query:
+        return queries
 
     # build commit message
     msg = "Fuzzy"
-    args = []
-    if paths:
-        args.append("paths={}".format(':'.join(paths)))
-    if query:
-        args.extend(["query={}".format(q) for q in queries])
+    args = ["query={}".format(q) for q in queries]
+    if test_paths:
+        args.append("paths={}".format(':'.join(test_paths)))
     if args:
         msg = "{} {}".format(msg, '&'.join(args))
     return push_to_try('fuzzy', message.format(msg=msg), selected, templates, push=push,
-                       closed_tree=kwargs["closed_tree"])
+                       closed_tree=closed_tree)

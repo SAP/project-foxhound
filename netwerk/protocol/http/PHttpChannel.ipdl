@@ -45,9 +45,8 @@ parent:
   async Redirect2Verify(nsresult result, RequestHeaderTuples changedHeaders,
                         ChildLoadInfoForwarderArgs loadInfoForwarder,
                         uint32_t loadFlags, uint32_t referrerPolicy,
-                        OptionalURIParams referrerUri,
-                        OptionalURIParams apiRedirectTo,
-                        OptionalCorsPreflightArgs corsPreflightArgs,
+                        URIParams? referrerUri, URIParams? apiRedirectTo,
+                        CorsPreflightArgs? corsPreflightArgs,
                         bool chooseAppcache);
 
   // Sent to the parent in order signal that the child side listeners have been
@@ -96,6 +95,9 @@ parent:
 
   // Called to get the input stream when altData was delivered.
   async OpenOriginalCacheInputStream();
+
+  // Called to get the input stream when altData is available.
+  async OpenAltDataCacheInputStream(nsCString aType);
 
   // Tell the parent the amount bytes read by child for the e10s back pressure
   // flow control
@@ -179,7 +181,10 @@ child:
   // See ADivertableParentChannel::CancelDiversion
   async CancelDiversion();
 
-  async OriginalCacheInputStreamAvailable(OptionalIPCStream stream);
+  async OriginalCacheInputStreamAvailable(IPCStream? stream);
+
+  async AltDataCacheInputStreamAvailable(IPCStream? stream);
+
 both:
   // After receiving this message, the parent also calls
   // SendFinishInterceptedRedirect, and makes sure not to send any more messages

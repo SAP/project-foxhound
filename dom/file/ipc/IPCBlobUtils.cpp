@@ -57,11 +57,11 @@ already_AddRefed<BlobImpl> Deserialize(const IPCBlob& aIPCBlob) {
 
   RefPtr<StreamBlobImpl> blobImpl;
 
-  if (aIPCBlob.file().type() == IPCFileUnion::Tvoid_t) {
+  if (aIPCBlob.file().isNothing()) {
     blobImpl = StreamBlobImpl::Create(inputStream.forget(), aIPCBlob.type(),
                                       aIPCBlob.size(), aIPCBlob.blobImplType());
   } else {
-    const IPCFile& file = aIPCBlob.file().get_IPCFile();
+    const IPCFile& file = aIPCBlob.file().ref();
     blobImpl = StreamBlobImpl::Create(inputStream.forget(), file.name(),
                                       aIPCBlob.type(), file.lastModified(),
                                       aIPCBlob.size(), aIPCBlob.blobImplType());
@@ -134,7 +134,7 @@ nsresult SerializeInputStreamChild(nsIInputStream* aInputStream,
 
 nsresult SerializeInputStream(nsIInputStream* aInputStream, uint64_t aSize,
                               uint64_t aChildID, IPCBlob& aIPCBlob,
-                              nsIContentParent* aManager) {
+                              ContentParent* aManager) {
   return SerializeInputStreamParent(aInputStream, aSize, aChildID, aIPCBlob,
                                     aManager);
 }
@@ -148,7 +148,7 @@ nsresult SerializeInputStream(nsIInputStream* aInputStream, uint64_t aSize,
 
 nsresult SerializeInputStream(nsIInputStream* aInputStream, uint64_t aSize,
                               uint64_t aChildID, IPCBlob& aIPCBlob,
-                              nsIContentChild* aManager) {
+                              ContentChild* aManager) {
   return SerializeInputStreamChild(aInputStream, aIPCBlob, aManager);
 }
 
@@ -158,7 +158,7 @@ nsresult SerializeInputStream(nsIInputStream* aInputStream, uint64_t aSize,
   return SerializeInputStreamChild(aInputStream, aIPCBlob, aManager);
 }
 
-uint64_t ChildIDFromManager(nsIContentParent* aManager) {
+uint64_t ChildIDFromManager(ContentParent* aManager) {
   return aManager->ChildID();
 }
 
@@ -166,7 +166,7 @@ uint64_t ChildIDFromManager(PBackgroundParent* aManager) {
   return BackgroundParent::GetChildID(aManager);
 }
 
-uint64_t ChildIDFromManager(nsIContentChild* aManager) { return 0; }
+uint64_t ChildIDFromManager(ContentChild* aManager) { return 0; }
 
 uint64_t ChildIDFromManager(PBackgroundChild* aManager) { return 0; }
 
@@ -189,7 +189,7 @@ nsresult SerializeInternal(BlobImpl* aBlobImpl, M* aManager,
   }
 
   if (!aBlobImpl->IsFile()) {
-    aIPCBlob.file() = void_t();
+    aIPCBlob.file() = Nothing();
   } else {
     IPCFile file;
 
@@ -212,7 +212,7 @@ nsresult SerializeInternal(BlobImpl* aBlobImpl, M* aManager,
 
     file.isDirectory() = aBlobImpl->IsDirectory();
 
-    aIPCBlob.file() = file;
+    aIPCBlob.file() = Some(file);
   }
 
   aIPCBlob.fileId() = aBlobImpl->GetFileId();
@@ -232,7 +232,7 @@ nsresult SerializeInternal(BlobImpl* aBlobImpl, M* aManager,
   return NS_OK;
 }
 
-nsresult Serialize(BlobImpl* aBlobImpl, nsIContentChild* aManager,
+nsresult Serialize(BlobImpl* aBlobImpl, ContentChild* aManager,
                    IPCBlob& aIPCBlob) {
   return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
 }
@@ -242,7 +242,7 @@ nsresult Serialize(BlobImpl* aBlobImpl, PBackgroundChild* aManager,
   return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
 }
 
-nsresult Serialize(BlobImpl* aBlobImpl, nsIContentParent* aManager,
+nsresult Serialize(BlobImpl* aBlobImpl, ContentParent* aManager,
                    IPCBlob& aIPCBlob) {
   return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
 }

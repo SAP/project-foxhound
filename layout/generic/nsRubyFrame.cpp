@@ -32,7 +32,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsRubyFrame)
 
 nsContainerFrame* NS_NewRubyFrame(nsIPresShell* aPresShell,
                                   ComputedStyle* aStyle) {
-  return new (aPresShell) nsRubyFrame(aStyle);
+  return new (aPresShell) nsRubyFrame(aStyle, aPresShell->GetPresContext());
 }
 
 //----------------------------------------------------------------------
@@ -40,7 +40,8 @@ nsContainerFrame* NS_NewRubyFrame(nsIPresShell* aPresShell,
 // nsRubyFrame Method Implementations
 // ==================================
 
-/* virtual */ bool nsRubyFrame::IsFrameOfType(uint32_t aFlags) const {
+/* virtual */
+bool nsRubyFrame::IsFrameOfType(uint32_t aFlags) const {
   if (aFlags & eBidiInlineContainer) {
     return false;
   }
@@ -53,8 +54,9 @@ nsresult nsRubyFrame::GetFrameName(nsAString& aResult) const {
 }
 #endif
 
-/* virtual */ void nsRubyFrame::AddInlineMinISize(
-    gfxContext* aRenderingContext, nsIFrame::InlineMinISizeData* aData) {
+/* virtual */
+void nsRubyFrame::AddInlineMinISize(gfxContext* aRenderingContext,
+                                    nsIFrame::InlineMinISizeData* aData) {
   for (nsIFrame* frame = this; frame; frame = frame->GetNextInFlow()) {
     for (RubySegmentEnumerator e(static_cast<nsRubyFrame*>(frame)); !e.AtEnd();
          e.Next()) {
@@ -63,8 +65,9 @@ nsresult nsRubyFrame::GetFrameName(nsAString& aResult) const {
   }
 }
 
-/* virtual */ void nsRubyFrame::AddInlinePrefISize(
-    gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData) {
+/* virtual */
+void nsRubyFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
+                                     nsIFrame::InlinePrefISizeData* aData) {
   for (nsIFrame* frame = this; frame; frame = frame->GetNextInFlow()) {
     for (RubySegmentEnumerator e(static_cast<nsRubyFrame*>(frame)); !e.AtEnd();
          e.Next()) {
@@ -86,10 +89,11 @@ static nsRubyBaseContainerFrame* FindRubyBaseContainerAncestor(
   return nullptr;
 }
 
-/* virtual */ void nsRubyFrame::Reflow(nsPresContext* aPresContext,
-                                       ReflowOutput& aDesiredSize,
-                                       const ReflowInput& aReflowInput,
-                                       nsReflowStatus& aStatus) {
+/* virtual */
+void nsRubyFrame::Reflow(nsPresContext* aPresContext,
+                         ReflowOutput& aDesiredSize,
+                         const ReflowInput& aReflowInput,
+                         nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsRubyFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
@@ -404,7 +408,7 @@ nsRubyBaseContainerFrame* nsRubyFrame::PullOneSegment(
   }
 
   if (nsBlockFrame* newFloatCB =
-          nsLayoutUtils::GetAsBlock(aLineLayout->LineContainerFrame())) {
+          do_QueryFrame(aLineLayout->LineContainerFrame())) {
     if (oldFloatCB && oldFloatCB != newFloatCB) {
       newFloatCB->ReparentFloats(baseFrame, oldFloatCB, true,
                                  ReparentingDirection::Backwards);

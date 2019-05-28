@@ -32,13 +32,14 @@ var EXPORTED_SYMBOLS = ["Dictionary", "Extension", "ExtensionData", "Langpack"];
  * to run in the same process of the existing addon debugging browser element).
  */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
+  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
@@ -46,7 +47,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
-  ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
   FileSource: "resource://gre/modules/L10nRegistry.jsm",
   L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
   Log: "resource://gre/modules/Log.jsm",
@@ -72,9 +72,9 @@ XPCOMUtils.defineLazyGetter(
   () => Services.io.getProtocolHandler("resource")
           .QueryInterface(Ci.nsIResProtocolHandler));
 
-ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
+const {ExtensionCommon} = ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
+const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
+const {ExtensionUtils} = ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
 
 XPCOMUtils.defineLazyServiceGetters(this, {
   aomStartup: ["@mozilla.org/addons/addon-manager-startup;1", "amIAddonManagerStartup"],
@@ -83,6 +83,10 @@ XPCOMUtils.defineLazyServiceGetters(this, {
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(this, "processCount", "dom.ipc.processCount.extension");
+
+// Temporary pref to be turned on when ready.
+XPCOMUtils.defineLazyPreferenceGetter(this, "allowPrivateBrowsingByDefault",
+                                      "extensions.allowPrivateBrowsingByDefault", true);
 
 var {
   GlobalManager,
@@ -105,6 +109,8 @@ XPCOMUtils.defineLazyGetter(this, "console", ExtensionCommon.getConsole);
 XPCOMUtils.defineLazyGetter(this, "LocaleData", () => ExtensionCommon.LocaleData);
 
 const {sharedData} = Services.ppmm;
+
+const PRIVATE_ALLOWED_PERMISSION = "internal:privateBrowsingAllowed";
 
 // The userContextID reserved for the extension storage (its purpose is ensuring that the IndexedDB
 // storage used by the browser.storage.local API is not directly accessible from the extension code,
@@ -274,6 +280,8 @@ var UninstallObserver = {
       Services.perms.removeFromPrincipal(principal, "persistent-storage");
     }
 
+    ExtensionPermissions.removeAll(addon.id);
+
     if (!Services.prefs.getBoolPref(LEAVE_UUID_PREF, false)) {
       // Clear the entry in the UUID map
       UUIDMap.remove(addon.id);
@@ -282,6 +290,13 @@ var UninstallObserver = {
 };
 
 UninstallObserver.init();
+
+const manifestTypes = new Map([
+  ["theme", "manifest.ThemeManifest"],
+  ["langpack", "manifest.WebExtensionLangpackManifest"],
+  ["dictionary", "manifest.WebExtensionDictionaryManifest"],
+  ["extension", "manifest.WebExtensionManifest"],
+]);
 
 /**
  * Represents the data contained in an extension, contained either
@@ -552,6 +567,56 @@ class ExtensionData {
     return this.experimentsAllowed && manifest.experiment_apis;
   }
 
+  /**
+   * Load a locale and return a localized manifest.  The extension must
+   * be initialized, and manifest parsed prior to calling.
+   *
+   * @param {string} locale to load, if necessary.
+   * @returns {object} normalized manifest.
+   */
+  async getLocalizedManifest(locale) {
+    if (!this.type || !this.localeData) {
+      throw new Error("The extension has not been initialized.");
+    }
+    if (!this.localeData.has(locale)) {
+      // Locales are not avialable until some additional
+      // initialization is done.  We could just call initAllLocales,
+      // but that is heavy handed, especially when we likely only
+      // need one out of 20.
+      let locales = await this.promiseLocales();
+      if (locales.get(locale)) {
+        await this.initLocale(locale);
+      }
+      if (!this.localeData.has(locale)) {
+        throw new Error(`The extension does not contain the locale ${locale}`);
+      }
+    }
+    let normalized = await this._getNormalizedManifest(locale);
+    if (normalized.error) {
+      throw new Error(normalized.error);
+    }
+    return normalized.value;
+  }
+
+  async _getNormalizedManifest(locale) {
+    let manifestType = manifestTypes.get(this.type);
+
+    let context = {
+      url: this.baseURI && this.baseURI.spec,
+      principal: this.principal,
+      logError: error => {
+        this.manifestWarning(error);
+      },
+      preprocessors: {},
+    };
+
+    if (this.localeData) {
+      context.preprocessors.localize = (value, context) => this.localize(value, locale);
+    }
+
+    return Schemas.normalize(this.rawManifest, manifestType, context);
+  }
+
   // eslint-disable-next-line complexity
   async parseManifest() {
     let [manifest] = await Promise.all([
@@ -562,41 +627,26 @@ class ExtensionData {
     this.manifest = manifest;
     this.rawManifest = manifest;
 
+    if (allowPrivateBrowsingByDefault &&
+        "incognito" in manifest && manifest.incognito == "not_allowed") {
+      throw new Error(`manifest.incognito set to "not_allowed" is currently unvailable for use.`);
+    }
+
     if (manifest && manifest.default_locale) {
       await this.initLocale();
     }
 
-    let context = {
-      url: this.baseURI && this.baseURI.spec,
-
-      principal: this.principal,
-
-      logError: error => {
-        this.manifestWarning(error);
-      },
-
-      preprocessors: {},
-    };
-
-    let manifestType = "manifest.WebExtensionManifest";
     if (this.manifest.theme) {
       this.type = "theme";
-      manifestType = "manifest.ThemeManifest";
     } else if (this.manifest.langpack_id) {
       this.type = "langpack";
-      manifestType = "manifest.WebExtensionLangpackManifest";
     } else if (this.manifest.dictionaries) {
       this.type = "dictionary";
-      manifestType = "manifest.WebExtensionDictionaryManifest";
     } else {
       this.type = "extension";
     }
 
-    if (this.localeData) {
-      context.preprocessors.localize = (value, context) => this.localize(value);
-    }
-
-    let normalized = Schemas.normalize(this.manifest, manifestType, context);
+    let normalized = await this._getNormalizedManifest();
     if (normalized.error) {
       this.manifestError(normalized.error);
       return null;
@@ -636,7 +686,6 @@ class ExtensionData {
       schemaURLs: null,
       type: this.type,
       webAccessibleResources,
-      privateBrowsingAllowed: manifest.incognito !== "not_allowed",
     };
 
     if (this.type === "extension") {
@@ -665,13 +714,14 @@ class ExtensionData {
         permissions.add(perm);
       }
 
+
       if (this.id) {
         // An extension always gets permission to its own url.
         let matcher = new MatchPattern(this.getURL(), {ignorePath: true});
         originPermissions.add(matcher.pattern);
 
         // Apply optional permissions
-        let perms = await ExtensionPermissions.get(this);
+        let perms = await ExtensionPermissions.get(this.id);
         for (let perm of perms.permissions) {
           permissions.add(perm);
         }
@@ -1436,7 +1486,7 @@ class Extension extends ExtensionData {
    * @property {TabManager} tabManager
    */
 
-  static getBootstrapScope(id, file) {
+  static getBootstrapScope() {
     return new BootstrapScope();
   }
 
@@ -1451,18 +1501,6 @@ class Extension extends ExtensionData {
       }
     }
     return frameLoader || ExtensionParent.DebugUtils.getFrameLoader(this.id);
-  }
-
-  static generateXPI(data) {
-    return ExtensionTestCommon.generateXPI(data);
-  }
-
-  static generateZipFile(files, baseName = "generated-extension.xpi") {
-    return ExtensionTestCommon.generateZipFile(files, baseName);
-  }
-
-  static generate(data) {
-    return ExtensionTestCommon.generate(data);
   }
 
   on(hook, f) {
@@ -1615,7 +1653,6 @@ class Extension extends ExtensionData {
       whiteListedHosts: this.whiteListedHosts.patterns.map(pat => pat.pattern),
       permissions: this.permissions,
       optionalPermissions: this.optionalPermissions,
-      privateBrowsingAllowed: this.privateBrowsingAllowed,
     };
   }
 
@@ -1812,6 +1849,22 @@ class Extension extends ExtensionData {
     }
   }
 
+  static async migratePrivateBrowsing(addonData) {
+    if (addonData.incognito !== "not_allowed") {
+      ExtensionPermissions.add(addonData.id, {permissions: [PRIVATE_ALLOWED_PERMISSION], origins: []});
+      await StartupCache.clearAddonData(addonData.id);
+
+      // Record a telemetry event for the extension automatically allowed on private browsing as
+      // part of the Firefox upgrade.
+      AMTelemetry.recordActionEvent({
+        extra: {addonId: addonData.id},
+        object: "appUpgrade",
+        action: "privateBrowsingAllowed",
+        value: "on",
+      });
+    }
+  }
+
   async startup() {
     this.state = "Startup";
 
@@ -1862,10 +1915,16 @@ class Extension extends ExtensionData {
         return;
       }
 
-      if (this.addonData && this.addonData.incognitoOverride !== undefined) {
-        this.policy.privateBrowsingAllowed = this.addonData.incognitoOverride !== "not_allowed";
-      } else {
-        this.policy.privateBrowsingAllowed = this.manifest.incognito !== "not_allowed";
+      // We automatically add permissions to system/built-in extensions.
+      // Extensions expliticy stating not_allowed will never get permission.
+      if (!allowPrivateBrowsingByDefault && this.manifest.incognito !== "not_allowed" &&
+          !this.permissions.has(PRIVATE_ALLOWED_PERMISSION)) {
+        if (this.isPrivileged && !this.addonData.temporarilyInstalled) {
+          // Add to EP so it is preserved after ADDON_INSTALL.  We don't wait on the add here
+          // since we are pushing the value into this.permissions.  EP will eventually save.
+          ExtensionPermissions.add(this.id, {permissions: [PRIVATE_ALLOWED_PERMISSION], origins: []});
+          this.permissions.add(PRIVATE_ALLOWED_PERMISSION);
+        }
       }
 
       GlobalManager.init(this);
@@ -1913,7 +1972,6 @@ class Extension extends ExtensionData {
 
       Management.emit("ready", this);
       this.emit("ready");
-      ExtensionTelemetry.extensionStartup.stopwatchFinish(this);
 
       this.state = "Startup: Complete";
     } catch (errors) {
@@ -1931,6 +1989,8 @@ class Extension extends ExtensionData {
       this.cleanupGeneratedFile();
 
       throw errors;
+    } finally {
+      ExtensionTelemetry.extensionStartup.stopwatchFinish(this);
     }
   }
 
@@ -1984,8 +2044,7 @@ class Extension extends ExtensionData {
       this.state = "Shutdown: Flushed jar cache";
     }
 
-    if (this.cleanupFile ||
-        ["ADDON_INSTALL", "ADDON_UNINSTALL", "ADDON_UPGRADE", "ADDON_DOWNGRADE"].includes(reason)) {
+    if (this.cleanupFile || reason !== "APP_SHUTDOWN") {
       StartupCache.clearAddonData(this.id);
     }
 
@@ -2065,7 +2124,7 @@ class Dictionary extends ExtensionData {
     this.startupData = addonData.startupData;
   }
 
-  static getBootstrapScope(id, file) {
+  static getBootstrapScope() {
     return new DictionaryBootstrapScope();
   }
 
@@ -2095,7 +2154,7 @@ class Langpack extends ExtensionData {
     this.manifestCacheKey = [addonData.id, addonData.version];
   }
 
-  static getBootstrapScope(id, file) {
+  static getBootstrapScope() {
     return new LangpackBootstrapScope();
   }
 

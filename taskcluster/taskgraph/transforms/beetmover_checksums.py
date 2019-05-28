@@ -22,10 +22,6 @@ from voluptuous import Optional, Required
 from taskgraph.util.treeherder import replace_group
 from taskgraph.transforms.task import task_description_schema
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 beetmover_checksums_description_schema = schema.extend({
     Required('depname', default='build'): basestring,
     Required('attributes'): {basestring: object},
@@ -81,8 +77,7 @@ def make_beetmover_checksums_description(config, jobs):
         else:
             extra['product'] = 'firefox'
 
-        dependent_kind = str(dep_job.kind)
-        dependencies = {dependent_kind: dep_job.label}
+        dependencies = {dep_job.kind: dep_job.label}
 
         attributes = copy_attributes_from_dependent_job(dep_job)
         attributes.update(job.get('attributes', {}))
@@ -152,7 +147,7 @@ def make_beetmover_checksums_worker(config, jobs):
 
         if should_use_artifact_map(platform, config.params['project']):
             upstream_artifacts = generate_beetmover_upstream_artifacts(
-                job, platform, locale
+                config, job, platform, locale
             )
             worker['artifact-map'] = generate_beetmover_artifact_map(
                 config, job, platform=platform, locale=locale)

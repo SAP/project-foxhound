@@ -25,7 +25,8 @@ void WebRenderBackgroundData::AddWebRenderCommands(
   aBuilder.PushRect(mBounds, mBounds, true, mColor);
 }
 
-/* static */ bool WebRenderUserData::SupportsAsyncUpdate(nsIFrame* aFrame) {
+/* static */
+bool WebRenderUserData::SupportsAsyncUpdate(nsIFrame* aFrame) {
   if (!aFrame) {
     return false;
   }
@@ -38,8 +39,9 @@ void WebRenderBackgroundData::AddWebRenderCommands(
   return false;
 }
 
-/* static */ bool WebRenderUserData::ProcessInvalidateForImage(
-    nsIFrame* aFrame, DisplayItemType aType) {
+/* static */
+bool WebRenderUserData::ProcessInvalidateForImage(
+    nsIFrame* aFrame, DisplayItemType aType, ContainerProducerID aProducerId) {
   MOZ_ASSERT(aFrame);
 
   if (!aFrame->HasProperty(WebRenderUserDataProperty::Key())) {
@@ -57,13 +59,21 @@ void WebRenderBackgroundData::AddWebRenderCommands(
 
   RefPtr<WebRenderImageData> image =
       GetWebRenderUserData<WebRenderImageData>(aFrame, type);
-  if (image && image->UsingSharedSurface()) {
+  if (image && image->UsingSharedSurface(aProducerId)) {
     return true;
   }
 
   aFrame->SchedulePaint();
   return false;
 }
+
+WebRenderUserData::WebRenderUserData(RenderRootStateManager* aManager,
+                                     uint32_t aDisplayItemKey, nsIFrame* aFrame)
+    : mManager(aManager),
+      mFrame(aFrame),
+      mDisplayItemKey(aDisplayItemKey),
+      mTable(aManager->GetWebRenderUserDataTable()),
+      mUsed(false) {}
 
 WebRenderUserData::WebRenderUserData(RenderRootStateManager* aManager,
                                      nsDisplayItem* aItem)
@@ -85,6 +95,11 @@ WebRenderImageData::WebRenderImageData(RenderRootStateManager* aManager,
                                        nsDisplayItem* aItem)
     : WebRenderUserData(aManager, aItem), mOwnsKey(false) {}
 
+WebRenderImageData::WebRenderImageData(RenderRootStateManager* aManager,
+                                       uint32_t aDisplayItemKey,
+                                       nsIFrame* aFrame)
+    : WebRenderUserData(aManager, aDisplayItemKey, aFrame), mOwnsKey(false) {}
+
 WebRenderImageData::~WebRenderImageData() {
   ClearImageKey();
 
@@ -93,7 +108,8 @@ WebRenderImageData::~WebRenderImageData() {
   }
 }
 
-bool WebRenderImageData::UsingSharedSurface() const {
+bool WebRenderImageData::UsingSharedSurface(
+    ContainerProducerID aProducerId) const {
   if (!mContainer || !mKey || mOwnsKey) {
     return false;
   }
@@ -103,7 +119,7 @@ bool WebRenderImageData::UsingSharedSurface() const {
   // rebuild the scene.
   wr::ImageKey key;
   nsresult rv = SharedSurfacesChild::Share(
-      mContainer, mManager, mManager->AsyncResourceUpdates(), key);
+      mContainer, mManager, mManager->AsyncResourceUpdates(), key, aProducerId);
   return NS_SUCCEEDED(rv) && mKey.ref() == key;
 }
 
@@ -135,8 +151,8 @@ Maybe<wr::ImageKey> WebRenderImageData::UpdateImageKey(
 
   wr::WrImageKey key;
   if (!aFallback) {
-    nsresult rv =
-        SharedSurfacesChild::Share(aContainer, mManager, aResources, key);
+    nsresult rv = SharedSurfacesChild::Share(aContainer, mManager, aResources,
+                                             key, kContainerProducerID_Invalid);
     if (NS_SUCCEEDED(rv)) {
       // Ensure that any previously owned keys are released before replacing. We
       // don't own this key, the surface itself owns it, so that it can be
@@ -266,23 +282,13 @@ void WebRenderImageData::CreateImageClientIfNeeded() {
 
 WebRenderFallbackData::WebRenderFallbackData(RenderRootStateManager* aManager,
                                              nsDisplayItem* aItem)
-    : WebRenderImageData(aManager, aItem), mInvalid(false) {}
+    : WebRenderUserData(aManager, aItem), mInvalid(false) {}
 
 WebRenderFallbackData::~WebRenderFallbackData() { ClearImageKey(); }
-
-nsDisplayItemGeometry* WebRenderFallbackData::GetGeometry() {
-  return mGeometry.get();
-}
-
-void WebRenderFallbackData::SetGeometry(
-    nsAutoPtr<nsDisplayItemGeometry> aGeometry) {
-  mGeometry = aGeometry;
-}
 
 void WebRenderFallbackData::SetBlobImageKey(const wr::BlobImageKey& aKey) {
   ClearImageKey();
   mBlobKey = Some(aKey);
-  mOwnsKey = true;
 }
 
 Maybe<wr::ImageKey> WebRenderFallbackData::GetImageKey() {
@@ -290,16 +296,39 @@ Maybe<wr::ImageKey> WebRenderFallbackData::GetImageKey() {
     return Some(wr::AsImageKey(mBlobKey.value()));
   }
 
-  return mKey;
+  if (mImageData) {
+    return mImageData->GetImageKey();
+  }
+
+  return Nothing();
 }
 
 void WebRenderFallbackData::ClearImageKey() {
-  if (mBlobKey && mOwnsKey) {
-    mManager->AddBlobImageKeyForDiscard(mBlobKey.value());
+  if (mImageData) {
+    mImageData->ClearImageKey();
+    mImageData = nullptr;
   }
-  mBlobKey.reset();
 
-  WebRenderImageData::ClearImageKey();
+  if (mBlobKey) {
+    mManager->AddBlobImageKeyForDiscard(mBlobKey.value());
+    mBlobKey.reset();
+  }
+}
+
+WebRenderImageData* WebRenderFallbackData::PaintIntoImage() {
+  if (mBlobKey) {
+    mManager->AddBlobImageKeyForDiscard(mBlobKey.value());
+    mBlobKey.reset();
+  }
+
+  if (mImageData) {
+    return mImageData.get();
+  }
+
+  mImageData = MakeAndAddRef<WebRenderImageData>(mManager.get(),
+                                                 mDisplayItemKey, mFrame);
+
+  return mImageData.get();
 }
 
 WebRenderAnimationData::WebRenderAnimationData(RenderRootStateManager* aManager,

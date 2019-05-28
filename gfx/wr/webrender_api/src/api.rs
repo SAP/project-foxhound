@@ -4,7 +4,6 @@
 
 extern crate serde_bytes;
 
-use app_units::Au;
 use channel::{self, MsgSender, Payload, PayloadSender, PayloadSenderHelperMethods};
 use std::cell::Cell;
 use std::fmt;
@@ -13,12 +12,13 @@ use std::os::raw::c_void;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::u32;
-use {BuiltDisplayList, BuiltDisplayListDescriptor, ColorF, DeviceIntPoint, DeviceIntRect};
-use {DeviceIntSize, ExternalScrollId, FontInstanceKey, FontInstanceOptions};
-use {FontInstancePlatformOptions, FontKey, FontVariation, GlyphDimensions, GlyphIndex, ImageData};
-use {ImageDescriptor, ItemTag, LayoutPoint, LayoutSize, LayoutTransform, LayoutVector2D};
-use {BlobDirtyRect, ImageDirtyRect, ImageKey, BlobImageKey, BlobImageData};
-use {NativeFontHandle, WorldPoint};
+// local imports
+use {display_item as di, font};
+use color::{ColorU, ColorF};
+use display_list::{BuiltDisplayList, BuiltDisplayListDescriptor};
+use image::{BlobImageData, BlobImageKey, ImageData, ImageDescriptor, ImageKey};
+use units::*;
+
 
 pub type TileSize = u16;
 /// Documents are rendered in the ascending order of their associated layer values.
@@ -33,9 +33,9 @@ pub enum ResourceUpdate {
     DeleteImage(ImageKey),
     SetBlobImageVisibleArea(BlobImageKey, DeviceIntRect),
     AddFont(AddFont),
-    DeleteFont(FontKey),
+    DeleteFont(font::FontKey),
     AddFontInstance(AddFontInstance),
-    DeleteFontInstance(FontInstanceKey),
+    DeleteFontInstance(font::FontInstanceKey),
 }
 
 /// A Transaction is a group of commands to apply atomically to a document.
@@ -64,7 +64,7 @@ pub struct Transaction {
 
     generate_frame: bool,
 
-    invalidate_rendered_frame: bool,
+    pub invalidate_rendered_frame: bool,
 
     low_priority: bool,
 }
@@ -121,7 +121,8 @@ impl Transaction {
     /// # Examples
     ///
     /// ```
-    /// # use webrender_api::{DeviceIntSize, PipelineId, RenderApiSender, Transaction};
+    /// # use webrender_api::{PipelineId, RenderApiSender, Transaction};
+    /// # use webrender_api::units::{DeviceIntSize};
     /// # fn example() {
     /// let pipeline_id = PipelineId(0, 0);
     /// let mut txn = Transaction::new();
@@ -198,19 +199,24 @@ impl Transaction {
         self.notifications.push(event);
     }
 
-    pub fn set_window_parameters(
+    /// Setup the output region in the framebuffer for a given document.
+    pub fn set_document_view(
         &mut self,
-        window_size: DeviceIntSize,
-        inner_rect: DeviceIntRect,
+        framebuffer_rect: FramebufferIntRect,
         device_pixel_ratio: f32,
     ) {
         self.scene_ops.push(
-            SceneMsg::SetWindowParameters {
-                window_size,
-                inner_rect,
+            SceneMsg::SetDocumentView {
+                framebuffer_rect,
                 device_pixel_ratio,
             },
         );
+    }
+
+    /// Enable copying of the output of this pipeline id to
+    /// an external texture for callers to consume.
+    pub fn enable_frame_output(&mut self, pipeline_id: PipelineId, enable: bool) {
+        self.scene_ops.push(SceneMsg::EnableFrameOutput(pipeline_id, enable));
     }
 
     /// Scrolls the scrolling layer under the `cursor`
@@ -224,7 +230,7 @@ impl Transaction {
     pub fn scroll_node_with_id(
         &mut self,
         origin: LayoutPoint,
-        id: ExternalScrollId,
+        id: di::ExternalScrollId,
         clamp: ScrollClamping,
     ) {
         self.frame_ops.push(FrameMsg::ScrollNodeWithId(origin, id, clamp));
@@ -275,12 +281,6 @@ impl Transaction {
     /// setting them on the transaction but can do them incrementally.
     pub fn append_dynamic_properties(&mut self, properties: DynamicProperties) {
         self.frame_ops.push(FrameMsg::AppendDynamicProperties(properties));
-    }
-
-    /// Enable copying of the output of this pipeline id to
-    /// an external texture for callers to consume.
-    pub fn enable_frame_output(&mut self, pipeline_id: PipelineId, enable: bool) {
-        self.frame_ops.push(FrameMsg::EnableFrameOutput(pipeline_id, enable));
     }
 
     /// Consumes this object and just returns the frame ops.
@@ -380,28 +380,28 @@ impl Transaction {
         self.resource_updates.push(ResourceUpdate::SetBlobImageVisibleArea(key, area))
     }
 
-    pub fn add_raw_font(&mut self, key: FontKey, bytes: Vec<u8>, index: u32) {
+    pub fn add_raw_font(&mut self, key: font::FontKey, bytes: Vec<u8>, index: u32) {
         self.resource_updates
             .push(ResourceUpdate::AddFont(AddFont::Raw(key, bytes, index)));
     }
 
-    pub fn add_native_font(&mut self, key: FontKey, native_handle: NativeFontHandle) {
+    pub fn add_native_font(&mut self, key: font::FontKey, native_handle: font::NativeFontHandle) {
         self.resource_updates
             .push(ResourceUpdate::AddFont(AddFont::Native(key, native_handle)));
     }
 
-    pub fn delete_font(&mut self, key: FontKey) {
+    pub fn delete_font(&mut self, key: font::FontKey) {
         self.resource_updates.push(ResourceUpdate::DeleteFont(key));
     }
 
     pub fn add_font_instance(
         &mut self,
-        key: FontInstanceKey,
-        font_key: FontKey,
+        key: font::FontInstanceKey,
+        font_key: font::FontKey,
         glyph_size: Au,
-        options: Option<FontInstanceOptions>,
-        platform_options: Option<FontInstancePlatformOptions>,
-        variations: Vec<FontVariation>,
+        options: Option<font::FontInstanceOptions>,
+        platform_options: Option<font::FontInstancePlatformOptions>,
+        variations: Vec<font::FontVariation>,
     ) {
         self.resource_updates
             .push(ResourceUpdate::AddFontInstance(AddFontInstance {
@@ -414,7 +414,7 @@ impl Transaction {
             }));
     }
 
-    pub fn delete_font_instance(&mut self, key: FontInstanceKey) {
+    pub fn delete_font_instance(&mut self, key: font::FontInstanceKey) {
         self.resource_updates.push(ResourceUpdate::DeleteFontInstance(key));
     }
 
@@ -529,11 +529,11 @@ pub struct UpdateBlobImage {
 #[derive(Clone, Deserialize, Serialize)]
 pub enum AddFont {
     Raw(
-        FontKey,
+        font::FontKey,
         #[serde(with = "serde_bytes")] Vec<u8>,
         u32
     ),
-    Native(FontKey, NativeFontHandle),
+    Native(font::FontKey, font::NativeFontHandle),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -542,7 +542,7 @@ pub struct HitTestItem {
     pub pipeline: PipelineId,
 
     /// The tag of the hit display item.
-    pub tag: ItemTag,
+    pub tag: di::ItemTag,
 
     /// The hit point in the coordinate space of the "viewport" of the display item. The
     /// viewport is the scroll node formed by the root reference frame of the display item's
@@ -569,12 +569,12 @@ bitflags! {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AddFontInstance {
-    pub key: FontInstanceKey,
-    pub font_key: FontKey,
+    pub key: font::FontInstanceKey,
+    pub font_key: font::FontKey,
     pub glyph_size: Au,
-    pub options: Option<FontInstanceOptions>,
-    pub platform_options: Option<FontInstancePlatformOptions>,
-    pub variations: Vec<FontVariation>,
+    pub options: Option<font::FontInstanceOptions>,
+    pub platform_options: Option<font::FontInstancePlatformOptions>,
+    pub variations: Vec<font::FontVariation>,
 }
 
 // Frame messages affect building the scene.
@@ -584,6 +584,7 @@ pub enum SceneMsg {
     SetPageZoom(ZoomFactor),
     SetRootPipeline(PipelineId),
     RemovePipeline(PipelineId),
+    EnableFrameOutput(PipelineId, bool),
     SetDisplayList {
         list_descriptor: BuiltDisplayListDescriptor,
         epoch: Epoch,
@@ -593,9 +594,8 @@ pub enum SceneMsg {
         content_size: LayoutSize,
         preserve_frame_state: bool,
     },
-    SetWindowParameters {
-        window_size: DeviceIntSize,
-        inner_rect: DeviceIntRect,
+    SetDocumentView {
+        framebuffer_rect: FramebufferIntRect,
         device_pixel_ratio: f32,
     },
 }
@@ -606,9 +606,8 @@ pub enum FrameMsg {
     UpdateEpoch(PipelineId, Epoch),
     HitTest(Option<PipelineId>, WorldPoint, HitTestFlags, MsgSender<HitTestResult>),
     SetPan(DeviceIntPoint),
-    EnableFrameOutput(PipelineId, bool),
     Scroll(ScrollLocation, WorldPoint),
-    ScrollNodeWithId(LayoutPoint, ExternalScrollId, ScrollClamping),
+    ScrollNodeWithId(LayoutPoint, di::ExternalScrollId, ScrollClamping),
     GetScrollNodeState(MsgSender<Vec<ScrollNodeState>>),
     UpdateDynamicProperties(DynamicProperties),
     AppendDynamicProperties(DynamicProperties),
@@ -622,7 +621,8 @@ impl fmt::Debug for SceneMsg {
             SceneMsg::SetDisplayList { .. } => "SceneMsg::SetDisplayList",
             SceneMsg::SetPageZoom(..) => "SceneMsg::SetPageZoom",
             SceneMsg::RemovePipeline(..) => "SceneMsg::RemovePipeline",
-            SceneMsg::SetWindowParameters { .. } => "SceneMsg::SetWindowParameters",
+            SceneMsg::EnableFrameOutput(..) => "SceneMsg::EnableFrameOutput",
+            SceneMsg::SetDocumentView { .. } => "SceneMsg::SetDocumentView",
             SceneMsg::SetRootPipeline(..) => "SceneMsg::SetRootPipeline",
         })
     }
@@ -637,7 +637,6 @@ impl fmt::Debug for FrameMsg {
             FrameMsg::Scroll(..) => "FrameMsg::Scroll",
             FrameMsg::ScrollNodeWithId(..) => "FrameMsg::ScrollNodeWithId",
             FrameMsg::GetScrollNodeState(..) => "FrameMsg::GetScrollNodeState",
-            FrameMsg::EnableFrameOutput(..) => "FrameMsg::EnableFrameOutput",
             FrameMsg::UpdateDynamicProperties(..) => "FrameMsg::UpdateDynamicProperties",
             FrameMsg::AppendDynamicProperties(..) => "FrameMsg::AppendDynamicProperties",
             FrameMsg::SetPinchZoom(..) => "FrameMsg::SetPinchZoom",
@@ -674,7 +673,6 @@ bitflags!{
 pub struct CapturedDocument {
     pub document_id: DocumentId,
     pub root_pipeline_id: Option<PipelineId>,
-    pub window_size: DeviceIntSize,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -715,18 +713,18 @@ pub enum ApiMsg {
     UpdateResources(Vec<ResourceUpdate>),
     /// Gets the glyph dimensions
     GetGlyphDimensions(
-        FontInstanceKey,
-        Vec<GlyphIndex>,
-        MsgSender<Vec<Option<GlyphDimensions>>>,
+        font::FontInstanceKey,
+        Vec<font::GlyphIndex>,
+        MsgSender<Vec<Option<font::GlyphDimensions>>>,
     ),
     /// Gets the glyph indices from a string
-    GetGlyphIndices(FontKey, String, MsgSender<Vec<Option<u32>>>),
+    GetGlyphIndices(font::FontKey, String, MsgSender<Vec<Option<u32>>>),
     /// Adds a new document namespace.
     CloneApi(MsgSender<IdNamespace>),
     /// Adds a new document namespace.
     CloneApiByClient(IdNamespace),
     /// Adds a new document with given initial size.
-    AddDocument(DocumentId, DeviceIntSize, DocumentLayer),
+    AddDocument(DocumentId, FramebufferIntSize, DocumentLayer),
     /// A message targeted at a particular document.
     UpdateDocument(DocumentId, TransactionMsg),
     /// Deletes an existing document.
@@ -815,6 +813,22 @@ impl PipelineId {
     }
 }
 
+#[derive(Copy, Clone, Debug, MallocSizeOf, Serialize, Deserialize)]
+pub enum ClipIntern {}
+#[derive(Copy, Clone, Debug, MallocSizeOf, Serialize, Deserialize)]
+pub enum FilterDataIntern {}
+
+/// Information specific to a primitive type that
+/// uniquely identifies a primitive template by key.
+#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash, Serialize, Deserialize)]
+pub enum PrimitiveKeyKind {
+    /// Clear an existing rect, used for special effects on some platforms.
+    Clear,
+    Rectangle {
+        color: ColorU,
+    },
+}
+
 /// Meta-macro to enumerate the various interner identifiers and types.
 ///
 /// IMPORTANT: Keep this synchronized with the list in mozilla-central located at
@@ -825,23 +839,24 @@ impl PipelineId {
 macro_rules! enumerate_interners {
     ($macro_name: ident) => {
         $macro_name! {
-            clip,
-            prim,
-            normal_border,
-            image_border,
-            image,
-            yuv_image,
-            line_decoration,
-            linear_grad,
-            radial_grad,
-            picture,
-            text_run,
+            clip: ClipIntern,
+            prim: PrimitiveKeyKind,
+            normal_border: NormalBorderPrim,
+            image_border: ImageBorder,
+            image: Image,
+            yuv_image: YuvImage,
+            line_decoration: LineDecoration,
+            linear_grad: LinearGradient,
+            radial_grad: RadialGradient,
+            picture: Picture,
+            text_run: TextRun,
+            filter_data: FilterDataIntern,
         }
     }
 }
 
 macro_rules! declare_interning_memory_report {
-    ( $( $name: ident, )+ ) => {
+    ( $( $name:ident: $ty:ident, )+ ) => {
         #[repr(C)]
         #[derive(AddAssign, Clone, Debug, Default, Deserialize, Serialize)]
         pub struct InternerSubReport {
@@ -993,6 +1008,7 @@ impl RenderApiSender {
 }
 
 bitflags! {
+    #[repr(C)]
     #[derive(Default, Deserialize, MallocSizeOf, Serialize)]
     pub struct DebugFlags: u32 {
         /// Display the frame profiler on screen.
@@ -1023,6 +1039,12 @@ bitflags! {
         const TEXTURE_CACHE_DBG_DISABLE_SHRINK = 1 << 16;
         /// Highlight all primitives with colors based on kind.
         const PRIMITIVE_DBG = 1 << 17;
+        /// Draw a zoom widget showing part of the framebuffer zoomed in.
+        const ZOOM_DBG = 1 << 18;
+        /// Scale the debug renderer down for a smaller screen. This will disrupt
+        /// any mapping between debug display items and page content, so shouldn't
+        /// be used with overlays like the picture caching or primitive display.
+        const SMALL_SCREEN = 1 << 19;
     }
 }
 
@@ -1042,7 +1064,7 @@ impl RenderApi {
         RenderApiSender::new(self.api_sender.clone(), self.payload_sender.clone())
     }
 
-    pub fn add_document(&self, initial_size: DeviceIntSize, layer: DocumentLayer) -> DocumentId {
+    pub fn add_document(&self, initial_size: FramebufferIntSize, layer: DocumentLayer) -> DocumentId {
         let new_id = self.next_unique_id();
         let document_id = DocumentId(self.namespace_id, new_id);
 
@@ -1057,14 +1079,14 @@ impl RenderApi {
         self.api_sender.send(msg).unwrap();
     }
 
-    pub fn generate_font_key(&self) -> FontKey {
+    pub fn generate_font_key(&self) -> font::FontKey {
         let new_id = self.next_unique_id();
-        FontKey::new(self.namespace_id, new_id)
+        font::FontKey::new(self.namespace_id, new_id)
     }
 
-    pub fn generate_font_instance_key(&self) -> FontInstanceKey {
+    pub fn generate_font_instance_key(&self) -> font::FontInstanceKey {
         let new_id = self.next_unique_id();
-        FontInstanceKey::new(self.namespace_id, new_id)
+        font::FontInstanceKey::new(self.namespace_id, new_id)
     }
 
     /// Gets the dimensions for the supplied glyph keys
@@ -1074,9 +1096,9 @@ impl RenderApi {
     /// This means that glyph dimensions e.g. for spaces (' ') will mostly be None.
     pub fn get_glyph_dimensions(
         &self,
-        font: FontInstanceKey,
-        glyph_indices: Vec<GlyphIndex>,
-    ) -> Vec<Option<GlyphDimensions>> {
+        font: font::FontInstanceKey,
+        glyph_indices: Vec<font::GlyphIndex>,
+    ) -> Vec<Option<font::GlyphDimensions>> {
         let (tx, rx) = channel::msg_channel().unwrap();
         let msg = ApiMsg::GetGlyphDimensions(font, glyph_indices, tx);
         self.api_sender.send(msg).unwrap();
@@ -1085,7 +1107,7 @@ impl RenderApi {
 
     /// Gets the glyph indices for the supplied string. These
     /// can be used to construct GlyphKeys.
-    pub fn get_glyph_indices(&self, font_key: FontKey, text: &str) -> Vec<Option<u32>> {
+    pub fn get_glyph_indices(&self, font_key: font::FontKey, text: &str) -> Vec<Option<u32>> {
         let (tx, rx) = channel::msg_channel().unwrap();
         let msg = ApiMsg::GetGlyphIndices(font_key, text.to_string(), tx);
         self.api_sender.send(msg).unwrap();
@@ -1220,18 +1242,34 @@ impl RenderApi {
         rx.recv().unwrap()
     }
 
-    pub fn set_window_parameters(
+    /// Setup the output region in the framebuffer for a given document.
+    pub fn set_document_view(
         &self,
         document_id: DocumentId,
-        window_size: DeviceIntSize,
-        inner_rect: DeviceIntRect,
+        framebuffer_rect: FramebufferIntRect,
         device_pixel_ratio: f32,
     ) {
         self.send_scene_msg(
             document_id,
-            SceneMsg::SetWindowParameters { window_size, inner_rect, device_pixel_ratio, },
+            SceneMsg::SetDocumentView { framebuffer_rect, device_pixel_ratio },
         );
     }
+
+    /// Setup the output region in the framebuffer for a given document.
+    /// Enable copying of the output of this pipeline id to
+    /// an external texture for callers to consume.
+    pub fn enable_frame_output(
+        &self,
+        document_id: DocumentId,
+        pipeline_id: PipelineId,
+        enable: bool,
+    ) {
+        self.send_scene_msg(
+            document_id,
+            SceneMsg::EnableFrameOutput(pipeline_id, enable),
+        );
+    }
+
 
     pub fn get_scroll_node_state(&self, document_id: DocumentId) -> Vec<ScrollNodeState> {
         let (tx, rx) = channel::msg_channel().unwrap();
@@ -1290,7 +1328,7 @@ impl Drop for RenderApi {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct ScrollNodeState {
-    pub id: ExternalScrollId,
+    pub id: di::ExternalScrollId,
     pub scroll_offset: LayoutVector2D,
 }
 
@@ -1310,7 +1348,7 @@ pub struct ZoomFactor(f32);
 
 impl ZoomFactor {
     /// Construct a new zoom factor.
-    pub fn new(scale: f32) -> ZoomFactor {
+    pub fn new(scale: f32) -> Self {
         ZoomFactor(scale)
     }
 

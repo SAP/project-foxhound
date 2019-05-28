@@ -18,11 +18,12 @@ add_task(async function() {
   await checkAdbNotRunning();
 
   const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
   const usbStatusElement = document.querySelector(".js-sidebar-usb-status");
 
   info("Install ADB");
   adbAddon.install("internal");
-  await waitUntil(() => usbStatusElement.textContent.includes("USB devices enabled"));
+  await waitUntil(() => usbStatusElement.textContent.includes("USB enabled"));
   await waitForAdbStart();
 
   info("Wait until the debug target for ADB appears");
@@ -52,7 +53,7 @@ add_task(async function() {
 
   info("Uninstall the adb extension and wait for the message to udpate");
   adbAddon.uninstall();
-  await waitUntil(() => usbStatusElement.textContent.includes("USB devices disabled"));
+  await waitUntil(() => usbStatusElement.textContent.includes("USB disabled"));
   await waitForAdbStop();
 
   await waitForRequestsToSettle(window.AboutDebugging.store);

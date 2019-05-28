@@ -4,6 +4,7 @@
 
 add_task(async function testIncognitoPopup() {
   let extension = ExtensionTestUtils.loadExtension({
+    incognitoOverride: "spanning",
     manifest: {
       "permissions": ["tabs"],
       "browser_action": {
@@ -108,6 +109,10 @@ add_task(async function testIncognitoPopup() {
 });
 
 add_task(async function test_pageAction_incognito_not_allowed() {
+  SpecialPowers.pushPrefEnv({set: [
+    ["extensions.allowPrivateBrowsingByDefault", false],
+  ]});
+
   const URL = "http://example.com/";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -117,7 +122,6 @@ add_task(async function test_pageAction_incognito_not_allowed() {
         "pinned": true,
       },
     },
-    incognitoOverride: "not_allowed",
   });
 
   await extension.startup();

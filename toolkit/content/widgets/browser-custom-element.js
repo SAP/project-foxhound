@@ -7,6 +7,7 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const elementsToDestroyOnUnload = new Set();
 
@@ -26,7 +27,11 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
     // When we have already been set up via connectedCallback and the
     // and the [remote] value changes, we need to start over. This used
     // to happen due to a XBL binding change.
-    if (name === "remote" && oldValue != newValue && this.isConnectedAndReady) {
+    //
+    // Only do this when the rebuild frameloaders pref is off. This update isn't
+    // required when we rebuild the frameloaders in the backend.
+    if (!Services.prefs.getBoolPref("fission.rebuild_frameloaders_on_remoteness_change", false) &&
+        name === "remote" && oldValue != newValue && this.isConnectedAndReady) {
       this.destroy();
       this.construct();
     }
@@ -150,7 +155,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
         event.stopPropagation();
       }
     });
-
   }
 
   resetFields() {
@@ -450,21 +454,27 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
   }
 
   get remoteType() {
-    if (!this.isRemoteBrowser) {
+    if (!this.isRemoteBrowser || !this.messageManager) {
       return null;
     }
 
-    let remoteType = this.getAttribute("remoteType");
-    if (remoteType) {
-      return remoteType;
+    return this.messageManager.remoteType;
+  }
+
+  get isCrashed() {
+    if (!this.isRemoteBrowser || !this.frameLoader) {
+      return false;
     }
 
-    let E10SUtils = ChromeUtils.import("resource://gre/modules/E10SUtils.jsm", {}).E10SUtils;
-    return E10SUtils.DEFAULT_REMOTE_TYPE;
+    return !this.frameLoader.tabParent;
   }
 
   get messageManager() {
-    if (this.frameLoader) {
+    // Bug 1524084 - Trying to get at the message manager while in the crashed state will
+    // create a new message manager that won't shut down properly when the crashed browser
+    // is removed from the DOM. We work around that right now by returning null if we're
+    // in the crashed state.
+    if (this.frameLoader && !this.isCrashed) {
       return this.frameLoader.messageManager;
     }
     return null;
@@ -545,7 +555,7 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
       return this.docShell.browsingContext;
     }
 
-    return ChromeUtils.getBrowsingContext(this._browsingContextId);
+    return BrowsingContext.get(this._browsingContextId);
   }
   /**
    * Note that this overrides webNavigation on XULFrameElement, and duplicates the return value for the non-remote case
@@ -657,7 +667,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
     } else {
       this.markupDocumentViewer.textZoom = val;
     }
-
   }
 
   get textZoom() {
@@ -794,20 +803,17 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
     if (!aURI) {
       aURI = "about:blank";
     }
-
     let {
       flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
-        referrerURI,
-        referrerPolicy = Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+        referrerInfo,
         triggeringPrincipal,
         postData,
         headers,
     } = aParams || {};
     let loadURIOptions = {
       triggeringPrincipal,
-      referrerURI,
+      referrerInfo,
       loadFlags: flags,
-      referrerPolicy,
       postData,
       headers,
     };
@@ -1032,7 +1038,7 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
       this._remoteWebNavigationImpl.swapBrowser(this);
 
       // Initialize contentPrincipal to the about:blank principal for this loadcontext
-      let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+      let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
       let aboutBlank = Services.io.newURI("about:blank");
       let ssm = Services.scriptSecurityManager;
       this._contentPrincipal = ssm.getLoadContextCodebasePrincipal(aboutBlank, this.loadContext);
@@ -1138,7 +1144,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
         this.messageManager.addMessageListener("Forms:ShowDropDown", this);
         this.messageManager.addMessageListener("Forms:HideDropDown", this);
       }
-
     }
   }
 
@@ -1259,10 +1264,15 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
           }
 
           let menulist = document.getElementById(this.getAttribute("selectmenulist"));
-          menulist.menupopup.style.direction = data.direction;
-          this._selectParentHelper.populate(menulist, data.options, data.selectedIndex, this._fullZoom,
-            data.uaSelectBackgroundColor, data.uaSelectColor,
-            data.selectBackgroundColor, data.selectColor, data.selectTextShadow);
+          menulist.menupopup.style.direction = data.style.direction;
+
+          let useFullZoom = !this.isRemoteBrowser ||
+                            Services.prefs.getBoolPref("browser.zoom.full") ||
+                            this.isSyntheticDocument;
+          let zoom = useFullZoom ? this._fullZoom : this._textZoom;
+          this._selectParentHelper.populate(menulist, data.options.options,
+            data.options.uniqueStyles, data.selectedIndex, zoom,
+            data.defaultStyle, data.style);
           this._selectParentHelper.open(this, menulist, data.rect, data.isOpenedViaTouch);
           break;
         }
@@ -1300,26 +1310,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
         };
         break;
 
-      case "Forms:ShowDropDown":
-        {
-          if (!this._selectParentHelper) {
-            this._selectParentHelper =
-              ChromeUtils.import("resource://gre/modules/SelectParentHelper.jsm", {}).SelectParentHelper;
-          }
-
-          let menulist = document.getElementById(this.getAttribute("selectmenulist"));
-          menulist.menupopup.style.direction = data.direction;
-
-          let zoom = Services.prefs.getBoolPref("browser.zoom.full") ||
-            this.isSyntheticDocument ? this._fullZoom : this._textZoom;
-          this._selectParentHelper.populate(menulist, data.options, data.selectedIndex,
-            zoom,
-            data.uaSelectBackgroundColor, data.uaSelectColor,
-            data.selectBackgroundColor, data.selectColor, data.selectTextShadow);
-          this._selectParentHelper.open(this, menulist, data.rect, data.isOpenedViaTouch);
-          break;
-        }
-
       case "FullZoomChange":
         {
           this._fullZoom = data.value;
@@ -1350,7 +1340,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
         return this._receiveMessage(aMessage);
     }
     return undefined;
-
   }
 
   enableDisableCommandsRemoteOnly(aAction, aEnabledLength, aEnabledCommands, aDisabledLength, aDisabledCommands) {
@@ -1750,6 +1739,7 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
         if (msg.data.id != id) {
           return;
         }
+        mm.removeMessageListener("InPermitUnload", listener);
         aCallback(msg.data.inPermitUnload);
       });
       return;
@@ -1777,7 +1767,7 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
       let permitUnload;
       let id = this._permitUnloadId++;
       let mm = this.messageManager;
-      let Services = ChromeUtils.import("resource://gre/modules/Services.jsm", {}).Services;
+      let {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
       let msgListener = msg => {
         if (msg.data.id != id) {
@@ -1881,7 +1871,6 @@ class MozBrowser extends MozElementMixin(XULFrameElement) {
   }
 }
 
-MozXULElement.implementCustomInterface(MozBrowser, [Ci.nsIBrowser, Ci.nsIFrameLoaderOwner]);
+MozXULElement.implementCustomInterface(MozBrowser, [Ci.nsIBrowser]);
 customElements.define("browser", MozBrowser);
-
 }

@@ -44,3 +44,71 @@ add_task(async function test() {
   BrowserTestUtils.closeWindow(newWindow);
   BrowserTestUtils.removeTab(tab4);
 });
+
+add_task(async function testLazyTabs() {
+  let params = {createLazyBrowser: true};
+  let oldTabs = [];
+  let numTabs = 4;
+  for (let i = 0; i < numTabs; ++i) {
+    oldTabs.push(BrowserTestUtils.addTab(gBrowser, `http://example.com/?${i}`, params));
+  }
+
+  await BrowserTestUtils.switchTab(gBrowser, oldTabs[0]);
+  for (let i = 1; i < numTabs; ++i) {
+    await triggerClickOn(oldTabs[i], { ctrlKey: true });
+  }
+
+  isnot(oldTabs[0].linkedPanel, "", `Old tab 0 shouldn't be lazy`);
+  for (let i = 1; i < numTabs; ++i) {
+    is(oldTabs[i].linkedPanel, "", `Old tab ${i} should be lazy`);
+  }
+
+  is(gBrowser.multiSelectedTabsCount, numTabs, `${numTabs} multiselected tabs`);
+  for (let i = 0; i < numTabs; ++i) {
+    ok(oldTabs[i].multiselected, `Old tab ${i} should be multiselected`);
+  }
+
+  let tabsMoved = new Promise(resolve => {
+    let numTabsMoved = 0;
+    window.addEventListener("TabClose", async function listener(event) {
+      let oldTab = event.target;
+      let i = oldTabs.indexOf(oldTab);
+      if (i == 0) {
+        isnot(oldTab.linkedPanel, "", `Old tab ${i} should continue not being lazy`);
+      } else if (i > 0) {
+        is(oldTab.linkedPanel, "", `Old tab ${i} should continue being lazy`);
+      } else {
+        return;
+      }
+      let newTab = event.detail.adoptedBy;
+      await TestUtils.waitForCondition(() => {
+        return newTab.linkedBrowser.currentURI.spec != "about:blank";
+      }, `Wait for the new tab to finish the adoption of the old tab`);
+      if (++numTabsMoved == numTabs) {
+        window.removeEventListener("TabClose", listener);
+        resolve();
+      }
+    });
+  });
+  let newWindow = gBrowser.replaceTabsWithWindow(oldTabs[0]);
+  await tabsMoved;
+  let newTabs = newWindow.gBrowser.tabs;
+
+  isnot(newTabs[0].linkedPanel, "", `New tab 0 should continue not being lazy`);
+  for (let i = 1; i < numTabs; ++i) {
+    is(newTabs[i].linkedPanel, "", `New tab ${i} should continue being lazy`);
+  }
+
+  is(newTabs[0].linkedBrowser.currentURI.spec, `http://example.com/?0`,
+    `New tab 0 should have the right URL`);
+  for (let i = 1; i < numTabs; ++i) {
+    is(SessionStore.getLazyTabValue(newTabs[i], "url"), `http://example.com/?${i}`,
+      `New tab ${i} should have the right lazy URL`);
+  }
+
+  for (let i = 0; i < numTabs; ++i) {
+    ok(newTabs[i].multiselected, `New tab ${i} should be multiselected`);
+  }
+
+  BrowserTestUtils.closeWindow(newWindow);
+});

@@ -4,8 +4,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const SERVER_PORT = 8080;
 const baseURL = "http://localhost:" + SERVER_PORT + "/";
@@ -16,13 +16,13 @@ for (let i =0; i < 10000; i++) {
 }
 
 var listener = {
-  onStartRequest: function (request, ctx) {
+  onStartRequest: function (request) {
   },
 
-  onDataAvailable: function (request, ctx, stream) {
+  onDataAvailable: function (request, stream) {
   },
 
-  onStopRequest: function (request, ctx, status) {
+  onStopRequest: function (request, status) {
       Assert.equal(status, Cr.NS_OK);
       server.stop(do_test_finished);
   },
@@ -39,6 +39,6 @@ function run_test() {
     });
     var chan = NetUtil.newChannel({uri: baseURL, loadUsingSystemPrincipal: true})
                       .QueryInterface(Ci.nsIHttpChannel);
-    chan.asyncOpen2(listener);
+    chan.asyncOpen(listener);
     do_test_pending();
 }

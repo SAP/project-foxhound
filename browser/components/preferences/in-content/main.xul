@@ -16,6 +16,7 @@
 
 <stringbundle id="bundlePreferences" src="chrome://browser/locale/preferences.properties"/>
 
+<box id="template-paneGeneral" hidden="true"><![CDATA[
 <hbox id="generalCategory"
       class="subcategory"
       hidden="true"
@@ -28,20 +29,6 @@
           data-category="paneGeneral"
           hidden="true">
   <label><html:h2 data-l10n-id="startup-header"/></label>
-
-#ifdef MOZ_DEV_EDITION
-  <vbox id="separateProfileBox">
-    <checkbox id="separateProfileMode"
-              data-l10n-id="separate-profile-mode"/>
-    <hbox id="sync-dev-edition-root" align="center" class="indent" hidden="true">
-      <label id="useFirefoxSync" data-l10n-id="use-firefox-sync"/>
-      <deck id="getStarted">
-        <label class="text-link" data-l10n-id="get-started-not-logged-in"/>
-        <label class="text-link" data-l10n-id="get-started-configured"/>
-      </deck>
-    </hbox>
-  </vbox>
-#endif
 
   <vbox id="startupPageBox">
     <checkbox id="browserRestoreSession"
@@ -119,7 +106,7 @@
                   data-l10n-id="browser-containers-enabled"
                   preference="privacy.userContext.enabled"
                   onsyncfrompreference="return gMainPane.readBrowserContainersCheckbox();"/>
-        <label id="browserContainersLearnMore" class="learnMore text-link" data-l10n-id="browser-containers-learn-more"/>
+        <label id="browserContainersLearnMore" is="text-link" class="learnMore" data-l10n-id="browser-containers-learn-more"/>
         <spacer flex="1"/>
         <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
         <hbox>
@@ -412,7 +399,7 @@
   <hbox align="center">
     <checkbox id="playDRMContent" preference="media.eme.enabled"
               class="tail-with-learn-more" data-l10n-id="play-drm-content" />
-    <label id="playDRMContentLink" class="learnMore text-link" data-l10n-id="play-drm-content-learn-more"/>
+    <label id="playDRMContentLink" class="learnMore" data-l10n-id="play-drm-content-learn-more" is="text-link"/>
   </hbox>
 </groupbox>
 
@@ -522,7 +509,7 @@
       <hbox id="manualUpdate" align="start">
         <image class="face-sad"/>
         <description flex="1" data-l10n-id="update-manual">
-          <label id="manualLink" class="text-link" data-l10n-name="manual-link"/>
+          <label id="manualLink" data-l10n-name="manual-link" is="text-link"/>
         </description>
         <spacer flex="1"/>
         <button data-l10n-id="update-checkForUpdatesButton"
@@ -530,7 +517,7 @@
       </hbox>
       <hbox id="unsupportedSystem" align="start">
         <description flex="1" data-l10n-id="update-unsupported">
-          <label id="unsupportedLink" class="learnMore text-link" data-l10n-name="unsupported-link"></label>
+          <label id="unsupportedLink" class="learnMore" data-l10n-name="unsupported-link" is="text-link"></label>
         </description>
         <spacer flex="1"/>
         <button data-l10n-id="update-checkForUpdatesButton"
@@ -588,7 +575,7 @@
               class="tail-with-learn-more"
               data-l10n-id="performance-use-recommended-settings-checkbox"
               preference="browser.preferences.defaultPerformanceSettings.enabled"/>
-    <label id="performanceSettingsLearnMore" class="learnMore text-link" data-l10n-id="performance-settings-learn-more"/>
+    <label id="performanceSettingsLearnMore" class="learnMore" data-l10n-id="performance-settings-learn-more" is="text-link"/>
   </hbox>
   <description class="indent tip-caption" data-l10n-id="performance-use-recommended-settings-desc"/>
 
@@ -648,12 +635,19 @@
   <checkbox id="searchStartTyping"
             data-l10n-id="browsing-search-on-start-typing"
             preference="accessibility.typeaheadfind"/>
-  <hbox align="center" data-subcategory="cfr">
+  <hbox align="center" data-subcategory="cfraddons">
     <checkbox id="cfrRecommendations"
             class="tail-with-learn-more"
             data-l10n-id="browsing-cfr-recommendations"
-            preference="browser.newtabpage.activity-stream.asrouter.userprefs.cfr"/>
-    <label id="cfrLearnMore" class="learnMore text-link" data-l10n-id="browsing-cfr-recommendations-learn-more"/>
+            preference="browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons"/>
+    <label id="cfrLearnMore" class="learnMore" data-l10n-id="browsing-cfr-recommendations-learn-more" is="text-link"/>
+  </hbox>
+  <hbox align="center" data-subcategory="cfrfeatures">
+    <checkbox id="cfrRecommendations-features"
+            class="tail-with-learn-more"
+            data-l10n-id="browsing-cfr-features"
+            preference="browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features"/>
+    <label id="cfrFeaturesLearnMore" class="learnMore" data-l10n-id="browsing-cfr-recommendations-learn-more" is="text-link"/>
   </hbox>
 </groupbox>
 
@@ -672,7 +666,7 @@
     <hbox align="center" flex="1">
       <description id="connectionSettingsDescription" control="connectionSettings"/>
       <spacer width="5"/>
-      <label id="connectionSettingsLearnMore" class="learnMore text-link"
+      <label id="connectionSettingsLearnMore" class="learnMore" is="text-link"
         data-l10n-id="network-proxy-connection-learn-more">
       </label>
       <separator orient="vertical"/>
@@ -712,3 +706,4 @@
     </hbox>
   </hbox>
 </groupbox>
+]]></box>

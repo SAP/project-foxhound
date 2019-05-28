@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
+
 XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell.ini'
 ]
@@ -11,6 +14,8 @@ XPCSHELL_TESTS_MANIFESTS += [
 TEST_HARNESS_FILES.xpcshell.dom.localstorage.test.unit += [
     'test/unit/databaseShadowing-shared.js',
 ]
+
+TEST_DIRS += ['test/gtest']
 
 XPIDL_SOURCES += [
     'nsILocalStorageManager.idl',

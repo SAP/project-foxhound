@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "FileUtils",
                                "resource://gre/modules/FileUtils.jsm");
@@ -29,7 +29,7 @@ HandlerService.prototype = {
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsISupportsWeakReference,
     Ci.nsIHandlerService,
-    Ci.nsIObserver
+    Ci.nsIObserver,
   ]),
 
   __store: null,
@@ -54,6 +54,7 @@ HandlerService.prototype = {
       this.__store.ensureDataReady();
 
       this._injectDefaultProtocolHandlersIfNeeded();
+      this._migrateProtocolHandlersIfNeeded();
 
       Services.obs.notifyObservers(null, "handlersvc-store-initialized");
     }
@@ -110,7 +111,6 @@ HandlerService.prototype = {
 
     // read all the scheme prefs into a hash
     for (let schemePrefName of schemePrefList) {
-
       let [scheme, handlerNumber, attribute] = schemePrefName.split(".");
 
       try {
@@ -139,10 +139,70 @@ HandlerService.prototype = {
         let handlerApp = this.handlerAppFromSerializable(schemes[scheme][handlerNumber]);
         // If there is already a handler registered with the same template
         // URL, the newly added one will be ignored when saving.
-        possibleHandlers.appendElement(handlerApp, false);
+        possibleHandlers.appendElement(handlerApp);
       }
 
       this.store(protoInfo);
+    }
+  },
+
+  /**
+   * Execute any migrations. Migrations are defined here for any changes or removals for
+   * existing handlers. Additions are still handled via the localized prefs infrastructure.
+   *
+   * This depends on the browser.handlers.migrations pref being set by migrateUI in
+   * nsBrowserGlue (for Fx Desktop) or similar mechanisms for other products.
+   * This is a comma-separated list of identifiers of migrations that need running.
+   * This avoids both re-running older migrations and keeping an additional
+   * pref around permanently.
+   */
+  _migrateProtocolHandlersIfNeeded() {
+    const kMigrations = {
+      "30boxes": () => {
+        const k30BoxesRegex = /^https?:\/\/(?:www\.)?30boxes.com\/external\/widget/i;
+        let webcalHandler = gExternalProtocolService.getProtocolHandlerInfo("webcal");
+        if (this.exists(webcalHandler)) {
+          this.fillHandlerInfo(webcalHandler, "");
+          let shouldStore = false;
+          // First remove 30boxes from possible handlers.
+          let handlers = webcalHandler.possibleApplicationHandlers;
+          for (let i = handlers.length - 1; i >= 0; i--) {
+            let app = handlers.queryElementAt(i, Ci.nsIHandlerApp);
+            if (app instanceof Ci.nsIWebHandlerApp &&
+                k30BoxesRegex.test(app.uriTemplate)) {
+              shouldStore = true;
+              handlers.removeElementAt(i);
+            }
+          }
+          // Then remove as a preferred handler.
+          if (webcalHandler.preferredApplicationHandler) {
+            let app = webcalHandler.preferredApplicationHandler;
+            if (app instanceof Ci.nsIWebHandlerApp &&
+                k30BoxesRegex.test(app.uriTemplate)) {
+              webcalHandler.preferredApplicationHandler = null;
+              shouldStore = true;
+            }
+          }
+          // Then store, if we changed anything.
+          if (shouldStore) {
+            this.store(webcalHandler);
+          }
+        }
+      },
+    };
+    let migrationsToRun = Services.prefs.getCharPref("browser.handlers.migrations", "");
+    migrationsToRun = migrationsToRun ? migrationsToRun.split(",") : [];
+    for (let migration of migrationsToRun) {
+      migration.trim();
+      try {
+        kMigrations[migration]();
+      } catch (ex) {
+        Cu.reportError(ex);
+      }
+    }
+
+    if (migrationsToRun.length) {
+      Services.prefs.clearUserPref("browser.handlers.migrations");
     }
   },
 
@@ -203,17 +263,17 @@ HandlerService.prototype = {
       let handler = new Proxy(
         {
           QueryInterface: ChromeUtils.generateQI([Ci.nsIHandlerInfo]),
-          type: type,
+          type,
           get _handlerInfo() {
             delete this._handlerInfo;
             return this._handlerInfo = gExternalProtocolService.getProtocolHandlerInfo(type);
           },
         },
         {
-          get: function(target, name) {
+          get(target, name) {
             return target[name] || target._handlerInfo[name];
           },
-          set: function(target, name, value) {
+          set(target, name, value) {
             target._handlerInfo[name] = value;
           },
         },

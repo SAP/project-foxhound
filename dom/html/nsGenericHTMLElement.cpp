@@ -1143,36 +1143,43 @@ void nsGenericHTMLElement::MapCommonAttributesInto(
   }
 }
 
-/* static */ const nsGenericHTMLElement::MappedAttributeEntry
+/* static */
+const nsGenericHTMLElement::MappedAttributeEntry
     nsGenericHTMLElement::sCommonAttributeMap[] = {{nsGkAtoms::contenteditable},
                                                    {nsGkAtoms::lang},
                                                    {nsGkAtoms::hidden},
                                                    {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sImageMarginSizeAttributeMap[] = {{nsGkAtoms::width},
                                                             {nsGkAtoms::height},
                                                             {nsGkAtoms::hspace},
                                                             {nsGkAtoms::vspace},
                                                             {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sImageAlignAttributeMap[] = {{nsGkAtoms::align},
                                                        {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sDivAlignAttributeMap[] = {{nsGkAtoms::align},
                                                      {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sImageBorderAttributeMap[] = {{nsGkAtoms::border},
                                                         {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sBackgroundAttributeMap[] = {
         {nsGkAtoms::background}, {nsGkAtoms::bgcolor}, {nullptr}};
 
-/* static */ const Element::MappedAttributeEntry
+/* static */
+const Element::MappedAttributeEntry
     nsGenericHTMLElement::sBackgroundColorAttributeMap[] = {
         {nsGkAtoms::bgcolor}, {nullptr}};
 
@@ -1446,10 +1453,10 @@ bool nsGenericHTMLElement::IsLabelable() const {
   return IsAnyOfHTMLElements(nsGkAtoms::progress, nsGkAtoms::meter);
 }
 
-/* static */ bool nsGenericHTMLElement::MatchLabelsElement(Element* aElement,
-                                                           int32_t aNamespaceID,
-                                                           nsAtom* aAtom,
-                                                           void* aData) {
+/* static */
+bool nsGenericHTMLElement::MatchLabelsElement(Element* aElement,
+                                              int32_t aNamespaceID,
+                                              nsAtom* aAtom, void* aData) {
   HTMLLabelElement* element = HTMLLabelElement::FromNode(aElement);
   return element && element->GetControl() == aData;
 }
@@ -1470,15 +1477,14 @@ already_AddRefed<nsINodeList> nsGenericHTMLElement::Labels() {
 
 bool nsGenericHTMLElement::IsInteractiveHTMLContent(
     bool aIgnoreTabindex) const {
-  return IsAnyOfHTMLElements(nsGkAtoms::details, nsGkAtoms::embed,
-                             nsGkAtoms::keygen) ||
+  return IsAnyOfHTMLElements(nsGkAtoms::embed, nsGkAtoms::keygen) ||
          (!aIgnoreTabindex && HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex));
 }
 
 // static
-bool nsGenericHTMLElement::TouchEventsEnabled(JSContext* aCx,
-                                              JSObject* aGlobal) {
-  return TouchEvent::PrefEnabled(aCx, aGlobal);
+bool nsGenericHTMLElement::LegacyTouchAPIEnabled(JSContext* aCx,
+                                                 JSObject* aGlobal) {
+  return TouchEvent::LegacyAPIEnabled(aCx, aGlobal);
 }
 
 //----------------------------------------------------------------------
@@ -1970,6 +1976,10 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
   }
 
   switch (aEvent->mMessage) {
+    case eAnimationStart:
+    case eAnimationEnd:
+    case eAnimationIteration:
+    case eAnimationCancel:
     case eMouseMove:
     case eMouseOver:
     case eMouseOut:
@@ -1980,6 +1990,10 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
     case ePointerOut:
     case ePointerEnter:
     case ePointerLeave:
+    case eTransitionCancel:
+    case eTransitionEnd:
+    case eTransitionRun:
+    case eTransitionStart:
     case eWheel:
     case eLegacyMouseLineOrPageScroll:
     case eLegacyMousePixelScroll:

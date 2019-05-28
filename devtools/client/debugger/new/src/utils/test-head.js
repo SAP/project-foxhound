@@ -17,6 +17,12 @@ import * as selectors from "../selectors";
 import { getHistory } from "../test/utils/history";
 import configureStore from "../actions/utils/create-store";
 import sourceQueue from "../utils/source-queue";
+import type { Source } from "../types";
+
+/**
+ * This file contains older interfaces used by tests that have not been
+ * converted to use test-mockup.js
+ */
 
 /**
  * @memberof utils/test-head
@@ -39,6 +45,14 @@ function createStore(client: any, initialState: any = {}, sourceMapsMock: any) {
     newSources: sources => store.dispatch(actions.newSources(sources))
   });
 
+  store.thunkArgs = () => ({
+    dispatch: store.dispatch,
+    getState: store.getState,
+    client,
+    sourceMaps,
+    panel: {}
+  });
+
   return store;
 }
 
@@ -55,15 +69,12 @@ function makeFrame({ id, sourceId }: Object, opts: Object = {}) {
     id,
     scope: { bindings: { variables: {}, arguments: [] } },
     location: { sourceId, line: 4 },
+    thread: "FakeThread",
     ...opts
   };
 }
 
-/**
- * @memberof utils/test-head
- * @static
- */
-function makeSource(name: string, props: any = {}) {
+function makeSourceRaw(name: string, props: any = {}): Source {
   return {
     id: name,
     loadedState: "unloaded",
@@ -72,9 +83,31 @@ function makeSource(name: string, props: any = {}) {
   };
 }
 
-function makeOriginalSource(name: string, props?: Object) {
-  const source = makeSource(name, props);
-  return { ...source, id: `${name}/originalSource` };
+/**
+ * @memberof utils/test-head
+ * @static
+ */
+function makeSource(name: string, props: any = {}): Source {
+  const rv = {
+    ...makeSourceRaw(name, props),
+    actors: [
+      {
+        actor: `${name}-actor`,
+        source: name,
+        thread: "FakeThread"
+      }
+    ]
+  };
+  return (rv: any);
+}
+
+function makeOriginalSource(name: string, props?: Object): Source {
+  const rv = {
+    ...makeSourceRaw(name, props),
+    id: `${name}/originalSource`,
+    actors: []
+  };
+  return (rv: any);
 }
 
 function makeFuncLocation(startLine, endLine) {
@@ -94,8 +127,8 @@ function makeFuncLocation(startLine, endLine) {
 function makeSymbolDeclaration(
   name: string,
   start: number,
-  end: number,
-  klass: string
+  end: ?number,
+  klass: ?string
 ) {
   return {
     id: `${name}:${start}`,
@@ -126,6 +159,33 @@ function waitForState(store: any, predicate: any): Promise<void> {
   });
 }
 
+function watchForState(store: any, predicate: any): () => boolean {
+  let sawState = false;
+  const checkState = function() {
+    if (!sawState && predicate(store.getState())) {
+      sawState = true;
+    }
+    return sawState;
+  };
+
+  let unsubscribe;
+  if (!checkState()) {
+    unsubscribe = store.subscribe(() => {
+      if (checkState()) {
+        unsubscribe();
+      }
+    });
+  }
+
+  return function read() {
+    if (unsubscribe) {
+      unsubscribe();
+    }
+
+    return sawState;
+  };
+}
+
 function getTelemetryEvents(eventName: string) {
   return window.dbg._telemetry.events[eventName] || [];
 }
@@ -142,5 +202,6 @@ export {
   makeOriginalSource,
   makeSymbolDeclaration,
   waitForState,
+  watchForState,
   getHistory
 };

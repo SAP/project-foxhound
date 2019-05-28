@@ -22,7 +22,7 @@ function test() {
   BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(function() {
       const sw = gScratchpadWindow;
-      const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+      const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
       const {TargetFactory} = require("devtools/client/framework/target");
 
       openScratchpad(async function() {
@@ -50,7 +50,7 @@ function testFocus(sw, hud) {
     ok(loc, "location element exists");
     is(loc.getAttribute("data-url"), sw.Scratchpad.uniqueName, "location value is correct");
     is(loc.getAttribute("data-line"), "1", "line value is correct");
-    is(loc.getAttribute("data-column"), "1", "column value is correct");
+    is(loc.getAttribute("data-column"), "9", "column value is correct");
 
     sw.addEventListener("focus", function() {
       const win = Services.wm.getMostRecentWindow("devtools:scratchpad");

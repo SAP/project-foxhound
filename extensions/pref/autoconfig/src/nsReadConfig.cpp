@@ -6,6 +6,7 @@
 #include "nsReadConfig.h"
 #include "nsJSConfigTriggers.h"
 
+#include "mozilla/Components.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIAppStartup.h"
 #include "nsContentUtils.h"
@@ -18,12 +19,13 @@
 #include "nsIPromptService.h"
 #include "nsIServiceManager.h"
 #include "nsIStringBundle.h"
-#include "nsToolkitCompsCID.h"
 #include "nsNetUtil.h"
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nspr.h"
 #include "nsXULAppAPI.h"
+
+using namespace mozilla;
 
 extern bool sandboxEnabled;
 
@@ -101,7 +103,7 @@ NS_IMETHODIMP nsReadConfig::Observe(nsISupports *aSubject, const char *aTopic,
         rv = DisplayError();
         if (NS_FAILED(rv)) {
           nsCOMPtr<nsIAppStartup> appStartup =
-              do_GetService(NS_APPSTARTUP_CONTRACTID);
+              components::AppStartup::Service();
           if (appStartup) appStartup->Quit(nsIAppStartup::eAttemptQuit);
         }
       }
@@ -261,7 +263,7 @@ nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName,
                        nsIContentPolicy::TYPE_OTHER);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = channel->Open2(getter_AddRefs(inStr));
+    rv = channel->Open(getter_AddRefs(inStr));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

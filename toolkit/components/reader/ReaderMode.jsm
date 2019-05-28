@@ -31,8 +31,8 @@ const CLASSES_TO_PRESERVE = [
   "wp-smiley",
 ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest", "XMLSerializer"]);
 
@@ -100,10 +100,14 @@ var ReaderMode = {
       return;
     }
     let flags = webNav.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+    let ReferrerInfo = Components.Constructor("@mozilla.org/referrer-info;1",
+                                              "nsIReferrerInfo",
+                                              "init");
     let loadURIOptions = {
       triggeringPrincipal: principal,
       loadFlags: flags,
-      referrerURI,
+      referrerInfo: new ReferrerInfo(
+        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET, true, referrerURI),
     };
     webNav.loadURI(originalURL, loadURIOptions);
   },

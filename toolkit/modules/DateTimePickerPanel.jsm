@@ -8,7 +8,7 @@ var EXPORTED_SYMBOLS = [
   "DateTimePickerPanel",
 ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var DateTimePickerPanel = class {
   constructor(element) {
@@ -99,7 +99,7 @@ var DateTimePickerPanel = class {
   initPicker(detail) {
     // TODO: When bug 1376616 lands, replace this.setGregorian with
     //       mozIntl.Locale for setting calendar to Gregorian
-    const locale = this.setGregorian(Services.locale.appLocaleAsBCP47);
+    const locale = this.setGregorian(Services.locale.regionalPrefsLocales[0]);
     const dir = Services.intl.getLocaleInfo(locale).direction;
 
     switch (this.type) {
@@ -125,8 +125,7 @@ var DateTimePickerPanel = class {
       case "date":
         {
           const { year, month, day } = detail.value;
-          const { firstDayOfWeek, weekends } =
-          this.getCalendarInfo(locale);
+          const { firstDayOfWeek, weekends } = this.getCalendarInfo(locale);
           const monthStrings = this.getDisplayNames(
             locale, [
               "dates/gregorian/months/january",

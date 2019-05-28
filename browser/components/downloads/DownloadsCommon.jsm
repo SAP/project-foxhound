@@ -32,8 +32,8 @@ var EXPORTED_SYMBOLS = [
 
 // Globals
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -53,7 +53,7 @@ XPCOMUtils.defineLazyServiceGetters(this, {
 });
 
 XPCOMUtils.defineLazyGetter(this, "DownloadsLogger", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
+  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   let consoleOptions = {
     maxLogLevelPref: "browser.download.loglevel",
     prefix: "Downloads",
@@ -185,8 +185,9 @@ var DownloadsCommon = {
    * HistoryDownloadsData objects, depending on the privacy status of the
    * specified window and on whether history downloads should be included.
    *
-   * @param window
+   * @param [optional] window
    *        The browser window which owns the download button.
+   *        If not given, the privacy status will be assumed as non-private.
    * @param [optional] history
    *        True to include history downloads when the window is public.
    * @param [optional] privateAll
@@ -197,7 +198,7 @@ var DownloadsCommon = {
    *        `kMaxHistoryResultsForLimitedView`.
    */
   getData(window, history = false, privateAll = false, limited = false) {
-    let isPrivate = PrivateBrowsingUtils.isContentWindowPrivate(window);
+    let isPrivate = window && PrivateBrowsingUtils.isContentWindowPrivate(window);
     if (isPrivate && !privateAll) {
       return PrivateDownloadsData;
     }

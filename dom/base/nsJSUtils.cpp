@@ -120,7 +120,7 @@ nsJSUtils::ExecutionContext::ExecutionContext(JSContext* aCx,
 #ifdef MOZ_GECKO_PROFILER
       mAutoProfilerLabel("nsJSUtils::ExecutionContext",
                          /* dynamicStr */ nullptr,
-                         js::ProfilingStackFrame::Category::JS),
+                         JS::ProfilingCategoryPair::JS),
 #endif
       mCx(aCx),
       mRealm(aCx, aGlobal),
@@ -402,7 +402,8 @@ static bool IsPromiseValue(JSContext* aCx, JS::Handle<JS::Value> aValue) {
     return false;
   }
 
-  JS::Rooted<JSObject*> obj(aCx, js::CheckedUnwrap(&aValue.toObject()));
+  // We only care about Promise here, so CheckedUnwrapStatic is fine.
+  JS::Rooted<JSObject*> obj(aCx, js::CheckedUnwrapStatic(&aValue.toObject()));
   if (!obj) {
     return false;
   }

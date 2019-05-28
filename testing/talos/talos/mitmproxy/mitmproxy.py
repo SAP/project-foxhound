@@ -35,7 +35,7 @@ POLICIES_CONTENT_ON = '''{
       "Mode": "manual",
       "HTTPProxy": "127.0.0.1:8080",
       "SSLProxy": "127.0.0.1:8080",
-      "Passthrough": "localhost, 127.0.0.1",
+      "Passthrough": "",
       "Locked": true
     }
   }
@@ -182,7 +182,7 @@ def start_mitmproxy_playback(mitmdump_path,
 
 def stop_mitmproxy_playback(mitmproxy_proc):
     """Stop the mitproxy server playback"""
-    LOG.info("Stopping mitmproxy playback, klling process %d" % mitmproxy_proc.pid)
+    LOG.info("Stopping mitmproxy playback, killing process %d" % mitmproxy_proc.pid)
     if mozinfo.os == 'win':
         mitmproxy_proc.kill()
     else:

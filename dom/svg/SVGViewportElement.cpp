@@ -167,7 +167,7 @@ void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
   // anyway (which will include our children).
   if ((changeHint & nsChangeHint_ReconstructFrame) ||
       !(aFlags & eDuringReflow)) {
-    nsLayoutUtils::PostRestyleEvent(this, nsRestyleHint(0), changeHint);
+    nsLayoutUtils::PostRestyleEvent(this, RestyleHint{0}, changeHint);
   }
 }
 
@@ -205,19 +205,32 @@ float SVGViewportElement::GetLength(uint8_t aCtxType) {
                                       ? &GetViewBoxInternal().GetAnimValue()
                                       : nullptr;
 
-  float h, w;
+  float h = 0.0f, w = 0.0f;
+  bool shouldComputeWidth =
+           (aCtxType == SVGContentUtils::X || aCtxType == SVGContentUtils::XY),
+       shouldComputeHeight =
+           (aCtxType == SVGContentUtils::Y || aCtxType == SVGContentUtils::XY);
+
   if (viewbox) {
     w = viewbox->width;
     h = viewbox->height;
   } else if (IsInner()) {
     SVGViewportElement* ctx = GetCtx();
-    w = mLengthAttributes[ATTR_WIDTH].GetAnimValue(ctx);
-    h = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(ctx);
+    if (shouldComputeWidth) {
+      w = mLengthAttributes[ATTR_WIDTH].GetAnimValue(ctx);
+    }
+    if (shouldComputeHeight) {
+      h = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(ctx);
+    }
   } else if (ShouldSynthesizeViewBox()) {
-    w = ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_WIDTH],
-                                           mViewportWidth, this);
-    h = ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_HEIGHT],
-                                           mViewportHeight, this);
+    if (shouldComputeWidth) {
+      w = ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_WIDTH],
+                                             mViewportWidth, this);
+    }
+    if (shouldComputeHeight) {
+      h = ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_HEIGHT],
+                                             mViewportHeight, this);
+    }
   } else {
     w = mViewportWidth;
     h = mViewportHeight;
@@ -240,7 +253,8 @@ float SVGViewportElement::GetLength(uint8_t aCtxType) {
 //----------------------------------------------------------------------
 // SVGElement methods
 
-/* virtual */ gfxMatrix SVGViewportElement::PrependLocalTransformsTo(
+/* virtual */
+gfxMatrix SVGViewportElement::PrependLocalTransformsTo(
     const gfxMatrix& aMatrix, SVGTransformTypes aWhich) const {
   // 'transform' attribute (or an override from a fragment identifier):
   gfxMatrix userToParent;
@@ -288,7 +302,8 @@ float SVGViewportElement::GetLength(uint8_t aCtxType) {
   return childToUser * aMatrix;
 }
 
-/* virtual */ bool SVGViewportElement::HasValidDimensions() const {
+/* virtual */
+bool SVGViewportElement::HasValidDimensions() const {
   return !IsInner() ||
          ((!mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() ||
            mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0) &&

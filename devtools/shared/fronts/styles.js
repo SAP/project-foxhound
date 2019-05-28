@@ -13,32 +13,23 @@ const {
 } = require("devtools/shared/specs/styles");
 const promise = require("promise");
 
-loader.lazyRequireGetter(this, "RuleRewriter",
-  "devtools/shared/css/parsing-utils", true);
+loader.lazyRequireGetter(this, "RuleRewriter", "devtools/shared/fronts/inspector/rule-rewriter");
 
 /**
  * PageStyleFront, the front object for the PageStyleActor
  */
 class PageStyleFront extends FrontClassWithSpec(pageStyleSpec) {
-  constructor(conn, form, ctx, detail) {
-    super(conn, form, ctx, detail);
+  constructor(conn) {
+    super(conn);
     this.inspector = this.parent();
   }
 
-  form(form, detail) {
-    if (detail === "actorid") {
-      this.actorID = form;
-      return;
-    }
+  form(form) {
     this._form = form;
   }
 
   get walker() {
     return this.inspector.walker;
-  }
-
-  get supportsAuthoredStyles() {
-    return this._form.traits && this._form.traits.authoredStyles;
   }
 
   get supportsFontStretchLevel4() {
@@ -76,13 +67,7 @@ class PageStyleFront extends FrontClassWithSpec(pageStyleSpec) {
   }
 
   addNewRule(node, pseudoClasses) {
-    let addPromise;
-    if (this.supportsAuthoredStyles) {
-      addPromise = super.addNewRule(node, pseudoClasses, true);
-    } else {
-      addPromise = super.addNewRule(node, pseudoClasses);
-    }
-    return addPromise.then(ret => {
+    return super.addNewRule(node, pseudoClasses).then(ret => {
       return ret.entries[0];
     });
   }
@@ -95,17 +80,13 @@ registerFront(PageStyleFront);
  * StyleRuleFront, the front for the StyleRule actor.
  */
 class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
-  constructor(client, form, ctx, detail) {
-    super(client, form, ctx, detail);
+  constructor(client) {
+    super(client);
 
     this.before("location-changed", this._locationChangedPre.bind(this));
   }
 
-  form(form, detail) {
-    if (detail === "actorid") {
-      this.actorID = form;
-      return;
-    }
+  form(form) {
     this.actorID = form.actor;
     this._form = form;
     if (this._mediaText) {
@@ -152,7 +133,9 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
     return this._form.cssText;
   }
   get authoredText() {
-    return this._form.authoredText || this._form.cssText;
+    return (typeof this._form.authoredText === "string")
+      ? this._form.authoredText
+      : this._form.cssText;
   }
   get declarations() {
     return this._form.declarations || [];
@@ -252,12 +235,7 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
   }
 
   async modifySelector(node, value) {
-    let response;
-    if (this.canSetRuleText) {
-      response = await super.modifySelector(node, value, true);
-    } else {
-      response = await super.modifySelector(node, value);
-    }
+    const response = await super.modifySelector(node, value, this.canSetRuleText);
 
     if (response.ruleProps) {
       response.ruleProps = response.ruleProps.entries[0];

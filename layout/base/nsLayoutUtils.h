@@ -21,7 +21,7 @@
 #include "nsThreadUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIWidget.h"
-#include "nsCSSPropertyID.h"
+#include "nsCSSPropertyIDSet.h"
 #include "nsStyleCoord.h"
 #include "nsStyleConsts.h"
 #include "nsGkAtoms.h"
@@ -55,7 +55,6 @@ class nsContainerFrame;
 class nsView;
 class nsIFrame;
 class nsStyleCoord;
-class nsStyleCorners;
 class nsPIDOMWindowOuter;
 class imgIRequest;
 struct nsStyleFont;
@@ -63,7 +62,7 @@ struct nsOverflowAreas;
 
 namespace mozilla {
 class ComputedStyle;
-enum class CSSPseudoElementType : uint8_t;
+enum class PseudoStyleType : uint8_t;
 class EventListenerManager;
 enum class LayoutFrameType : uint8_t;
 struct IntrinsicSize;
@@ -146,6 +145,8 @@ enum class ReparentingDirection {
  */
 class nsLayoutUtils {
   typedef mozilla::ComputedStyle ComputedStyle;
+  typedef mozilla::LengthPercentage LengthPercentage;
+  typedef mozilla::LengthPercentageOrAuto LengthPercentageOrAuto;
   typedef mozilla::dom::DOMRectList DOMRectList;
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::StackingContextHelper StackingContextHelper;
@@ -382,6 +383,7 @@ class nsLayoutUtils {
    * table frame has been destroyed).
    */
   static nsIFrame* GetStyleFrame(nsIFrame* aPrimaryFrame);
+  static const nsIFrame* GetStyleFrame(const nsIFrame* aPrimaryFrame);
 
   /**
    * Given a content node,
@@ -390,6 +392,20 @@ class nsLayoutUtils {
    * This is aContent->GetPrimaryFrame() except for tableWrapper frames.
    */
   static nsIFrame* GetStyleFrame(const nsIContent* aContent);
+
+  /**
+   * The inverse of GetStyleFrame. Returns |aStyleFrame| unless it is an inner
+   * table frame, in which case the table wrapper frame is returned.
+   */
+  static nsIFrame* GetPrimaryFrameFromStyleFrame(nsIFrame* aStyleFrame);
+  static const nsIFrame* GetPrimaryFrameFromStyleFrame(
+      const nsIFrame* aStyleFrame);
+
+  /**
+   * Similar to nsIFrame::IsPrimaryFrame except that this will return true
+   * for the inner table frame rather than for its wrapper frame.
+   */
+  static bool IsPrimaryStyleFrame(const nsIFrame* aFrame);
 
   /**
    * Gets the real primary frame associated with the content object.
@@ -682,7 +698,7 @@ class nsLayoutUtils {
    */
   static bool HasPseudoStyle(nsIContent* aContent,
                              ComputedStyle* aComputedStyle,
-                             mozilla::CSSPseudoElementType aPseudoElement,
+                             mozilla::PseudoStyleType aPseudoElement,
                              nsPresContext* aPresContext);
 
   /**
@@ -1343,12 +1359,6 @@ class nsLayoutUtils {
    */
   static nsIFrame* GetNonGeneratedAncestor(nsIFrame* aFrame);
 
-  /**
-   * Cast aFrame to an nsBlockFrame* or return null if it's not
-   * an nsBlockFrame.
-   */
-  static nsBlockFrame* GetAsBlock(nsIFrame* aFrame);
-
   /*
    * Whether the frame is an nsBlockFrame which is not a wrapper block.
    */
@@ -1461,65 +1471,65 @@ class nsLayoutUtils {
                                             uint32_t aFlags = 0);
 
   /*
-   * Convert nsStyleCoord to nscoord when percentages depend on the
+   * Convert LengthPercentage to nscoord when percentages depend on the
    * containing block size.
    * @param aPercentBasis The width or height of the containing block
    * (whichever the client wants to use for resolving percentages).
    */
   static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
-                                         const nsStyleCoord& aCoord);
+                                         const LengthPercentage& aCoord) {
+    NS_WARNING_ASSERTION(
+        aPercentBasis != NS_UNCONSTRAINEDSIZE,
+        "have unconstrained width or height; this should only result from very "
+        "large sizes, not attempts at intrinsic size calculation");
+    return aCoord.Resolve(aPercentBasis);
+  }
+  static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
+                                         const LengthPercentageOrAuto& aCoord) {
+    if (aCoord.IsAuto()) {
+      return 0;
+    }
+    return ComputeCBDependentValue(aPercentBasis, aCoord.AsLengthPercentage());
+  }
 
   static nscoord ComputeBSizeDependentValue(nscoord aContainingBlockBSize,
-                                            const nsStyleCoord& aCoord);
+                                            const LengthPercentageOrAuto&);
 
   static nscoord ComputeBSizeValue(nscoord aContainingBlockBSize,
                                    nscoord aContentEdgeToBoxSizingBoxEdge,
-                                   const nsStyleCoord& aCoord) {
+                                   const LengthPercentage& aCoord) {
     MOZ_ASSERT(aContainingBlockBSize != nscoord_MAX || !aCoord.HasPercent(),
                "caller must deal with %% of unconstrained block-size");
-    MOZ_ASSERT(aCoord.IsCoordPercentCalcUnit());
 
-    nscoord result = aCoord.ComputeCoordPercentCalc(aContainingBlockBSize);
+    nscoord result = aCoord.Resolve(aContainingBlockBSize);
     // Clamp calc(), and the subtraction for box-sizing.
     return std::max(0, result - aContentEdgeToBoxSizingBoxEdge);
   }
 
-  static bool IsAutoBSize(const nsStyleCoord& aCoord, nscoord aCBBSize) {
-    nsStyleUnit unit = aCoord.GetUnit();
-    return unit == eStyleUnit_Auto ||  // only for 'height'
-           unit == eStyleUnit_None ||  // only for 'max-height'
-           // The enumerated values were originally aimed at inline-size
-           // (or width, as it was before logicalization). For now, let them
-           // return true here, so that we don't call ComputeBSizeValue with
-           // value types that it doesn't understand. (See bug 1113216.)
-           //
-           // FIXME (bug 567039, bug 527285)
-           // This isn't correct for the 'fill' value or for the 'min-*' or
-           // 'max-*' properties, which need to be handled differently by
-           // the callers of IsAutoBSize().
-           unit == eStyleUnit_Enumerated ||
+  /**
+   * The "extremum length" values (see ExtremumLength) were originally aimed at
+   * inline-size (or width, as it was before logicalization). For now, we return
+   * true for those here, so that we don't call ComputeBSizeValue with value
+   * types that it doesn't understand. (See bug 1113216.)
+   *
+   * FIXME (bug 567039, bug 527285)
+   * This isn't correct for the 'fill' value or for the 'min-*' or 'max-*'
+   * properties, which need to be handled differently by the callers of
+   * IsAutoBSize().
+   */
+  template <typename SizeOrMaxSize>
+  static bool IsAutoBSize(const SizeOrMaxSize& aCoord, nscoord aCBBSize) {
+    return aCoord.BehavesLikeInitialValueOnBlockAxis() ||
            (aCBBSize == nscoord_MAX && aCoord.HasPercent());
   }
 
-  static bool IsPaddingZero(const nsStyleCoord& aCoord) {
-    return (aCoord.GetUnit() == eStyleUnit_Coord &&
-            aCoord.GetCoordValue() == 0) ||
-           (aCoord.GetUnit() == eStyleUnit_Percent &&
-            aCoord.GetPercentValue() == 0.0f) ||
-           (aCoord.IsCalcUnit() &&
-            // clamp negative calc() to 0
-            aCoord.ComputeCoordPercentCalc(nscoord_MAX) <= 0 &&
-            aCoord.ComputeCoordPercentCalc(0) <= 0);
+  static bool IsPaddingZero(const LengthPercentage& aLength) {
+    // clamp negative calc() to 0
+    return aLength.Resolve(nscoord_MAX) <= 0 && aLength.Resolve(0) <= 0;
   }
 
-  static bool IsMarginZero(const nsStyleCoord& aCoord) {
-    return (aCoord.GetUnit() == eStyleUnit_Coord &&
-            aCoord.GetCoordValue() == 0) ||
-           (aCoord.GetUnit() == eStyleUnit_Percent &&
-            aCoord.GetPercentValue() == 0.0f) ||
-           (aCoord.IsCalcUnit() &&
-            aCoord.ComputeCoordPercentCalc(nscoord_MAX) == 0 &&
-            aCoord.ComputeCoordPercentCalc(0) == 0);
+  static bool IsMarginZero(const LengthPercentage& aLength) {
+    return aLength.Resolve(nscoord_MAX) == 0 && aLength.Resolve(0) == 0;
   }
 
   static void MarkDescendantsDirty(nsIFrame* aSubtreeRoot);
@@ -1941,7 +1951,7 @@ class nsLayoutUtils {
 
   /**
    * Determine if any corner radius is of nonzero size
-   *   @param aCorners the |nsStyleCorners| object to check
+   *   @param aCorners the |BorderRadius| object to check
    *   @return true unless all the coordinates are 0%, 0 or null.
    *
    * A corner radius with one dimension zero and one nonzero is
@@ -1950,13 +1960,13 @@ class nsLayoutUtils {
    * corners are not expected to appear outside of test cases, and it's
    * simpler to implement the test this way.
    */
-  static bool HasNonZeroCorner(const nsStyleCorners& aCorners);
+  static bool HasNonZeroCorner(const mozilla::BorderRadius& aCorners);
 
   /**
    * Determine if there is any corner radius on corners adjacent to the
    * given side.
    */
-  static bool HasNonZeroCornerOnSide(const nsStyleCorners& aCorners,
+  static bool HasNonZeroCornerOnSide(const mozilla::BorderRadius& aCorners,
                                      mozilla::Side aSide);
 
   /**
@@ -2282,25 +2292,33 @@ class nsLayoutUtils {
   static bool HasCurrentTransitions(const nsIFrame* aFrame);
 
   /**
-   * Returns true if |aFrame| has an animation of |aProperty| regardless of
-   * whether the property is overridden by !important rule.
+   * Returns true if |aFrame| has an animation of a property in |aPropertySet|
+   * regardless of whether any property in the set is overridden by !important
+   * rule.
    */
-  static bool HasAnimationOfProperty(const nsIFrame* aFrame,
-                                     nsCSSPropertyID aProperty);
+  static bool HasAnimationOfPropertySet(const nsIFrame* aFrame,
+                                        const nsCSSPropertyIDSet& aPropertySet);
 
   /**
-   * Returns true if |aEffectSet| has an animation of |aProperty| regardless of
-   * whether the property is overridden by !important rule.
+   * Returns true if |aEffectSet| has an animation of a property in
+   * |aPropertySet| regardless of whether any property in the set is overridden
+   * by !important rule.
    */
-  static bool HasAnimationOfProperty(mozilla::EffectSet* aEffectSet,
-                                     nsCSSPropertyID aProperty);
-
+  static bool HasAnimationOfPropertySet(mozilla::EffectSet* aEffectSet,
+                                        const nsCSSPropertyIDSet& aPropertySet);
   /**
    * Returns true if |aFrame| has an animation of |aProperty| which is
    * not overridden by !important rules.
    */
   static bool HasEffectiveAnimation(const nsIFrame* aFrame,
                                     nsCSSPropertyID aProperty);
+
+  /**
+   * Returns true if |aFrame| has animations of properties in |aPropertySet|,
+   * and all of these properties are not overridden by !important rules.
+   */
+  static bool HasEffectiveAnimation(const nsIFrame* aFrame,
+                                    const nsCSSPropertyIDSet& aPropertySet);
 
   /**
    * Returns all effective animated CSS properties on |aFrame|. That means
@@ -2356,11 +2374,6 @@ class nsLayoutUtils {
    * Checks whether support for inter-character ruby is enabled.
    */
   static bool IsInterCharacterRubyEnabled();
-
-  /**
-   * Checks whether content-select is enabled.
-   */
-  static bool IsContentSelectEnabled();
 
   static bool InterruptibleReflowEnabled() {
     return sInterruptibleReflowEnabled;
@@ -2552,8 +2565,7 @@ class nsLayoutUtils {
    * can avoid including nsCSSFrameConstructor.h and all its dependencies
    * in content files.
    */
-  static void PostRestyleEvent(mozilla::dom::Element* aElement,
-                               nsRestyleHint aRestyleHint,
+  static void PostRestyleEvent(mozilla::dom::Element*, mozilla::RestyleHint,
                                nsChangeHint aMinChangeHint);
 
   /**
@@ -2945,22 +2957,17 @@ class nsLayoutUtils {
   // from preferences.
   static uint8_t ControlCharVisibilityDefault();
 
-  enum class FlushUserFontSet {
-    Yes,
-    No,
-  };
-
+  // Callers are responsible to ensure the user-font-set is up-to-date if
+  // aUseUserFontSet is true.
   static already_AddRefed<nsFontMetrics> GetMetricsFor(
       nsPresContext* aPresContext, bool aIsVertical,
-      const nsStyleFont* aStyleFont, nscoord aFontSize, bool aUseUserFontSet,
-      FlushUserFontSet aFlushUserFontSet);
+      const nsStyleFont* aStyleFont, nscoord aFontSize, bool aUseUserFontSet);
 
   /**
    * Appropriately add the correct font if we are using DocumentFonts or
    * overriding for XUL
    */
-  static void FixupNoneGeneric(nsFont* aFont, const nsPresContext* aPresContext,
-                               uint8_t aGenericFontID,
+  static void FixupNoneGeneric(nsFont* aFont, uint8_t aGenericFontID,
                                const nsFont* aDefaultVariableFont);
 
   /**
@@ -2968,12 +2975,11 @@ class nsLayoutUtils {
    * from preferences, as well as -moz-min-font-size-ratio.
    */
   static void ApplyMinFontSize(nsStyleFont* aFont,
-                               const nsPresContext* aPresContext,
+                               const mozilla::dom::Document*,
                                nscoord aMinFontSize);
 
   static void ComputeSystemFont(nsFont* aSystemFont,
                                 mozilla::LookAndFeel::FontID aFontID,
-                                const nsPresContext* aPresContext,
                                 const nsFont* aDefaultVariableFont);
 
   static void ComputeFontFeatures(const nsCSSValuePairList* aFeaturesList,
@@ -2990,6 +2996,18 @@ class nsLayoutUtils {
    * need to create a MobileViewportManager.
    */
   static bool ShouldHandleMetaViewport(mozilla::dom::Document*);
+
+  /**
+   * Resolve a CSS <length-percentage> value to a definite size.
+   */
+  template <bool clampNegativeResultToZero>
+  static nscoord ResolveToLength(const LengthPercentage& aLengthPercentage,
+                                 nscoord aPercentageBasis) {
+    nscoord value = (aPercentageBasis == NS_UNCONSTRAINEDSIZE)
+                        ? aLengthPercentage.Resolve(0)
+                        : aLengthPercentage.Resolve(aPercentageBasis);
+    return clampNegativeResultToZero ? std::max(0, value) : value;
+  }
 
   /**
    * Resolve a CSS <length-percentage> value to a definite size.

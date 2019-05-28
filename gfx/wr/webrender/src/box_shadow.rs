@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BorderRadius, BoxShadowClipMode, ClipMode, ColorF, DeviceIntSize, LayoutPrimitiveInfo};
-use api::{LayoutRect, LayoutSize, LayoutVector2D, MAX_BLUR_RADIUS};
+use api::{BorderRadius, BoxShadowClipMode, ClipMode, ColorF, LayoutPrimitiveInfo, PrimitiveKeyKind};
+use api::MAX_BLUR_RADIUS;
+use api::units::*;
 use clip::ClipItemKey;
 use display_list_flattener::DisplayListFlattener;
 use gpu_cache::GpuCacheHandle;
 use gpu_types::BoxShadowStretchMode;
-use prim_store::{ScrollNodeAndClipChain, PrimitiveKeyKind};
+use prim_store::ScrollNodeAndClipChain;
 use render_task::RenderTaskCacheEntryHandle;
 use util::RectHelpers;
 
@@ -77,7 +78,6 @@ impl<'a> DisplayListFlattener<'a> {
         spread_radius: f32,
         border_radius: BorderRadius,
         clip_mode: BoxShadowClipMode,
-        reference_frame_relative_offset: LayoutVector2D,
     ) {
         if color.a == 0.0 {
             return;
@@ -167,7 +167,6 @@ impl<'a> DisplayListFlattener<'a> {
                 PrimitiveKeyKind::Rectangle {
                     color: color.into(),
                 },
-                reference_frame_relative_offset,
             );
         } else {
             // Normal path for box-shadows with a valid blur radius.
@@ -257,7 +256,6 @@ impl<'a> DisplayListFlattener<'a> {
                 &prim_info,
                 extra_clips,
                 prim,
-                reference_frame_relative_offset,
             );
         }
     }

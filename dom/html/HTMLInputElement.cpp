@@ -52,7 +52,6 @@
 #include "nsError.h"
 #include "nsIEditor.h"
 #include "nsAttrValueOrString.h"
-#include "nsDateTimeControlFrame.h"
 
 #include "mozilla/PresState.h"
 #include "nsLinebreakConverter.h"  //to strip out carriage returns
@@ -250,7 +249,8 @@ class DispatchChangeEventCallback final : public GetFilesCallback {
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult DispatchEvents() {
-    nsresult rv = nsContentUtils::DispatchInputEvent(mInputElement);
+    RefPtr<HTMLInputElement> inputElement(mInputElement);
+    nsresult rv = nsContentUtils::DispatchInputEvent(inputElement);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to dispatch input event");
 
     rv = nsContentUtils::DispatchTrustedEvent(
@@ -606,7 +606,8 @@ nsresult nsColorPickerShownCallback::UpdateInternal(const nsAString& aColor,
   }
 
   mValueChanged = true;
-  DebugOnly<nsresult> rvIgnored = nsContentUtils::DispatchInputEvent(mInput);
+  RefPtr<HTMLInputElement> input(mInput);
+  DebugOnly<nsresult> rvIgnored = nsContentUtils::DispatchInputEvent(input);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                        "Failed to dispatch input event");
   return NS_OK;
@@ -916,8 +917,8 @@ static nsresult FireEventForAccessibility(HTMLInputElement* aTarget,
 nsTextEditorState* HTMLInputElement::sCachedTextEditorState = nullptr;
 bool HTMLInputElement::sShutdown = false;
 
-/* static */ void HTMLInputElement::ReleaseTextEditorState(
-    nsTextEditorState* aState) {
+/* static */
+void HTMLInputElement::ReleaseTextEditorState(nsTextEditorState* aState) {
   if (!sShutdown && !sCachedTextEditorState) {
     aState->PrepareForReuse();
     sCachedTextEditorState = aState;
@@ -926,7 +927,8 @@ bool HTMLInputElement::sShutdown = false;
   }
 }
 
-/* static */ void HTMLInputElement::Shutdown() {
+/* static */
+void HTMLInputElement::Shutdown() {
   sShutdown = true;
   delete sCachedTextEditorState;
   sCachedTextEditorState = nullptr;
@@ -1381,7 +1383,8 @@ uint32_t HTMLInputElement::Height() {
   if (mType != NS_FORM_INPUT_IMAGE) {
     return 0;
   }
-  return GetWidthHeightForImage(mCurrentRequest).height;
+  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
+  return GetWidthHeightForImage(currentRequest).height;
 }
 
 void HTMLInputElement::SetIndeterminateInternal(bool aValue,
@@ -1405,7 +1408,8 @@ uint32_t HTMLInputElement::Width() {
   if (mType != NS_FORM_INPUT_IMAGE) {
     return 0;
   }
-  return GetWidthHeightForImage(mCurrentRequest).width;
+  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
+  return GetWidthHeightForImage(currentRequest).width;
 }
 
 void HTMLInputElement::GetValue(nsAString& aValue, CallerType aCallerType) {
@@ -1504,8 +1508,8 @@ int32_t HTMLInputElement::MonthsSinceJan1970(uint32_t aYear,
   return (aYear - 1970) * 12 + aMonth - 1;
 }
 
-/* static */ Decimal HTMLInputElement::StringToDecimal(
-    const nsAString& aValue) {
+/* static */
+Decimal HTMLInputElement::StringToDecimal(const nsAString& aValue) {
   if (!IsASCII(aValue)) {
     return Decimal::nan();
   }
@@ -2064,26 +2068,20 @@ void HTMLInputElement::GetDateTimeInputBoxValue(DateTimeValue& aValue) {
   aValue = *mDateTimeInputBoxValue;
 }
 
-Element* HTMLInputElement::GetDateTimeBoxElementInUAWidget() {
-  if (GetShadowRoot()) {
-    // The datetimebox <div> is the only child of the UA Widget Shadow Root
-    // if it is present.
-    MOZ_ASSERT(GetShadowRoot()->IsUAWidget());
-    MOZ_ASSERT(1 >= GetShadowRoot()->GetChildCount());
-    if (nsIContent* inputAreaContent = GetShadowRoot()->GetFirstChild()) {
-      return inputAreaContent->AsElement();
-    }
+Element* HTMLInputElement::GetDateTimeBoxElement() {
+  if (!GetShadowRoot()) {
+    return nullptr;
+  }
+
+  // The datetimebox <div> is the only child of the UA Widget Shadow Root
+  // if it is present.
+  MOZ_ASSERT(GetShadowRoot()->IsUAWidget());
+  MOZ_ASSERT(1 >= GetShadowRoot()->GetChildCount());
+  if (nsIContent* inputAreaContent = GetShadowRoot()->GetFirstChild()) {
+    return inputAreaContent->AsElement();
   }
 
   return nullptr;
-}
-
-Element* HTMLInputElement::GetDateTimeBoxElement() {
-  nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-  if (frame && frame->GetInputAreaContent()) {
-    return frame->GetInputAreaContent()->AsElement();
-  }
-  return GetDateTimeBoxElementInUAWidget();
 }
 
 void HTMLInputElement::OpenDateTimePicker(const DateTimeValue& aInitialValue) {
@@ -2314,7 +2312,7 @@ HTMLInputElement::EnablePreview() {
 
   mIsPreviewEnabled = true;
   // Reconstruct the frame to append an anonymous preview node
-  nsLayoutUtils::PostRestyleEvent(this, nsRestyleHint(0),
+  nsLayoutUtils::PostRestyleEvent(this, RestyleHint{0},
                                   nsChangeHint_ReconstructFrame);
 }
 
@@ -2539,7 +2537,8 @@ void HTMLInputElement::SetFiles(FileList* aFiles) {
   mFileData->mFileList = aFiles;
 }
 
-/* static */ void HTMLInputElement::HandleNumberControlSpin(void* aData) {
+/* static */
+void HTMLInputElement::HandleNumberControlSpin(void* aData) {
   RefPtr<HTMLInputElement> input = static_cast<HTMLInputElement*>(aData);
 
   NS_ASSERTION(input->mNumberControlSpinnerIsSpinning,
@@ -2618,9 +2617,11 @@ nsresult HTMLInputElement::SetValueInternal(const nsAString& aValue,
         // If the caller won't dispatch "input" event via
         // nsContentUtils::DispatchInputEvent(), we need to modify
         // validationMessage value here.
-        if (aFlags & (nsTextEditorState::eSetValue_Internal |
-                      nsTextEditorState::eSetValue_ByContent)) {
-          MaybeUpdateAllValidityStates();
+        //
+        // FIXME(emilio): eSetValue_Internal is not supposed to change state,
+        // but maybe we could run this too?
+        if (aFlags & nsTextEditorState::eSetValue_ByContent) {
+          MaybeUpdateAllValidityStates(!mDoneCreating);
         }
       } else {
         free(mInputData.mValue);
@@ -2645,22 +2646,16 @@ nsresult HTMLInputElement::SetValueInternal(const nsAString& aValue,
                     mType == NS_FORM_INPUT_DATE) &&
                    !IsExperimentalMobileType(mType) &&
                    !(aFlags & nsTextEditorState::eSetValue_BySetUserInput)) {
-          if (Element* dateTimeBoxElement = GetDateTimeBoxElementInUAWidget()) {
+          if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
             AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
                 dateTimeBoxElement,
                 NS_LITERAL_STRING("MozDateTimeValueChanged"), CanBubble::eNo,
                 ChromeOnlyDispatch::eNo);
             dispatcher->RunDOMEventWhenSafe();
-          } else {
-            nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-            if (frame) {
-              frame->OnValueChanged();
-            }
           }
         }
         if (mDoneCreating) {
-          OnValueChanged(/* aNotify = */ true,
-                         /* aWasInteractiveUserChange = */ false);
+          OnValueChanged(/* aNotify = */ true, ValueChangeKind::Internal);
         }
         // else DoneCreatingElement calls us again once mDoneCreating is true
       }
@@ -2942,18 +2937,12 @@ void HTMLInputElement::Blur(ErrorResult& aError) {
 
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
       !IsExperimentalMobileType(mType)) {
-    if (Element* dateTimeBoxElement = GetDateTimeBoxElementInUAWidget()) {
+    if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
       AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
           dateTimeBoxElement, NS_LITERAL_STRING("MozBlurInnerTextBox"),
           CanBubble::eNo, ChromeOnlyDispatch::eNo);
       dispatcher->RunDOMEventWhenSafe();
       return;
-    } else {
-      nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-      if (frame) {
-        frame->HandleBlurEvent();
-        return;
-      }
     }
   }
 
@@ -2976,18 +2965,12 @@ void HTMLInputElement::Focus(ErrorResult& aError) {
 
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
       !IsExperimentalMobileType(mType)) {
-    if (Element* dateTimeBoxElement = GetDateTimeBoxElementInUAWidget()) {
+    if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
       AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
           dateTimeBoxElement, NS_LITERAL_STRING("MozFocusInnerTextBox"),
           CanBubble::eNo, ChromeOnlyDispatch::eNo);
       dispatcher->RunDOMEventWhenSafe();
       return;
-    } else {
-      nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-      if (frame) {
-        frame->HandleFocusEvent();
-        return;
-      }
     }
   }
 
@@ -3296,16 +3279,11 @@ void HTMLInputElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
       aVisitor.mEvent->mOriginalTarget == this) {
     // If original target is this and not the inner text control, we should
     // pass the focus to the inner text control.
-    if (Element* dateTimeBoxElement = GetDateTimeBoxElementInUAWidget()) {
+    if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
       AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
           dateTimeBoxElement, NS_LITERAL_STRING("MozFocusInnerTextBox"),
           CanBubble::eNo, ChromeOnlyDispatch::eNo);
       dispatcher->RunDOMEventWhenSafe();
-    } else {
-      nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-      if (frame) {
-        frame->HandleFocusEvent();
-      }
     }
   }
 
@@ -4381,7 +4359,7 @@ nsresult HTMLInputElement::BindToTree(Document* aDocument, nsIContent* aParent,
   UpdateState(false);
 
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
-      nsContentUtils::IsUAWidgetEnabled() && IsInComposedDoc()) {
+      IsInComposedDoc()) {
     // Construct Shadow Root so web content can be hidden in the DOM.
     AttachAndSetUAShadowRoot();
     NotifyUAWidgetSetupOrChange();
@@ -4414,7 +4392,7 @@ void HTMLInputElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   }
 
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
-      nsContentUtils::IsUAWidgetEnabled() && IsInComposedDoc()) {
+      IsInComposedDoc()) {
     NotifyUAWidgetTeardown();
   }
 
@@ -4593,7 +4571,7 @@ void HTMLInputElement::HandleTypeChange(uint8_t aNewType, bool aNotify) {
     dispatcher->PostDOMEvent();
   }
 
-  if (nsContentUtils::IsUAWidgetEnabled() && IsInComposedDoc()) {
+  if (IsInComposedDoc()) {
     if (oldType == NS_FORM_INPUT_TIME || oldType == NS_FORM_INPUT_DATE) {
       if (mType != NS_FORM_INPUT_TIME && mType != NS_FORM_INPUT_DATE) {
         // Switch away from date/time type.
@@ -5018,8 +4996,10 @@ uint32_t HTMLInputElement::NumberOfDaysInMonth(uint32_t aMonth,
   return IsLeapYear(aYear) ? 29 : 28;
 }
 
-/* static */ bool HTMLInputElement::DigitSubStringToNumber(
-    const nsAString& aStr, uint32_t aStart, uint32_t aLen, uint32_t* aRetVal) {
+/* static */
+bool HTMLInputElement::DigitSubStringToNumber(const nsAString& aStr,
+                                              uint32_t aStart, uint32_t aLen,
+                                              uint32_t* aRetVal) {
   MOZ_ASSERT(aStr.Length() > (aStart + aLen - 1));
 
   for (uint32_t offset = 0; offset < aLen; ++offset) {
@@ -5039,8 +5019,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return ParseTime(aValue, nullptr);
 }
 
-/* static */ bool HTMLInputElement::ParseTime(const nsAString& aValue,
-                                              uint32_t* aResult) {
+/* static */
+bool HTMLInputElement::ParseTime(const nsAString& aValue, uint32_t* aResult) {
   /* The string must have the following parts:
    * - HOURS: two digits, value being in [0, 23];
    * - Colon (:);
@@ -5120,8 +5100,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return true;
 }
 
-/* static */ bool HTMLInputElement::IsDateTimeTypeSupported(
-    uint8_t aDateTimeInputType) {
+/* static */
+bool HTMLInputElement::IsDateTimeTypeSupported(uint8_t aDateTimeInputType) {
   return ((aDateTimeInputType == NS_FORM_INPUT_DATE ||
            aDateTimeInputType == NS_FORM_INPUT_TIME) &&
           (IsInputDateTimeEnabled() || IsExperimentalFormsEnabled())) ||
@@ -5131,7 +5111,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
           IsInputDateTimeOthersEnabled());
 }
 
-/* static */ bool HTMLInputElement::IsWebkitFileSystemEnabled() {
+/* static */
+bool HTMLInputElement::IsWebkitFileSystemEnabled() {
   static bool sWebkitFileSystemEnabled = false;
   static bool sWebkitFileSystemPrefCached = false;
   if (!sWebkitFileSystemPrefCached) {
@@ -5143,7 +5124,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return sWebkitFileSystemEnabled;
 }
 
-/* static */ bool HTMLInputElement::IsDirPickerEnabled() {
+/* static */
+bool HTMLInputElement::IsDirPickerEnabled() {
   static bool sDirPickerEnabled = false;
   static bool sDirPickerPrefCached = false;
   if (!sDirPickerPrefCached) {
@@ -5155,7 +5137,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return sDirPickerEnabled;
 }
 
-/* static */ bool HTMLInputElement::IsExperimentalFormsEnabled() {
+/* static */
+bool HTMLInputElement::IsExperimentalFormsEnabled() {
   static bool sExperimentalFormsEnabled = false;
   static bool sExperimentalFormsPrefCached = false;
   if (!sExperimentalFormsPrefCached) {
@@ -5167,7 +5150,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return sExperimentalFormsEnabled;
 }
 
-/* static */ bool HTMLInputElement::IsInputDateTimeEnabled() {
+/* static */
+bool HTMLInputElement::IsInputDateTimeEnabled() {
   static bool sDateTimeEnabled = false;
   static bool sDateTimePrefCached = false;
   if (!sDateTimePrefCached) {
@@ -5179,7 +5163,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return sDateTimeEnabled;
 }
 
-/* static */ bool HTMLInputElement::IsInputDateTimeOthersEnabled() {
+/* static */
+bool HTMLInputElement::IsInputDateTimeOthersEnabled() {
   static bool sDateTimeOthersEnabled = false;
   static bool sDateTimeOthersPrefCached = false;
   if (!sDateTimeOthersPrefCached) {
@@ -5191,7 +5176,8 @@ bool HTMLInputElement::IsValidTime(const nsAString& aValue) const {
   return sDateTimeOthersEnabled;
 }
 
-/* static */ bool HTMLInputElement::IsInputColorEnabled() {
+/* static */
+bool HTMLInputElement::IsInputColorEnabled() {
   static bool sInputColorEnabled = false;
   static bool sInputColorPrefCached = false;
   if (!sInputColorPrefCached) {
@@ -6790,8 +6776,10 @@ HTMLInputElement::InitializeKeyboardEventListeners() {
 }
 
 NS_IMETHODIMP_(void)
-HTMLInputElement::OnValueChanged(bool aNotify, bool aWasInteractiveUserChange) {
-  mLastValueChangeWasInteractive = aWasInteractiveUserChange;
+HTMLInputElement::OnValueChanged(bool aNotify, ValueChangeKind aKind) {
+  if (aKind != ValueChangeKind::Internal) {
+    mLastValueChangeWasInteractive = aKind == ValueChangeKind::UserInteraction;
+  }
 
   UpdateAllValidityStates(aNotify);
 

@@ -25,6 +25,7 @@ function checkBaseProcessCount(description) {
 }
 
 function processScript() {
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
   if (Services.cpmm !== this) {
     dump("Test failed: wrong global object\n");
     return;
@@ -145,7 +146,8 @@ add_task(async function() {
 
     check = checkProcess(Services.ppmm);
     // Reset the default browser to start a new child process
-    gBrowser.updateBrowserRemoteness(gBrowser.selectedBrowser, true);
+    gBrowser.updateBrowserRemoteness(gBrowser.selectedBrowser,
+                                     { remoteType: E10SUtils.DEFAULT_REMOTE_TYPE });
     BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank");
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 

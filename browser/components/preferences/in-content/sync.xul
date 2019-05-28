@@ -6,12 +6,12 @@
 
 <script type="application/javascript"
         src="chrome://browser/content/preferences/in-content/sync.js"/>
-
+<box id="template-paneSync" hidden="true"><![CDATA[
 <hbox id="firefoxAccountCategory"
       class="subcategory"
       hidden="true"
       data-category="paneSync">
-  <html:h1 data-l10n-id="pane-sync-title"/>
+  <html:h1 data-l10n-id="pane-sync-title2"/>
 </hbox>
 
 <deck id="weavePrefsDeck" data-category="paneSync" hidden="true"
@@ -70,7 +70,7 @@
     <hbox>
       <vbox id="fxaContentWrapper" flex="1">
         <groupbox id="fxaGroup">
-          <label class="search-header" hidden="true"><html:h2 data-l10n-id="pane-sync-title"/></label>
+          <label class="search-header" hidden="true"><html:h2 data-l10n-id="pane-sync-title2"/></label>
 
           <deck id="fxaLoginStatus" flex="1">
 
@@ -185,14 +185,15 @@
       </hbox>
     </groupbox>
     <vbox align="start">
-      <label id="mobilePromo-singledevice"
-             class="text-link fxaMobilePromo" data-l10n-id="sync-mobilepromo-single"/>
-      <label id="mobilePromo-multidevice"
-             class="text-link fxaMobilePromo" data-l10n-id="sync-mobilepromo-multi"/>
+      <label id="connect-another-device" is="text-link"
+             class="fxaMobilePromo" data-l10n-id="sync-connect-another-device"/>
+      <label id="manage-devices" is="text-link"
+             class="fxaMobilePromo" data-l10n-id="sync-manage-devices"/>
     </vbox>
     <vbox id="tosPP-small" align="start">
-      <label id="tosPP-small-ToS" class="text-link" data-l10n-id="sync-tos-link"/>
-      <label id="tosPP-small-PP" class="text-link" data-l10n-id="sync-fxa-privacy-notice"/>
+      <label id="tosPP-small-ToS" is="text-link" data-l10n-id="sync-tos-link"/>
+      <label id="tosPP-small-PP" is="text-link" data-l10n-id="sync-fxa-privacy-notice"/>
     </vbox>
   </vbox>
 </deck>
+]]></box>

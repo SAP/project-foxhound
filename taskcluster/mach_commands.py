@@ -281,12 +281,12 @@ class MachCommands(MachCommandBase):
     def test_action_callback(self, **options):
         import taskgraph.parameters
         import taskgraph.actions
-        import yaml
+        from taskgraph.util import yaml
 
         def load_data(filename):
             with open(filename) as f:
                 if filename.endswith('.yml'):
-                    return yaml.safe_load(f)
+                    return yaml.load_stream(f)
                 elif filename.endswith('.json'):
                     return json.load(f)
                 else:
@@ -301,7 +301,12 @@ class MachCommands(MachCommandBase):
             else:
                 input = None
 
-            parameters = taskgraph.parameters.load_parameters_file(options['parameters'])
+            parameters = taskgraph.parameters.load_parameters_file(
+                options['parameters'],
+                strict=False,
+                # FIXME: There should be a way to parameterize this.
+                trust_domain="gecko",
+            )
             parameters.check()
 
             root = options['root']
@@ -347,8 +352,7 @@ class MachCommands(MachCommandBase):
 
         try:
             self.setup_logging(quiet=options['quiet'], verbose=options['verbose'])
-            parameters = taskgraph.parameters.load_parameters_file(options['parameters'])
-            parameters.check()
+            parameters = taskgraph.parameters.parameters_loader(options['parameters'])
 
             tgg = taskgraph.generator.TaskGraphGenerator(
                 root_dir=options.get('root'),
@@ -406,14 +410,13 @@ class MachCommands(MachCommandBase):
 
         try:
             self.setup_logging(quiet=options['quiet'], verbose=options['verbose'])
-            parameters = taskgraph.parameters.load_parameters_file(options['parameters'])
-            parameters.check()
+            parameters = taskgraph.parameters.parameters_loader(options['parameters'])
 
             tgg = taskgraph.generator.TaskGraphGenerator(
                 root_dir=options.get('root'),
                 parameters=parameters)
 
-            actions = taskgraph.actions.render_actions_json(parameters, tgg.graph_config)
+            actions = taskgraph.actions.render_actions_json(tgg.parameters, tgg.graph_config)
             print(json.dumps(actions, sort_keys=True, indent=2, separators=(',', ': ')))
         except Exception:
             traceback.print_exc()

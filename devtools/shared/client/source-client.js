@@ -5,7 +5,6 @@
 "use strict";
 
 const {arg, DebuggerClient} = require("devtools/shared/client/debugger-client");
-loader.lazyRequireGetter(this, "BreakpointClient", "devtools/shared/client/breakpoint-client");
 
 const noop = () => {};
 
@@ -19,7 +18,6 @@ const noop = () => {};
  */
 function SourceClient(client, form) {
   this._form = form;
-  this._isBlackBoxed = form.isBlackBoxed;
   this._activeThread = client;
   this._client = client.client;
 }
@@ -27,9 +25,6 @@ function SourceClient(client, form) {
 SourceClient.prototype = {
   get _transport() {
     return this._client._transport;
-  },
-  get isBlackBoxed() {
-    return this._isBlackBoxed;
   },
   get actor() {
     return this._form.actor;
@@ -51,15 +46,6 @@ SourceClient.prototype = {
     },
     {
       telemetry: "BLACKBOX",
-      after: function(response) {
-        if (!response.error) {
-          this._isBlackBoxed = true;
-          if (this._activeThread) {
-            this._activeThread.emit("blackboxchange", this);
-          }
-        }
-        return response;
-      },
     },
   ),
 
@@ -73,15 +59,6 @@ SourceClient.prototype = {
     },
     {
       telemetry: "UNBLACKBOX",
-      after: function(response) {
-        if (!response.error) {
-          this._isBlackBoxed = false;
-          if (this._activeThread) {
-            this._activeThread.emit("blackboxchange", this);
-          }
-        }
-        return response;
-      },
     },
   ),
 
@@ -168,83 +145,6 @@ SourceClient.prototype = {
         contentType: contentType,
       };
       return newResponse;
-    });
-  },
-
-  /**
-   * Request to set a breakpoint in the specified location.
-   *
-   * @param object location
-   *        The location and condition of the breakpoint in
-   *        the form of { line[, column, condition] }.
-   */
-  setBreakpoint: function({ line, column, condition, noSliding }) {
-    // A helper function that sets the breakpoint.
-    const doSetBreakpoint = callback => {
-      const root = this._client.mainRoot;
-      const location = {
-        line,
-        column,
-      };
-
-      const packet = {
-        to: this.actor,
-        type: "setBreakpoint",
-        location,
-        condition,
-        noSliding,
-      };
-
-      // Backwards compatibility: send the breakpoint request to the
-      // thread if the server doesn't support Debugger.Source actors.
-      if (!root.traits.debuggerSourceActors) {
-        packet.to = this._activeThread.actor;
-        packet.location.url = this.url;
-      }
-
-      return this._client.request(packet).then(response => {
-        // Ignoring errors, since the user may be setting a breakpoint in a
-        // dead script that will reappear on a page reload.
-        let bpClient;
-        if (response.actor) {
-          bpClient = new BreakpointClient(
-            this._client,
-            this,
-            response.actor,
-            location,
-            root.traits.conditionalBreakpoints ? condition : undefined
-          );
-        }
-        if (callback) {
-          callback();
-        }
-        return [response, bpClient];
-      });
-    };
-
-    // With async sourcemap processing removed from the server, it is not
-    // necessary for clients to pause the debuggee before adding breakpoints.
-    if (this._client.mainRoot.traits.breakpointWhileRunning) {
-      return doSetBreakpoint();
-    }
-
-    // If the debuggee is paused, just set the breakpoint.
-    if (this._activeThread.paused) {
-      return doSetBreakpoint();
-    }
-    // Otherwise, force a pause in order to set the breakpoint.
-    return this._activeThread.interrupt().then(response => {
-      if (response.error) {
-        // Can't set the breakpoint if pausing failed.
-        return response;
-      }
-
-      const { type, why } = response;
-      const cleanUp = type == "paused" && why.type == "interrupted"
-            ? () => this._activeThread.resume()
-            : noop;
-
-      return doSetBreakpoint(cleanUp);
     });
   },
 

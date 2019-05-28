@@ -66,7 +66,7 @@ class nsARefreshObserver {
   // except while it is notifying them.
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
-  virtual void WillRefresh(mozilla::TimeStamp aTime) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual void WillRefresh(mozilla::TimeStamp aTime) = 0;
 };
 
 /**
@@ -424,6 +424,11 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // Schedule a refresh so that any delayed events will run soon.
   void RunDelayedEventsSoon();
 
+  void InitializeTimer() {
+    MOZ_ASSERT(!mActiveTimer);
+    EnsureTimerStarted();
+  }
+
  private:
   typedef nsTObserverArray<nsARefreshObserver*> ObserverArray;
   typedef nsTArray<RefPtr<VVPResizeEvent>> VisualViewportResizeEventArray;
@@ -442,6 +447,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void DispatchAnimationEvents();
   void RunFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
   void UpdateIntersectionObservations();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void Tick(mozilla::VsyncId aId, mozilla::TimeStamp aNowTime);
 
   enum EnsureTimerStartedFlags {
@@ -539,6 +545,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   mozilla::TimeStamp mTickVsyncTime;
   mozilla::TimeStamp mNextThrottledFrameRequestTick;
   mozilla::TimeStamp mNextRecomputeVisibilityTick;
+  mozilla::TimeStamp mInitialTimerRunningLimit;
 
   // separate arrays for each flush type we support
   ObserverArray mObservers[4];

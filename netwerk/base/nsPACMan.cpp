@@ -637,7 +637,8 @@ void nsPACMan::ContinueLoadingAfterPACUriKnown() {
                       nsContentUtils::GetSystemPrincipal(),
                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                       nsIContentPolicy::TYPE_OTHER,
-                      nullptr,  // PerformanceStorage,
+                      nullptr,  // nsICookieSettings
+                      nullptr,  // PerformanceStorage
                       nullptr,  // aLoadGroup
                       nullptr,  // aCallbacks
                       nsIRequest::LOAD_NORMAL, ios);
@@ -649,7 +650,7 @@ void nsPACMan::ContinueLoadingAfterPACUriKnown() {
       if (channel) {
         channel->SetLoadFlags(nsIRequest::LOAD_BYPASS_CACHE);
         channel->SetNotificationCallbacks(this);
-        if (NS_SUCCEEDED(channel->AsyncOpen2(mLoader))) return;
+        if (NS_SUCCEEDED(channel->AsyncOpen(mLoader))) return;
       }
     }
   }

@@ -45,7 +45,14 @@ window.addEventListener("DOMContentLoaded", () => {
     gConnectionsDialog.proxyTypeChanged.bind(gConnectionsDialog));
   Preferences.get("network.proxy.socks_version").on("change",
     gConnectionsDialog.updateDNSPref.bind(gConnectionsDialog));
-  gConnectionsDialog.initDnsOverHttpsUI();
+
+  // wait until the network.trr prefs are added before init'ing the UI for them
+  gConnectionsDialog.uiReady = new Promise(resolve => {
+    gConnectionsDialog._initialPrefsAdded = resolve;
+  }).then(() => {
+    delete gConnectionsDialog._initialPrefsAdded;
+    gConnectionsDialog.initDnsOverHttpsUI();
+  });
 
   document
     .getElementById("disableProxyExtension")
@@ -289,6 +296,10 @@ var gConnectionsDialog = {
     }
   },
 
+  isDnsOverHttpsLocked() {
+    return Services.prefs.prefIsLocked("network.trr.mode");
+  },
+
   isDnsOverHttpsEnabled() {
     // values outside 1:4 are considered falsey/disabled in this context
     let trrPref = Preferences.get("network.trr.mode");
@@ -298,9 +309,13 @@ var gConnectionsDialog = {
 
   readDnsOverHttpsMode() {
     // called to update checked element property to reflect current pref value
+    // this is the first signal we get when the prefs are added, so lazy-init
     let enabled = this.isDnsOverHttpsEnabled();
     let uriPref = Preferences.get("network.trr.uri");
-    uriPref.disabled = !enabled;
+    uriPref.disabled = !enabled || this.isDnsOverHttpsLocked();
+    if (this._initialPrefsAdded) {
+      this._initialPrefsAdded();
+    }
     return enabled;
   },
 
@@ -321,7 +336,25 @@ var gConnectionsDialog = {
     customDnsOverHttpsUrlRadio.disabled = !parentCheckbox.checked;
   },
 
+  getDnsOverHttpsControls() {
+    return [
+      document.getElementById("networkDnsOverHttps"),
+      document.getElementById("customDnsOverHttpsUrlRadio"),
+      document.getElementById("defaultDnsOverHttpsUrlRadio"),
+      document.getElementById("customDnsOverHttpsInput"),
+    ];
+  },
+
+  disableDnsOverHttpsUI(disabled) {
+    for (let element of this.getDnsOverHttpsControls()) {
+      element.disabled = disabled;
+    }
+  },
+
   initDnsOverHttpsUI() {
+    // If we have a locked pref disable the UI.
+    this.disableDnsOverHttpsUI(this.isDnsOverHttpsLocked());
+
     let defaultDnsOverHttpsUrlRadio = document.getElementById("defaultDnsOverHttpsUrlRadio");
     let defaultPrefUrl = Preferences.get("network.trr.uri").defaultValue;
     document.l10n.setAttributes(defaultDnsOverHttpsUrlRadio, "connection-dns-over-https-url-default", {

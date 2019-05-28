@@ -20,7 +20,6 @@ user_pref("browser.safebrowsing.provider.google4.gethashURL", "http://127.0.0.1/
 user_pref("browser.safebrowsing.provider.google4.updateURL", "http://127.0.0.1/safebrowsing-dummyg4/update");
 user_pref("browser.safebrowsing.provider.mozilla.gethashURL", "http://127.0.0.1/safebrowsing-dummym/gethash");
 user_pref("browser.safebrowsing.provider.mozilla.updateURL", "http://127.0.0.1/safebrowsing-dummym/update");
-user_pref("browser.snippets.firstrunHomepage.enabled", false);
 // use about:blank, not browser.startup.homepage
 user_pref("browser.startup.page", 0);
 // Since our tests are 800px wide, set the assume-designed-for width of all
@@ -99,6 +98,7 @@ user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy/");
 user_pref("ui.caretBlinkTime", -1);
 user_pref("ui.caretWidth", 1);
 user_pref("ui.prefersReducedMotion", 0);
+user_pref("ui.systemUsesDarkTheme", 0);
 // Turn off the Push service.
 user_pref("dom.push.serverURL", "");
 // Disable intermittent telemetry collection

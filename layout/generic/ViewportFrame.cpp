@@ -27,7 +27,7 @@ typedef nsAbsoluteContainingBlock::AbsPosReflowFlags AbsPosReflowFlags;
 
 ViewportFrame* NS_NewViewportFrame(nsIPresShell* aPresShell,
                                    ComputedStyle* aStyle) {
-  return new (aPresShell) ViewportFrame(aStyle);
+  return new (aPresShell) ViewportFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(ViewportFrame)
@@ -51,25 +51,14 @@ void ViewportFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 void ViewportFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                      const nsDisplayListSet& aLists) {
-  AUTO_PROFILER_LABEL("ViewportFrame::BuildDisplayList", GRAPHICS);
+  AUTO_PROFILER_LABEL("ViewportFrame::BuildDisplayList",
+                      GRAPHICS_DisplayListBuilding);
 
   if (nsIFrame* kid = mFrames.FirstChild()) {
     // make the kid's BorderBackground our own. This ensures that the canvas
     // frame's background becomes our own background and therefore appears
     // below negative z-index elements.
     BuildDisplayListForChild(aBuilder, kid, aLists);
-  }
-
-  nsDisplayList topLayerList;
-  BuildDisplayListForTopLayer(aBuilder, &topLayerList);
-  if (!topLayerList.IsEmpty()) {
-    // Wrap the whole top layer in a single item with maximum z-index,
-    // and append it at the very end, so that it stays at the topmost.
-    nsDisplayWrapList* wrapList =
-        MakeDisplayItem<nsDisplayWrapList>(aBuilder, this, &topLayerList);
-    wrapList->SetOverrideZIndex(
-        std::numeric_limits<decltype(wrapList->ZIndex())>::max());
-    aLists.PositionedDescendants()->AppendToTop(wrapList);
   }
 }
 
@@ -117,8 +106,7 @@ static void BuildDisplayListForTopLayerFrame(nsDisplayListBuilder* aBuilder,
         savedOutOfFlowData->mContainingBlockActiveScrolledRoot);
   }
   nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
-      aBuilder, aFrame, visible, dirty,
-      aBuilder->IsAtRootOfPseudoStackingContext());
+      aBuilder, aFrame, visible, dirty);
 
   nsDisplayList list;
   aFrame->BuildDisplayListForStackingContext(aBuilder, &list);
@@ -203,8 +191,8 @@ void ViewportFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 #endif
 
-/* virtual */ nscoord ViewportFrame::GetMinISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord ViewportFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_MIN_INLINE_SIZE(this, result);
   if (mFrames.IsEmpty())
@@ -215,8 +203,8 @@ void ViewportFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   return result;
 }
 
-/* virtual */ nscoord ViewportFrame::GetPrefISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord ViewportFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_PREF_INLINE_SIZE(this, result);
   if (mFrames.IsEmpty())
@@ -267,6 +255,11 @@ nsRect ViewportFrame::AdjustReflowInputAsContainingBlock(
   if (ps->IsVisualViewportSizeSet() &&
       rect.Size() < ps->GetVisualViewportSize()) {
     rect.SizeTo(ps->GetVisualViewportSize());
+  }
+  // Expand the size to the layout viewport size if necessary.
+  const nsSize layoutViewportSize = ps->GetLayoutViewportSize();
+  if (rect.Size() < layoutViewportSize) {
+    rect.SizeTo(layoutViewportSize);
   }
   return rect;
 }
@@ -377,16 +370,9 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
 }
 
 void ViewportFrame::UpdateStyle(ServoRestyleState& aRestyleState) {
-  nsAtom* pseudo = Style()->GetPseudo();
   RefPtr<ComputedStyle> newStyle =
-      aRestyleState.StyleSet().ResolveInheritingAnonymousBoxStyle(pseudo,
-                                                                  nullptr);
-
-  // We're special because we have a null GetContent(), so don't call things
-  // like UpdateStyleOfOwnedChildFrame that try to append changes for the
-  // content to the change list.  Nor do we computed a changehint, since we have
-  // no way to apply it anyway.
-  newStyle->ResolveSameStructsAs(Style());
+      aRestyleState.StyleSet().ResolveInheritingAnonymousBoxStyle(
+          Style()->GetPseudoType(), nullptr);
 
   MOZ_ASSERT(!GetNextContinuation(), "Viewport has continuations?");
   SetComputedStyle(newStyle);

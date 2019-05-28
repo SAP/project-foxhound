@@ -18,9 +18,9 @@
 /* fluent-dom@fa25466f (October 12, 2018) */
 
 const { Localization } =
-  ChromeUtils.import("resource://gre/modules/Localization.jsm", {});
+  ChromeUtils.import("resource://gre/modules/Localization.jsm");
 const { Services } =
-  ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Match the opening angle bracket (<) in HTML tags, and HTML entities like
 // &amp;, &#0038;, &#x0026;.
@@ -65,7 +65,7 @@ const LOCALIZABLE_ATTRIBUTES = {
     description: ["value"],
     key: ["key", "keycode"],
     label: ["value"],
-    textbox: ["placeholder"],
+    textbox: ["placeholder", "value"],
   },
 };
 
@@ -510,6 +510,13 @@ class DOMLocalization extends Localization {
    * @param {Element}      newRoot - Root to observe.
    */
   connectRoot(newRoot) {
+    // Sometimes we connect the root while the document is already in the
+    // process of being closed. Bail out gracefully.
+    // See bug 1532712 for details.
+    if (!newRoot.ownerGlobal) {
+      return;
+    }
+
     for (const root of this.roots) {
       if (root === newRoot ||
           root.contains(newRoot) ||
@@ -570,6 +577,10 @@ class DOMLocalization extends Localization {
    * @returns {Promise}
    */
   translateRoots() {
+    if (this.resourceIds.length === 0) {
+      return Promise.resolve();
+    }
+
     const roots = Array.from(this.roots);
     return Promise.all(
       roots.map(async root => {
@@ -819,5 +830,10 @@ class DOMLocalization extends Localization {
   }
 }
 
-this.DOMLocalization = DOMLocalization;
-var EXPORTED_SYMBOLS = ["DOMLocalization"];
+/**
+ * Helper function which allows us to construct a new
+ * DOMLocalization from DocumentL10n.
+ */
+var getDOMLocalization = () => new DOMLocalization();
+
+var EXPORTED_SYMBOLS = ["DOMLocalization", "getDOMLocalization"];

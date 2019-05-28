@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Components.h"
 #include "nsCRT.h"
 #include "nsIHttpChannel.h"
 #include "nsIObserverService.h"
@@ -14,8 +15,8 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
-#include "nsToolkitCompsCID.h"
 #include "nsUrlClassifierStreamUpdater.h"
+#include "nsUrlClassifierUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/Logging.h"
@@ -132,6 +133,7 @@ nsresult nsUrlClassifierStreamUpdater::FetchUpdate(
                      nsContentUtils::GetSystemPrincipal(),
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER,
+                     nullptr,  // nsICookieSettings
                      nullptr,  // aPerformanceStorage
                      nullptr,  // aLoadGroup
                      this,     // aInterfaceRequestor
@@ -139,12 +141,10 @@ nsresult nsUrlClassifierStreamUpdater::FetchUpdate(
 
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsILoadInfo> loadInfo = mChannel->GetLoadInfo();
+  nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
   mozilla::OriginAttributes attrs;
   attrs.mFirstPartyDomain.AssignLiteral(NECKO_SAFEBROWSING_FIRST_PARTY_DOMAIN);
-  if (loadInfo) {
-    loadInfo->SetOriginAttributes(attrs);
-  }
+  loadInfo->SetOriginAttributes(attrs);
 
   mBeganStream = false;
 
@@ -191,7 +191,7 @@ nsresult nsUrlClassifierStreamUpdater::FetchUpdate(
   }
 
   // Make the request.
-  rv = mChannel->AsyncOpen2(this);
+  rv = mChannel->AsyncOpen(this);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mTelemetryClockStart = PR_IntervalNow();
@@ -294,7 +294,7 @@ nsUrlClassifierStreamUpdater::DownloadUpdates(
 
     observerService->AddObserver(this, gQuitApplicationMessage, false);
 
-    mDBService = do_GetService(NS_URLCLASSIFIERDBSERVICE_CONTRACTID, &rv);
+    mDBService = mozilla::components::UrlClassifierDB::Service(&rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
     mInitialized = true;
@@ -326,8 +326,10 @@ nsUrlClassifierStreamUpdater::DownloadUpdates(
     return rv;
   }
 
-  nsCOMPtr<nsIUrlClassifierUtils> urlUtil =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID);
+  nsUrlClassifierUtils *urlUtil = nsUrlClassifierUtils::GetInstance();
+  if (NS_WARN_IF(!urlUtil)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsTArray<nsCString> tables;
   mozilla::safebrowsing::Classifier::SplitTables(aRequestTables, tables);
@@ -567,8 +569,7 @@ nsresult nsUrlClassifierStreamUpdater::AddRequestBody(
 // nsIStreamListenerObserver implementation
 
 NS_IMETHODIMP
-nsUrlClassifierStreamUpdater::OnStartRequest(nsIRequest *request,
-                                             nsISupports *context) {
+nsUrlClassifierStreamUpdater::OnStartRequest(nsIRequest *request) {
   nsresult rv;
   bool downloadError = false;
   nsAutoCString strStatus;
@@ -663,7 +664,6 @@ nsUrlClassifierStreamUpdater::OnStartRequest(nsIRequest *request,
 
 NS_IMETHODIMP
 nsUrlClassifierStreamUpdater::OnDataAvailable(nsIRequest *request,
-                                              nsISupports *context,
                                               nsIInputStream *aIStream,
                                               uint64_t aSourceOffset,
                                               uint32_t aLength) {
@@ -695,7 +695,6 @@ nsUrlClassifierStreamUpdater::OnDataAvailable(nsIRequest *request,
 
 NS_IMETHODIMP
 nsUrlClassifierStreamUpdater::OnStopRequest(nsIRequest *request,
-                                            nsISupports *context,
                                             nsresult aStatus) {
   if (!mDBService) return NS_ERROR_NOT_INITIALIZED;
 

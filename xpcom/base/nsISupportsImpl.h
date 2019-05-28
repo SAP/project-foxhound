@@ -50,11 +50,10 @@ class nsAutoOwningThread {
   nsAutoOwningThread();
 
   // We move the actual assertion checks out-of-line to minimize code bloat,
-  // but that means we have to pass a non-literal string to
-  // MOZ_CRASH_UNSAFE_OOL.  To make that more safe, the public interface
-  // requires a literal string and passes that to the private interface; we
-  // can then be assured that we effectively are passing a literal string
-  // to MOZ_CRASH_UNSAFE_OOL.
+  // but that means we have to pass a non-literal string to MOZ_CRASH_UNSAFE.
+  // To make that more safe, the public interface requires a literal string
+  // and passes that to the private interface; we can then be assured that we
+  // effectively are passing a literal string to MOZ_CRASH_UNSAFE.
   template <int N>
   void AssertOwnership(const char (&aMsg)[N]) const {
     AssertCurrentThreadOwnsMe(aMsg);
@@ -1248,45 +1247,45 @@ class Runnable;
  * Macro to generate nsIClassInfo methods for classes which do not have
  * corresponding nsIFactory implementations.
  */
-#define NS_IMPL_THREADSAFE_CI(_class)                           \
-  NS_IMETHODIMP                                                 \
-  _class::GetInterfaces(uint32_t* _count, nsIID*** _array) {    \
-    return NS_CI_INTERFACE_GETTER_NAME(_class)(_count, _array); \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetScriptableHelper(nsIXPCScriptable** _retval) {     \
-    *_retval = nullptr;                                         \
-    return NS_OK;                                               \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetContractID(nsACString& _contractID) {              \
-    _contractID.SetIsVoid(true);                                \
-    return NS_OK;                                               \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetClassDescription(nsACString& _classDescription) {  \
-    _classDescription.SetIsVoid(true);                          \
-    return NS_OK;                                               \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetClassID(nsCID** _classID) {                        \
-    *_classID = nullptr;                                        \
-    return NS_OK;                                               \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetFlags(uint32_t* _flags) {                          \
-    *_flags = nsIClassInfo::THREADSAFE;                         \
-    return NS_OK;                                               \
-  }                                                             \
-                                                                \
-  NS_IMETHODIMP                                                 \
-  _class::GetClassIDNoAlloc(nsCID* _classIDNoAlloc) {           \
-    return NS_ERROR_NOT_AVAILABLE;                              \
+#define NS_IMPL_THREADSAFE_CI(_class)                          \
+  NS_IMETHODIMP                                                \
+  _class::GetInterfaces(nsTArray<nsIID>& _array) {             \
+    return NS_CI_INTERFACE_GETTER_NAME(_class)(_array);        \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetScriptableHelper(nsIXPCScriptable** _retval) {    \
+    *_retval = nullptr;                                        \
+    return NS_OK;                                              \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetContractID(nsACString& _contractID) {             \
+    _contractID.SetIsVoid(true);                               \
+    return NS_OK;                                              \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetClassDescription(nsACString& _classDescription) { \
+    _classDescription.SetIsVoid(true);                         \
+    return NS_OK;                                              \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetClassID(nsCID** _classID) {                       \
+    *_classID = nullptr;                                       \
+    return NS_OK;                                              \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetFlags(uint32_t* _flags) {                         \
+    *_flags = nsIClassInfo::THREADSAFE;                        \
+    return NS_OK;                                              \
+  }                                                            \
+                                                               \
+  NS_IMETHODIMP                                                \
+  _class::GetClassIDNoAlloc(nsCID* _classIDNoAlloc) {          \
+    return NS_ERROR_NOT_AVAILABLE;                             \
   }
 
 #endif

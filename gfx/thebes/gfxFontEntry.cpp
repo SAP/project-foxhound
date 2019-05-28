@@ -118,13 +118,8 @@ gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
 gfxFontEntry::~gfxFontEntry() {
   // Should not be dropped by stylo
   MOZ_ASSERT(NS_IsMainThread());
-  if (mCOLR) {
-    hb_blob_destroy(mCOLR);
-  }
-
-  if (mCPAL) {
-    hb_blob_destroy(mCPAL);
-  }
+  hb_blob_destroy(mCOLR);
+  hb_blob_destroy(mCPAL);
 
   // For downloaded fonts, we need to tell the user font cache that this
   // entry is being deleted.
@@ -468,7 +463,7 @@ void gfxFontEntry::FontTableHashEntry::Clear() {
   if (mSharedBlobData) {
     mSharedBlobData->ForgetHashEntry();
     mSharedBlobData = nullptr;
-  } else if (mBlob) {
+  } else {
     hb_blob_destroy(mBlob);
   }
   mBlob = nullptr;
@@ -476,7 +471,8 @@ void gfxFontEntry::FontTableHashEntry::Clear() {
 
 // a hb_destroy_func for hb_blob_create
 
-/* static */ void gfxFontEntry::FontTableHashEntry::DeleteFontTableBlobData(
+/* static */
+void gfxFontEntry::FontTableHashEntry::DeleteFontTableBlobData(
     void* aBlobData) {
   delete static_cast<FontTableBlobData*>(aBlobData);
 }
@@ -547,8 +543,9 @@ hb_blob_t* gfxFontEntry::GetFontTable(uint32_t aTag) {
 
 // callback for HarfBuzz to get a font table (in hb_blob_t form)
 // from the font entry (passed as aUserData)
-/*static*/ hb_blob_t* gfxFontEntry::HBGetTable(hb_face_t* face, uint32_t aTag,
-                                               void* aUserData) {
+/*static*/
+hb_blob_t* gfxFontEntry::HBGetTable(hb_face_t* face, uint32_t aTag,
+                                    void* aUserData) {
   gfxFontEntry* fontEntry = static_cast<gfxFontEntry*>(aUserData);
 
   // bug 589682 - ignore the GDEF table in buggy fonts (applies to
@@ -566,7 +563,8 @@ hb_blob_t* gfxFontEntry::GetFontTable(uint32_t aTag) {
   return fontEntry->GetFontTable(aTag);
 }
 
-/*static*/ void gfxFontEntry::HBFaceDeletedCallback(void* aUserData) {
+/*static*/
+void gfxFontEntry::HBFaceDeletedCallback(void* aUserData) {
   gfxFontEntry* fe = static_cast<gfxFontEntry*>(aUserData);
   fe->ForgetHBFace();
 }
@@ -599,8 +597,9 @@ hb_face_t* gfxFontEntry::GetHBFace() {
   return nullptr;
 }
 
-/*static*/ void gfxFontEntry::GrReleaseTable(const void* aAppFaceHandle,
-                                             const void* aTableBuffer) {
+/*static*/
+void gfxFontEntry::GrReleaseTable(const void* aAppFaceHandle,
+                                  const void* aTableBuffer) {
   gfxFontEntry* fontEntry =
       static_cast<gfxFontEntry*>(const_cast<void*>(aAppFaceHandle));
   void* value;
@@ -1709,43 +1708,56 @@ void gfxFontFamily::FindFontForChar(GlobalFontMatch* aMatchData) {
                                         LAYOUT, charAndName);
 #endif
 
-  gfxFontEntry* fe =
-      FindFontForStyle(aMatchData->mStyle, /*aIgnoreSizeTolerance*/ true);
-  if (!fe || fe->SkipDuringSystemFallback()) {
+  AutoTArray<gfxFontEntry*, 4> entries;
+  FindAllFontsForStyle(aMatchData->mStyle, entries,
+                       /*aIgnoreSizeTolerance*/ true);
+  if (entries.IsEmpty()) {
     return;
   }
 
+  gfxFontEntry* fe = nullptr;
   float distance = INFINITY;
 
-  if (fe->HasCharacter(aMatchData->mCh)) {
-    aMatchData->mCount++;
-
-    LogModule* log = gfxPlatform::GetLog(eGfxLog_textrun);
-
-    if (MOZ_UNLIKELY(MOZ_LOG_TEST(log, LogLevel::Debug))) {
-      uint32_t unicodeRange = FindCharUnicodeRange(aMatchData->mCh);
-      Script script = GetScriptCode(aMatchData->mCh);
-      MOZ_LOG(log, LogLevel::Debug,
-              ("(textrun-systemfallback-fonts) char: u+%6.6x "
-               "unicode-range: %d script: %d match: [%s]\n",
-               aMatchData->mCh, unicodeRange, int(script), fe->Name().get()));
+  for (auto e : entries) {
+    if (e->SkipDuringSystemFallback()) {
+      continue;
     }
 
-    distance = WeightStyleStretchDistance(fe, aMatchData->mStyle);
-  } else if (!fe->IsNormalStyle()) {
+    aMatchData->mCmapsTested++;
+    if (e->HasCharacter(aMatchData->mCh)) {
+      aMatchData->mCount++;
+
+      LogModule* log = gfxPlatform::GetLog(eGfxLog_textrun);
+
+      if (MOZ_UNLIKELY(MOZ_LOG_TEST(log, LogLevel::Debug))) {
+        uint32_t unicodeRange = FindCharUnicodeRange(aMatchData->mCh);
+        Script script = GetScriptCode(aMatchData->mCh);
+        MOZ_LOG(log, LogLevel::Debug,
+                ("(textrun-systemfallback-fonts) char: u+%6.6x "
+                 "unicode-range: %d script: %d match: [%s]\n",
+                 aMatchData->mCh, unicodeRange, int(script), e->Name().get()));
+      }
+
+      fe = e;
+      distance = WeightStyleStretchDistance(fe, aMatchData->mStyle);
+      break;
+    }
+  }
+
+  if (!fe && !aMatchData->mStyle.IsNormalStyle()) {
     // If style/weight/stretch was not Normal, see if we can
     // fall back to a next-best face (e.g. Arial Black -> Bold,
     // or Arial Narrow -> Regular).
     GlobalFontMatch data(aMatchData->mCh, aMatchData->mStyle);
     SearchAllFontsForChar(&data);
-    if (std::isfinite(data.mMatchDistance)) {
-      fe = data.mBestMatch;
-      distance = data.mMatchDistance;
+    if (!data.mBestMatch) {
+      return;
     }
+    fe = data.mBestMatch;
+    distance = data.mMatchDistance;
   }
-  aMatchData->mCmapsTested++;
 
-  if (std::isinf(distance)) {
+  if (!fe) {
     return;
   }
 
@@ -1781,7 +1793,8 @@ gfxFontFamily::~gfxFontFamily() {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
-/*static*/ void gfxFontFamily::ReadOtherFamilyNamesForFace(
+/*static*/
+void gfxFontFamily::ReadOtherFamilyNamesForFace(
     const nsACString& aFamilyName, const char* aNameData, uint32_t aDataLength,
     nsTArray<nsCString>& aOtherFamilyNames, bool useFullName) {
   const gfxFontUtils::NameHeader* nameHeader =

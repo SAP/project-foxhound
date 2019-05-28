@@ -1,8 +1,14 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionPermissions.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {AddonManager} = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+const {ExtensionPermissions} = ChromeUtils.import("resource://gre/modules/ExtensionPermissions.jsm");
+
+// ExtensionParent.jsm is being imported lazily because when it is imported Services.appinfo will be
+// retrieved and cached (as a side-effect of Schemas.jsm being imported), and so Services.appinfo
+// will not be returning the version set by AddonTestUtils.createAppInfo and this test will
+// fail on non-nightly builds (because the cached appinfo.version will be undefined and
+// AddonManager startup will fail).
+ChromeUtils.defineModuleGetter(this, "ExtensionParent", "resource://gre/modules/ExtensionParent.jsm");
 
 const BROWSER_PROPERTIES = "chrome://browser/locale/browser.properties";
 
@@ -24,13 +30,65 @@ const observer = {
   },
 };
 
-add_task(function setup() {
+add_task(async function setup() {
   Services.prefs.setBoolPref("extensions.webextOptionalPermissionPrompts", true);
   Services.obs.addObserver(observer, "webextension-optional-permission-prompt");
   registerCleanupFunction(() => {
     Services.obs.removeObserver(observer, "webextension-optional-permission-prompt");
     Services.prefs.clearUserPref("extensions.webextOptionalPermissionPrompts");
   });
+  await AddonTestUtils.promiseStartupManager();
+  AddonTestUtils.usePrivilegedSignatures = false;
+});
+
+
+add_task(async function test_permissions_on_startup() {
+  let extensionId = "@permissionTest";
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      applications: {
+        gecko: {id: extensionId},
+      },
+      permissions: ["tabs"],
+    },
+    useAddonManager: "permanent",
+    async background() {
+      let perms = await browser.permissions.getAll();
+      browser.test.sendMessage("permissions", perms);
+    },
+  });
+  let adding = {permissions: ["internal:privateBrowsingAllowed"], origins: []};
+  await extension.startup();
+  let perms = await extension.awaitMessage("permissions");
+  equal(perms.permissions.length, 1, "one permission");
+  equal(perms.permissions[0], "tabs", "internal permission not present");
+
+  const {StartupCache} = ExtensionParent;
+
+  // StartupCache.permissions will not contain the extension permissions.
+  let manifestData = await StartupCache.permissions.get(extensionId, () => { return {permissions: [], origins: []}; });
+  equal(manifestData.permissions.length, 0, "no permission");
+
+  perms = await ExtensionPermissions.get(extensionId);
+  equal(perms.permissions.length, 0, "no permissions");
+  await ExtensionPermissions.add(extensionId, adding);
+
+  // Restart the extension and re-test the permissions.
+  await ExtensionPermissions._uninit();
+  await AddonTestUtils.promiseRestartManager();
+  let restarted = extension.awaitMessage("permissions");
+  await extension.awaitStartup();
+  perms = await restarted;
+
+  manifestData = await StartupCache.permissions.get(extensionId, () => { return {permissions: [], origins: []}; });
+  deepEqual(manifestData.permissions, adding.permissions, "StartupCache.permissions contains permission");
+
+  equal(perms.permissions.length, 1, "one permission");
+  equal(perms.permissions[0], "tabs", "internal permission not present");
+  let added = await ExtensionPermissions._get(extensionId);
+  deepEqual(added, adding, "permissions were retained");
+
+  await extension.unload();
 });
 
 add_task(async function test_permissions() {
@@ -41,8 +99,6 @@ add_task(async function test_permissions() {
   const OPTIONAL_PERMISSIONS = ["idle", "clipboardWrite"];
   const OPTIONAL_ORIGINS = ["http://optionalsite.com/", "https://*.optionaldomain.com/"];
   const OPTIONAL_ORIGINS_NORMALIZED = ["http://optionalsite.com/*", "https://*.optionaldomain.com/*"];
-
-  await AddonTestUtils.promiseStartupManager();
 
   function background() {
     browser.test.onMessage.addListener(async (method, arg) => {
@@ -225,12 +281,16 @@ add_task(async function test_startup() {
 
   let extension1 = ExtensionTestUtils.loadExtension({
     background,
-    manifest: {optional_permissions: PERMS1.permissions},
+    manifest: {
+      optional_permissions: PERMS1.permissions,
+    },
     useAddonManager: "permanent",
   });
   let extension2 = ExtensionTestUtils.loadExtension({
     background,
-    manifest: {optional_permissions: PERMS2.origins},
+    manifest: {
+      optional_permissions: PERMS2.origins,
+    },
     useAddonManager: "permanent",
   });
 
@@ -485,7 +545,7 @@ add_task(async function test_permissions_prompt() {
 
   const PERMS = ["history", "tabs"];
   const ORIGINS = ["https://test1.example.com/*", "https://test3.example.com/"];
-  let xpi = Extension.generateXPI({
+  let xpi = AddonTestUtils.createTempWebExtensionFile({
     background,
     manifest: {
       name: "permissions test",
@@ -522,5 +582,76 @@ add_task(async function test_permissions_prompt() {
   deepEqual(perms.origins, ORIGINS, "Update details includes only manifest origin permissions");
 
   await extension.unload();
-  await OS.File.remove(xpi.path);
+});
+
+// Check that internal permissions can not be set and are not returned by the API.
+add_task(async function test_internal_permissions() {
+  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
+
+  function background() {
+    browser.test.onMessage.addListener(async (method, arg) => {
+      try {
+        if (method == "getAll") {
+          let perms = await browser.permissions.getAll();
+          browser.test.sendMessage("getAll.result", perms);
+        } else if (method == "contains") {
+          let result = await browser.permissions.contains(arg);
+          browser.test.sendMessage("contains.result", {status: "success", result});
+        } else if (method == "request") {
+          let result = await browser.permissions.request(arg);
+          browser.test.sendMessage("request.result", {status: "success", result});
+        } else if (method == "remove") {
+          let result = await browser.permissions.remove(arg);
+          browser.test.sendMessage("remove.result", result);
+        }
+      } catch (err) {
+        browser.test.sendMessage(`${method}.result`, {status: "error", message: err.message});
+      }
+    });
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    background,
+    manifest: {
+      name: "permissions test",
+      description: "permissions test",
+      manifest_version: 2,
+      version: "1.0",
+      permissions: [],
+    },
+    useAddonManager: "permanent",
+    incognitoOverride: "spanning",
+  });
+
+  let perm = "internal:privateBrowsingAllowed";
+
+  await extension.startup();
+
+  function call(method, arg) {
+    extension.sendMessage(method, arg);
+    return extension.awaitMessage(`${method}.result`);
+  }
+
+  let result = await call("getAll");
+  ok(!result.permissions.includes(perm), "internal not returned");
+
+  result = await call("contains", {permissions: [perm]});
+  ok(/Type error for parameter permissions \(Error processing permissions/.test(result.message),
+     `Unable to check for internal permission: ${result.message}`);
+
+  result = await call("remove", {permissions: [perm]});
+  ok(/Type error for parameter permissions \(Error processing permissions/.test(result.message),
+     `Unable to remove for internal permission ${result.message}`);
+
+  await withHandlingUserInput(extension, async () => {
+    result = await call("request", {
+      permissions: [perm],
+      origins: [],
+    });
+    ok(/Type error for parameter permissions \(Error processing permissions/.test(result.message),
+       `Unable to request internal permission ${result.message}`);
+  });
+
+  await extension.unload();
+  Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
 });

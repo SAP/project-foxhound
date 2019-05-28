@@ -1,5 +1,5 @@
 /*
- * Test for keeping the valid fields information in initialProcessData.
+ * Test for keeping the valid fields information in sharedData.
  */
 
 "use strict";
@@ -7,7 +7,7 @@
 let FormAutofillParent;
 
 add_task(async function setup() {
-  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", {}));
+  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", null));
 });
 
 add_task(async function test_profileSavedFieldNames_init() {
@@ -34,7 +34,7 @@ add_task(async function test_profileSavedFieldNames_observe() {
   });
 
   // profile metadata updated => no need to trigger updateValidFields
-  formAutofillParent._updateSavedFieldNames.reset();
+  formAutofillParent._updateSavedFieldNames.resetHistory();
   formAutofillParent.observe(null, "formautofill-storage-changed", "notifyUsed");
   Assert.equal(formAutofillParent._updateSavedFieldNames.called, false);
 });
@@ -54,7 +54,7 @@ add_task(async function test_profileSavedFieldNames_update() {
 
   // The set is empty if there's no profile in the store.
   formAutofillParent._updateSavedFieldNames();
-  Assert.equal(Services.ppmm.initialProcessData.autofillSavedFieldNames.size, 0);
+  Assert.equal(Services.ppmm.sharedData.get("FormAutofill:savedFieldNames").size, 0);
 
   // 2 profiles with 4 valid fields.
   formAutofillParent.formAutofillStorage.addresses._data = [{
@@ -81,7 +81,7 @@ add_task(async function test_profileSavedFieldNames_update() {
 
   formAutofillParent._updateSavedFieldNames();
 
-  let autofillSavedFieldNames = Services.ppmm.initialProcessData.autofillSavedFieldNames;
+  let autofillSavedFieldNames = Services.ppmm.sharedData.get("FormAutofill:savedFieldNames");
   Assert.equal(autofillSavedFieldNames.size, 4);
   Assert.equal(autofillSavedFieldNames.has("organization"), true);
   Assert.equal(autofillSavedFieldNames.has("street-address"), true);

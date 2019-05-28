@@ -26,6 +26,7 @@ StaticAutoPtr<std::unordered_map<uint64_t, APZUpdater*>>
 APZUpdater::APZUpdater(const RefPtr<APZCTreeManager>& aApz,
                        bool aIsUsingWebRender)
     : mApz(aApz),
+      mDestroyed(false),
       mIsUsingWebRender(aIsUsingWebRender),
       mThreadIdLock("APZUpdater::ThreadIdLock"),
       mQueueLock("APZUpdater::QueueLock") {
@@ -61,22 +62,24 @@ void APZUpdater::SetWebRenderWindowId(const wr::WindowId& aWindowId) {
   (*sWindowIdMap)[wr::AsUint64(aWindowId)] = this;
 }
 
-/*static*/ void APZUpdater::SetUpdaterThread(const wr::WrWindowId& aWindowId) {
+/*static*/
+void APZUpdater::SetUpdaterThread(const wr::WrWindowId& aWindowId) {
   if (RefPtr<APZUpdater> updater = GetUpdater(aWindowId)) {
     MutexAutoLock lock(updater->mThreadIdLock);
     updater->mUpdaterThreadId = Some(PlatformThread::CurrentId());
   }
 }
 
-/*static*/ void APZUpdater::PrepareForSceneSwap(
-    const wr::WrWindowId& aWindowId) {
+/*static*/
+void APZUpdater::PrepareForSceneSwap(const wr::WrWindowId& aWindowId) {
   if (RefPtr<APZUpdater> updater = GetUpdater(aWindowId)) {
     updater->mApz->LockTree();
   }
 }
 
-/*static*/ void APZUpdater::CompleteSceneSwap(const wr::WrWindowId& aWindowId,
-                                              const wr::WrPipelineInfo& aInfo) {
+/*static*/
+void APZUpdater::CompleteSceneSwap(const wr::WrWindowId& aWindowId,
+                                   const wr::WrPipelineInfo& aInfo) {
   RefPtr<APZUpdater> updater = GetUpdater(aWindowId);
   if (!updater) {
     // This should only happen in cases where PrepareForSceneSwap also got a
@@ -119,8 +122,8 @@ void APZUpdater::SetWebRenderWindowId(const wr::WindowId& aWindowId) {
   updater->mApz->UnlockTree();
 }
 
-/*static*/ void APZUpdater::ProcessPendingTasks(
-    const wr::WrWindowId& aWindowId) {
+/*static*/
+void APZUpdater::ProcessPendingTasks(const wr::WrWindowId& aWindowId) {
   if (RefPtr<APZUpdater> updater = GetUpdater(aWindowId)) {
     updater->ProcessQueue();
   }
@@ -132,6 +135,7 @@ void APZUpdater::ClearTree(LayersId aRootLayersId) {
   RunOnUpdaterThread(aRootLayersId,
                      NS_NewRunnableFunction("APZUpdater::ClearTree", [=]() {
                        self->mApz->ClearTree();
+                       self->mDestroyed = true;
 
                        // Once ClearTree is called on the APZCTreeManager, we
                        // are in a shutdown phase. After this point it's ok if
@@ -409,7 +413,8 @@ bool APZUpdater::UsingWebRenderUpdaterThread() const {
   return mIsUsingWebRender;
 }
 
-/*static*/ already_AddRefed<APZUpdater> APZUpdater::GetUpdater(
+/*static*/
+already_AddRefed<APZUpdater> APZUpdater::GetUpdater(
     const wr::WrWindowId& aWindowId) {
   RefPtr<APZUpdater> updater;
   StaticMutexAutoLock lock(sWindowIdLock);
@@ -423,6 +428,8 @@ bool APZUpdater::UsingWebRenderUpdaterThread() const {
 }
 
 void APZUpdater::ProcessQueue() {
+  MOZ_ASSERT(!mDestroyed);
+
   {  // scope lock to check for emptiness
     MutexAutoLock lock(mQueueLock);
     if (mUpdaterQueue.empty()) {
@@ -461,6 +468,23 @@ void APZUpdater::ProcessQueue() {
     } else {
       // Run and discard the task
       task.mRunnable->Run();
+    }
+  }
+
+  if (mDestroyed) {
+    // If we get here, then we must have just run the ClearTree task for
+    // this updater. There might be tasks in the queue from content subtrees
+    // of this window that are blocked due to stale epochs. This can happen
+    // if the tasks were queued after the root pipeline was removed in
+    // WebRender, which prevents scene builds (and therefore prevents us
+    // from getting updated epochs via CompleteSceneSwap). See bug 1465658
+    // comment 43 for some more context.
+    // To avoid leaking these tasks, we discard the contents of the queue.
+    // This happens during window shutdown so if we don't run the tasks it's
+    // not going to matter much.
+    MutexAutoLock lock(mQueueLock);
+    if (!mUpdaterQueue.empty()) {
+      mUpdaterQueue.clear();
     }
   }
 }

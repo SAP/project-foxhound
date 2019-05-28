@@ -133,8 +133,8 @@ class PluginBackgroundSink : public ReadbackSink {
   nsPluginFrame* mFrame;
 };
 
-nsPluginFrame::nsPluginFrame(ComputedStyle* aStyle)
-    : nsFrame(aStyle, kClassID),
+nsPluginFrame::nsPluginFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsFrame(aStyle, aPresContext, kClassID),
       mInstanceOwner(nullptr),
       mOuterView(nullptr),
       mInnerView(nullptr),
@@ -202,8 +202,8 @@ void nsPluginFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-/* virtual */ void nsPluginFrame::DidSetComputedStyle(
-    ComputedStyle* aOldComputedStyle) {
+/* virtual */
+void nsPluginFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   if (HasView()) {
     nsView* view = GetView();
     nsViewManager* vm = view->GetViewManager();
@@ -351,8 +351,8 @@ nsresult nsPluginFrame::PrepForDrawing(nsIWidget* aWidget) {
 #define EMBED_DEF_WIDTH 240
 #define EMBED_DEF_HEIGHT 200
 
-/* virtual */ nscoord nsPluginFrame::GetMinISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsPluginFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result = 0;
 
   if (!IsHidden(false)) {
@@ -367,8 +367,8 @@ nsresult nsPluginFrame::PrepForDrawing(nsIWidget* aWidget) {
   return result;
 }
 
-/* virtual */ nscoord nsPluginFrame::GetPrefISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsPluginFrame::GetPrefISize(gfxContext* aRenderingContext) {
   return nsPluginFrame::GetMinISize(aRenderingContext);
 }
 
@@ -802,10 +802,9 @@ void nsPluginFrame::DidReflow(nsPresContext* aPresContext,
   }
 }
 
-/* static */ void nsPluginFrame::PaintPrintPlugin(nsIFrame* aFrame,
-                                                  gfxContext* aCtx,
-                                                  const nsRect& aDirtyRect,
-                                                  nsPoint aPt) {
+/* static */
+void nsPluginFrame::PaintPrintPlugin(nsIFrame* aFrame, gfxContext* aCtx,
+                                     const nsRect& aDirtyRect, nsPoint aPt) {
   // Translate the context:
   nsPoint pt = aPt + aFrame->GetContentRectRelativeToSelf().TopLeft();
   gfxPoint devPixelPt = nsLayoutUtils::PointToGfxPoint(
@@ -1589,24 +1588,23 @@ nsNPAPIPluginInstance* nsPluginFrame::GetPluginInstance() {
   return mInstanceOwner->GetInstance();
 }
 
-nsresult nsPluginFrame::GetCursor(const nsPoint& aPoint,
-                                  nsIFrame::Cursor& aCursor) {
+Maybe<nsIFrame::Cursor> nsPluginFrame::GetCursor(const nsPoint& aPoint) {
   if (!mInstanceOwner) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
   RefPtr<nsNPAPIPluginInstance> inst = mInstanceOwner->GetInstance();
   if (!inst) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
   bool useDOMCursor =
       static_cast<nsNPAPIPluginInstance*>(inst.get())->UsesDOMForCursor();
   if (!useDOMCursor) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
-  return nsFrame::GetCursor(aPoint, aCursor);
+  return nsFrame::GetCursor(aPoint);
 }
 
 void nsPluginFrame::SetIsDocumentActive(bool aIsActive) {
@@ -1633,8 +1631,8 @@ nsIObjectFrame* nsPluginFrame::GetNextObjectFrame(nsPresContext* aPresContext,
   return nullptr;
 }
 
-/*static*/ void nsPluginFrame::BeginSwapDocShells(nsISupports* aSupports,
-                                                  void*) {
+/*static*/
+void nsPluginFrame::BeginSwapDocShells(nsISupports* aSupports, void*) {
   MOZ_ASSERT(aSupports, "null parameter");
   nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
   if (!content) {
@@ -1652,7 +1650,8 @@ nsIObjectFrame* nsPluginFrame::GetNextObjectFrame(nsPresContext* aPresContext,
   objectFrame->UnregisterPluginForGeometryUpdates();
 }
 
-/*static*/ void nsPluginFrame::EndSwapDocShells(nsISupports* aSupports, void*) {
+/*static*/
+void nsPluginFrame::EndSwapDocShells(nsISupports* aSupports, void*) {
   MOZ_ASSERT(aSupports, "null parameter");
   nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
   if (!content) {
@@ -1685,7 +1684,7 @@ nsIObjectFrame* nsPluginFrame::GetNextObjectFrame(nsPresContext* aPresContext,
 }
 
 nsIFrame* NS_NewObjectFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsPluginFrame(aStyle);
+  return new (aPresShell) nsPluginFrame(aStyle, aPresShell->GetPresContext());
 }
 
 bool nsPluginFrame::IsPaintedByGecko() const {

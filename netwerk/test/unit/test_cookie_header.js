@@ -1,8 +1,7 @@
 // This file tests bug 250375
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort + "/";
@@ -28,7 +27,7 @@ function check_request_header(chan, name, value) {
 var cookieVal = "C1=V1";
 
 var listener = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     try {
       var chan = request.QueryInterface(Ci.nsIHttpChannel);
       check_request_header(chan, "Cookie", cookieVal);
@@ -43,7 +42,7 @@ var listener = {
     throw Cr.NS_ERROR_UNEXPECTED;
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     if (this._iteration == 1) {
       run_test_continued();
     } else {
@@ -65,8 +64,10 @@ var httpserv = null;
 
 function run_test() {
   // Allow all cookies if the pref service is available in this process.
-  if (!inChildProcess())
+  if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+    Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+  }
 
   httpserv = new HttpServer();
   httpserv.start(-1);
@@ -75,7 +76,7 @@ function run_test() {
 
   chan.setRequestHeader("Cookie", cookieVal, false);
 
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -94,7 +95,7 @@ function run_test_continued() {
   cookieVal = cookie2 + "; " + cookieVal;
 
   listener._iteration++;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }

@@ -11,10 +11,11 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
-const { PAGE_TYPES, RUNTIMES } = require("../../constants");
+const { MESSAGE_LEVEL, PAGE_TYPES, RUNTIMES } = require("../../constants");
 const Types = require("../../types/index");
 loader.lazyRequireGetter(this, "ADB_ADDON_STATES", "devtools/shared/adb/adb-addon", true);
 
+const Message = createFactory(require("../shared/Message"));
 const SidebarItem = createFactory(require("./SidebarItem"));
 const SidebarFixedItem = createFactory(require("./SidebarFixedItem"));
 const SidebarRuntimeItem = createFactory(require("./SidebarRuntimeItem"));
@@ -27,12 +28,12 @@ const USB_ICON = "chrome://devtools/skin/images/aboutdebugging-connect-icon.svg"
 class Sidebar extends PureComponent {
   static get propTypes() {
     return {
-      adbAddonStatus: PropTypes.string,
+      adbAddonStatus: Types.adbAddonStatus,
       className: PropTypes.string,
       dispatch: PropTypes.func.isRequired,
       isScanningUsb: PropTypes.bool.isRequired,
       networkRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
-      selectedPage: PropTypes.string,
+      selectedPage: Types.page,
       selectedRuntimeId: PropTypes.string,
       usbRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
     };
@@ -42,14 +43,20 @@ class Sidebar extends PureComponent {
     const isAddonInstalled = this.props.adbAddonStatus === ADB_ADDON_STATES.INSTALLED;
     const localizationId = isAddonInstalled ? "about-debugging-sidebar-usb-enabled" :
                                               "about-debugging-sidebar-usb-disabled";
-    return Localized(
+    return Message(
       {
-        id: localizationId,
-      }, dom.aside(
-        {
-          className: "sidebar__devices__message js-sidebar-usb-status",
-        },
-        localizationId
+          level: MESSAGE_LEVEL.INFO,
+      },
+        Localized(
+          {
+            id: localizationId,
+          },
+          dom.div(
+            {
+              className: "js-sidebar-usb-status",
+            },
+            localizationId
+          )
       )
     );
   }
@@ -65,7 +72,7 @@ class Sidebar extends PureComponent {
         },
         dom.aside(
           {
-            className: "sidebar__devices__message js-sidebar-no-devices",
+            className: "sidebar__label js-sidebar-no-devices",
           },
           "No devices discovered"
         )
@@ -96,6 +103,12 @@ class Sidebar extends PureComponent {
       const isSelected = selectedPage === PAGE_TYPES.RUNTIME &&
         runtime.id === selectedRuntimeId;
 
+      let name = runtime.name;
+      if (runtime.type === RUNTIMES.USB && runtimeHasDetails) {
+        // Update the name to be same to the runtime page.
+        name = runtime.runtimeDetails.info.name;
+      }
+
       return SidebarRuntimeItem({
         deviceName: runtime.extra.deviceName,
         dispatch,
@@ -104,7 +117,7 @@ class Sidebar extends PureComponent {
         isConnected: runtimeHasDetails,
         isSelected,
         isUnknown: runtime.isUnknown,
-        name: runtime.name,
+        name,
         runtimeId: runtime.id,
       });
     });
@@ -120,17 +133,6 @@ class Sidebar extends PureComponent {
       dom.ul(
         {},
         Localized(
-          { id: "about-debugging-sidebar-this-firefox", attrs: { name: true } },
-          SidebarFixedItem({
-            icon: FIREFOX_ICON,
-            isSelected: PAGE_TYPES.RUNTIME === selectedPage &&
-              selectedRuntimeId === RUNTIMES.THIS_FIREFOX,
-            key: RUNTIMES.THIS_FIREFOX,
-            name: "This Firefox",
-            to: `/runtime/${RUNTIMES.THIS_FIREFOX}`,
-          })
-        ),
-        Localized(
           { id: "about-debugging-sidebar-connect", attrs: { name: true } },
           SidebarFixedItem({
             dispatch,
@@ -141,10 +143,21 @@ class Sidebar extends PureComponent {
             to: "/connect",
           })
         ),
+        Localized(
+          { id: "about-debugging-sidebar-this-firefox", attrs: { name: true } },
+          SidebarFixedItem({
+            icon: FIREFOX_ICON,
+            isSelected: PAGE_TYPES.RUNTIME === selectedPage &&
+              selectedRuntimeId === RUNTIMES.THIS_FIREFOX,
+            key: RUNTIMES.THIS_FIREFOX,
+            name: "This Firefox",
+            to: `/runtime/${RUNTIMES.THIS_FIREFOX}`,
+          })
+        ),
         SidebarItem(
           {
+            className: "sidebar-item--overflow",
             isSelected: false,
-            key: "separator-0",
           },
           dom.hr({ className: "separator" }),
           this.renderAdbAddonStatus(),

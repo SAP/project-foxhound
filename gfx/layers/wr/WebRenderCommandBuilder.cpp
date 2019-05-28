@@ -241,7 +241,8 @@ static bool IsContainerLayerItem(nsDisplayItem* aItem) {
     case DisplayItemType::TYPE_FILTER:
     case DisplayItemType::TYPE_BLEND_CONTAINER:
     case DisplayItemType::TYPE_BLEND_MODE:
-    case DisplayItemType::TYPE_MASK: {
+    case DisplayItemType::TYPE_MASK:
+    case DisplayItemType::TYPE_PERSPECTIVE: {
       return true;
     }
     default: { return false; }
@@ -250,7 +251,7 @@ static bool IsContainerLayerItem(nsDisplayItem* aItem) {
 
 #include <sstream>
 
-bool DetectContainerLayerPropertiesBoundsChange(
+static bool DetectContainerLayerPropertiesBoundsChange(
     nsDisplayItem* aItem, BlobItemData* aData,
     nsDisplayItemGeometry& aGeometry) {
   switch (aItem->GetType()) {
@@ -520,7 +521,7 @@ struct DIGroup {
           // we need to catch bounds changes of containers so that we continue
           // to have the correct bounds rects in the recording
           if (DetectContainerLayerPropertiesBoundsChange(aItem, aData,
-                                                            *geometry)) {
+                                                         *geometry)) {
             nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
                 geometry->ComputeInvalidationRegion());
             aData->mGeometry = std::move(geometry);
@@ -641,6 +642,7 @@ struct DIGroup {
 
     gfx::SurfaceFormat format = gfx::SurfaceFormat::B8G8R8A8;
     std::vector<RefPtr<ScaledFont>> fonts;
+    bool validFonts = true;
     RefPtr<WebRenderDrawEventRecorder> recorder =
         MakeAndAddRef<WebRenderDrawEventRecorder>(
             [&](MemStream& aStream,
@@ -648,10 +650,14 @@ struct DIGroup {
               size_t count = aScaledFonts.size();
               aStream.write((const char*)&count, sizeof(count));
               for (auto& scaled : aScaledFonts) {
-                BlobFont font = {
+                Maybe<wr::FontInstanceKey> key =
                     aWrManager->WrBridge()->GetFontKeyForScaledFont(
-                        scaled, &aResources),
-                    scaled};
+                        scaled, &aResources);
+                if (key.isNothing()) {
+                  validFonts = false;
+                  break;
+                }
+                BlobFont font = {key.value(), scaled};
                 aStream.write((const char*)&font, sizeof(font));
               }
               fonts = std::move(aScaledFonts);
@@ -688,6 +694,10 @@ struct DIGroup {
                          aWrManager->GetRenderRootStateManager(), aResources);
     bool hasItems = recorder->Finish();
     GP("%d Finish\n", hasItems);
+    if (!validFonts) {
+      gfxCriticalNote << "Failed serializing fonts for blob image";
+      return;
+    }
     Range<uint8_t> bytes((uint8_t*)recorder->mOutputStream.mData,
                          recorder->mOutputStream.mLength);
     if (!mKey) {
@@ -1011,12 +1021,13 @@ class WebRenderGroupData : public WebRenderUserData {
 };
 
 static bool IsItemProbablyActive(nsDisplayItem* aItem,
-                                 nsDisplayListBuilder* aDisplayListBuilder);
+                                 nsDisplayListBuilder* aDisplayListBuilder,
+                                 bool aParentActive = true);
 
 static bool HasActiveChildren(const nsDisplayList& aList,
                               nsDisplayListBuilder* aDisplayListBuilder) {
   for (nsDisplayItem* i = aList.GetBottom(); i; i = i->GetAbove()) {
-    if (IsItemProbablyActive(i, aDisplayListBuilder)) {
+    if (IsItemProbablyActive(i, aDisplayListBuilder, false)) {
       return true;
     }
   }
@@ -1031,7 +1042,8 @@ static bool HasActiveChildren(const nsDisplayList& aList,
 // We can't easily use GetLayerState because it wants a bunch of layers related
 // information.
 static bool IsItemProbablyActive(nsDisplayItem* aItem,
-                                 nsDisplayListBuilder* aDisplayListBuilder) {
+                                 nsDisplayListBuilder* aDisplayListBuilder,
+                                 bool aParentActive) {
   switch (aItem->GetType()) {
     case DisplayItemType::TYPE_TRANSFORM: {
       nsDisplayTransform* transformItem =
@@ -1055,6 +1067,13 @@ static bool IsItemProbablyActive(nsDisplayItem* aItem,
     }
     case DisplayItemType::TYPE_FOREIGN_OBJECT: {
       return true;
+    }
+    case DisplayItemType::TYPE_BLEND_MODE: {
+      /* BLEND_MODE needs to be active if it might have a previous sibling
+       * that is active. We use the activeness of the parent as a rough
+       * proxy for this situation. */
+      return aParentActive || HasActiveChildren(*aItem->GetChildren(),
+                                                aDisplayListBuilder);
     }
     case DisplayItemType::TYPE_WRAP_LIST:
     case DisplayItemType::TYPE_PERSPECTIVE: {
@@ -1092,7 +1111,7 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
                              item);
 
       {
-        auto spaceAndClipChain = mClipManager.SwitchItem(item, aSc);
+        auto spaceAndClipChain = mClipManager.SwitchItem(item);
         wr::SpaceAndClipChainHelper saccHelper(aBuilder, spaceAndClipChain);
 
         sIndent++;
@@ -1300,7 +1319,18 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
       CreateOrRecycleWebRenderUserData<WebRenderGroupData>(aWrappingItem);
 
   bool snapped;
-  nsRect groupBounds = aWrappingItem->GetBounds(aDisplayListBuilder, &snapped);
+  nsRect groupBounds =
+      aWrappingItem->GetUntransformedBounds(aDisplayListBuilder, &snapped);
+  // We don't want to restrict the size of the blob to the building rect of the
+  // display item, since that will change when we scroll and trigger a resize
+  // invalidation of the blob (will be fixed by blob recoordination).
+  // Instead we retrieve the bounds of the overflow clip on the <svg> and use
+  // that to restrict our size and prevent invisible content from affecting
+  // our bounds.
+  if (mClippedGroupBounds) {
+    groupBounds = groupBounds.Intersect(mClippedGroupBounds.value());
+    mClippedGroupBounds = Nothing();
+  }
   DIGroup& group = groupData->mSubGroup;
 
   gfx::Size scale = aSc.GetInheritedScale();
@@ -1362,12 +1392,15 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
   group.mImageBounds =
       IntRect(0, 0, group.mLayerBounds.width, group.mLayerBounds.height);
   group.mClippedImageBounds = group.mImageBounds;
-  group.mPaintRect =
-      LayerIntRect::FromUnknownRect(
-          ScaleToOutsidePixelsOffset(aWrappingItem->GetPaintRect(), scale.width,
-                                     scale.height, group.mAppUnitsPerDevPixel,
-                                     residualOffset))
-          .Intersect(group.mLayerBounds);
+
+  const nsRect& untransformedPaintRect =
+      aWrappingItem->GetUntransformedPaintRect();
+
+  group.mPaintRect = LayerIntRect::FromUnknownRect(
+                         ScaleToOutsidePixelsOffset(
+                             untransformedPaintRect, scale.width, scale.height,
+                             group.mAppUnitsPerDevPixel, residualOffset))
+                         .Intersect(group.mLayerBounds);
   // XXX: Make the paint rect relative to the layer bounds. After we include
   // mLayerBounds.TopLeft() in the blob image we want to stop doing this
   // adjustment.
@@ -1405,7 +1438,9 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
     wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResourceUpdates, nsDisplayList* aDisplayList,
     nsDisplayListBuilder* aDisplayListBuilder, WebRenderScrollData& aScrollData,
-    wr::LayoutSize& aContentSize, nsTArray<wr::FilterOp>&& aFilters) {
+    wr::LayoutSize& aContentSize, WrFiltersHolder&& aFilters) {
+  AUTO_PROFILER_LABEL_CATEGORY_PAIR(GRAPHICS_WRDisplayList);
+
   StackingContextHelper sc;
   aScrollData = WebRenderScrollData(mManager);
   MOZ_ASSERT(mLayerScrollData.empty());
@@ -1417,21 +1452,17 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
   mClipManager.BeginBuild(mManager, aBuilder);
 
   {
-    if (!mZoomProp && gfxPrefs::APZAllowZooming() && XRE_IsContentProcess()) {
-      mZoomProp.emplace();
-      mZoomProp->effect_type = wr::WrAnimationType::Transform;
-      mZoomProp->id = AnimationHelper::GetNextCompositorAnimationsId();
-    }
-
     nsPresContext* presContext =
         aDisplayListBuilder->RootReferenceFrame()->PresContext();
     bool isTopLevelContent =
         presContext->Document()->IsTopLevelContentDocument();
 
     wr::StackingContextParams params;
-    params.mFilters = std::move(aFilters);
-    params.animation = mZoomProp.ptrOr(nullptr);
+    params.mFilters = std::move(aFilters.filters);
+    params.mFilterDatas = std::move(aFilters.filter_datas);
     params.cache_tiles = isTopLevelContent;
+    params.clip =
+        wr::WrStackingContextClip::ClipChain(aBuilder.CurrentClipChainId());
 
     StackingContextHelper pageRootSc(sc, nullptr, nullptr, nullptr, aBuilder,
                                      params);
@@ -1447,9 +1478,6 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
   // Make a "root" layer data that has everything else as descendants
   mLayerScrollData.emplace_back();
   mLayerScrollData.back().InitializeRoot(mLayerScrollData.size() - 1);
-  if (mZoomProp) {
-    mLayerScrollData.back().SetZoomAnimationId(mZoomProp->id);
-  }
   auto callback =
       [&aScrollData](ScrollableLayerGuid::ViewID aScrollId) -> bool {
     return aScrollData.HasMetadataFor(aScrollId).isSome();
@@ -1584,7 +1612,7 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
 
     // This is where we emulate the clip/scroll stack that was previously
     // implemented on the WR display list side.
-    auto spaceAndClipChain = mClipManager.SwitchItem(item, aSc);
+    auto spaceAndClipChain = mClipManager.SwitchItem(item);
     wr::SpaceAndClipChainHelper saccHelper(aBuilder, spaceAndClipChain);
 
     {  // scope restoreDoGrouping
@@ -1595,6 +1623,25 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
         // animated geometry root, so we can combine subsequent items of that
         // type into the same image.
         mContainsSVGGroup = mDoGrouping = true;
+        if (aWrappingItem &&
+            aWrappingItem->GetType() == DisplayItemType::TYPE_TRANSFORM) {
+          // Inline <svg> should always have an overflow clip, but it gets put
+          // outside the nsDisplayTransform we create for scaling the svg
+          // viewport. Converting the clip into inner coordinates lets us
+          // restrict the size of the blob images and prevents unnecessary
+          // resizes.
+          nsDisplayTransform* transform =
+              static_cast<nsDisplayTransform*>(aWrappingItem);
+
+          nsRect clippedBounds =
+              transform->GetClippedBounds(aDisplayListBuilder);
+          nsRect innerClippedBounds;
+          DebugOnly<bool> result = transform->UntransformRect(
+              aDisplayListBuilder, clippedBounds, &innerClippedBounds);
+          MOZ_ASSERT(result);
+
+          mClippedGroupBounds = Some(innerClippedBounds);
+        }
         GP("attempting to enter the grouping code\n");
       }
 
@@ -2006,7 +2053,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
   }
 
   gfx::Size scale = aSc.GetInheritedScale();
-  gfx::Size oldScale = fallbackData->GetScale();
+  gfx::Size oldScale = fallbackData->mScale;
   // We tolerate slight changes in scale so that we don't, for example,
   // rerasterize on MotionMark
   bool differentScale = gfx::FuzzyEqual(scale.width, oldScale.width, 1e-6f) &&
@@ -2040,7 +2087,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
 
   auto offset = aImageRect.TopLeft();
 
-  nsDisplayItemGeometry* geometry = fallbackData->GetGeometry();
+  nsDisplayItemGeometry* geometry = fallbackData->mGeometry;
 
   bool needPaint = true;
 
@@ -2061,7 +2108,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
       aItem->ComputeInvalidationRegion(aDisplayListBuilder, geometry,
                                        &invalidRegion);
 
-      nsRect lastBounds = fallbackData->GetBounds();
+      nsRect lastBounds = fallbackData->mBounds;
       lastBounds.MoveBy(shift);
 
       if (!lastBounds.IsEqualInterior(paintBounds)) {
@@ -2075,7 +2122,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
   if (needPaint || !fallbackData->GetImageKey()) {
     nsAutoPtr<nsDisplayItemGeometry> newGeometry;
     newGeometry = aItem->AllocateGeometry(aDisplayListBuilder);
-    fallbackData->SetGeometry(std::move(newGeometry));
+    fallbackData->mGeometry = std::move(newGeometry);
 
     gfx::SurfaceFormat format = aItem->GetType() == DisplayItemType::TYPE_MASK
                                     ? gfx::SurfaceFormat::A8
@@ -2088,7 +2135,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
               ? wr::OpacityType::Opaque
               : wr::OpacityType::HasAlphaChannel;
       std::vector<RefPtr<ScaledFont>> fonts;
-
+      bool validFonts = true;
       RefPtr<WebRenderDrawEventRecorder> recorder =
           MakeAndAddRef<WebRenderDrawEventRecorder>(
               [&](MemStream& aStream,
@@ -2096,10 +2143,14 @@ WebRenderCommandBuilder::GenerateFallbackData(
                 size_t count = aScaledFonts.size();
                 aStream.write((const char*)&count, sizeof(count));
                 for (auto& scaled : aScaledFonts) {
-                  BlobFont font = {
+                  Maybe<wr::FontInstanceKey> key =
                       mManager->WrBridge()->GetFontKeyForScaledFont(
-                          scaled, &aResources),
-                      scaled};
+                          scaled, &aResources);
+                  if (key.isNothing()) {
+                    validFonts = false;
+                    break;
+                  }
+                  BlobFont font = {key.value(), scaled};
                   aStream.write((const char*)&font, sizeof(font));
                 }
                 fonts = std::move(aScaledFonts);
@@ -2115,10 +2166,22 @@ WebRenderCommandBuilder::GenerateFallbackData(
       bool isInvalidated = PaintItemByDrawTarget(
           aItem, dt, offset, aDisplayListBuilder,
           fallbackData->mBasicLayerManager, scale, highlight);
+      if (!isInvalidated) {
+        if (!aItem->GetBuildingRect().IsEqualInterior(fallbackData->mBuildingRect)) {
+          // The building rect has changed but we didn't see any invalidations.
+          // We should still consider this an invalidation.
+          isInvalidated = true;
+        }
+      }
       recorder->FlushItem(IntRect({0, 0}, dtSize.ToUnknownSize()));
       TakeExternalSurfaces(recorder, fallbackData->mExternalSurfaces,
                            mManager->GetRenderRootStateManager(), aResources);
       recorder->Finish();
+
+      if (!validFonts) {
+        gfxCriticalNote << "Failed serializing fonts for blob image";
+        return nullptr;
+      }
 
       if (isInvalidated) {
         Range<uint8_t> bytes((uint8_t*)recorder->mOutputStream.mData,
@@ -2144,8 +2207,10 @@ WebRenderCommandBuilder::GenerateFallbackData(
           ViewAs<ImagePixel>(visibleRect,
                              PixelCastJustification::LayerIsImage));
     } else {
-      fallbackData->CreateImageClientIfNeeded();
-      RefPtr<ImageClient> imageClient = fallbackData->GetImageClient();
+      WebRenderImageData* imageData = fallbackData->PaintIntoImage();
+
+      imageData->CreateImageClientIfNeeded();
+      RefPtr<ImageClient> imageClient = imageData->GetImageClient();
       RefPtr<ImageContainer> imageContainer =
           LayerManager::CreateImageContainer();
       bool isInvalidated = false;
@@ -2175,7 +2240,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
         } else {
           // If there is no invalidation region and we don't have a image key,
           // it means we don't need to push image for the item.
-          if (!fallbackData->GetImageKey().isSome()) {
+          if (!imageData->GetImageKey().isSome()) {
             return nullptr;
           }
         }
@@ -2186,17 +2251,18 @@ WebRenderCommandBuilder::GenerateFallbackData(
       // because it doesn't know UpdateImageHelper already updated the image
       // container.
       if (isInvalidated &&
-          !fallbackData->UpdateImageKey(imageContainer, aResources, true)) {
+          !imageData->UpdateImageKey(imageContainer, aResources, true)) {
         return nullptr;
       }
     }
 
-    fallbackData->SetScale(scale);
+    fallbackData->mScale = scale;
     fallbackData->SetInvalid(false);
   }
 
   // Update current bounds to fallback data
-  fallbackData->SetBounds(paintBounds);
+  fallbackData->mBounds = paintBounds;
+  fallbackData->mBuildingRect = aItem->GetBuildingRect();
 
   MOZ_ASSERT(fallbackData->GetImageKey());
 
@@ -2235,7 +2301,7 @@ class WebRenderMaskData : public WebRenderUserData {
   gfx::Size mScale;
 };
 
-Maybe<wr::WrImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
+Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
     nsDisplayMasksAndClipPaths* aMaskItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources, const StackingContextHelper& aSc,
     nsDisplayListBuilder* aDisplayListBuilder,
@@ -2282,6 +2348,7 @@ Maybe<wr::WrImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
     IntSize size = itemRect.Size().ToUnknownSize();
 
     std::vector<RefPtr<ScaledFont>> fonts;
+    bool validFonts = true;
     RefPtr<WebRenderDrawEventRecorder> recorder =
         MakeAndAddRef<WebRenderDrawEventRecorder>(
             [&](MemStream& aStream,
@@ -2290,9 +2357,14 @@ Maybe<wr::WrImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
               aStream.write((const char*)&count, sizeof(count));
 
               for (auto& scaled : aScaledFonts) {
-                BlobFont font = {mManager->WrBridge()->GetFontKeyForScaledFont(
-                                     scaled, &aResources),
-                                 scaled};
+                Maybe<wr::FontInstanceKey> key =
+                    mManager->WrBridge()->GetFontKeyForScaledFont(scaled,
+                                                                  &aResources);
+                if (key.isNothing()) {
+                  validFonts = false;
+                  break;
+                }
+                BlobFont font = {key.value(), scaled};
                 aStream.write((const char*)&font, sizeof(font));
               }
 
@@ -2323,6 +2395,11 @@ Maybe<wr::WrImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
                          mManager->GetRenderRootStateManager(), aResources);
     recorder->Finish();
 
+    if (!validFonts) {
+      gfxCriticalNote << "Failed serializing fonts for blob mask image";
+      return Nothing();
+    }
+
     Range<uint8_t> bytes((uint8_t*)recorder->mOutputStream.mData,
                          recorder->mOutputStream.mLength);
     wr::BlobImageKey key =
@@ -2345,7 +2422,7 @@ Maybe<wr::WrImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
     }
   }
 
-  wr::WrImageMask imageMask;
+  wr::ImageMask imageMask;
   imageMask.image = wr::AsImageKey(maskData->mBlobKey.value());
   imageMask.rect = wr::ToLayoutRect(imageRect);
   imageMask.repeat = false;

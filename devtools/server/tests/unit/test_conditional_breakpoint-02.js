@@ -32,32 +32,33 @@ function test_simple_breakpoint() {
       gThreadClient,
       packet.frame.where.actor
     );
-    source.setBreakpoint({
-      line: 3,
-      condition: "a === 2",
-    }).then(function([response, bpClient]) {
-      gThreadClient.addOneTimeListener("paused", function(event, packet) {
-        // Check the return value.
-        Assert.equal(packet.why.type, "debuggerStatement");
-        Assert.equal(packet.frame.where.line, 4);
+    const location1 = { sourceUrl: source.url, line: 3 };
+    gThreadClient.setBreakpoint(location1, { condition: "a === 2" });
+    const location2 = { sourceUrl: source.url, line: 4 };
+    gThreadClient.setBreakpoint(location2, { condition: "a === 1" });
+    gThreadClient.addOneTimeListener("paused", function(event, packet) {
+      // Check the return value.
+      Assert.equal(packet.why.type, "breakpoint");
+      Assert.equal(packet.frame.where.line, 4);
 
-        // Remove the breakpoint.
-        bpClient.remove(function(response) {
-          gThreadClient.resume(function() {
-            finishClient(gClient);
-          });
-        });
+      // Remove the breakpoint.
+      gThreadClient.removeBreakpoint(location2);
+
+      gThreadClient.resume(function() {
+        finishClient(gClient);
       });
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
     });
+
+    // Continue until the breakpoint is hit.
+    gThreadClient.resume();
   });
 
   /* eslint-disable */
   Cu.evalInSandbox("debugger;\n" +   // 1
                    "var a = 1;\n" +  // 2
                    "var b = 2;\n" +  // 3
-                   "debugger;",      // 4
+                   "b++;" +          // 4
+                   "debugger;",      // 5
                    gDebuggee,
                    "1.8",
                    "test.js",

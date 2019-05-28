@@ -36,7 +36,6 @@ DIRS += [
 ]
 
 XPIDL_SOURCES += [
-    'nsCDefaultURIFixup.idl',
     'nsIContentViewer.idl',
     'nsIContentViewerEdit.idl',
     'nsIDocShell.idl',
@@ -77,14 +76,17 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'BrowsingContext.h',
+    'BrowsingContextFieldList.h',
+    'BrowsingContextGroup.h',
+    'CanonicalBrowsingContext.h',
     'ChildProcessChannelListener.h',
-    'ChromeBrowsingContext.h'
 ]
 
 UNIFIED_SOURCES += [
     'BrowsingContext.cpp',
+    'BrowsingContextGroup.cpp',
+    'CanonicalBrowsingContext.cpp',
     'ChildProcessChannelListener.cpp',
-    'ChromeBrowsingContext.cpp',
     'LoadContext.cpp',
     'nsAboutRedirector.cpp',
     'nsDefaultURIFixup.cpp',
@@ -107,6 +109,7 @@ LOCAL_INCLUDES += [
     '/docshell/shistory',
     '/dom/base',
     '/dom/bindings',
+    '/js/xpconnect/src',
     '/layout/base',
     '/layout/generic',
     '/layout/style',

@@ -178,7 +178,7 @@ mod tests {
             domain: Some("foo.bar".into()),
             expiry: Some(Date(123)),
             secure: true,
-            httpOnly: false,
+            http_only: false,
         }));
 
         check_serialize(&json, &data);
@@ -201,7 +201,7 @@ mod tests {
             domain: None,
             expiry: None,
             secure: true,
-            httpOnly: false,
+            http_only: false,
         }));
 
         check_serialize(&json, &data);
@@ -224,7 +224,7 @@ mod tests {
             domain: None,
             expiry: None,
             secure: true,
-            httpOnly: false,
+            http_only: false,
         }]));
 
         check_serialize(&json, &data);
@@ -280,6 +280,14 @@ mod tests {
     fn test_json_timeouts_response() {
         let json = r#"{"value":{"script":1,"pageLoad":2,"implicit":3}}"#;
         let data = WebDriverResponse::Timeouts(TimeoutsResponse::new(Some(1), 2, 3));
+
+        check_serialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_timeouts_response_with_null_script_timeout() {
+        let json = r#"{"value":{"script":null,"pageLoad":2,"implicit":3}}"#;
+        let data = WebDriverResponse::Timeouts(TimeoutsResponse::new(None, 2, 3));
 
         check_serialize(&json, &data);
     }

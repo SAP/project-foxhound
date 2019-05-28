@@ -56,6 +56,8 @@ extern crate bitflags;
 #[macro_use]
 extern crate cfg_if;
 #[macro_use]
+extern crate cstr;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
@@ -69,6 +71,9 @@ extern crate thread_profiler;
 
 extern crate wr_malloc_size_of;
 use wr_malloc_size_of as malloc_size_of;
+
+#[macro_use]
+mod profiler;
 
 mod batch;
 mod border;
@@ -85,6 +90,7 @@ mod debug_server;
 mod device;
 mod display_list_flattener;
 mod ellipse;
+mod filterdata;
 mod frame_builder;
 mod freelist;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -98,12 +104,10 @@ mod gpu_types;
 mod hit_test;
 mod image;
 mod intern;
-mod intern_types;
 mod internal_types;
 mod picture;
 mod prim_store;
 mod print_tree;
-mod profiler;
 mod record;
 mod render_backend;
 mod render_task;
@@ -163,7 +167,6 @@ extern crate libc;
 #[cfg(target_os = "windows")]
 extern crate dwrote;
 
-extern crate app_units;
 extern crate bincode;
 extern crate byteorder;
 extern crate fxhash;
@@ -206,10 +209,11 @@ pub use device::{build_shader_strings, ReadPixelsFormat, UploadMethod, VertexUsa
 pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver};
 pub use device::Device;
 pub use frame_builder::ChasePrimitive;
+pub use profiler::{ProfilerHooks, set_profiler_hooks};
 pub use renderer::{AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource, GpuProfile};
 pub use renderer::{GraphicsApi, GraphicsApiInfo, PipelineInfo, Renderer, RendererOptions};
-pub use renderer::{RendererStats, SceneBuilderHooks, ThreadListener, ShaderPrecacheFlags};
+pub use renderer::{RenderResults, RendererStats, SceneBuilderHooks, ThreadListener, ShaderPrecacheFlags};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
 pub use shade::{Shaders, WrShaders};
 pub use webrender_api as api;

@@ -14,7 +14,7 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarResult"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
@@ -26,7 +26,7 @@ class UrlbarResult {
   /**
    * Creates a result.
    * @param {integer} resultType one of UrlbarUtils.RESULT_TYPE.* values
-   * @param {integer} matchSource one of UrlbarUtils.MATCH_SOURCE.* values
+   * @param {integer} resultSource one of UrlbarUtils.RESULT_SOURCE.* values
    * @param {object} payload data for this result. A payload should always
    *        contain a way to extract a final url to visit. The url getter
    *        should have a case for each of the types.
@@ -36,7 +36,7 @@ class UrlbarResult {
    *        length] tuples. Each tuple indicates a substring in the correspoding
    *        payload property.
    */
-  constructor(resultType, matchSource, payload, payloadHighlights = {}) {
+  constructor(resultType, resultSource, payload, payloadHighlights = {}) {
     // Type describes the payload and visualization that should be used for
     // this result.
     if (!Object.values(UrlbarUtils.RESULT_TYPE).includes(resultType)) {
@@ -44,12 +44,16 @@ class UrlbarResult {
     }
     this.type = resultType;
 
-    // Source describes which data has been used to derive this match. In case
+    // Source describes which data has been used to derive this result. In case
     // multiple sources are involved, use the more privacy restricted.
-    if (!Object.values(UrlbarUtils.MATCH_SOURCE).includes(matchSource)) {
-      throw new Error("Invalid match source");
+    if (!Object.values(UrlbarUtils.RESULT_SOURCE).includes(resultSource)) {
+      throw new Error("Invalid result source");
     }
-    this.source = matchSource;
+    this.source = resultSource;
+
+    // May be used to indicate an heuristic result. Heuristic results can bypass
+    // source filters in the ProvidersManager, that otherwise may skip them.
+    this.heuristic = false;
 
     // The payload contains result data. Some of the data is common across
     // multiple types, but most of it will vary.
@@ -95,6 +99,7 @@ class UrlbarResult {
    */
   get _titleAndHighlights() {
     switch (this.type) {
+      case UrlbarUtils.RESULT_TYPE.KEYWORD:
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
       case UrlbarUtils.RESULT_TYPE.URL:
       case UrlbarUtils.RESULT_TYPE.OMNIBOX:
@@ -103,6 +108,9 @@ class UrlbarResult {
                [this.payload.title, this.payloadHighlights.title] :
                [this.payload.url || "", this.payloadHighlights.url || []];
       case UrlbarUtils.RESULT_TYPE.SEARCH:
+        if (this.payload.isKeywordOffer) {
+          return [this.payload.keyword, this.payloadHighlights.keyword];
+        }
         return this.payload.suggestion ?
                [this.payload.suggestion, this.payloadHighlights.suggestion] :
                [this.payload.query, this.payloadHighlights.query];
@@ -127,6 +135,9 @@ class UrlbarResult {
    * return values as the `payload` and `payloadHighlights` params of the
    * UrlbarResult constructor.
    *
+   * If the payload doesn't have a title or has an empty title, and it also has
+   * a URL, then this function also sets the title to the URL's domain.
+   *
    * @param {array} tokens The tokens that should be highlighted in each of the
    *        payload properties.
    * @param {object} payloadInfo An object that looks like this:
@@ -134,9 +145,25 @@ class UrlbarResult {
    *          payloadPropertyName: [payloadPropertyValue, shouldHighlight],
    *          ...
    *        }
+   *        payloadPropertyValue may be a string or an array of strings.  If
+   *        it's a string, then the payloadHighlights in the return value will
+   *        be an array of match highlights as described in
+   *        UrlbarUtils.getTokenMatches().  If it's an array, then
+   *        payloadHighlights will be an array of arrays of match highlights,
+   *        one element per element in payloadPropertyValue.
    * @returns {array} An array [payload, payloadHighlights].
    */
   static payloadAndSimpleHighlights(tokens, payloadInfo) {
+    if ((!payloadInfo.title || (payloadInfo.title && !payloadInfo.title[0])) &&
+        payloadInfo.url && typeof payloadInfo.url[0] == "string") {
+      // If there's no title, show the domain as the title.  Not all valid URLs
+      // have a domain.
+      payloadInfo.title = payloadInfo.title || ["", true];
+      try {
+        payloadInfo.title[0] = new URL(payloadInfo.url[0]).host;
+      } catch (e) {}
+    }
+
     let entries = Object.entries(payloadInfo);
     return [
       entries.reduce((payload, [name, [val, _]]) => {

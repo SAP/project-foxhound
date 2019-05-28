@@ -2,8 +2,8 @@
 // POST test
 //
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -88,7 +88,7 @@ function run_test() {
          .setUploadStream(mime, "", mime.available());
   channel.requestMethod = "POST";
   channel.notificationCallbacks = listenerCallback;
-  channel.asyncOpen2(new ChannelListener(checkRequest, channel));
+  channel.asyncOpen(new ChannelListener(checkRequest, channel));
   do_test_pending();
 }
 

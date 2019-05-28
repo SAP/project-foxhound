@@ -72,11 +72,9 @@ It is augmented as it progresses through the system, with various information:
     providers; // {array} List of registered provider names. Providers can be
                // registered through the UrlbarProvidersManager.
     sources; // {array} If provided is the list of sources, as defined by
-             // MATCH_SOURCE.*, that can be returned by the model.
+             // RESULT_SOURCE.*, that can be returned by the model.
 
     // Properties added by the Model.
-    autofillValue; // {string} the text value that should be autofilled in the
-                   // input, if any.
     preselected; // {boolean} whether the first result should be preselected.
     results; // {array} list of UrlbarResult objects.
     tokens; // {array} tokens extracted from the searchString, each token is an
@@ -173,7 +171,7 @@ class UrlbarProvider {
     throw new Error("Trying to access the base class, must be overridden");
   }
   /**
-   * List of UrlbarUtils.MATCH_SOURCE, representing the data sources used by
+   * List of UrlbarUtils.RESULT_SOURCE, representing the data sources used by
    * the provider.
    * @abstract
    */
@@ -261,9 +259,9 @@ View (e.g. showing/hiding a panel). It is also responsible for reporting Telemet
     // Used by the View to listen for results.
     addQueryListener(listener);
     removeQueryListener(listener);
-    // Used to indicate the View context changed, as such any cached information
-    // should be reset.
-    tabContextChanged();
+    // Used to indicate the View context changed, so that cached information
+    // about the latest search is no more relevant and can be dropped.
+    viewContextChanged();
   }
 
 
@@ -296,8 +294,8 @@ Implements an input box *View*, owns an *UrlbarView*.
     // Manage view visibility.
     closePopup();
     openResults();
-    // Converts an internal URI (e.g. a wyciwyg URI) into one which we can
-    // expose to the user.
+    // Converts an internal URI (e.g. a URI with a username or password) into
+    // one which we can expose to the user.
     makeURIReadable(uri);
     // Handles an event which would cause a url or text to be opened.
     handleCommand();
@@ -349,7 +347,11 @@ Represents the base *View* implementation, communicates with the *Controller*.
     onQueryCancelled(queryContext);
     // Invoked when the query is done.
     onQueryFinished(queryContext);
+    // Invoked when the view context changed, so that cached information about
+    // the latest search is no more relevant and can be dropped.
+    onViewContextChanged();
   }
+
 
 UrlbarResult
 ===========
@@ -371,10 +373,16 @@ properties, supported by all of the results.
     constructor(resultType, payload);
 
     type: {integer} One of UrlbarUtils.RESULT_TYPE.
-    source: {integer} One of UrlbarUtils.MATCH_SOURCE.
+    source: {integer} One of UrlbarUtils.RESULT_SOURCE.
     title: {string} A title that may be used as a label for this result.
     icon: {string} Url of an icon for this result.
     payload: {object} Object containing properties for the specific RESULT_TYPE.
+    autofill: {object} An object describing the text that should be
+              autofilled in the input when the result is selected, if any.
+    autofill.value: {string} The autofill value.
+    autofill.selectionStart: {integer} The first index in the autofill
+                             selection.
+    autofill.selectionEnd: {integer} The last index in the autofill selection.
   }
 
 The following RESULT_TYPEs are supported:
@@ -384,7 +392,7 @@ The following RESULT_TYPEs are supported:
 
     // Payload: { icon, url, userContextId }
     TAB_SWITCH: 1,
-    // Payload: { icon, suggestion, keyword, query }
+    // Payload: { icon, suggestion, keyword, query, isKeywordOffer }
     SEARCH: 2,
     // Payload: { icon, url, title, tags }
     URL: 3,
@@ -394,6 +402,7 @@ The following RESULT_TYPEs are supported:
     OMNIBOX: 5,
     // Payload: { icon, url, device, title }
     REMOTE_TAB: 6,
+
 
 Shared Modules
 ==============

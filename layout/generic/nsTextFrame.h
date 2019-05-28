@@ -52,8 +52,9 @@ class nsTextFrame : public nsFrame {
   typedef gfxTextRun::Range Range;
 
  public:
-  explicit nsTextFrame(ComputedStyle* aStyle, ClassID aID = kClassID)
-      : nsFrame(aStyle, aID),
+  explicit nsTextFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+                       ClassID aID = kClassID)
+      : nsFrame(aStyle, aPresContext, aID),
         mNextContinuation(nullptr),
         mContentOffset(0),
         mContentLengthHint(0),
@@ -78,7 +79,7 @@ class nsTextFrame : public nsFrame {
   void DestroyFrom(nsIFrame* aDestructRoot,
                    PostDestroyData& aPostDestroyData) override;
 
-  nsresult GetCursor(const nsPoint& aPoint, nsIFrame::Cursor& aCursor) final;
+  mozilla::Maybe<Cursor> GetCursor(const nsPoint&) final;
 
   nsresult CharacterDataChanged(const CharacterDataChangeInfo&) final;
 
@@ -182,7 +183,8 @@ class nsTextFrame : public nsFrame {
       PeekOffsetCharacterOptions aOptions = PeekOffsetCharacterOptions()) final;
   FrameSearchResult PeekOffsetWord(bool aForward, bool aWordSelectEatSpace,
                                    bool aIsKeyboardSelect, int32_t* aOffset,
-                                   PeekWordState* aState) final;
+                                   PeekWordState* aState,
+                                   bool aTrimSpaces) final;
 
   nsresult CheckVisibility(nsPresContext* aContext, int32_t aStartIndex,
                            int32_t aEndIndex, bool aRecurse, bool* aFinished,
@@ -405,20 +407,17 @@ class nsTextFrame : public nsFrame {
     mozilla::SVGContextPaint* contextPaint = nullptr;
     DrawPathCallbacks* callbacks = nullptr;
     enum {
-      PaintText,         // Normal text painting.
-      PaintTextBGColor,  // Only paint background color of the selected text
-                         // range in this state.
-      GenerateTextMask   // To generate a mask from a text frame. Should
-                         // only paint text itself with opaque color.
-                         // Text shadow, text selection color and text
-                         // decoration are all discarded in this state.
+      PaintText,        // Normal text painting.
+      GenerateTextMask  // To generate a mask from a text frame. Should
+                        // only paint text itself with opaque color.
+                        // Text shadow, text selection color and text
+                        // decoration are all discarded in this state.
     };
     uint8_t state = PaintText;
     explicit PaintTextParams(gfxContext* aContext) : context(aContext) {}
 
     bool IsPaintText() const { return state == PaintText; }
     bool IsGenerateTextMask() const { return state == GenerateTextMask; }
-    bool IsPaintBGColor() const { return state == PaintTextBGColor; }
   };
 
   struct PaintTextSelectionParams : PaintTextParams {
@@ -575,8 +574,15 @@ class nsTextFrame : public nsFrame {
     int32_t mLength;
     int32_t GetEnd() const { return mStart + mLength; }
   };
-  TrimmedOffsets GetTrimmedOffsets(const nsTextFragment* aFrag, bool aTrimAfter,
-                                   bool aPostReflow = true) const;
+  enum class TrimmedOffsetFlags : uint8_t {
+    kDefaultTrimFlags = 0,
+    kNotPostReflow = 1 << 0,
+    kNoTrimAfter = 1 << 1,
+    kNoTrimBefore = 1 << 2
+  };
+  TrimmedOffsets GetTrimmedOffsets(
+      const nsTextFragment* aFrag,
+      TrimmedOffsetFlags aFlags = TrimmedOffsetFlags::kDefaultTrimFlags) const;
 
   // Similar to Reflow(), but for use from nsLineLayout
   void ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
@@ -807,5 +813,7 @@ class nsTextFrame : public nsFrame {
   nsPoint GetPointFromIterator(const gfxSkipCharsIterator& aIter,
                                PropertyProvider& aProperties);
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsTextFrame::TrimmedOffsetFlags)
 
 #endif

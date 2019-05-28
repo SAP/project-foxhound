@@ -6,6 +6,7 @@
 #define SharedCertVerifier_h
 
 #include "CertVerifier.h"
+#include "EnterpriseRoots.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 
@@ -27,11 +28,12 @@ class SharedCertVerifier : public mozilla::psm::CertVerifier {
                      BRNameMatchingPolicy::Mode nameMatchingMode,
                      NetscapeStepUpPolicy netscapeStepUpPolicy,
                      CertificateTransparencyMode ctMode,
-                     DistrustedCAPolicy distrustedCAPolicy)
+                     DistrustedCAPolicy distrustedCAPolicy,
+                     const Vector<EnterpriseCert>& thirdPartyCerts)
       : mozilla::psm::CertVerifier(
             odc, osc, ocspSoftTimeout, ocspHardTimeout, certShortLifetimeInDays,
             pinningMode, sha1Mode, nameMatchingMode, netscapeStepUpPolicy,
-            ctMode, distrustedCAPolicy) {}
+            ctMode, distrustedCAPolicy, thirdPartyCerts) {}
 };
 
 }  // namespace psm

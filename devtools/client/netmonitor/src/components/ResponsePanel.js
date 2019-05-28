@@ -7,6 +7,7 @@
 const { Component, createFactory } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const Services = require("Services");
 const { L10N } = require("../utils/l10n");
 const {
   decodeUnicodeBase64,
@@ -27,6 +28,8 @@ const RESPONSE_IMG_DIMENSIONS = L10N.getStr("netmonitor.response.dimensions");
 const RESPONSE_IMG_MIMETYPE = L10N.getStr("netmonitor.response.mime");
 const RESPONSE_PAYLOAD = L10N.getStr("responsePayload");
 const RESPONSE_PREVIEW = L10N.getStr("responsePreview");
+const RESPONSE_EMPTY_TEXT = L10N.getStr("responseEmptyText");
+const RESPONSE_TRUNCATED = L10N.getStr("responseTruncated");
 
 const JSON_VIEW_MIME_TYPE = "application/vnd.mozilla.json.view";
 
@@ -102,7 +105,17 @@ class ResponsePanel extends Component {
    * as text/plain instead.
    */
   isJSON(mimeType, response) {
+    const limit = Services.prefs.getIntPref("devtools.netmonitor.responseBodyLimit");
+    const { request } = this.props;
     let json, error;
+
+    // Check if the response has been truncated, in which case no parse should
+    // be attempted.
+    if (limit <= request.responseContent.content.size) {
+      const result = {};
+      result.error = RESPONSE_TRUNCATED;
+      return result;
+    }
 
     try {
       json = JSON.parse(response);
@@ -160,8 +173,11 @@ class ResponsePanel extends Component {
     const { openLink, request } = this.props;
     const { responseContent, url } = request;
 
-    if (!responseContent || typeof responseContent.content.text !== "string") {
-      return null;
+    if (!responseContent || typeof responseContent.content.text !== "string"
+        || !responseContent.content.text) {
+      return div({ className: "empty-notice" },
+        RESPONSE_EMPTY_TEXT
+      );
     }
 
     let { encoding, mimeType, text } = responseContent.content;

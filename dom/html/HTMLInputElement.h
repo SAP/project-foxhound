@@ -244,8 +244,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   NS_IMETHOD_(bool) GetPlaceholderVisibility() override;
   NS_IMETHOD_(bool) GetPreviewVisibility() override;
   NS_IMETHOD_(void) InitializeKeyboardEventListeners() override;
-  NS_IMETHOD_(void)
-  OnValueChanged(bool aNotify, bool aWasInteractiveUserChange) override;
+  NS_IMETHOD_(void) OnValueChanged(bool aNotify, ValueChangeKind) override;
   virtual void GetValueFromSetRangeText(nsAString& aValue) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsresult SetValueFromSetRangeText(const nsAString& aValue) override;
@@ -346,11 +345,12 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   // as needed.  aNotify controls whether the element state update
   // needs to notify.
   void UpdateAllValidityStates(bool aNotify);
-  void MaybeUpdateAllValidityStates() {
+  MOZ_CAN_RUN_SCRIPT
+  void MaybeUpdateAllValidityStates(bool aNotify) {
     // If you need to add new type which supports validationMessage, you should
     // add test cases into test_MozEditableElement_setUserInput.html.
     if (mType == NS_FORM_INPUT_EMAIL) {
-      UpdateAllValidityStates(!mDoneCreating);
+      UpdateAllValidityStates(aNotify);
     }
   }
 
@@ -756,17 +756,8 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   void GetDateTimeInputBoxValue(DateTimeValue& aValue);
 
   /*
-   * This locates the inner datetimebox UA Widget element and only the
-   * UA Widget
-   * element. This should fold into GetDateTimeBoxElement() when the XBL binding
-   * is removed.
-   */
-  Element* GetDateTimeBoxElementInUAWidget();
-
-  /*
    * This allows chrome JavaScript to dispatch event to the inner datetimebox
-   * anonymous or UA Widget element and access nsIDateTimeInputArea
-   * implementation.
+   * anonymous or UA Widget element.
    */
   Element* GetDateTimeBoxElement();
 

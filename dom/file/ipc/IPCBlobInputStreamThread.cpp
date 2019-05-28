@@ -77,7 +77,8 @@ class MigrateActorRunnable final : public Runnable {
 
 NS_IMPL_ISUPPORTS(IPCBlobInputStreamThread, nsIObserver, nsIEventTarget)
 
-/* static */ bool IPCBlobInputStreamThread::IsOnFileEventTarget(
+/* static */
+bool IPCBlobInputStreamThread::IsOnFileEventTarget(
     nsIEventTarget* aEventTarget) {
   MOZ_ASSERT(aEventTarget);
 
@@ -85,7 +86,19 @@ NS_IMPL_ISUPPORTS(IPCBlobInputStreamThread, nsIObserver, nsIEventTarget)
   return gIPCBlobThread && aEventTarget == gIPCBlobThread->mThread;
 }
 
-/* static */ IPCBlobInputStreamThread* IPCBlobInputStreamThread::GetOrCreate() {
+/* static */
+IPCBlobInputStreamThread* IPCBlobInputStreamThread::Get() {
+  mozilla::StaticMutexAutoLock lock(gIPCBlobThreadMutex);
+
+  if (gShutdownHasStarted) {
+    return nullptr;
+  }
+
+  return gIPCBlobThread;
+}
+
+/* static */
+IPCBlobInputStreamThread* IPCBlobInputStreamThread::GetOrCreate() {
   mozilla::StaticMutexAutoLock lock(gIPCBlobThreadMutex);
 
   if (gShutdownHasStarted) {

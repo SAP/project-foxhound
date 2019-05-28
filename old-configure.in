@@ -47,7 +47,7 @@ dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZPNG=10635
 NSPR_VERSION=4
-NSPR_MINVER=4.19
+NSPR_MINVER=4.21
 NSS_VERSION=3
 
 dnl Set the minimum version of toolkit libs used by mozilla
@@ -64,7 +64,7 @@ W32API_VERSION=3.14
 GCONF_VERSION=1.2.1
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.26.0
+SQLITE_VERSION=3.27.2
 
 dnl Set various checks
 dnl ========================================================
@@ -168,38 +168,8 @@ case "$target" in
         MSVC_C_RUNTIME_DLL=vcruntime140.dll
         MSVC_CXX_RUNTIME_DLL=msvcp140.dll
 
-        MOZ_CHECK_HEADER(dia2.h, MSVC_HAS_DIA_SDK=1)
-        if test -n "$MSVC_HAS_DIA_SDK"; then
-            AC_DEFINE(MSVC_HAS_DIA_SDK)
-        fi
-
-        # C5038: Enable initializer list order warnings
-        # The -w1#### flag treats warning C#### as if it was a warning level
-        # 1 warning, and thus enables it because we enable /W3 warnings. We
-        # don't use -we#### because it would enable warning C#### but treat
-        # it as an error, even in third-party code.
-        # https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level
-        CXXFLAGS="$CXXFLAGS -w15038"
-
-        # C5026: move constructor was implicitly defined as deleted
-        CXXFLAGS="$CXXFLAGS -wd5026"
-
-        # C5027: move assignment operator was implicitly defined as deleted
-        CXXFLAGS="$CXXFLAGS -wd5027"
-
         # -Zc:sizedDealloc- disables C++14 global sized deallocation (see bug 1160146)
         CXXFLAGS="$CXXFLAGS -Zc:sizedDealloc-"
-
-        # https://connect.microsoft.com/VisualStudio/feedback/details/888527/warnings-on-dbghelp-h
-        # for dbghelp.h, imagehlp.h, and shobj.h
-        # C4091: 'typedef ': ignored on left of '' when no variable is declared
-        CFLAGS="$CFLAGS -wd4091"
-        CXXFLAGS="$CXXFLAGS -wd4091"
-
-        # This is intended as a temporary hack to support building with VS2015.
-        # 'noexcept' used with no exception handling mode specified;
-        # termination on exception is not guaranteed. Specify /EHsc
-        CXXFLAGS="$CXXFLAGS -wd4577"
 
         if test -n "$WIN_UCRT_REDIST_DIR"; then
           if test ! -d "$WIN_UCRT_REDIST_DIR"; then
@@ -208,14 +178,6 @@ case "$target" in
           WIN_UCRT_REDIST_DIR=`cd "$WIN_UCRT_REDIST_DIR" && pwd -W`
         fi
 
-        if test -n "$WIN_DIA_SDK_BIN_DIR"; then
-          if test ! -d "$WIN_DIA_SDK_BIN_DIR"; then
-            AC_MSG_ERROR([Invalid Windows DIA SDK directory: ${WIN_DIA_SDK_BIN_DIR}])
-          fi
-          WIN_DIA_SDK_BIN_DIR=`cd "$WIN_DIA_SDK_BIN_DIR" && pwd -W`
-        fi
-
-        AC_SUBST(MSVC_HAS_DIA_SDK)
         AC_SUBST(MSVC_C_RUNTIME_DLL)
         AC_SUBST(MSVC_CXX_RUNTIME_DLL)
 
@@ -780,25 +742,6 @@ case "$target" in
             # String tail merging doesn't play nice with ASan's ODR checker.
             LDFLAGS="$LDFLAGS -opt:nolldtailmerge"
         fi
-        # khuey says we can safely ignore MSVC warning C4251
-        # MSVC warning C4244 (implicit type conversion may lose data) warns
-        # and requires workarounds for perfectly valid code.  Also, GCC/clang
-        # don't warn about it by default. So for consistency/sanity, we turn
-        # it off on MSVC, too.
-        # MSVC warning C4267 warns for narrowing type conversions from size_t
-        # to 32-bit integer types on 64-bit platforms.  Since this is virtually
-        # the same thing as C4244, we disable C4267, too.
-        # MSVC warning C4800 warns when a value is implicitly cast to bool,
-        # because this also forces narrowing to a single byte, which can be a
-        # perf hit.  But this matters so little in practice (and often we want
-        # that behavior) that it's better to turn it off.
-        # MSVC warning C4595 warns non-member operator new or delete functions
-        # may not be declared inline, as of VS2015 Update 2.
-        CFLAGS="$CFLAGS -wd4244 -wd4267"
-        CXXFLAGS="$CXXFLAGS -wd4251 -wd4244 -wd4267 -wd4800 -wd4595"
-        # Silence "warning C4065: switch statement contains 'default' but no
-        # 'case' labels".  See bug 1461304.
-        CXXFLAGS="$CXXFLAGS -wd4065"
         if test -n "$CLANG_CL"; then
             # XXX We should combine some of these with our generic GCC-style
             # warning checks.
@@ -864,9 +807,6 @@ case "$target" in
             # is annoying, and rather noisy.
             CXXFLAGS="$CXXFLAGS -Wno-used-but-marked-unused"
         fi
-        # make 'foo == bar;' error out
-        CFLAGS="$CFLAGS -we4553"
-        CXXFLAGS="$CXXFLAGS -we4553"
         # Silence VS2017 15.5+ TR1 deprecation warnings hit by older gtest versions
         CXXFLAGS="$CXXFLAGS -D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING"
         LIBS="$LIBS kernel32.lib user32.lib gdi32.lib winmm.lib wsock32.lib advapi32.lib secur32.lib"
@@ -1288,40 +1228,37 @@ fi
 
 dnl Checks for library functions.
 dnl ========================================================
-AC_PROG_GCC_TRADITIONAL
-AC_FUNC_MEMCMP
 AC_CHECK_FUNCS(stat64 lstat64 truncate64 statvfs64 statvfs statfs64 statfs getpagesize gmtime_r localtime_r arc4random arc4random_buf mallinfo gettid lchown setpriority strerror syscall)
 
 dnl check for clock_gettime(), the CLOCK_MONOTONIC clock
-dnl avoid this on Darwin, since depending on your system config, we may think
-dnl it exists but it really doesn't
-case "$OS_TARGET" in
-Darwin)
-  ;;
-*)
-  AC_CACHE_CHECK(for clock_gettime(CLOCK_MONOTONIC),
-                 ac_cv_clock_monotonic,
-                 [for libs in "" -lrt; do
-                      _SAVE_LIBS="$LIBS"
-                      LIBS="$LIBS $libs"
-                      AC_TRY_LINK([#include <time.h>],
-                                   [ struct timespec ts;
-                                     clock_gettime(CLOCK_MONOTONIC, &ts); ],
-                                   ac_cv_clock_monotonic=$libs
-                                   LIBS="$_SAVE_LIBS"
-                                   break,
-                                   ac_cv_clock_monotonic=no)
-                      LIBS="$_SAVE_LIBS"
-                  done])
-  if test "$ac_cv_clock_monotonic" != "no"; then
-      HAVE_CLOCK_MONOTONIC=1
-      REALTIME_LIBS=$ac_cv_clock_monotonic
-      AC_DEFINE(HAVE_CLOCK_MONOTONIC)
-      AC_SUBST(HAVE_CLOCK_MONOTONIC)
-      AC_SUBST_LIST(REALTIME_LIBS)
-  fi
-  ;;
-esac
+AC_CACHE_CHECK(for clock_gettime(CLOCK_MONOTONIC),
+               ac_cv_clock_monotonic,
+               [for libs in "" -lrt; do
+                    _SAVE_LIBS="$LIBS"
+                    _SAVE_CFLAGS="$CFLAGS"
+                    LIBS="$LIBS $libs"
+                    CFLAGS="$CFLAGS $DSO_PIC_CFLAGS"
+dnl clock_gettime is available on OSX since 10.12, so depending on MACOSX_DEPLOYMENT_TARGET,
+dnl we should or not be able to use it. To detect if we can, we need to make the
+dnl availability attribute strict, so that compilation fails when the target is < 10.12.
+                    AC_TRY_LINK([#define availability(os, ...) availability(os, strict, __VA_ARGS)
+                                 #include <time.h>],
+                                 [ struct timespec ts;
+                                   clock_gettime(CLOCK_MONOTONIC, &ts); ],
+                                 ac_cv_clock_monotonic=$libs
+                                 LIBS="$_SAVE_LIBS"
+                                 break,
+                                 ac_cv_clock_monotonic=no)
+                    LIBS="$_SAVE_LIBS"
+                    CFLAGS="$_SAVE_CFLAGS"
+                done])
+if test "$ac_cv_clock_monotonic" != "no"; then
+    HAVE_CLOCK_MONOTONIC=1
+    REALTIME_LIBS=$ac_cv_clock_monotonic
+    AC_DEFINE(HAVE_CLOCK_MONOTONIC)
+    AC_SUBST(HAVE_CLOCK_MONOTONIC)
+    AC_SUBST_LIST(REALTIME_LIBS)
+fi
 
 dnl Turn on warnings-as-errors to prevent implicit declaration of
 dnl pthread_cond_timedwait_monotonic_np, which can cause this test to
@@ -1447,30 +1384,6 @@ if test "$GNU_CC"; then
 
   TARGET_COMPILER_ABI="${TARGET_COMPILER_ABI-${ARM_ABI_PREFIX}gcc3}"
 fi
-
-dnl See if a dynamic_cast to void* gives the most derived object.
-AC_CACHE_CHECK(for C++ dynamic_cast to void*,
-               ac_cv_cpp_dynamic_cast_void_ptr,
-               [AC_TRY_RUN([class X { int i; public: virtual ~X() { } };
-                            class Y { int j; public: virtual ~Y() { } };
-                            class Z : public X, public Y { int k; };
-
-                            int main() {
-                                 Z mdo;
-                                 X *subx = (X*)&mdo;
-                                 Y *suby = (Y*)&mdo;
-                                 return !((((void*)&mdo != (void*)subx) &&
-                                           ((void*)&mdo == dynamic_cast<void*>(subx))) ||
-                                          (((void*)&mdo != (void*)suby) &&
-                                           ((void*)&mdo == dynamic_cast<void*>(suby))));
-                            }],
-                           ac_cv_cpp_dynamic_cast_void_ptr=yes,
-                           ac_cv_cpp_dynamic_cast_void_ptr=no,
-                           ac_cv_cpp_dynamic_cast_void_ptr=no)])
-if test "$ac_cv_cpp_dynamic_cast_void_ptr" = yes ; then
-   AC_DEFINE(HAVE_CPP_DYNAMIC_CAST_TO_VOID_PTR)
-fi
-
 
 # try harder, when checking for __thread support, see bug 521750 comment #33 and below
 # We pass MOZ_OPTIMIZE_LDFLAGS to the linker because if dead_strip is
@@ -1835,7 +1748,7 @@ dnl ========================================================
 
 case "$MOZ_BUILD_APP" in
 mobile/android)
-    MOZ_ANDROID_SDK(26, 26, 27.0.3)
+    MOZ_ANDROID_SDK
     ;;
 esac
 
@@ -2469,151 +2382,6 @@ then
     dnl ============================
     dnl Check to see if the system SQLite package is new enough.
     PKG_CHECK_MODULES(SQLITE, sqlite3 >= $SQLITE_VERSION)
-
-    dnl ==================================
-    dnl === SQLITE_SECURE_DELETE check ===
-    dnl ==================================
-    dnl Check to see if the system SQLite package is compiled with
-    dnl SQLITE_SECURE_DELETE enabled.
-    AC_MSG_CHECKING(for SQLITE_SECURE_DELETE support in system SQLite)
-    _SAVE_CFLAGS="$CFLAGS"
-    CFLAGS="$CFLAGS $SQLITE_CFLAGS"
-    _SAVE_LIBS="$LIBS"
-    LIBS="$LIBS $SQLITE_LIBS"
-    AC_CACHE_VAL(ac_cv_sqlite_secure_delete,[
-        AC_TRY_RUN([
-            #include "sqlite3.h"
-
-            int main(int argc, char **argv){
-              return !sqlite3_compileoption_used("SQLITE_SECURE_DELETE");
-            }],
-            ac_cv_sqlite_secure_delete=yes,
-            ac_cv_sqlite_secure_delete=no,
-            ac_cv_sqlite_secure_delete=no
-        )
-    ])
-    AC_MSG_RESULT($ac_cv_sqlite_secure_delete)
-    CFLAGS="$_SAVE_CFLAGS"
-    LIBS="$_SAVE_LIBS"
-    if test "x$ac_cv_sqlite_secure_delete" = "xno"; then
-        AC_MSG_ERROR([System SQLite library is not compiled with SQLITE_SECURE_DELETE.])
-    fi
-
-    dnl ===============================
-    dnl === SQLITE_THREADSAFE check ===
-    dnl ===============================
-    dnl Check to see if the system SQLite package is compiled with
-    dnl SQLITE_THREADSAFE enabled.
-    AC_MSG_CHECKING(for SQLITE_THREADSAFE support in system SQLite)
-    _SAVE_CFLAGS="$CFLAGS"
-    CFLAGS="$CFLAGS $SQLITE_CFLAGS"
-    _SAVE_LIBS="$LIBS"
-    LIBS="$LIBS $SQLITE_LIBS"
-    AC_CACHE_VAL(ac_cv_sqlite_threadsafe,[
-        AC_TRY_RUN([
-            #include "sqlite3.h"
-
-            int main(int argc, char **argv){
-              return !sqlite3_compileoption_used("SQLITE_THREADSAFE=1");
-            }],
-            ac_cv_sqlite_threadsafe=yes,
-            ac_cv_sqlite_threadsafe=no,
-            ac_cv_sqlite_threadsafe=no
-        )
-    ])
-    AC_MSG_RESULT($ac_cv_sqlite_threadsafe)
-    CFLAGS="$_SAVE_CFLAGS"
-    LIBS="$_SAVE_LIBS"
-    if test "x$ac_cv_sqlite_threadsafe" = "xno"; then
-        AC_MSG_ERROR([System SQLite library is not compiled with SQLITE_THREADSAFE.])
-    fi
-
-    dnl ================================
-    dnl === SQLITE_ENABLE_FTS3 check ===
-    dnl ================================
-    dnl check to see if the system SQLite package is compiled with
-    dnl SQLITE_ENABLE_FTS3 enabled.
-    AC_MSG_CHECKING(for SQLITE_ENABLE_FTS3 support in system SQLite)
-    _SAVE_CFLAGS="$CFLAGS"
-    CFLAGS="$CFLAGS $SQLITE_CFLAGS"
-    _SAVE_LIBS="$LIBS"
-    LIBS="$LIBS $SQLITE_LIBS"
-    AC_CACHE_VAL(ac_cv_sqlite_enable_fts3,[
-        AC_TRY_RUN([
-            #include "sqlite3.h"
-
-            int main(int argc, char **argv){
-              return !sqlite3_compileoption_used("SQLITE_ENABLE_FTS3");
-            }],
-            ac_cv_sqlite_enable_fts3=yes,
-            ac_cv_sqlite_enable_fts3=no,
-            ac_cv_sqlite_enable_fts3=no
-        )
-    ])
-    AC_MSG_RESULT($ac_cv_sqlite_enable_fts3)
-    CFLAGS="$_SAVE_CFLAGS"
-    LIBS="$_SAVE_LIBS"
-    if test "x$ac_cv_sqlite_enable_fts3" = "xno"; then
-        AC_MSG_ERROR([System SQLite library is not compiled with SQLITE_ENABLE_FTS3.])
-    fi
-
-    dnl =========================================
-    dnl === SQLITE_ENABLE_UNLOCK_NOTIFY check ===
-    dnl =========================================
-    dnl check to see if the system SQLite package is compiled with
-    dnl SQLITE_ENABLE_UNLOCK_NOTIFY enabled.
-    AC_MSG_CHECKING(for SQLITE_ENABLE_UNLOCK_NOTIFY support in system SQLite)
-    _SAVE_CFLAGS="$CFLAGS"
-    CFLAGS="$CFLAGS $SQLITE_CFLAGS"
-    _SAVE_LIBS="$LIBS"
-    LIBS="$LIBS $SQLITE_LIBS"
-    AC_CACHE_VAL(ac_cv_sqlite_enable_unlock_notify,[
-        AC_TRY_RUN([
-            #include "sqlite3.h"
-
-            int main(int argc, char **argv){
-              return !sqlite3_compileoption_used("SQLITE_ENABLE_UNLOCK_NOTIFY");
-            }],
-            ac_cv_sqlite_enable_unlock_notify=yes,
-            ac_cv_sqlite_enable_unlock_notify=no,
-            ac_cv_sqlite_enable_unlock_notify=no
-        )
-    ])
-    AC_MSG_RESULT($ac_cv_sqlite_enable_unlock_notify)
-    CFLAGS="$_SAVE_CFLAGS"
-    LIBS="$_SAVE_LIBS"
-    if test "x$ac_cv_sqlite_enable_unlock_notify" = "xno"; then
-        AC_MSG_ERROR([System SQLite library is not compiled with SQLITE_ENABLE_UNLOCK_NOTIFY.])
-    fi
-
-    dnl =========================================
-    dnl === SQLITE_ENABLE_DBSTAT_VTAB check ===
-    dnl =========================================
-    dnl check to see if the system SQLite package is compiled with
-    dnl SQLITE_ENABLE_DBSTAT_VTAB.
-    AC_MSG_CHECKING(for SQLITE_ENABLE_DBSTAT_VTAB support in system SQLite)
-    _SAVE_CFLAGS="$CFLAGS"
-    CFLAGS="$CFLAGS $SQLITE_CFLAGS"
-    _SAVE_LIBS="$LIBS"
-    LIBS="$LIBS $SQLITE_LIBS"
-    AC_CACHE_VAL(ac_cv_sqlite_dbstat_vtab,[
-        AC_TRY_RUN([
-            #include "sqlite3.h"
-
-            int main(int argc, char **argv){
-              return !sqlite3_compileoption_used("SQLITE_ENABLE_DBSTAT_VTAB");
-            }],
-            ac_cv_sqlite_dbstat_vtab=yes,
-            ac_cv_sqlite_dbstat_vtab=no,
-            ac_cv_sqlite_dbstat_vtab=no
-        )
-    ])
-    AC_MSG_RESULT($ac_cv_sqlite_dbstat_vtab)
-    CFLAGS="$_SAVE_CFLAGS"
-    LIBS="$_SAVE_LIBS"
-    if test "x$ac_cv_sqlite_dbstat_vtab" = "xno"; then
-        AC_MSG_ERROR([System SQLite library is not compiled with SQLITE_ENABLE_DBSTAT_VTAB.])
-    fi
 else
     dnl ==============================
     dnl === SQLite fdatasync check ===
@@ -3469,7 +3237,6 @@ fi
 dnl win32 options
 AC_SUBST(WIN32_REDIST_DIR)
 AC_SUBST(WIN_UCRT_REDIST_DIR)
-AC_SUBST(WIN_DIA_SDK_BIN_DIR)
 
 dnl ========================================================
 dnl ICU Support
@@ -3653,7 +3420,6 @@ dnl ========================================================
 dnl The following defines are used by xpcom
 _NON_GLOBAL_ACDEFINES="$_NON_GLOBAL_ACDEFINES
 CPP_THROW_NEW
-HAVE_CPP_DYNAMIC_CAST_TO_VOID_PTR
 HAVE_GETPAGESIZE
 HAVE_STATVFS64
 HAVE_STATVFS

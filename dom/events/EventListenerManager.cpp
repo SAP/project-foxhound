@@ -147,10 +147,10 @@ EventListenerManager::~EventListenerManager() {
   // XXX azakai: Is there any reason to not just call Disconnect
   //             from right here, if not previously called?
   NS_ASSERTION(!mTarget, "didn't call Disconnect");
-  RemoveAllListeners();
+  RemoveAllListenersSilently();
 }
 
-void EventListenerManager::RemoveAllListeners() {
+void EventListenerManager::RemoveAllListenersSilently() {
   if (mClearingListeners) {
     return;
   }
@@ -287,9 +287,6 @@ void EventListenerManager::AddEventListenerInternal(
       nsCOMPtr<Document> doc = window->GetExtantDoc();
       if (doc) {
         doc->WarnOnceAbout(Document::eMutationEvent);
-        if (aEventMessage == eLegacyAttrModified) {
-          doc->WarnOnceAbout(Document::eDOMAttrModifiedEvent);
-        }
       }
       // If aEventMessage is eLegacySubtreeModified, we need to listen all
       // mutations. nsContentUtils::HasMutationListeners relies on this.
@@ -992,15 +989,6 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   NS_ENSURE_SUCCESS(result, result);
   NS_ENSURE_TRUE(handler, NS_ERROR_FAILURE);
 
-  JS::Rooted<JSFunction*> func(cx, JS_GetObjectFunction(handler));
-  MOZ_ASSERT(func);
-  JS::Rooted<JSScript*> jsScript(cx, JS_GetFunctionScript(cx, func));
-  MOZ_ASSERT(jsScript);
-  RefPtr<LoadedScript> loaderScript = ScriptLoader::GetActiveScript(cx);
-  if (loaderScript) {
-    loaderScript->AssociateWithScript(jsScript);
-  }
-
   MOZ_ASSERT(js::IsObjectInContextCompartment(handler, cx));
   JS::Rooted<JSObject*> handlerGlobal(cx, JS::CurrentGlobalOrNull(cx));
 
@@ -1051,7 +1039,9 @@ nsresult EventListenerManager::HandleEventSubType(Listener* aListener,
                                                       *aDOMEvent, rv);
       result = rv.StealNSResult();
     } else {
-      result = listenerHolder.GetXPCOMCallback()->HandleEvent(aDOMEvent);
+      // listenerHolder is holding a stack ref here.
+      result = MOZ_KnownLive(listenerHolder.GetXPCOMCallback())
+                   ->HandleEvent(aDOMEvent);
     }
   }
 
@@ -1331,7 +1321,7 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
 
 void EventListenerManager::Disconnect() {
   mTarget = nullptr;
-  RemoveAllListeners();
+  RemoveAllListenersSilently();
 }
 
 void EventListenerManager::AddEventListener(const nsAString& aType,
@@ -1716,6 +1706,19 @@ bool EventListenerManager::IsApzAwareEvent(nsAtom* aEvent) {
         nsContentUtils::GetDocShellForEventTarget(mTarget));
   }
   return false;
+}
+
+void EventListenerManager::RemoveAllListeners() {
+  while (!mListeners.IsEmpty()) {
+    size_t idx = mListeners.Length() - 1;
+    RefPtr<nsAtom> type = mListeners.ElementAt(idx).mTypeAtom;
+    EventMessage message = mListeners.ElementAt(idx).mEventMessage;
+    mListeners.RemoveElementAt(idx);
+    NotifyEventListenerRemoved(type);
+    if (IsDeviceType(message)) {
+      DisableDevice(message);
+    }
+  }
 }
 
 already_AddRefed<nsIScriptGlobalObject>

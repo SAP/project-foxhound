@@ -347,8 +347,9 @@ void mozilla::plugins::TerminatePlugin(uint32_t aPluginId,
   }
 }
 
-/* static */ PluginLibrary* PluginModuleContentParent::LoadModule(
-    uint32_t aPluginId, nsPluginTag* aPluginTag) {
+/* static */
+PluginLibrary* PluginModuleContentParent::LoadModule(uint32_t aPluginId,
+                                                     nsPluginTag* aPluginTag) {
   PluginModuleMapping::NotifyLoadingModule loadingModule;
   nsAutoPtr<PluginModuleMapping> mapping(new PluginModuleMapping(aPluginId));
 
@@ -386,7 +387,8 @@ void mozilla::plugins::TerminatePlugin(uint32_t aPluginId,
   return parent;
 }
 
-/* static */ void PluginModuleContentParent::Initialize(
+/* static */
+void PluginModuleContentParent::Initialize(
     Endpoint<PPluginModuleParent>&& aEndpoint) {
   nsAutoPtr<PluginModuleMapping> moduleMapping(
       PluginModuleMapping::Resolve(aEndpoint.OtherPid()));
@@ -528,7 +530,7 @@ bool PluginModuleChromeParent::InitCrashReporter() {
   }
 
   NativeThreadId threadId;
-  if (!CallInitCrashReporter(shmem, &threadId)) {
+  if (!CallInitCrashReporter(std::move(shmem), &threadId)) {
     return false;
   }
 
@@ -631,7 +633,7 @@ PluginModuleChromeParent::~PluginModuleChromeParent() {
   NS_ASSERTION(mShutdown, "NP_Shutdown didn't");
 
   if (mSubprocess) {
-    mSubprocess->Delete();
+    mSubprocess->Destroy();
     mSubprocess = nullptr;
   }
 
@@ -1753,7 +1755,8 @@ void PluginModuleChromeParent::CachedSettingChanged() {
   Unused << SendSettingChanged(settings);
 }
 
-/* static */ void PluginModuleChromeParent::CachedSettingChanged(
+/* static */
+void PluginModuleChromeParent::CachedSettingChanged(
     const char* aPref, PluginModuleChromeParent* aModule) {
   aModule->CachedSettingChanged();
 }
@@ -2259,7 +2262,7 @@ void PluginModuleParent::ProcessRemoteNativeEventsInInterruptCall() {
 
 mozilla::ipc::IPCResult PluginModuleParent::RecvPluginShowWindow(
     const uint32_t& aWindowId, const bool& aModal, const int32_t& aX,
-    const int32_t& aY, const size_t& aWidth, const size_t& aHeight) {
+    const int32_t& aY, const double& aWidth, const double& aHeight) {
   PLUGIN_LOG_DEBUG(("%s", FULLFUNCTION));
 #if defined(XP_MACOSX)
   CGRect windowBound = ::CGRectMake(aX, aY, aWidth, aHeight);

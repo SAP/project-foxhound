@@ -6,8 +6,8 @@
 //       but don't allow it for cross-origin sub-resources
 //   2 - allow the cross-origin authentication as well.
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var prefs = Cc["@mozilla.org/preferences-service;1"].
               getService(Ci.nsIPrefBranch);
@@ -146,7 +146,7 @@ Test.prototype = {
   _contentPolicy: Ci.nsIContentPolicy.TYPE_OTHER,
   _expectedCode: 200,
 
-  onStartRequest: function(request, ctx) {
+  onStartRequest: function(request) {
     try {
       if (!Components.isSuccessCode(request.status)) {
         do_throw("Channel should have a success code!");
@@ -167,11 +167,11 @@ Test.prototype = {
     throw Cr.NS_ERROR_ABORT;
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function(request, ctx, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(status, Cr.NS_ERROR_ABORT);
 
     // Clear the auth cache.
@@ -193,7 +193,7 @@ Test.prototype = {
                      this._subresource_http_auth_allow_pref);
     let chan = makeChan(this._loadingUri, this._uri, this._contentPolicy);
     chan.notificationCallbacks = new Requestor(this._expectedCode == 200);
-    chan.asyncOpen2(this);
+    chan.asyncOpen(this);
   }
 };
 

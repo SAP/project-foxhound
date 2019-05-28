@@ -41,8 +41,8 @@ window.gActivityStreamStrings = {
   "prefs_home_header": "Firefox 홈 콘텐츠",
   "prefs_home_description": "Firefox 홈 화면에 나올 콘텐츠를 선택하세요.",
   "prefs_content_discovery_header": "Firefox 홈",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_description": "Firefox 홈의 콘텐츠 탐색 기능을 사용하면 웹에 있는 고품질의 관련 문서를 탐색할 수 있습니다.",
+  "prefs_content_discovery_button": "콘텐츠 탐색 끄기",
   "prefs_section_rows_option": "{num} 행",
   "prefs_search_header": "웹 검색",
   "prefs_topsites_description": "가장 많이 방문한 사이트",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "좋아하는 이야기를 Pocket에 저장하고 재미있게 읽어 보세요.",
   "highlights_empty_state": "브라우징을 시작하면 최근 방문하거나 북마크한 좋은 글이나 영상, 페이지를 여기에 보여줍니다.",
   "topstories_empty_state": "다 왔습니다. {provider}에서 제공하는 주요 기사를 다시 확인해 보세요. 기다릴 수가 없나요? 주제를 선택하면 웹에서 볼 수 있는 가장 재미있는 글을 볼 수 있습니다.",
-  "manual_migration_explanation2": "다른 브라우저에 있는 북마크, 기록, 비밀번호를 사용해 Firefox를 이용해 보세요.",
-  "manual_migration_cancel_button": "괜찮습니다",
-  "manual_migration_import_button": "지금 가져오기",
   "error_fallback_default_info": "이 콘텐츠를 불러오는데 오류가 발생하였습니다.",
   "error_fallback_default_refresh_suggestion": "페이지를 새로고침해서 다시 시도해 주세요.",
   "section_menu_action_remove_section": "섹션 삭제",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "개인 정보 보호 정책",
   "firstrun_continue_to_login": "계속",
   "firstrun_skip_login": "단계 건너뛰기",
-  "context_menu_title": "메뉴 열기"
+  "context_menu_title": "메뉴 열기",
+  "manual_migration_explanation2": "다른 브라우저에 있는 북마크, 기록, 비밀번호를 사용해 Firefox를 이용해 보세요.",
+  "manual_migration_cancel_button": "괜찮습니다",
+  "manual_migration_import_button": "지금 가져오기"
 };

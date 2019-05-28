@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "FileUtils",
                                "resource://gre/modules/FileUtils.jsm");
@@ -564,7 +564,7 @@ RTPStats.prototype = {
       statsString += ` ${getString("lost_label")}: ${stats.packetsLost} ${getString("jitter_label")}: ${stats.jitter}`;
 
       if (stats.roundTripTime) {
-        statsString += ` RTT: ${stats.roundTripTime} ms`;
+        statsString += ` RTT: ${stats.roundTripTime * 1000} ms`;
       }
     } else if (stats.packetsSent) {
       statsString += ` ${getString("sent_label")}: ${stats.packetsSent} ${getString("packets")}`;

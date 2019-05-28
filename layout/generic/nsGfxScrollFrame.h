@@ -82,6 +82,18 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists);
 
+  // Add display items for the top-layer (which includes things like
+  // the fullscreen element, its backdrop, and text selection carets)
+  // to |aLists|.
+  // This is a no-op for scroll frames other than the viewport's
+  // root scroll frame.
+  // This should be called with an nsDisplayListSet that will be
+  // wrapped in the async zoom container, if we're building one.
+  // It should not be called with an ASR setter on the stack, as the
+  // top-layer items handle setting up their own ASRs.
+  void MaybeAddTopLayerItems(nsDisplayListBuilder* aBuilder,
+                             const nsDisplayListSet& aLists);
+
   void AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
                            const nsDisplayListSet& aLists, bool aCreateLayer,
                            bool aPositioned);
@@ -435,8 +447,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
   void MarkScrollbarsDirtyForReflow() const;
 
-  bool ShouldClampScrollPosition() const;
-
   bool IsAlwaysActive() const;
   void MarkEverScrolled();
   void MarkRecentlyScrolled();
@@ -702,6 +712,9 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // True if we are using the minimum scale size instead of ICB for scroll port.
   bool mIsUsingMinimumScaleSize : 1;
 
+  // True if the minimum scale size has been changed since the last reflow.
+  bool mMinimumScaleSizeChanged : 1;
+
   mozilla::layout::ScrollVelocityQueue mVelocityQueue;
 
  protected:
@@ -822,8 +835,13 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.ComputeCustomOverflow(aOverflowAreas);
   }
 
+  nscoord GetLogicalBaseline(mozilla::WritingMode aWritingMode) const override;
+
   bool GetVerticalAlignBaseline(mozilla::WritingMode aWM,
                                 nscoord* aBaseline) const override {
+    NS_ASSERTION(!aWM.IsOrthogonalTo(GetWritingMode()),
+                 "You should only call this on frames with a WM that's "
+                 "parallel to aWM");
     *aBaseline = GetLogicalBaseline(aWM);
     return true;
   }
@@ -1173,13 +1191,11 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.IsRootScrollFrameOfDocument();
   }
 
-  virtual const ScrollAnchorContainer* GetAnchor() const override {
+  virtual const ScrollAnchorContainer* Anchor() const override {
     return &mHelper.mAnchor;
   }
 
-  virtual ScrollAnchorContainer* GetAnchor() override {
-    return &mHelper.mAnchor;
-  }
+  virtual ScrollAnchorContainer* Anchor() override { return &mHelper.mAnchor; }
 
   // Return the scrolled frame.
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override {
@@ -1195,10 +1211,12 @@ class nsHTMLScrollFrame : public nsContainerFrame,
 #endif
 
  protected:
-  nsHTMLScrollFrame(ComputedStyle* aStyle, bool aIsRoot)
-      : nsHTMLScrollFrame(aStyle, kClassID, aIsRoot) {}
+  nsHTMLScrollFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+                    bool aIsRoot)
+      : nsHTMLScrollFrame(aStyle, aPresContext, kClassID, aIsRoot) {}
 
-  nsHTMLScrollFrame(ComputedStyle* aStyle, nsIFrame::ClassID aID, bool aIsRoot);
+  nsHTMLScrollFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+                    nsIFrame::ClassID aID, bool aIsRoot);
   void SetSuppressScrollbarUpdate(bool aSuppress) {
     mHelper.mSuppressScrollbarUpdate = aSuppress;
   }
@@ -1651,13 +1669,11 @@ class nsXULScrollFrame final : public nsBoxFrame,
     return mHelper.IsRootScrollFrameOfDocument();
   }
 
-  virtual const ScrollAnchorContainer* GetAnchor() const override {
+  virtual const ScrollAnchorContainer* Anchor() const override {
     return &mHelper.mAnchor;
   }
 
-  virtual ScrollAnchorContainer* GetAnchor() override {
-    return &mHelper.mAnchor;
-  }
+  virtual ScrollAnchorContainer* Anchor() override { return &mHelper.mAnchor; }
 
   // Return the scrolled frame.
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override {
@@ -1669,7 +1685,7 @@ class nsXULScrollFrame final : public nsBoxFrame,
 #endif
 
  protected:
-  nsXULScrollFrame(ComputedStyle* aStyle, bool aIsRoot,
+  nsXULScrollFrame(ComputedStyle*, nsPresContext*, bool aIsRoot,
                    bool aClipAllDescendants);
 
   void ClampAndSetBounds(nsBoxLayoutState& aState, nsRect& aRect,

@@ -8,18 +8,18 @@
 const { Component } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const { PluralForm } = require("devtools/shared/plural-form");
-const { KeyCodes } = require("devtools/client/shared/keycodes");
-
-const actions = require("devtools/client/webconsole/actions/index");
 const {
   getReverseSearchTotalResults,
   getReverseSearchResultPosition,
   getReverseSearchResult,
 } = require("devtools/client/webconsole/selectors/history");
+
+loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
+loader.lazyRequireGetter(this, "actions", "devtools/client/webconsole/actions/index");
+loader.lazyRequireGetter(this, "l10n", "devtools/client/webconsole/utils/messages", true);
+loader.lazyRequireGetter(this, "PluralForm", "devtools/shared/plural-form", true);
+loader.lazyRequireGetter(this, "KeyCodes", "devtools/client/shared/keycodes", true);
 
 const Services = require("Services");
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -28,7 +28,9 @@ class ReverseSearchInput extends Component {
   static get propTypes() {
     return {
       dispatch: PropTypes.func.isRequired,
-      hud: PropTypes.object.isRequired,
+      setInputValue: PropTypes.func.isRequired,
+      focusInput: PropTypes.func.isRequired,
+      evaluateInput: PropTypes.func.isRequired,
       reverseSearchResult: PropTypes.string,
       reverseSearchTotalResults: PropTypes.number,
       reverseSearchResultPosition: PropTypes.number,
@@ -44,17 +46,17 @@ class ReverseSearchInput extends Component {
   }
 
   componentDidUpdate(prevProps) {
-    const {jsterm} = this.props.hud;
+    const {setInputValue, focusInput} = this.props;
     if (
       prevProps.reverseSearchResult !== this.props.reverseSearchResult
       && this.props.visible
       && this.props.reverseSearchTotalResults > 0
     ) {
-      jsterm.setInputValue(this.props.reverseSearchResult);
+      setInputValue(this.props.reverseSearchResult);
     }
 
     if (prevProps.visible === true && this.props.visible === false) {
-      jsterm.focus();
+      focusInput();
     }
 
     if (
@@ -76,7 +78,7 @@ class ReverseSearchInput extends Component {
 
     const {
       dispatch,
-      hud,
+      evaluateInput,
       reverseSearchTotalResults,
     } = this.props;
 
@@ -84,7 +86,7 @@ class ReverseSearchInput extends Component {
     if (keyCode === KeyCodes.DOM_VK_RETURN) {
       event.stopPropagation();
       dispatch(actions.reverseSearchInputToggle());
-      hud.jsterm.execute();
+      evaluateInput();
       return;
     }
 

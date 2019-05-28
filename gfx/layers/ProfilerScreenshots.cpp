@@ -30,12 +30,13 @@ ProfilerScreenshots::~ProfilerScreenshots() {
     SystemGroup::Dispatch(
         TaskCategory::Other,
         NewRunnableMethod("ProfilerScreenshots::~ProfilerScreenshots", mThread,
-                          &nsIThread::Shutdown));
+                          &nsIThread::AsyncShutdown));
     mThread = nullptr;
   }
 }
 
-/* static */ bool ProfilerScreenshots::IsEnabled() {
+/* static */
+bool ProfilerScreenshots::IsEnabled() {
 #ifdef MOZ_GECKO_PROFILER
   return profiler_feature_active(ProfilerFeature::Screenshots);
 #else
@@ -105,7 +106,7 @@ void ProfilerScreenshots::SubmitScreenshot(
           if (NS_SUCCEEDED(rv)) {
             // Add a marker with the data URL.
             profiler_add_marker_for_thread(
-                sourceThread, js::ProfilingStackFrame::Category::GRAPHICS,
+                sourceThread, JS::ProfilingCategoryPair::GRAPHICS,
                 "CompositorScreenshot",
                 MakeUnique<ScreenshotPayload>(timeStamp, std::move(dataURL),
                                               originalSize, windowIdentifier));

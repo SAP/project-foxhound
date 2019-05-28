@@ -5,7 +5,6 @@
 
 #include "nsOfflineCacheUpdate.h"
 
-#include "nsCPrefetchService.h"
 #include "nsCURILoader.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsIApplicationCacheChannel.h"
@@ -167,6 +166,7 @@ nsresult nsManifestCheck::Begin() {
   rv = NS_NewChannel(getter_AddRefs(mChannel), mURI, mLoadingPrincipal,
                      nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
                      nsIContentPolicy::TYPE_OTHER,
+                     nullptr,  // nsICookieSettings
                      nullptr,  // PerformanceStorage
                      nullptr,  // loadGroup
                      nullptr,  // aCallbacks
@@ -185,16 +185,18 @@ nsresult nsManifestCheck::Begin() {
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  return mChannel->AsyncOpen2(this);
+  return mChannel->AsyncOpen(this);
 }
 
 //-----------------------------------------------------------------------------
 // nsManifestCheck <public>
 //-----------------------------------------------------------------------------
 
-/* static */ nsresult nsManifestCheck::ReadManifest(
-    nsIInputStream *aInputStream, void *aClosure, const char *aFromSegment,
-    uint32_t aOffset, uint32_t aCount, uint32_t *aBytesConsumed) {
+/* static */
+nsresult nsManifestCheck::ReadManifest(nsIInputStream *aInputStream,
+                                       void *aClosure, const char *aFromSegment,
+                                       uint32_t aOffset, uint32_t aCount,
+                                       uint32_t *aBytesConsumed) {
   nsManifestCheck *manifestCheck = static_cast<nsManifestCheck *>(aClosure);
 
   nsresult rv;
@@ -212,22 +214,18 @@ nsresult nsManifestCheck::Begin() {
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsManifestCheck::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
-  return NS_OK;
-}
+nsManifestCheck::OnStartRequest(nsIRequest *aRequest) { return NS_OK; }
 
 NS_IMETHODIMP
-nsManifestCheck::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
-                                 nsIInputStream *aStream, uint64_t aOffset,
-                                 uint32_t aCount) {
+nsManifestCheck::OnDataAvailable(nsIRequest *aRequest, nsIInputStream *aStream,
+                                 uint64_t aOffset, uint32_t aCount) {
   uint32_t bytesRead;
   aStream->ReadSegments(ReadManifest, this, aCount, &bytesRead);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsManifestCheck::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
-                               nsresult aStatus) {
+nsManifestCheck::OnStopRequest(nsIRequest *aRequest, nsresult aStatus) {
   nsAutoCString manifestHash;
   if (NS_SUCCEEDED(aStatus)) {
     mManifestHash->Finish(true, manifestHash);
@@ -334,6 +332,7 @@ nsresult nsOfflineCacheUpdateItem::OpenChannel(nsOfflineCacheUpdate *aUpdate) {
   rv = NS_NewChannel(getter_AddRefs(mChannel), mURI, mLoadingPrincipal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER,
+                     nullptr,  // nsICookieSettings
                      nullptr,  // PerformanceStorage
                      nullptr,  // aLoadGroup
                      this,     // aCallbacks
@@ -366,7 +365,7 @@ nsresult nsOfflineCacheUpdateItem::OpenChannel(nsOfflineCacheUpdate *aUpdate) {
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  rv = mChannel->AsyncOpen2(this);
+  rv = mChannel->AsyncOpen(this);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mUpdate = aUpdate;
@@ -392,8 +391,7 @@ nsresult nsOfflineCacheUpdateItem::Cancel() {
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsOfflineCacheUpdateItem::OnStartRequest(nsIRequest *aRequest,
-                                         nsISupports *aContext) {
+nsOfflineCacheUpdateItem::OnStartRequest(nsIRequest *aRequest) {
   mState = LoadStatus::RECEIVING;
 
   return NS_OK;
@@ -401,7 +399,6 @@ nsOfflineCacheUpdateItem::OnStartRequest(nsIRequest *aRequest,
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateItem::OnDataAvailable(nsIRequest *aRequest,
-                                          nsISupports *aContext,
                                           nsIInputStream *aStream,
                                           uint64_t aOffset, uint32_t aCount) {
   uint32_t bytesRead = 0;
@@ -417,7 +414,6 @@ nsOfflineCacheUpdateItem::OnDataAvailable(nsIRequest *aRequest,
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateItem::OnStopRequest(nsIRequest *aRequest,
-                                        nsISupports *aContext,
                                         nsresult aStatus) {
   if (LOG_ENABLED()) {
     LOG(("%p: Done fetching offline item %s [status=%" PRIx32 "]\n", this,
@@ -1039,8 +1035,7 @@ void nsOfflineManifestItem::ReadStrictFileOriginPolicyPref() {
 }
 
 NS_IMETHODIMP
-nsOfflineManifestItem::OnStartRequest(nsIRequest *aRequest,
-                                      nsISupports *aContext) {
+nsOfflineManifestItem::OnStartRequest(nsIRequest *aRequest) {
   nsresult rv;
 
   nsCOMPtr<nsIHttpChannel> channel = do_QueryInterface(aRequest, &rv);
@@ -1060,12 +1055,11 @@ nsOfflineManifestItem::OnStartRequest(nsIRequest *aRequest,
   rv = GetOldManifestContentHash(aRequest);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return nsOfflineCacheUpdateItem::OnStartRequest(aRequest, aContext);
+  return nsOfflineCacheUpdateItem::OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
 nsOfflineManifestItem::OnDataAvailable(nsIRequest *aRequest,
-                                       nsISupports *aContext,
                                        nsIInputStream *aStream,
                                        uint64_t aOffset, uint32_t aCount) {
   uint32_t bytesRead = 0;
@@ -1087,8 +1081,7 @@ nsOfflineManifestItem::OnDataAvailable(nsIRequest *aRequest,
 }
 
 NS_IMETHODIMP
-nsOfflineManifestItem::OnStopRequest(nsIRequest *aRequest,
-                                     nsISupports *aContext, nsresult aStatus) {
+nsOfflineManifestItem::OnStopRequest(nsIRequest *aRequest, nsresult aStatus) {
   if (mBytesRead == 0) {
     // We didn't need to read (because LOAD_ONLY_IF_MODIFIED was
     // specified).
@@ -1105,7 +1098,7 @@ nsOfflineManifestItem::OnStopRequest(nsIRequest *aRequest,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return nsOfflineCacheUpdateItem::OnStopRequest(aRequest, aContext, aStatus);
+  return nsOfflineCacheUpdateItem::OnStopRequest(aRequest, aStatus);
 }
 
 //-----------------------------------------------------------------------------

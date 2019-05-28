@@ -52,6 +52,7 @@ SSLHashType tls13_GetHash(const sslSocket *ss);
 unsigned int tls13_GetHashSizeForHash(SSLHashType hash);
 unsigned int tls13_GetHashSize(const sslSocket *ss);
 CK_MECHANISM_TYPE tls13_GetHkdfMechanism(sslSocket *ss);
+CK_MECHANISM_TYPE tls13_GetHkdfMechanismForHash(SSLHashType hash);
 SECStatus tls13_ComputeHash(sslSocket *ss, SSL3Hashes *hashes,
                             const PRUint8 *buf, unsigned int len);
 SECStatus tls13_ComputeHandshakeHashes(sslSocket *ss,
@@ -62,7 +63,7 @@ SECStatus tls13_DeriveSecretNullHash(sslSocket *ss, PK11SymKey *key,
                                      PK11SymKey **dest);
 void tls13_FatalError(sslSocket *ss, PRErrorCode prError,
                       SSL3AlertDescription desc);
-SECStatus tls13_SetupClientHello(sslSocket *ss);
+SECStatus tls13_SetupClientHello(sslSocket *ss, sslClientHelloType chType);
 SECStatus tls13_MaybeDo0RTTHandshake(sslSocket *ss);
 PRInt32 tls13_LimitEarlyData(sslSocket *ss, SSLContentType type, PRInt32 toSend);
 PRBool tls13_AllowPskCipher(const sslSocket *ss,
@@ -130,7 +131,13 @@ SECStatus tls13_SendKeyUpdate(sslSocket *ss, tls13KeyUpdateRequest request,
 SECStatus SSLExp_KeyUpdate(PRFileDesc *fd, PRBool requestUpdate);
 PRBool tls13_MaybeTls13(sslSocket *ss);
 SSLAEADCipher tls13_GetAead(const ssl3BulkCipherDef *cipherDef);
+SECStatus tls13_AEAD(const ssl3KeyMaterial *keys, PRBool doDecrypt,
+                     unsigned char *out, unsigned int *outlen, unsigned int maxout,
+                     const unsigned char *in, unsigned int inlen,
+                     CK_MECHANISM_TYPE mechanism,
+                     unsigned char *aeadParams, unsigned int aeadParamLength);
 void tls13_SetSpecRecordVersion(sslSocket *ss, ssl3CipherSpec *spec);
+SECStatus SSLExp_SendCertificateRequest(PRFileDesc *fd);
 
 /* Use this instead of FATAL_ERROR when no alert shall be sent. */
 #define LOG_ERROR(ss, prError)                                                     \

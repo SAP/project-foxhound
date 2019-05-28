@@ -4,13 +4,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
 });
@@ -221,7 +221,7 @@ SpecialPowersObserverAPI.prototype = {
       uri: aUrl,
       loadUsingSystemPrincipal: true,
     });
-    var input = channel.open2();
+    var input = channel.open();
     scriptableStream.init(input);
 
     var str;
@@ -562,7 +562,15 @@ SpecialPowersObserverAPI.prototype = {
       case "SPCheckServiceWorkers": {
         let swm = Cc["@mozilla.org/serviceworkers/manager;1"]
                     .getService(Ci.nsIServiceWorkerManager);
-        return { hasWorkers: swm.getAllRegistrations().length != 0 };
+        let regs = swm.getAllRegistrations();
+
+        // XXX This code is shared with specialpowers.js.
+        let workers = new Array(regs.length);
+        for (let i = 0; i < regs.length; ++i) {
+          let { scope, scriptSpec } = regs.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo);
+          workers[i] = { scope, scriptSpec };
+        }
+        return { workers };
       }
 
       case "SPLoadExtension": {
@@ -593,9 +601,18 @@ SpecialPowersObserverAPI.prototype = {
 
       case "SPStartupExtension": {
         let id = aMessage.data.id;
+        // This is either an Extension, or (if useAddonManager is set) a MockExtension.
         let extension = this._extensions.get(id);
-        extension.on("startup", () => {
-          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionSetId", args: [extension.id, extension.uuid]});
+        extension.on("startup", (eventName, ext) => {
+          if (!ext) {
+            // ext is only set by the "startup" event from Extension.jsm.
+            // Unfortunately ext-backgroundPage.js emits an event with the same
+            // name, but without the extension object as parameter.
+            return;
+          }
+          // ext is always the "real" Extension object, even when "extension"
+          // is a MockExtension.
+          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionSetId", args: [ext.id, ext.uuid]});
         });
 
         // Make sure the extension passes the packaging checks when
@@ -616,7 +633,12 @@ SpecialPowersObserverAPI.prototype = {
             // extension, so don't worry about locale errors in that
             // case.
           }
-        ).then(() => {
+        ).then(async () => {
+          // browser tests do not call startup in ExtensionXPCShellUtils or MockExtension,
+          // in that case we have an ID here and we need to set the override.
+          if (extension.id) {
+            await ExtensionTestCommon.setIncognitoOverride(extension);
+          }
           return extension.startup();
         }).then(() => {
           this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionStarted", args: []});

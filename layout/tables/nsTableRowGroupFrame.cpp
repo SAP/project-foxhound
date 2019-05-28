@@ -49,8 +49,9 @@ struct TableRowGroupReflowInput {
 
 }  // namespace mozilla
 
-nsTableRowGroupFrame::nsTableRowGroupFrame(ComputedStyle* aStyle)
-    : nsContainerFrame(aStyle, kClassID) {
+nsTableRowGroupFrame::nsTableRowGroupFrame(ComputedStyle* aStyle,
+                                           nsPresContext* aPresContext)
+    : nsContainerFrame(aStyle, aPresContext, kClassID) {
   SetRepeatable(false);
 }
 
@@ -404,9 +405,8 @@ void nsTableRowGroupFrame::ReflowChildren(
           rowFrame->DidResize();
           // the overflow area may have changed inflate the overflow area
           const nsStylePosition* stylePos = StylePosition();
-          nsStyleUnit unit = stylePos->BSize(wm).GetUnit();
           if (aReflowInput.tableFrame->IsAutoBSize(wm) &&
-              unit != eStyleUnit_Coord) {
+              !stylePos->BSize(wm).ConvertsToLength()) {
             // Because other cells in the row may need to be aligned
             // differently, repaint the entire row
             InvalidateFrame();
@@ -1437,7 +1437,8 @@ bool nsTableRowGroupFrame::ComputeCustomOverflow(
   return nsContainerFrame::ComputeCustomOverflow(aOverflowAreas);
 }
 
-/* virtual */ void nsTableRowGroupFrame::DidSetComputedStyle(
+/* virtual */
+void nsTableRowGroupFrame::DidSetComputedStyle(
     ComputedStyle* aOldComputedStyle) {
   nsContainerFrame::DidSetComputedStyle(aOldComputedStyle);
 
@@ -1556,15 +1557,18 @@ void nsTableRowGroupFrame::RemoveFrame(ChildListID aListID,
   mFrames.DestroyFrame(aOldFrame);
 }
 
-/* virtual */ nsMargin nsTableRowGroupFrame::GetUsedMargin() const {
+/* virtual */
+nsMargin nsTableRowGroupFrame::GetUsedMargin() const {
   return nsMargin(0, 0, 0, 0);
 }
 
-/* virtual */ nsMargin nsTableRowGroupFrame::GetUsedBorder() const {
+/* virtual */
+nsMargin nsTableRowGroupFrame::GetUsedBorder() const {
   return nsMargin(0, 0, 0, 0);
 }
 
-/* virtual */ nsMargin nsTableRowGroupFrame::GetUsedPadding() const {
+/* virtual */
+nsMargin nsTableRowGroupFrame::GetUsedPadding() const {
   return nsMargin(0, 0, 0, 0);
 }
 
@@ -1627,7 +1631,8 @@ bool nsTableRowGroupFrame::HasInternalBreakAfter() const {
 
 nsTableRowGroupFrame* NS_NewTableRowGroupFrame(nsIPresShell* aPresShell,
                                                ComputedStyle* aStyle) {
-  return new (aPresShell) nsTableRowGroupFrame(aStyle);
+  return new (aPresShell)
+      nsTableRowGroupFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableRowGroupFrame)

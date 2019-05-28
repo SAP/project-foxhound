@@ -7,7 +7,7 @@
 let FormAutofillParent;
 
 add_task(async function setup() {
-  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", {}));
+  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", null));
 });
 
 add_task(async function test_activeStatus_init() {
@@ -16,19 +16,19 @@ add_task(async function test_activeStatus_init() {
 
   // Default status is null before initialization
   Assert.equal(formAutofillParent._active, null);
-  Assert.equal(Services.ppmm.initialProcessData.autofillEnabled, undefined);
+  Assert.equal(Services.ppmm.sharedData.get("FormAutofill:enabled"), undefined);
 
   await formAutofillParent.init();
   // init shouldn't call updateStatus since that requires storage which will
   // lead to startup time regressions.
   Assert.equal(formAutofillParent._updateStatus.called, false);
-  Assert.equal(Services.ppmm.initialProcessData.autofillEnabled, undefined);
+  Assert.equal(Services.ppmm.sharedData.get("FormAutofill:enabled"), undefined);
 
   // Initialize profile storage
   await formAutofillParent.formAutofillStorage.initialize();
   // Upon first initializing profile storage, status should be computed.
   Assert.equal(formAutofillParent._updateStatus.called, true);
-  Assert.equal(Services.ppmm.initialProcessData.autofillEnabled, false);
+  Assert.equal(Services.ppmm.sharedData.get("FormAutofill:enabled"), false);
 
   formAutofillParent._uninit();
 });
@@ -47,7 +47,7 @@ add_task(async function test_activeStatus_observe() {
 
   // _active != _computeStatus() => Need to trigger _onStatusChanged
   formAutofillParent._computeStatus.returns(false);
-  formAutofillParent._onStatusChanged.reset();
+  formAutofillParent._onStatusChanged.resetHistory();
   formAutofillParent.observe(null, "nsPref:changed", "extensions.formautofill.addresses.enabled");
   formAutofillParent.observe(null, "nsPref:changed", "extensions.formautofill.creditCards.enabled");
   Assert.equal(formAutofillParent._onStatusChanged.called, true);
@@ -55,14 +55,14 @@ add_task(async function test_activeStatus_observe() {
   // profile changed => Need to trigger _onStatusChanged
   await Promise.all(["add", "update", "remove", "reconcile"].map(async event => {
     formAutofillParent._computeStatus.returns(!formAutofillParent._active);
-    formAutofillParent._onStatusChanged.reset();
+    formAutofillParent._onStatusChanged.resetHistory();
     await formAutofillParent.observe(null, "formautofill-storage-changed", event);
     Assert.equal(formAutofillParent._onStatusChanged.called, true);
   }));
 
   // profile metadata updated => No need to trigger _onStatusChanged
   formAutofillParent._computeStatus.returns(!formAutofillParent._active);
-  formAutofillParent._onStatusChanged.reset();
+  formAutofillParent._onStatusChanged.resetHistory();
   await formAutofillParent.observe(null, "formautofill-storage-changed", "notifyUsed");
   Assert.equal(formAutofillParent._onStatusChanged.called, false);
 });

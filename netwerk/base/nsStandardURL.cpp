@@ -49,7 +49,7 @@ static NS_DEFINE_CID(kStandardURLCID, NS_STANDARDURL_CID);
 
 // This will always be initialized and destroyed on the main thread, but
 // can be safely used on other threads.
-nsIIDNService *nsStandardURL::gIDN = nullptr;
+StaticRefPtr<nsIIDNService> nsStandardURL::gIDN;
 
 // This value will only be updated on the main thread once. Worker threads
 // may race when reading this values, but that's OK because in the worst
@@ -60,10 +60,6 @@ const char nsStandardURL::gHostLimitDigits[] = {'/', '\\', '?', '#', 0};
 bool nsStandardURL::gPunycodeHost = true;
 
 // Invalid host characters
-// We still allow % because it is in the ID of addons.
-// Any percent encoded ASCII characters that are not allowed in the
-// hostname are not percent decoded, and will be parsed just fine.
-//
 // Note that the array below will be initialized at compile time,
 // so we do not need to "optimize" TestForInvalidHostCharacters.
 //
@@ -73,7 +69,12 @@ constexpr bool TestForInvalidHostCharacters(char c) {
   return (c > 0 && c < 32) ||  // The control characters are [1, 31]
          c == ' ' || c == '#' || c == '/' || c == ':' || c == '?' || c == '@' ||
          c == '[' || c == '\\' || c == ']' || c == '*' || c == '<' ||
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+         // Mailnews %-escapes file paths into URLs.
          c == '>' || c == '|' || c == '"';
+#else
+         c == '>' || c == '|' || c == '"' || c == '%';
+#endif
 }
 constexpr ASCIIMaskArray sInvalidHostChars =
     CreateASCIIMask(TestForInvalidHostCharacters);
@@ -267,7 +268,7 @@ void nsStandardURL::InitGlobalObjects() {
                                "network.standard-url.punycode-host", true);
   nsCOMPtr<nsIIDNService> serv(do_GetService(NS_IDNSERVICE_CONTRACTID));
   if (serv) {
-    NS_ADDREF(gIDN = serv.get());
+    gIDN = serv;
   }
   MOZ_DIAGNOSTIC_ASSERT(gIDN);
 
@@ -279,7 +280,7 @@ void nsStandardURL::InitGlobalObjects() {
 
 void nsStandardURL::ShutdownGlobalObjects() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-  NS_IF_RELEASE(gIDN);
+  gIDN = nullptr;
 
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
   if (gInitialized) {
@@ -478,8 +479,9 @@ inline nsresult ParseIPv4Number(const nsACString &input, int32_t base,
 }
 
 // IPv4 parser spec: https://url.spec.whatwg.org/#concept-ipv4-parser
-/* static */ nsresult nsStandardURL::NormalizeIPv4(const nsACString &host,
-                                                   nsCString &result) {
+/* static */
+nsresult nsStandardURL::NormalizeIPv4(const nsACString &host,
+                                      nsCString &result) {
   int32_t bases[4] = {10, 10, 10, 10};
   bool onlyBase10 = true;  // Track this as a special case
   int32_t dotIndex[3];     // The positions of the dots in the string
@@ -2463,8 +2465,8 @@ nsStandardURL::GetCommonBaseSpec(nsIURI *uri2, nsACString &aResult) {
   aResult.Truncate();
 
   // check pre-path; if they don't match, then return empty string
-  nsStandardURL *stdurl2;
-  nsresult rv = uri2->QueryInterface(kThisImplCID, (void **)&stdurl2);
+  RefPtr<nsStandardURL> stdurl2;
+  nsresult rv = uri2->QueryInterface(kThisImplCID, getter_AddRefs(stdurl2));
   isEquals = NS_SUCCEEDED(rv) &&
              SegmentIs(mScheme, stdurl2->mSpec.get(), stdurl2->mScheme) &&
              SegmentIs(mHost, stdurl2->mSpec.get(), stdurl2->mHost) &&
@@ -2472,7 +2474,6 @@ nsStandardURL::GetCommonBaseSpec(nsIURI *uri2, nsACString &aResult) {
              SegmentIs(mPassword, stdurl2->mSpec.get(), stdurl2->mPassword) &&
              (Port() == stdurl2->Port());
   if (!isEquals) {
-    if (NS_SUCCEEDED(rv)) NS_RELEASE(stdurl2);
     return NS_OK;
   }
 
@@ -2494,7 +2495,6 @@ nsStandardURL::GetCommonBaseSpec(nsIURI *uri2, nsACString &aResult) {
   // grab spec from beginning to thisIndex
   aResult = Substring(mSpec, mScheme.mPos, thisIndex - mSpec.get());
 
-  NS_RELEASE(stdurl2);
   return rv;
 }
 
@@ -2508,8 +2508,8 @@ nsStandardURL::GetRelativeSpec(nsIURI *uri2, nsACString &aResult) {
   bool isEquals = false;
   if (NS_SUCCEEDED(Equals(uri2, &isEquals)) && isEquals) return NS_OK;
 
-  nsStandardURL *stdurl2;
-  nsresult rv = uri2->QueryInterface(kThisImplCID, (void **)&stdurl2);
+  RefPtr<nsStandardURL> stdurl2;
+  nsresult rv = uri2->QueryInterface(kThisImplCID, getter_AddRefs(stdurl2));
   isEquals = NS_SUCCEEDED(rv) &&
              SegmentIs(mScheme, stdurl2->mSpec.get(), stdurl2->mScheme) &&
              SegmentIs(mHost, stdurl2->mSpec.get(), stdurl2->mHost) &&
@@ -2517,8 +2517,6 @@ nsStandardURL::GetRelativeSpec(nsIURI *uri2, nsACString &aResult) {
              SegmentIs(mPassword, stdurl2->mSpec.get(), stdurl2->mPassword) &&
              (Port() == stdurl2->Port());
   if (!isEquals) {
-    if (NS_SUCCEEDED(rv)) NS_RELEASE(stdurl2);
-
     return uri2->GetSpec(aResult);
   }
 
@@ -2546,7 +2544,6 @@ nsStandardURL::GetRelativeSpec(nsIURI *uri2, nsACString &aResult) {
 
     // if we didn't match through the first segment, return absolute path
     if ((*thisIndex != '/') || (*thatIndex != '/')) {
-      NS_RELEASE(stdurl2);
       return uri2->GetSpec(aResult);
     }
   }
@@ -2574,7 +2571,6 @@ nsStandardURL::GetRelativeSpec(nsIURI *uri2, nsACString &aResult) {
   aResult.Append(
       Substring(stdurl2->mSpec, startPos, stdurl2->mSpec.Length() - startPos));
 
-  NS_RELEASE(stdurl2);
   return rv;
 }
 
@@ -3446,9 +3442,8 @@ bool nsStandardURL::Deserialize(const URIParams &aParams) {
 //----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsStandardURL::GetInterfaces(uint32_t *count, nsIID ***array) {
-  *count = 0;
-  *array = nullptr;
+nsStandardURL::GetInterfaces(nsTArray<nsIID> &array) {
+  array.Clear();
   return NS_OK;
 }
 

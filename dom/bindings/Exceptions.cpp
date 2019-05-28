@@ -42,9 +42,11 @@ static void ThrowExceptionValueIfSafe(JSContext* aCx,
   JS::Rooted<JSObject*> exnObj(aCx, &exnVal.toObject());
   MOZ_ASSERT(js::IsObjectInContextCompartment(exnObj, aCx),
              "exnObj needs to be in the right compartment for the "
-             "CheckedUnwrap thing to make sense");
+             "CheckedUnwrapDynamic thing to make sense");
 
-  if (js::CheckedUnwrap(exnObj)) {
+  // aCx's current Realm is where we're throwing, so using it in the
+  // CheckedUnwrapDynamic check makes sense.
+  if (js::CheckedUnwrapDynamic(exnObj, aCx)) {
     // This is an object we're allowed to work with, so just go ahead and throw
     // it.
     JS_SetPendingException(aCx, exnVal);
@@ -224,11 +226,13 @@ class JSStackFrame final : public nsIStackFrame, public xpc::JSStackFrameBase {
   nsString mFilename;
   nsString mFunname;
   nsString mAsyncCause;
+  int32_t mSourceId;
   int32_t mLineno;
   int32_t mColNo;
 
   bool mFilenameInitialized;
   bool mFunnameInitialized;
+  bool mSourceIdInitialized;
   bool mLinenoInitialized;
   bool mColNoInitialized;
   bool mAsyncCauseInitialized;
@@ -239,10 +243,12 @@ class JSStackFrame final : public nsIStackFrame, public xpc::JSStackFrameBase {
 
 JSStackFrame::JSStackFrame(JS::Handle<JSObject*> aStack)
     : mStack(aStack),
+      mSourceId(0),
       mLineno(0),
       mColNo(0),
       mFilenameInitialized(false),
       mFunnameInitialized(false),
+      mSourceIdInitialized(false),
       mLinenoInitialized(false),
       mColNoInitialized(false),
       mAsyncCauseInitialized(false),
@@ -447,6 +453,34 @@ void JSStackFrame::GetName(JSContext* aCx, nsAString& aFunction) {
     mFunname = aFunction;
     mFunnameInitialized = true;
   }
+}
+
+int32_t JSStackFrame::GetSourceId(JSContext* aCx) {
+  if (!mStack) {
+    return 0;
+  }
+
+  uint32_t id;
+  bool canCache = false, useCachedValue = false;
+  GetValueIfNotCached(aCx, mStack, JS::GetSavedFrameSourceId,
+                      mSourceIdInitialized, &canCache, &useCachedValue, &id);
+
+  if (useCachedValue) {
+    return mSourceId;
+  }
+
+  if (canCache) {
+    mSourceId = id;
+    mSourceIdInitialized = true;
+  }
+
+  return id;
+}
+
+NS_IMETHODIMP
+JSStackFrame::GetSourceIdXPCOM(JSContext* aCx, int32_t* aSourceId) {
+  *aSourceId = GetSourceId(aCx);
+  return NS_OK;
 }
 
 int32_t JSStackFrame::GetLineNumber(JSContext* aCx) {

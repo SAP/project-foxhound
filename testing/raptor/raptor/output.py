@@ -32,7 +32,7 @@ class Output(object):
         self.summarized_screenshots = []
         self.subtest_alert_on = subtest_alert_on
 
-    def summarize(self):
+    def summarize(self, test_names):
         suites = []
         test_results = {
             'framework': {
@@ -43,7 +43,8 @@ class Output(object):
 
         # check if we actually have any results
         if len(self.results) == 0:
-            LOG.error("error: no raptor test results found!")
+            LOG.error("error: no raptor test results found for %s" %
+                      ', '.join(test_names))
             return
 
         for test in self.results:
@@ -134,7 +135,8 @@ class Output(object):
                 suite['subtests'] = subtests
 
             else:
-                LOG.error("output.summarize received unsupported test results type")
+                LOG.error("output.summarize received unsupported test results type for %s" %
+                          test.name)
                 return
 
             # for benchmarks there is generally  more than one subtest in each cycle
@@ -602,12 +604,8 @@ class Output(object):
 
         self.summarized_screenshots.append("""</table></body> </html>""")
 
-    def output(self):
+    def output(self, test_names):
         """output to file and perfherder data json """
-        if self.summarized_results == {}:
-            LOG.error("error: no summarized raptor results found!")
-            return False
-
         if os.environ['MOZ_UPLOAD_DIR']:
             # i.e. testing/mozharness/build/raptor.json locally; in production it will
             # be at /tasks/task_*/build/ (where it will be picked up by mozharness later
@@ -620,15 +618,24 @@ class Output(object):
             results_path = os.path.join(os.getcwd(), 'raptor.json')
             screenshot_path = os.path.join(os.getcwd(), 'screenshots.html')
 
-        with open(results_path, 'w') as f:
-            for result in self.summarized_results:
-                f.write("%s\n" % result)
+        if self.summarized_results == {}:
+            LOG.error("error: no summarized raptor results found for %s" %
+                      ', '.join(test_names))
+        else:
+            with open(results_path, 'w') as f:
+                for result in self.summarized_results:
+                    f.write("%s\n" % result)
 
         if len(self.summarized_screenshots) > 0:
             with open(screenshot_path, 'w') as f:
                 for result in self.summarized_screenshots:
                     f.write("%s\n" % result)
             LOG.info("screen captures can be found locally at: %s" % screenshot_path)
+
+        # now that we've checked for screen captures too, if there were no actual
+        # test results we can bail out here
+        if self.summarized_results == {}:
+            return False
 
         # when gecko_profiling, we don't want results ingested by Perfherder
         extra_opts = self.summarized_results['suites'][0].get('extraOptions', [])
@@ -650,7 +657,7 @@ class Output(object):
 
         return True
 
-    def output_supporting_data(self):
+    def output_supporting_data(self, test_names):
         '''
         Supporting data was gathered outside of the main raptor test; it has already
         been summarized, now output it appropriately.
@@ -661,7 +668,8 @@ class Output(object):
         from the actual Raptor test that was ran when the supporting data was gathered.
         '''
         if len(self.summarized_supporting_data) == 0:
-            LOG.error("error: no summarized supporting data found!")
+            LOG.error("error: no summarized supporting data found for %s" %
+                      ', '.join(test_names))
             return False
 
         for next_data_set in self.summarized_supporting_data:

@@ -102,7 +102,8 @@ PopupBlocker::PopupControlState PopupBlocker::PushPopupControlState(
   return old;
 }
 
-/* static */ void PopupBlocker::PopPopupControlState(
+/* static */
+void PopupBlocker::PopPopupControlState(
     PopupBlocker::PopupControlState aState) {
   MOZ_ASSERT(NS_IsMainThread());
   sPopupControlState = aState;
@@ -113,8 +114,8 @@ PopupBlocker::GetPopupControlState() {
   return sPopupControlState;
 }
 
-/* static */ bool PopupBlocker::CanShowPopupByPermission(
-    nsIPrincipal* aPrincipal) {
+/* static */
+bool PopupBlocker::CanShowPopupByPermission(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aPrincipal);
   uint32_t permit;
   nsCOMPtr<nsIPermissionManager> permissionManager =
@@ -122,7 +123,7 @@ PopupBlocker::GetPopupControlState() {
 
   if (permissionManager &&
       NS_SUCCEEDED(permissionManager->TestPermissionFromPrincipal(
-          aPrincipal, "popup", &permit))) {
+          aPrincipal, NS_LITERAL_CSTRING("popup"), &permit))) {
     if (permit == nsIPermissionManager::ALLOW_ACTION) {
       return true;
     }
@@ -134,7 +135,8 @@ PopupBlocker::GetPopupControlState() {
   return !StaticPrefs::dom_disable_open_during_load();
 }
 
-/* static */ bool PopupBlocker::TryUsePopupOpeningToken() {
+/* static */
+bool PopupBlocker::TryUsePopupOpeningToken() {
   MOZ_ASSERT(sPopupStatePusherCount);
 
   if (!sUnusedPopupToken) {
@@ -145,15 +147,14 @@ PopupBlocker::GetPopupControlState() {
   return false;
 }
 
-/* static */ bool PopupBlocker::IsPopupOpeningTokenUnused() {
-  return sUnusedPopupToken;
-}
+/* static */
+bool PopupBlocker::IsPopupOpeningTokenUnused() { return sUnusedPopupToken; }
 
-/* static */ void PopupBlocker::PopupStatePusherCreated() {
-  ++sPopupStatePusherCount;
-}
+/* static */
+void PopupBlocker::PopupStatePusherCreated() { ++sPopupStatePusherCount; }
 
-/* static */ void PopupBlocker::PopupStatePusherDestroyed() {
+/* static */
+void PopupBlocker::PopupStatePusherDestroyed() {
   MOZ_ASSERT(sPopupStatePusherCount);
 
   if (!--sPopupStatePusherCount) {
@@ -287,32 +288,45 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       }
       break;
     case eMouseEventClass:
-      if (aEvent->IsTrusted() &&
-          aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
-        abuse = PopupBlocker::openBlocked;
+      if (aEvent->IsTrusted()) {
+        if (aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+          abuse = PopupBlocker::openBlocked;
+          switch (aEvent->mMessage) {
+            case eMouseUp:
+              if (PopupAllowedForEvent("mouseup")) {
+                abuse = PopupBlocker::openControlled;
+              }
+              break;
+            case eMouseDown:
+              if (PopupAllowedForEvent("mousedown")) {
+                abuse = PopupBlocker::openControlled;
+              }
+              break;
+            case eMouseClick:
+              /* Click events get special treatment because of their
+                 historical status as a more legitimate event handler. If
+                 click popups are enabled in the prefs, clear the popup
+                 status completely. */
+              if (PopupAllowedForEvent("click")) {
+                abuse = PopupBlocker::openAllowed;
+              }
+              break;
+            case eMouseDoubleClick:
+              if (PopupAllowedForEvent("dblclick")) {
+                abuse = PopupBlocker::openControlled;
+              }
+              break;
+            default:
+              break;
+          }
+        }
+
         switch (aEvent->mMessage) {
-          case eMouseUp:
-            if (PopupAllowedForEvent("mouseup")) {
+          case eContextMenu:
+            if (PopupAllowedForEvent("contextmenu")) {
               abuse = PopupBlocker::openControlled;
-            }
-            break;
-          case eMouseDown:
-            if (PopupAllowedForEvent("mousedown")) {
-              abuse = PopupBlocker::openControlled;
-            }
-            break;
-          case eMouseClick:
-            /* Click events get special treatment because of their
-               historical status as a more legitimate event handler. If
-               click popups are enabled in the prefs, clear the popup
-               status completely. */
-            if (PopupAllowedForEvent("click")) {
-              abuse = PopupBlocker::openAllowed;
-            }
-            break;
-          case eMouseDoubleClick:
-            if (PopupAllowedForEvent("dblclick")) {
-              abuse = PopupBlocker::openControlled;
+            } else {
+              abuse = PopupBlocker::openBlocked;
             }
             break;
           default:
@@ -368,14 +382,16 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
   return abuse;
 }
 
-/* static */ void PopupBlocker::Initialize() {
+/* static */
+void PopupBlocker::Initialize() {
   DebugOnly<nsresult> rv =
       Preferences::RegisterCallback(OnPrefChange, "dom.popup_allowed_events");
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "Failed to observe \"dom.popup_allowed_events\"");
 }
 
-/* static */ void PopupBlocker::Shutdown() {
+/* static */
+void PopupBlocker::Shutdown() {
   if (sPopupAllowedEvents) {
     free(sPopupAllowedEvents);
   }
@@ -383,7 +399,8 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
   Preferences::UnregisterCallback(OnPrefChange, "dom.popup_allowed_events");
 }
 
-/* static */ bool PopupBlocker::ConsumeTimerTokenForExternalProtocolIframe() {
+/* static */
+bool PopupBlocker::ConsumeTimerTokenForExternalProtocolIframe() {
   TimeStamp now = TimeStamp::Now();
 
   if (sLastAllowedExternalProtocolIFrameTimeStamp.IsNull()) {
@@ -400,8 +417,14 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
   return true;
 }
 
-/* static */ TimeStamp PopupBlocker::WhenLastExternalProtocolIframeAllowed() {
+/* static */
+TimeStamp PopupBlocker::WhenLastExternalProtocolIframeAllowed() {
   return sLastAllowedExternalProtocolIFrameTimeStamp;
+}
+
+/* static */
+void PopupBlocker::ResetLastExternalProtocolIframeAllowed() {
+  sLastAllowedExternalProtocolIFrameTimeStamp = TimeStamp();
 }
 
 }  // namespace dom

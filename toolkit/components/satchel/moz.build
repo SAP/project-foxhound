@@ -27,19 +27,21 @@ LOCAL_INCLUDES += [
     '../build',
 ]
 
-EXTRA_COMPONENTS += [
-    'FormHistoryStartup.js',
-    'nsFormAutoComplete.js',
-    'nsInputListAutoComplete.js',
-    'satchel.manifest',
-]
-
 EXTRA_JS_MODULES += [
     'AutoCompletePopup.jsm',
+    'FormAutoComplete.jsm',
     'FormHistory.jsm',
+    'FormHistoryStartup.jsm',
+    'InputListAutoComplete.jsm',
     'nsFormAutoCompleteResult.jsm',
 ]
 
-FINAL_LIBRARY = 'xul'
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
 
-JAR_MANIFESTS += ['jar.mn']
+FINAL_TARGET_FILES.actors += [
+    'FormSubmitChild.jsm',
+]
+
+FINAL_LIBRARY = 'xul'

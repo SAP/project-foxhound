@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Oke, paham",
   "prefs_home_header": "Konten Beranda Firefox",
   "prefs_home_description": "Pilih konten yang ingin Anda tampilkan dalam Beranda Firefox.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Beranda Firefox",
+  "prefs_content_discovery_description": "Penemuan Konten dalam Firefox Home memungkinkan Anda untuk menemukan artikel bermutu tinggi dan relevan dari seluruh web.",
+  "prefs_content_discovery_button": "Matikan Penemuan Konten",
   "prefs_section_rows_option": "{num} baris",
   "prefs_search_header": "Pencarian Web",
   "prefs_topsites_description": "Situs yang sering Anda kunjungi",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Simpan cerita yang anda sukai di Pocket, dan dapatkan bacaan menarik untuk Anda.",
   "highlights_empty_state": "Mulai menjelajah, dan kami akan menampilkan beberapa artikel bagus, video, dan halaman lain yang baru saja Anda kunjungi atau termarkah di sini.",
   "topstories_empty_state": "Maaf Anda tercegat. Periksa lagi nanti untuk lebih banyak cerita terbaik dari {provider}. Tidak mau menunggu? Pilih topik populer untuk menemukan lebih banyak cerita hebat dari seluruh web.",
-  "manual_migration_explanation2": "Coba Firefox dengan markah, riwayat, dan sandi dari peramban lain.",
-  "manual_migration_cancel_button": "Tidak, Terima kasih",
-  "manual_migration_import_button": "Impor Sekarang",
   "error_fallback_default_info": "Ups, ada masalah saat memuat konten ini.",
   "error_fallback_default_refresh_suggestion": "Segarkan laman untuk mencoba lagi.",
   "section_menu_action_remove_section": "Hapus Bagian",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Lanjutkan",
   "firstrun_skip_login": "Lewati langkah ini",
   "context_menu_title": "Buka menu",
-  "pocket_learn_more": "Pelajari Lebih Lanjut"
+  "manual_migration_explanation2": "Coba Firefox dengan markah, riwayat, dan sandi dari peramban lain.",
+  "manual_migration_cancel_button": "Tidak, Terima kasih",
+  "manual_migration_import_button": "Impor Sekarang"
 };

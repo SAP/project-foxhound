@@ -1,8 +1,6 @@
 "use strict";
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 function inChildProcess() {
@@ -24,7 +22,7 @@ function OpenChannelPromise(aChannel, aClosure) {
       aClosure(request.QueryInterface(Ci.nsIHttpChannel), buffer, context);
       resolve();
     }
-    aChannel.asyncOpen2(new ChannelListener(processResponse, null));
+    aChannel.asyncOpen(new ChannelListener(processResponse, null));
   });
 }
 

@@ -10,7 +10,7 @@
  */
 var tabPreviews = {
   get aspectRatio() {
-    let { PageThumbUtils } = ChromeUtils.import("resource://gre/modules/PageThumbUtils.jsm", {});
+    let { PageThumbUtils } = ChromeUtils.import("resource://gre/modules/PageThumbUtils.jsm");
     let [ width, height ] = PageThumbUtils.getThumbnailSize(window);
     delete this.aspectRatio;
     return this.aspectRatio = height / width;
@@ -93,8 +93,9 @@ var tabPreviewPanelHelper = {
     if (host._prevFocus) {
       Services.focus.setFocus(host._prevFocus, Ci.nsIFocusManager.FLAG_NOSCROLL);
       host._prevFocus = null;
-    } else
+    } else {
       gBrowser.selectedBrowser.focus();
+    }
 
     if (host.tabToSelect) {
       gBrowser.selectedTab = host.tabToSelect;
@@ -428,10 +429,8 @@ var ctrlTab = {
   },
 
   onKeyDown(event) {
-    if (event.keyCode != event.DOM_VK_TAB ||
-        !event.ctrlKey ||
-        event.altKey ||
-        event.metaKey) {
+    let action = ShortcutUtils.getSystemActionForEvent(event);
+    if (action != ShortcutUtils.CYCLE_TABS) {
       return;
     }
 

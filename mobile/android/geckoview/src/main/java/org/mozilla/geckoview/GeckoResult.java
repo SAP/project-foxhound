@@ -210,7 +210,7 @@ public class GeckoResult<T> {
      *
      * @param from The {@link GeckoResult} to copy.
      */
-    public GeckoResult(GeckoResult<T> from) {
+    public GeckoResult(final GeckoResult<T> from) {
         this();
         completeFrom(from);
     }
@@ -477,7 +477,7 @@ public class GeckoResult<T> {
      * @throws TimeoutException if we wait more than timeoutMillis before the result
      *                          is completed.
      */
-    public synchronized @Nullable T poll(long timeoutMillis) throws Throwable {
+    public synchronized @Nullable T poll(final long timeoutMillis) throws Throwable {
         final long start = SystemClock.uptimeMillis();
         long remaining = timeoutMillis;
         while (!mComplete && remaining > 0) {

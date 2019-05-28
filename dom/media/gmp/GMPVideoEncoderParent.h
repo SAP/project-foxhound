@@ -25,6 +25,8 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
                               public PGMPVideoEncoderParent,
                               public GMPSharedMemManager,
                               public GMPCrashHelperHolder {
+  friend class PGMPVideoEncoderParent;
+
  public:
   NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent)
 
@@ -56,7 +58,7 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
     return AllocUnsafeShmem(aSize, aType, aMem);
 #endif
   }
-  void Dealloc(Shmem& aMem) override { DeallocShmem(aMem); }
+  void Dealloc(Shmem&& aMem) override { DeallocShmem(aMem); }
 
  private:
   virtual ~GMPVideoEncoderParent(){};

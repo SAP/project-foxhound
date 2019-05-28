@@ -55,12 +55,12 @@ class nsAvailableMemoryWatcher final : public nsIObserver,
 #  if defined(HAVE_64BIT_BUILD)
   static const size_t kLowVirtualMemoryThreshold = 0;
 #  else
-  static const size_t kLowVirtualMemoryThreshold = 256 * 1024 * 1024;
+  static const size_t kLowVirtualMemoryThreshold = 384 * 1024 * 1024;
 #  endif
 
   // Fire a low-memory notification if we have less than this many bytes of
   // commit space (physical memory plus page file) left.
-  static const size_t kLowCommitSpaceThreshold = 256 * 1024 * 1024;
+  static const size_t kLowCommitSpaceThreshold = 384 * 1024 * 1024;
 
   // Fire a low-memory notification if we have less than this many bytes of
   // physical memory available on the whole machine.
@@ -134,8 +134,8 @@ void nsAvailableMemoryWatcher::Shutdown() {
   }
 }
 
-/* static */ bool nsAvailableMemoryWatcher::IsVirtualMemoryLow(
-    const MEMORYSTATUSEX& aStat) {
+/* static */
+bool nsAvailableMemoryWatcher::IsVirtualMemoryLow(const MEMORYSTATUSEX& aStat) {
   if ((kLowVirtualMemoryThreshold != 0) &&
       (aStat.ullAvailVirtual < kLowVirtualMemoryThreshold)) {
     sNumLowVirtualMemEvents++;
@@ -145,8 +145,8 @@ void nsAvailableMemoryWatcher::Shutdown() {
   return false;
 }
 
-/* static */ bool nsAvailableMemoryWatcher::IsCommitSpaceLow(
-    const MEMORYSTATUSEX& aStat) {
+/* static */
+bool nsAvailableMemoryWatcher::IsCommitSpaceLow(const MEMORYSTATUSEX& aStat) {
   if ((kLowCommitSpaceThreshold != 0) &&
       (aStat.ullAvailPageFile < kLowCommitSpaceThreshold)) {
     sNumLowCommitSpaceEvents++;
@@ -159,7 +159,8 @@ void nsAvailableMemoryWatcher::Shutdown() {
   return false;
 }
 
-/* static */ bool nsAvailableMemoryWatcher::IsPhysicalMemoryLow(
+/* static */
+bool nsAvailableMemoryWatcher::IsPhysicalMemoryLow(
     const MEMORYSTATUSEX& aStat) {
   if ((kLowPhysicalMemoryThreshold != 0) &&
       (aStat.ullAvailPhys < kLowPhysicalMemoryThreshold)) {

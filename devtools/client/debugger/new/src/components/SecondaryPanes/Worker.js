@@ -9,7 +9,7 @@ import { connect } from "../../utils/connect";
 import classnames from "classnames";
 
 import actions from "../../actions";
-import { getCurrentThread, getThreadIsPaused } from "../../selectors";
+import { getCurrentThread, getIsPaused } from "../../selectors";
 import { getDisplayName, isWorker } from "../../utils/workers";
 import AccessibleImage from "../shared/AccessibleImage";
 
@@ -23,6 +23,11 @@ type Props = {
 };
 
 export class Worker extends Component<Props> {
+  onSelectThread = () => {
+    const { thread } = this.props;
+    this.props.selectThread(thread.actor);
+  };
+
   render() {
     const { currentThread, isPaused, thread } = this.props;
 
@@ -32,12 +37,11 @@ export class Worker extends Component<Props> {
 
     return (
       <div
-        className={classnames(
-          "worker",
-          thread.actor == currentThread && "selected"
-        )}
+        className={classnames("worker", {
+          selected: thread.actor == currentThread
+        })}
         key={thread.actor}
-        onClick={() => this.props.selectThread(thread.actor)}
+        onClick={this.onSelectThread}
       >
         <div clasName="icon">
           <AccessibleImage className={isWorker ? "worker" : "file"} />
@@ -55,7 +59,7 @@ export class Worker extends Component<Props> {
 
 const mapStateToProps = (state, props: Props) => ({
   currentThread: getCurrentThread(state),
-  isPaused: getThreadIsPaused(state, props.thread.actor)
+  isPaused: getIsPaused(state, props.thread.actor)
 });
 
 export default connect(

@@ -13,7 +13,6 @@ author: Jordan Lund
 import json
 
 import os
-import pprint
 import time
 import uuid
 import copy
@@ -55,8 +54,6 @@ MISSING_CFG_KEY_MSG = "The key '%s' could not be determined \
 Please add this to your config."
 
 ERROR_MSGS = {
-    'undetermined_repo_path': 'The repo could not be determined. \
-Please make sure that "repo" is in your config.',
     'comments_undetermined': '"comments" could not be determined. This may be \
 because it was a forced build.',
     'tooltool_manifest_undetermined': '"tooltool_manifest_src" not set, \
@@ -257,7 +254,7 @@ class BuildingConfig(BaseConfig):
         # eg ('builds/branch_specifics.py', {'foo': 'bar'})
         all_config_dicts = []
         # important config files
-        variant_cfg_file = branch_cfg_file = pool_cfg_file = ''
+        variant_cfg_file = pool_cfg_file = ''
 
         # we want to make the order in which the options were given
         # not matter. ie: you can supply --branch before --build-pool
@@ -266,12 +263,11 @@ class BuildingConfig(BaseConfig):
         # ### The order from highest precedence to lowest is:
         # # There can only be one of these...
         # 1) build_pool: this can be either staging, pre-prod, and prod cfgs
-        # 2) branch: eg: mozilla-central, cedar, cypress, etc
-        # 3) build_variant: these could be known like asan and debug
+        # 2) build_variant: these could be known like asan and debug
         #                   or a custom config
         #
         # # There can be many of these
-        # 4) all other configs: these are any configs that are passed with
+        # 3) all other configs: these are any configs that are passed with
         #                       --cfg and --opt-cfg. There order is kept in
         #                       which they were passed on the cmd line. This
         #                       behaviour is maintains what happens by default
@@ -284,16 +280,13 @@ class BuildingConfig(BaseConfig):
                 if cf == BuildOptionParser.build_pool_cfg_file:
                     pool_cfg_file = all_config_files[i]
 
-            if cf == BuildOptionParser.branch_cfg_file:
-                branch_cfg_file = all_config_files[i]
-
             if cf == options.build_variant:
                 variant_cfg_file = all_config_files[i]
 
         # now remove these from the list if there was any.
         # we couldn't pop() these in the above loop as mutating a list while
         # iterating through it causes spurious results :)
-        for cf in [pool_cfg_file, branch_cfg_file, variant_cfg_file]:
+        for cf in [pool_cfg_file, variant_cfg_file]:
             if cf:
                 all_config_files.remove(cf)
 
@@ -312,14 +305,6 @@ class BuildingConfig(BaseConfig):
                 (variant_cfg_file, parse_config_file(variant_cfg_file))
             )
         config_paths = options.config_paths or ['.']
-        if branch_cfg_file:
-            # take only the specific branch, if present
-            branch_configs = parse_config_file(branch_cfg_file,
-                                               search_path=config_paths + [DEFAULT_CONFIG_PATH])
-            if branch_configs.get(options.branch or ""):
-                all_config_dicts.append(
-                    (branch_cfg_file, branch_configs[options.branch])
-                )
         if pool_cfg_file:
             # take only the specific pool. If we are here, the pool
             # must be present
@@ -353,10 +338,8 @@ class BuildOptionParser(object):
         'tsan': 'builds/releng_sub_%s_configs/%s_tsan.py',
         'cross-debug': 'builds/releng_sub_%s_configs/%s_cross_debug.py',
         'cross-debug-searchfox': 'builds/releng_sub_%s_configs/%s_cross_debug_searchfox.py',
-        'cross-debug-artifact': 'builds/releng_sub_%s_configs/%s_cross_debug_artifact.py',
         'cross-noopt-debug': 'builds/releng_sub_%s_configs/%s_cross_noopt_debug.py',
         'cross-fuzzing-asan': 'builds/releng_sub_%s_configs/%s_cross_fuzzing_asan.py',
-        'cross-artifact': 'builds/releng_sub_%s_configs/%s_cross_artifact.py',
         'debug': 'builds/releng_sub_%s_configs/%s_debug.py',
         'fuzzing-debug': 'builds/releng_sub_%s_configs/%s_fuzzing_debug.py',
         'asan-and-debug': 'builds/releng_sub_%s_configs/%s_asan_and_debug.py',
@@ -369,28 +352,21 @@ class BuildOptionParser(object):
         'api-16-gradle-dependencies':
             'builds/releng_sub_%s_configs/%s_api_16_gradle_dependencies.py',
         'api-16': 'builds/releng_sub_%s_configs/%s_api_16.py',
-        'api-16-artifact': 'builds/releng_sub_%s_configs/%s_api_16_artifact.py',
         'api-16-debug': 'builds/releng_sub_%s_configs/%s_api_16_debug.py',
         'api-16-debug-ccov': 'builds/releng_sub_%s_configs/%s_api_16_debug_ccov.py',
-        'api-16-debug-artifact': 'builds/releng_sub_%s_configs/%s_api_16_debug_artifact.py',
+        'api-16-debug-searchfox': 'builds/releng_sub_%s_configs/%s_api_16_debug_searchfox.py',
         'api-16-gradle': 'builds/releng_sub_%s_configs/%s_api_16_gradle.py',
-        'api-16-gradle-artifact': 'builds/releng_sub_%s_configs/%s_api_16_gradle_artifact.py',
         'api-16-without-google-play-services':
             'builds/releng_sub_%s_configs/%s_api_16_without_google_play_services.py',
         'rusttests': 'builds/releng_sub_%s_configs/%s_rusttests.py',
         'rusttests-debug': 'builds/releng_sub_%s_configs/%s_rusttests_debug.py',
         'x86': 'builds/releng_sub_%s_configs/%s_x86.py',
-        'x86-artifact': 'builds/releng_sub_%s_configs/%s_x86_artifact.py',
         'x86-fuzzing-debug': 'builds/releng_sub_%s_configs/%s_x86_fuzzing_debug.py',
         'x86_64': 'builds/releng_sub_%s_configs/%s_x86_64.py',
-        'x86_64-artifact': 'builds/releng_sub_%s_configs/%s_x86_64_artifact.py',
         'x86_64-debug': 'builds/releng_sub_%s_configs/%s_x86_64_debug.py',
-        'x86_64-debug-artifact': 'builds/releng_sub_%s_configs/%s_x86_64_debug_artifact.py',
         'api-16-partner-sample1': 'builds/releng_sub_%s_configs/%s_api_16_partner_sample1.py',
         'aarch64': 'builds/releng_sub_%s_configs/%s_aarch64.py',
-        'aarch64-artifact': 'builds/releng_sub_%s_configs/%s_aarch64_artifact.py',
         'aarch64-debug': 'builds/releng_sub_%s_configs/%s_aarch64_debug.py',
-        'aarch64-debug-artifact': 'builds/releng_sub_%s_configs/%s_aarch64_debug_artifact.py',
         'android-test': 'builds/releng_sub_%s_configs/%s_test.py',
         'android-test-ccov': 'builds/releng_sub_%s_configs/%s_test_ccov.py',
         'android-checkstyle': 'builds/releng_sub_%s_configs/%s_checkstyle.py',
@@ -399,12 +375,9 @@ class BuildOptionParser(object):
         'android-findbugs': 'builds/releng_sub_%s_configs/%s_findbugs.py',
         'android-geckoview-docs': 'builds/releng_sub_%s_configs/%s_geckoview_docs.py',
         'valgrind': 'builds/releng_sub_%s_configs/%s_valgrind.py',
-        'artifact': 'builds/releng_sub_%s_configs/%s_artifact.py',
-        'debug-artifact': 'builds/releng_sub_%s_configs/%s_debug_artifact.py',
         'tup': 'builds/releng_sub_%s_configs/%s_tup.py',
     }
     build_pool_cfg_file = 'builds/build_pool_specifics.py'
-    branch_cfg_file = 'builds/branch_specifics.py'
 
     @classmethod
     def _query_pltfrm_and_bits(cls, target_option, options):
@@ -520,9 +493,7 @@ class BuildOptionParser(object):
 
     @classmethod
     def set_build_branch(cls, option, opt, value, parser):
-        # first let's add the branch_specific file where there may be branch
-        # specific keys/values. Then let's store the branch name we are using
-        parser.values.config_files.append(cls.branch_cfg_file)
+        # Store the branch name we are using
         setattr(parser.values, option.dest, value)  # the branch name
 
     @classmethod
@@ -583,12 +554,7 @@ BUILD_BASE_CONFIG_OPTIONS = [
         "callback": BuildOptionParser.set_build_branch,
         "type": "string",
         "dest": "branch",
-        "help": "This sets the branch we will be building this for."
-                " If this branch is in branch_specifics.py, update our"
-                " config with specific keys/values from that. See"
-                " %s for possibilites" % (
-                    BuildOptionParser.branch_cfg_file,
-                )}],
+        "help": "This sets the branch we will be building this for."}],
     [['--scm-level'], {
         "action": "store",
         "type": "int",
@@ -646,7 +612,6 @@ class BuildScript(AutomationMixin,
             if not self.stage_platform:
                 self.error("'stage_platform' not determined and is required")
             self.fatal("Please add missing items to your config")
-        self.repo_path = None
         self.buildid = None
         self.query_buildid()  # sets self.buildid
         self.generated_build_props = False
@@ -673,24 +638,12 @@ class BuildScript(AutomationMixin,
                 BuildOptionParser.bits
             )
         build_pool_cfg = BuildOptionParser.build_pool_cfg_file
-        branch_cfg = BuildOptionParser.branch_cfg_file
 
         cfg_match_msg = "Script was run with '%(option)s %(type)s' and \
 '%(type)s' matches a key in '%(type_config_file)s'. Updating self.config with \
 items from that key's value."
-        pf_override_msg = "The branch '%(branch)s' has custom behavior for the \
-platform '%(platform)s'. Updating self.config with the following from \
-'platform_overrides' found in '%(pf_cfg_file)s':"
 
         for i, (target_file, target_dict) in enumerate(cfg_files_and_dicts):
-            if branch_cfg and branch_cfg in target_file:
-                self.info(
-                    cfg_match_msg % {
-                        'option': '--branch',
-                        'type': c['branch'],
-                        'type_config_file': BuildOptionParser.branch_cfg_file
-                    }
-                )
             if build_pool_cfg and build_pool_cfg in target_file:
                 self.info(
                     cfg_match_msg % {
@@ -707,20 +660,6 @@ platform '%(platform)s'. Updating self.config with the following from \
                         'type_config_file': variant_cfg,
                     }
                 )
-        if c.get("platform_overrides"):
-            if c['stage_platform'] in c['platform_overrides'].keys():
-                self.info(
-                    pf_override_msg % {
-                        'branch': c['branch'],
-                        'platform': c['stage_platform'],
-                        'pf_cfg_file': BuildOptionParser.branch_cfg_file
-                    }
-                )
-                branch_pf_overrides = c['platform_overrides'][
-                    c['stage_platform']
-                ]
-                self.info(pprint.pformat(branch_pf_overrides))
-                c.update(branch_pf_overrides)
         self.info('To generate a config file based upon options passed and '
                   'config files used, run script as before but extend options '
                   'with "--dump-config"')
@@ -806,24 +745,6 @@ or run without that action (ie: --no-{action})"
         self.objdir = self.config['objdir']
         return self.objdir
 
-    def _query_repo(self):
-        if self.repo_path:
-            return self.repo_path
-        c = self.config
-
-        # we actually supply the repo in mozharness so if it's in
-        #  the config, we use that (automation does not require it in
-        # props)
-        if not c.get('repo_path'):
-            repo_path = 'projects/%s' % (self.branch,)
-            self.info(
-                "repo_path not in config. Using '%s' instead" % (repo_path,)
-            )
-        else:
-            repo_path = c['repo_path']
-        self.repo_path = '%s/%s' % (c['repo_base'], repo_path,)
-        return self.repo_path
-
     def query_is_nightly_promotion(self):
         platform_enabled = self.config.get('enable_nightly_promotion')
         branch_enabled = self.branch in self.config.get('nightly_promotion_branches')
@@ -841,22 +762,14 @@ or run without that action (ie: --no-{action})"
         # first grab the buildid
         env['MOZ_BUILD_DATE'] = self.query_buildid()
 
-        # Set the source repository to what we're building from since
-        # the default is to query `hg paths` which isn't reliable with pooled
-        # storage
-        repo_path = self._query_repo()
-        assert repo_path
-        env['MOZ_SOURCE_REPO'] = repo_path
-
         if self.query_is_nightly() or self.query_is_nightly_promotion():
-            # in branch_specifics.py we might set update_channel explicitly
+            # taskcluster sets the update channel for shipping builds
+            # explicitly
             if c.get('update_channel'):
                 update_channel = c['update_channel']
                 if isinstance(update_channel, unicode):
                     update_channel = update_channel.encode("utf-8")
                 env["MOZ_UPDATE_CHANNEL"] = update_channel
-            elif c.get('enable_release_promotion'):
-                env["MOZ_UPDATE_CHANNEL"] = self.branch
             else:  # let's just give the generic channel based on branch
                 env["MOZ_UPDATE_CHANNEL"] = "nightly-%s" % (self.branch,)
             self.info("Update channel set to: {}".format(env["MOZ_UPDATE_CHANNEL"]))
@@ -889,13 +802,11 @@ or run without that action (ie: --no-{action})"
 
         requirements:
         1) must be a platform that can run against pgo
-        2) either:
-            a) must be a nightly build
-            b) must be on a branch that runs pgo if it can everytime
+        2) must be a nightly build
         """
         c = self.config
         if self.stage_platform in c['pgo_platforms']:
-            if c.get('branch_uses_per_checkin_strategy') or self.query_is_nightly():
+            if self.query_is_nightly():
                 return True
         return False
 
@@ -1287,7 +1198,7 @@ or run without that action (ie: --no-{action})"
         )
 
     def check_test(self):
-        if self.config.get('forced_artifact_build'):
+        if os.environ.get('USE_ARTIFACT'):
             self.info('Skipping due to forced artifact build.')
             return
         c = self.config
@@ -1394,8 +1305,16 @@ or run without that action (ie: --no-{action})"
         with open(stats_file, 'rb') as fh:
             stats = json.load(fh)
 
-        total = stats['stats']['requests_executed']
-        hits = stats['stats']['cache_hits']
+        def get_stat(key):
+            val = stats['stats'][key]
+            # Future versions of sccache will distinguish stats by language
+            # and store them as a dict.
+            if isinstance(val, dict):
+                val = sum(val['counts'].values())
+            return val
+
+        total = get_stat('requests_executed')
+        hits = get_stat('cache_hits')
         if total > 0:
             hits /= float(total)
 
@@ -1617,7 +1536,7 @@ or run without that action (ie: --no-{action})"
         """
         self.info('Collecting build metrics')
 
-        if self.config.get('forced_artifact_build'):
+        if os.environ.get('USE_ARTIFACT'):
             self.info('Skipping due to forced artifact build.')
             return
 

@@ -13,7 +13,7 @@ ChromeUtils.defineModuleGetter(this, "Services",
                                "resource://gre/modules/Services.jsm");
 
 var RemotePrompt = {
-  // Listeners are added in nsBrowserGlue.js
+  // Listeners are added in BrowserGlue.jsm
   receiveMessage(message) {
     switch (message.name) {
       case "Prompt:Open":
@@ -80,6 +80,7 @@ var RemotePrompt = {
       // there's other stuff in nsWindowWatcher::OpenWindowInternal
       // that we might need to do here as well.
     } catch (ex) {
+      Cu.reportError(ex);
       onPromptClose(true);
     }
   },

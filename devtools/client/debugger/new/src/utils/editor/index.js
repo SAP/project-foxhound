@@ -162,6 +162,12 @@ function isVisible(codeMirror: any, top: number, left: number) {
 
 export function getLocationsInViewport({ codeMirror }: Object) {
   // Get scroll position
+  if (!codeMirror) {
+    return {
+      start: { line: 0, column: 0 },
+      end: { line: 0, column: 0 }
+    };
+  }
   const charWidth = codeMirror.defaultCharWidth();
   const scrollArea = codeMirror.getScrollInfo();
   const { scrollLeft } = codeMirror.doc;
@@ -187,7 +193,7 @@ export function getLocationsInViewport({ codeMirror }: Object) {
 
 export function markText(
   { codeMirror }: Object,
-  className: String,
+  className: string,
   { start, end }: EditorRange
 ) {
   return codeMirror.markText(
@@ -208,7 +214,7 @@ export function lineAtHeight(
 
 export function getSourceLocationFromMouseEvent(
   { codeMirror }: Object,
-  selectedLocation: SourceLocation,
+  source: Source,
   e: MouseEvent
 ) {
   const { line, ch } = codeMirror.coordsChar({
@@ -217,7 +223,7 @@ export function getSourceLocationFromMouseEvent(
   });
 
   return {
-    sourceId: selectedLocation.sourceId,
+    sourceId: source.id,
     line: line + 1,
     column: ch + 1
   };

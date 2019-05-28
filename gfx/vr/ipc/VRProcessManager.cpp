@@ -16,14 +16,19 @@ namespace gfx {
 
 static StaticAutoPtr<VRProcessManager> sSingleton;
 
-/* static */ VRProcessManager* VRProcessManager::Get() { return sSingleton; }
+/* static */
+VRProcessManager* VRProcessManager::Get() { return sSingleton; }
 
-/* static */ void VRProcessManager::Initialize() {
+/* static */
+void VRProcessManager::Initialize() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  sSingleton = new VRProcessManager();
+  if (sSingleton == nullptr) {
+    sSingleton = new VRProcessManager();
+  }
 }
 
-/* static */ void VRProcessManager::Shutdown() { sSingleton = nullptr; }
+/* static */
+void VRProcessManager::Shutdown() { sSingleton = nullptr; }
 
 VRProcessManager::VRProcessManager() : mProcess(nullptr) {
   MOZ_COUNT_CTOR(VRProcessManager);
@@ -36,6 +41,7 @@ VRProcessManager::~VRProcessManager() {
   MOZ_COUNT_DTOR(VRProcessManager);
 
   if (mObserver) {
+    mObserver->Unregister();
     nsContentUtils::UnregisterShutdownObserver(mObserver);
     mObserver = nullptr;
   }
@@ -144,6 +150,8 @@ VRProcessManager::Observer::Observe(nsISupports* aSubject, const char* aTopic,
   }
   return NS_OK;
 }
+
+void VRProcessManager::Observer::Unregister() { mManager = nullptr; }
 
 void VRProcessManager::CleanShutdown() { DestroyProcess(); }
 

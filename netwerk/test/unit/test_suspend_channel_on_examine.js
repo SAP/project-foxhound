@@ -2,8 +2,8 @@
 
 var CC = Components.Constructor;
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var obs = Cc["@mozilla.org/observer-service;1"]
             .getService(Ci.nsIObserverService);
@@ -34,7 +34,7 @@ function startChannelRequest(baseUrl, flags, callback) {
     uri: baseUrl,
     loadUsingSystemPrincipal: true
   });
-  chan.asyncOpen2(new ChannelListener(callback, null, flags));
+  chan.asyncOpen(new ChannelListener(callback, null, flags));
 }
 
 // We first make a request that we'll cancel asynchronously.  The response will

@@ -272,6 +272,7 @@ typedef struct sslOptionsStr {
     unsigned int enableDtlsShortHeader : 1;
     unsigned int enableHelloDowngradeCheck : 1;
     unsigned int enableV2CompatibleHello : 1;
+    unsigned int enablePostHandshakeAuth : 1;
 } sslOptions;
 
 typedef enum { sslHandshakingUndetermined = 0,
@@ -622,8 +623,6 @@ typedef struct SSL3HandshakeStateStr {
     unsigned long msg_len;
     PRBool isResuming;  /* we are resuming (not used in TLS 1.3) */
     PRBool sendingSCSV; /* instead of empty RI */
-    sslBuffer msgState; /* current state for handshake messages*/
-                        /* protected by recvBufLock */
 
     /* The session ticket received in a NewSessionTicket message is temporarily
      * stored in newSessionTicket until the handshake is finished; then it is
@@ -744,10 +743,10 @@ struct ssl3StateStr {
      * update is initiated locally. */
     PRBool peerRequestedKeyUpdate;
 
-    /* Internal callback for when we do a cipher suite change. Used for
-     * debugging in TLS 1.3. This can only be set by non-public functions. */
-    sslCipherSpecChangedFunc changedCipherSpecFunc;
-    void *changedCipherSpecArg;
+    /* This is true after the server requests client certificate;
+     * false after the client certificate is received.  Used by the
+     * server. */
+    PRBool clientCertRequested;
 
     CERTCertificate *clientCertificate;   /* used by client */
     SECKEYPrivateKey *clientPrivateKey;   /* used by client */
@@ -994,6 +993,10 @@ struct sslSocketStr {
     PRCList extensionHooks;
     SSLResumptionTokenCallback resumptionTokenCallback;
     void *resumptionTokenContext;
+    SSLSecretCallback secretCallback;
+    void *secretCallbackArg;
+    SSLRecordWriteCallback recordWriteCallback;
+    void *recordWriteCallbackArg;
 
     PRIntervalTime rTimeout; /* timeout for NSPR I/O */
     PRIntervalTime wTimeout; /* timeout for NSPR I/O */
@@ -1174,7 +1177,7 @@ extern SECStatus ssl_SaveWriteData(sslSocket *ss,
                                    const void *p, unsigned int l);
 extern SECStatus ssl_BeginClientHandshake(sslSocket *ss);
 extern SECStatus ssl_BeginServerHandshake(sslSocket *ss);
-extern int ssl_Do1stHandshake(sslSocket *ss);
+extern SECStatus ssl_Do1stHandshake(sslSocket *ss);
 
 extern SECStatus ssl3_InitPendingCipherSpecs(sslSocket *ss, PK11SymKey *secret,
                                              PRBool derive);
@@ -1206,9 +1209,9 @@ extern SECStatus ssl_CipherPrefSetDefault(PRInt32 which, PRBool enabled);
 extern SECStatus ssl3_ConstrainRangeByPolicy(void);
 
 extern SECStatus ssl3_InitState(sslSocket *ss);
-extern SECStatus Null_Cipher(void *ctx, unsigned char *output, int *outputLen,
-                             int maxOutputLen, const unsigned char *input,
-                             int inputLen);
+extern SECStatus Null_Cipher(void *ctx, unsigned char *output, unsigned int *outputLen,
+                             unsigned int maxOutputLen, const unsigned char *input,
+                             unsigned int inputLen);
 extern void ssl3_RestartHandshakeHashes(sslSocket *ss);
 extern SECStatus ssl3_UpdateHandshakeHashes(sslSocket *ss,
                                             const unsigned char *b,
@@ -1660,6 +1663,8 @@ SECStatus ssl3_FillInCachedSID(sslSocket *ss, sslSessionID *sid,
 const ssl3CipherSuiteDef *ssl_LookupCipherSuiteDef(ssl3CipherSuite suite);
 const ssl3CipherSuiteCfg *ssl_LookupCipherSuiteCfg(ssl3CipherSuite suite,
                                                    const ssl3CipherSuiteCfg *suites);
+PRBool ssl3_CipherSuiteAllowedForVersionRange(ssl3CipherSuite cipherSuite,
+                                              const SSLVersionRange *vrange);
 
 SECStatus ssl3_SelectServerCert(sslSocket *ss);
 SECStatus ssl_PickSignatureScheme(sslSocket *ss,
@@ -1742,7 +1747,44 @@ SECStatus SSLExp_GetResumptionTokenInfo(const PRUint8 *tokenData, unsigned int t
 
 SECStatus SSLExp_DestroyResumptionTokenInfo(SSLResumptionTokenInfo *token);
 
+SECStatus SSLExp_SecretCallback(PRFileDesc *fd, SSLSecretCallback cb,
+                                void *arg);
+SECStatus SSLExp_RecordLayerWriteCallback(PRFileDesc *fd,
+                                          SSLRecordWriteCallback write,
+                                          void *arg);
+SECStatus SSLExp_RecordLayerData(PRFileDesc *fd, PRUint16 epoch,
+                                 SSLContentType contentType,
+                                 const PRUint8 *data, unsigned int len);
+SECStatus SSLExp_GetCurrentEpoch(PRFileDesc *fd, PRUint16 *readEpoch,
+                                 PRUint16 *writeEpoch);
+
 #define SSLResumptionTokenVersion 2
+
+SECStatus SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
+                          const char *labelPrefix, unsigned int labelPrefixLen,
+                          SSLAeadContext **ctx);
+SECStatus SSLExp_DestroyAead(SSLAeadContext *ctx);
+SECStatus SSLExp_AeadEncrypt(const SSLAeadContext *ctx, PRUint64 counter,
+                             const PRUint8 *aad, unsigned int aadLen,
+                             const PRUint8 *plaintext, unsigned int plaintextLen,
+                             PRUint8 *out, unsigned int *outLen, unsigned int maxOut);
+SECStatus SSLExp_AeadDecrypt(const SSLAeadContext *ctx, PRUint64 counter,
+                             const PRUint8 *aad, unsigned int aadLen,
+                             const PRUint8 *plaintext, unsigned int plaintextLen,
+                             PRUint8 *out, unsigned int *outLen, unsigned int maxOut);
+
+SECStatus SSLExp_HkdfExtract(PRUint16 version, PRUint16 cipherSuite,
+                             PK11SymKey *salt, PK11SymKey *ikm, PK11SymKey **keyp);
+SECStatus SSLExp_HkdfExpandLabel(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
+                                 const PRUint8 *hsHash, unsigned int hsHashLen,
+                                 const char *label, unsigned int labelLen,
+                                 PK11SymKey **key);
+SECStatus
+SSLExp_HkdfExpandLabelWithMech(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
+                               const PRUint8 *hsHash, unsigned int hsHashLen,
+                               const char *label, unsigned int labelLen,
+                               CK_MECHANISM_TYPE mech, unsigned int keySize,
+                               PK11SymKey **keyp);
 
 SEC_END_PROTOS
 

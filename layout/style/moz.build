@@ -34,7 +34,6 @@ with Files('nsTransitionManager.*'):
 with Files('StyleAnimationValue.*'):
     BUG_COMPONENT = ('Core', 'CSS Transitions and Animations')
 
-DIRS += ['xbl-marquee']
 TEST_DIRS += ['test']
 
 EXPORTS += [
@@ -88,7 +87,9 @@ EXPORTS.mozilla += [
     'MappedDeclarations.h',
     'MediaFeatureChange.h',
     'PostTraversalTask.h',
+    'PreferenceSheet.h',
     'PreloadedStyleSheet.h',
+    'PseudoStyleType.h',
     'RustCell.h',
     'ServoArcTypeList.h',
     'ServoBindings.h',
@@ -187,8 +188,10 @@ UNIFIED_SOURCES += [
     'MediaQueryList.cpp',
     'nsAnimationManager.cpp',
     'nsComputedDOMStyle.cpp',
+    'nsCSSAnonBoxes.cpp',
     'nsCSSKeywords.cpp',
     'nsCSSProps.cpp',
+    'nsCSSPseudoElements.cpp',
     'nsCSSValue.cpp',
     'nsDOMCSSAttrDeclaration.cpp',
     'nsDOMCSSDeclaration.cpp',
@@ -198,6 +201,7 @@ UNIFIED_SOURCES += [
     'nsHTMLCSSStyleSheet.cpp',
     'nsHTMLStyleSheet.cpp',
     'nsICSSDeclaration.cpp',
+    'nsLayoutStylesheetCache.cpp',
     'nsMediaFeatures.cpp',
     'nsROCSSPrimitiveValue.cpp',
     'nsStyleCoord.cpp',
@@ -208,7 +212,9 @@ UNIFIED_SOURCES += [
     'PaintWorkletGlobalScope.cpp',
     'PaintWorkletImpl.cpp',
     'PostTraversalTask.cpp',
+    'PreferenceSheet.cpp',
     'PreloadedStyleSheet.cpp',
+    'PseudoStyleType.cpp',
     'Rule.cpp',
     'ServoCSSParser.cpp',
     'ServoCSSRuleList.cpp',
@@ -220,19 +226,6 @@ UNIFIED_SOURCES += [
     'StyleSheet.cpp',
     'URLExtraData.cpp',
 ]
-
-SOURCES += [
-    'nsCSSAnonBoxes.cpp',
-    'nsCSSPseudoElements.cpp',
-    # nsLayoutStylesheetCache.cpp uses nsExceptionHandler.h, which includes
-    # windows.h.
-    'nsLayoutStylesheetCache.cpp',
-]
-if CONFIG['CC_TYPE'] == 'msvc':
-    # Needed for gCSSAnonBoxAtoms.
-    SOURCES['nsCSSAnonBoxes.cpp'].flags += ['-Zc:externConstexpr']
-    # Needed for gCSSPseudoElementAtoms.
-    SOURCES['nsCSSPseudoElements.cpp'].flags += ['-Zc:externConstexpr']
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

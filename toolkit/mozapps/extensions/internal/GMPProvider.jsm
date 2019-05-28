@@ -6,17 +6,17 @@
 
 var EXPORTED_SYMBOLS = [];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AddonManager, AddonManagerPrivate} = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 /* globals AddonManagerPrivate*/
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 /* globals OS*/
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/GMPUtils.jsm");
-/* globals GMP_PLUGIN_IDS, GMPPrefs, GMPUtils, OPEN_H264_ID, WIDEVINE_ID */
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/UpdateUtils.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+// These symbols are, unfortunately, accessed via the module global from
+// tests, and therefore cannot be lexical definitions.
+var {GMPPrefs, GMPUtils, OPEN_H264_ID, WIDEVINE_ID} = ChromeUtils.import("resource://gre/modules/GMPUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 ChromeUtils.defineModuleGetter(
   this, "GMPInstallManager", "resource://gre/modules/GMPInstallManager.jsm");
@@ -48,7 +48,7 @@ const GMP_PLUGINS = [
     // license without having bug 624602 fixed yet, and intentionally ignores
     // localisation.
     licenseURL:      "chrome://mozapps/content/extensions/OpenH264-license.txt",
-    homepageURL:     "http://www.openh264.org/",
+    homepageURL:     "https://www.openh264.org/",
   },
   {
     id:              WIDEVINE_ID,
@@ -528,9 +528,10 @@ GMPWrapper.prototype = {
       };
     }
 
-    let abi = GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_ABI, UpdateUtils.ABI,
+    let expectedABI = GMPUtils._expectedABI(this._plugin);
+    let abi = GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_ABI, expectedABI,
                                  this._plugin.id);
-    if (abi != UpdateUtils.ABI) {
+    if (abi != expectedABI) {
       // ABI doesn't match. Possibly this is a profile migrated across platforms
       // or from 32 -> 64 bit.
       return {
@@ -599,7 +600,11 @@ var GMPProvider = {
     try {
       let greDir = Services.dirsvc.get(NS_GRE_DIR,
                                        Ci.nsIFile);
-      let clearkeyPath = OS.Path.join(greDir.path,
+      let path = greDir.path;
+      if (GMPUtils._isWindowsOnARM64()) {
+        path = OS.Path.join(path, "i686");
+      }
+      let clearkeyPath = OS.Path.join(path,
                                       CLEARKEY_PLUGIN_ID,
                                       CLEARKEY_VERSION);
       this._log.info("startup - adding clearkey CDM directory " +

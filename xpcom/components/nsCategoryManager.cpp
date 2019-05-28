@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsICategoryManager.h"
 #include "nsCategoryManager.h"
+#include "nsCategoryManagerUtils.h"
 
 #include "prio.h"
 #include "prlock.h"
@@ -322,14 +322,16 @@ nsCategoryManager::Release() { return 1; }
 
 nsCategoryManager* nsCategoryManager::gCategoryManager;
 
-/* static */ nsCategoryManager* nsCategoryManager::GetSingleton() {
+/* static */
+nsCategoryManager* nsCategoryManager::GetSingleton() {
   if (!gCategoryManager) {
     gCategoryManager = new nsCategoryManager();
   }
   return gCategoryManager;
 }
 
-/* static */ void nsCategoryManager::Destroy() {
+/* static */
+void nsCategoryManager::Destroy() {
   // The nsMemoryReporterManager gets destroyed before the nsCategoryManager,
   // so we don't need to unregister the nsCategoryManager as a memory reporter.
   // In debug builds we assert that unregistering fails, as a way (imperfect

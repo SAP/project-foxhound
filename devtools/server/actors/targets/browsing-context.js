@@ -627,19 +627,26 @@ const browsingContextTargetPrototype = {
     return { frames: windows };
   },
 
-  listWorkers(request) {
-    if (!this.attached) {
-      return { error: "wrongState" };
-    }
-
+  ensureWorkerTargetActorList() {
     if (this._workerTargetActorList === null) {
       this._workerTargetActorList = new WorkerTargetActorList(this.conn, {
         type: Ci.nsIWorkerDebugger.TYPE_DEDICATED,
         window: this.window,
       });
     }
+    return this._workerTargetActorList;
+  },
 
-    return this._workerTargetActorList.getList().then((actors) => {
+  pauseWorkersUntilAttach(shouldPause) {
+    this.ensureWorkerTargetActorList().setPauseMatchingWorkers(shouldPause);
+  },
+
+  listWorkers(request) {
+    if (!this.attached) {
+      return { error: "wrongState" };
+    }
+
+    return this.ensureWorkerTargetActorList().getList().then((actors) => {
       const pool = new Pool(this.conn);
       for (const actor of actors) {
         pool.manage(actor);
@@ -886,6 +893,7 @@ const browsingContextTargetPrototype = {
     // Make sure that no more workerListChanged notifications are sent.
     if (this._workerTargetActorList !== null) {
       this._workerTargetActorList.onListChanged = null;
+      this._workerTargetActorList.setPauseMatchingWorkers(false);
       this._workerTargetActorList = null;
     }
 
@@ -997,6 +1005,8 @@ const browsingContextTargetPrototype = {
       } catch (e) {
         continue;
       }
+      // Ensure docShell.document is available.
+      docShell.QueryInterface(Ci.nsIWebNavigation);
       // We don't really want to reparse UA sheets and such, but want to do
       // Shadow DOM / XBL.
       const sheets =

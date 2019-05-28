@@ -4,11 +4,11 @@
 
 /* import-globals-from head_global.js */
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://services-common/utils.js");
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://testing-common/services/common/logging.js");
-ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
+var {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+var {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
+var {HTTP_400, HTTP_401, HTTP_402, HTTP_403, HTTP_404, HTTP_405, HTTP_406, HTTP_407, HTTP_408, HTTP_409, HTTP_410, HTTP_411, HTTP_412, HTTP_413, HTTP_414, HTTP_415, HTTP_417, HTTP_500, HTTP_501, HTTP_502, HTTP_503, HTTP_504, HTTP_505, HttpError, HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+var {getTestLogger, initTestLogging} = ChromeUtils.import("resource://testing-common/services/common/logging.js");
+var {MockRegistrar} = ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 function do_check_empty(obj) {
   do_check_attribute_count(obj, 0);
@@ -154,23 +154,47 @@ function uninstallFakePAC() {
   MockRegistrar.unregister(fakePACCID);
 }
 
+function _eventsTelemetrySnapshot(component, source) {
+  const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+  const TELEMETRY_CATEGORY_ID = "uptake.remotecontent.result";
+  const snapshot = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT, true);
+  const parentEvents = snapshot.parent || [];
+  return parentEvents
+    // Transform raw event data to objects.
+    .map(([i, category, method, object, value, extras]) => { return { category, method, object, value, extras }; })
+    // Keep only for the specified component and source.
+    .filter((e) => e.category == TELEMETRY_CATEGORY_ID && e.object == component && e.extras.source == source)
+    // Return total number of events received by status, to mimic histograms snapshots.
+    .reduce((acc, e) => {
+      acc[e.value] = (acc[e.value] || 0) + 1;
+      return acc;
+    }, {});
+}
 
 function getUptakeTelemetrySnapshot(key) {
-  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
   const TELEMETRY_HISTOGRAM_ID = "UPTAKE_REMOTE_CONTENT_RESULT_1";
-  return Services.telemetry
-           .getKeyedHistogramById(TELEMETRY_HISTOGRAM_ID)
-           .snapshot()[key];
+  const TELEMETRY_COMPONENT = "remotesettings";
+  const histogram = Services.telemetry.getKeyedHistogramById(TELEMETRY_HISTOGRAM_ID).snapshot()[key];
+  const events = _eventsTelemetrySnapshot(TELEMETRY_COMPONENT, key);
+  return { histogram, events };
 }
 
 function checkUptakeTelemetry(snapshot1, snapshot2, expectedIncrements) {
-  const LABELS = ["up_to_date", "success", "backoff", "pref_disabled", "parse_error", "content_error", "sign_error", "sign_retry_error", "conflict_error", "sync_error", "apply_error", "server_error", "certificate_error", "download_error", "timeout_error", "network_error", "offline_error", "cleanup_error", "unknown_error", "custom_1_error", "custom_2_error", "custom_3_error", "custom_4_error", "custom_5_error"];
-  for (const label of LABELS) {
-    const key = LABELS.indexOf(label);
-    const expected = expectedIncrements[label] || 0;
-    let value1 = (snapshot1 && snapshot1.values[key]) || 0;
-    let value2 = (snapshot2 && snapshot2.values[key]) || 0;
-    const actual = value2 - value1;
-    equal(expected, actual, `check histogram values for ${label}`);
+  const STATUSES = ["up_to_date", "success", "backoff", "pref_disabled", "parse_error", "content_error", "sign_error", "sign_retry_error", "conflict_error", "sync_error", "apply_error", "server_error", "certificate_error", "download_error", "timeout_error", "network_error", "offline_error", "cleanup_error", "unknown_error", "custom_1_error", "custom_2_error", "custom_3_error", "custom_4_error", "custom_5_error"];
+
+  for (const status of STATUSES) {
+    const key = STATUSES.indexOf(status);
+    const expected = expectedIncrements[status] || 0;
+    // Check histogram increments.
+    let value1 = (snapshot1 && snapshot1.histogram && snapshot1.histogram.values[key]) || 0;
+    let value2 = (snapshot2 && snapshot2.histogram && snapshot2.histogram.values[key]) || 0;
+    let actual = value2 - value1;
+    equal(expected, actual, `check histogram values for ${status}`);
+    // Check events increments.
+    value1 = (snapshot1 && snapshot1.histogram && snapshot1.histogram.values[key]) || 0;
+    value2 = (snapshot2 && snapshot2.histogram && snapshot2.histogram.values[key]) || 0;
+    actual = value2 - value1;
+    equal(expected, actual, `check events for ${status}`);
   }
 }

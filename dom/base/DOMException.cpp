@@ -290,6 +290,14 @@ void Exception::GetMessageMoz(nsString& retval) {
 
 uint32_t Exception::Result() const { return (uint32_t)mResult; }
 
+uint32_t Exception::SourceId(JSContext* aCx) const {
+  if (mLocation) {
+    return mLocation->GetSourceId(aCx);
+  }
+
+  return 0;
+}
+
 uint32_t Exception::LineNumber(JSContext* aCx) const {
   if (mLocation) {
     return mLocation->GetLineNumber(aCx);
@@ -376,7 +384,8 @@ JSObject* DOMException::WrapObject(JSContext* aCx,
   return DOMException_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-/* static */ already_AddRefed<DOMException> DOMException::Create(nsresult aRv) {
+/* static */
+already_AddRefed<DOMException> DOMException::Create(nsresult aRv) {
   nsCString name;
   nsCString message;
   uint16_t code;
@@ -385,7 +394,8 @@ JSObject* DOMException::WrapObject(JSContext* aCx,
   return inst.forget();
 }
 
-/* static */ already_AddRefed<DOMException> DOMException::Create(
+/* static */
+already_AddRefed<DOMException> DOMException::Create(
     nsresult aRv, const nsACString& aMessage) {
   nsCString name;
   nsCString message;

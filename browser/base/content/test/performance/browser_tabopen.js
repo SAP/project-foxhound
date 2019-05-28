@@ -34,7 +34,7 @@ add_task(async function() {
   let firstTabLabelRect =
     document.getAnonymousElementByAttribute(gBrowser.selectedTab, "anonid", "tab-label")
             .getBoundingClientRect();
-  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar,
+  let textBoxRect = document.getAnonymousElementByAttribute(gURLBar.textbox,
     "anonid", "moz-input-box").getBoundingClientRect();
   let inRange = (val, min, max) => min <= val && val <= max;
 
@@ -42,8 +42,7 @@ add_task(async function() {
   await withPerfObserver(async function() {
     let switchDone = BrowserTestUtils.waitForEvent(window, "TabSwitchDone");
     BrowserOpenTab();
-    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "transitionend",
-                                        false, e => e.propertyName === "max-width");
+    await BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "TabAnimationEnd");
     await switchDone;
   }, {expectedReflows: EXPECTED_REFLOWS,
       frames: {

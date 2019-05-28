@@ -10,6 +10,7 @@
 #include "nsIGlobalObject.h"
 #include "nsITimer.h"
 
+#include "js/ArrayBuffer.h"  // JS::NewArrayBufferWithContents
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/DOMException.h"
@@ -117,7 +118,8 @@ FileReader::~FileReader() {
   DropJSObjects(this);
 }
 
-/* static */ already_AddRefed<FileReader> FileReader::Constructor(
+/* static */
+already_AddRefed<FileReader> FileReader::Constructor(
     const GlobalObject& aGlobal, ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<WeakWorkerRef> workerRef;
@@ -179,7 +181,7 @@ void FileReader::OnLoadEndArrayBuffer() {
 
   JSContext* cx = jsapi.cx();
 
-  mResultArrayBuffer = JS_NewArrayBufferWithContents(cx, mDataLen, mFileData);
+  mResultArrayBuffer = JS::NewArrayBufferWithContents(cx, mDataLen, mFileData);
   if (mResultArrayBuffer) {
     mFileData = nullptr;  // Transfer ownership
     FreeDataAndDispatchSuccess();
@@ -470,8 +472,9 @@ nsresult FileReader::GetAsDataURL(Blob* aBlob, const char* aFileData,
   return NS_OK;
 }
 
-/* virtual */ JSObject* FileReader::WrapObject(
-    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+/* virtual */
+JSObject* FileReader::WrapObject(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
   return FileReader_Binding::Wrap(aCx, this, aGivenProto);
 }
 

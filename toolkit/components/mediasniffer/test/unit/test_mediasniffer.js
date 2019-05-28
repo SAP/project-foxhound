@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const PATH = "/file.meh";
 var httpserver = new HttpServer();
@@ -42,12 +42,12 @@ const tests = [
 
 // A basic listener that reads checks the if we sniffed properly.
 var listener = {
-  onStartRequest(request, context) {
+  onStartRequest(request) {
     Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
                  tests[testRan].expectedContentType);
   },
 
-  onDataAvailable(request, context, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     try {
       var bis = Cc["@mozilla.org/binaryinputstream;1"]
                   .createInstance(Ci.nsIBinaryInputStream);
@@ -58,7 +58,7 @@ var listener = {
     }
   },
 
-  onStopRequest(request, context, status) {
+  onStopRequest(request, status) {
     testRan++;
     runNext();
   },
@@ -87,7 +87,7 @@ function runNext() {
     response.setHeader("Content-Type", tests[testRan].contentType, false);
     response.bodyOutputStream.write(data, data.length);
   });
-  channel.asyncOpen2(listener);
+  channel.asyncOpen(listener);
 }
 
 function run_test() {

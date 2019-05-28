@@ -42,17 +42,6 @@ const Types = exports.__TypesForTests = [
     spec: "devtools/shared/specs/animation",
     front: "devtools/shared/fronts/animation",
   },
-  /* breakpoint has old fashion client and no front */
-  {
-    types: ["breakpoint"],
-    spec: "devtools/shared/specs/breakpoint",
-    front: null,
-  },
-  {
-    types: ["frame-snapshot", "canvas"],
-    spec: "devtools/shared/specs/canvas",
-    front: "devtools/shared/fronts/canvas",
-  },
   {
     types: ["changes"],
     spec: "devtools/shared/specs/changes",
@@ -94,11 +83,6 @@ const Types = exports.__TypesForTests = [
     types: ["framerate"],
     spec: "devtools/shared/specs/framerate",
     front: "devtools/shared/fronts/framerate",
-  },
-  {
-    types: ["function-call"],
-    spec: "devtools/shared/specs/function-call",
-    front: "devtools/shared/fronts/function-call",
   },
   /* heap snapshot has old fashion client and no front */
   {
@@ -275,19 +259,9 @@ const Types = exports.__TypesForTests = [
     front: "devtools/shared/fronts/targets/worker",
   },
   {
-    types: ["audionode", "webaudio"],
-    spec: "devtools/shared/specs/webaudio",
-    front: "devtools/shared/fronts/webaudio",
-  },
-  {
     types: ["console"],
     spec: "devtools/shared/specs/webconsole",
-    front: null,
-  },
-  {
-    types: ["gl-shader", "gl-program", "webgl"],
-    spec: "devtools/shared/specs/webgl",
-    front: "devtools/shared/fronts/webgl",
+    front: "devtools/shared/fronts/webconsole",
   },
   {
     types: ["pushSubscription"],

@@ -32,7 +32,8 @@ using namespace mozilla::gl;
 namespace mozilla {
 namespace layers {
 
-/* static */ already_AddRefed<CanvasClient> CanvasClient::CreateCanvasClient(
+/* static */
+already_AddRefed<CanvasClient> CanvasClient::CreateCanvasClient(
     CanvasClientType aType, CompositableForwarder* aForwarder,
     TextureFlags aFlags) {
   switch (aType) {
@@ -310,11 +311,12 @@ static already_AddRefed<TextureClient> TexClientFromReadback(
     // ReadPixels from the current FB into mapped.data.
     auto width = src->mSize.width;
     auto height = src->mSize.height;
+    auto stride = mapped.stride;
 
     {
       ScopedPackState scopedPackState(gl);
-
-      MOZ_ASSERT(mapped.stride / 4 == mapped.size.width);
+      bool handled = scopedPackState.SetForWidthAndStrideRGBA(width, stride);
+      MOZ_RELEASE_ASSERT(handled, "Unhandled stride");
       gl->raw_fReadPixels(0, 0, width, height, readFormat, readType,
                           mapped.data);
     }
@@ -387,14 +389,7 @@ void CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize,
   RefPtr<TextureClient> newFront;
 
   mShSurfClient = nullptr;
-  if (canvasRenderer && canvasRenderer->mGLFrontbuffer) {
-    mShSurfClient = CloneSurface(canvasRenderer->mGLFrontbuffer.get(),
-                                 canvasRenderer->mFactory.get());
-    if (!mShSurfClient) {
-      gfxCriticalError() << "Invalid canvas front buffer";
-      return;
-    }
-  } else if (gl->Screen()) {
+  if (gl->Screen()) {
     mShSurfClient = gl->Screen()->Front();
     if (mShSurfClient && mShSurfClient->GetAllocator() &&
         mShSurfClient->GetAllocator() !=

@@ -4,8 +4,8 @@
 
 var EXPORTED_SYMBOLS = ["ContextualIdentityService"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // The maximum valid numeric value for the userContextId.
 const MAX_USER_CONTEXT_ID = -1 >>> 0;
@@ -425,7 +425,17 @@ _ContextualIdentityService.prototype = {
 
     let userContextId = tab.getAttribute("usercontextid");
     let identity = this.getPublicIdentityFromId(userContextId);
-    tab.setAttribute("data-identity-color", identity ? identity.color : "");
+
+    let prefix = "identity-color-";
+    /* Remove the existing container color highlight if it exists */
+    for (let className of tab.classList) {
+      if (className.startsWith(prefix)) {
+        tab.classList.remove(className);
+      }
+    }
+    if (identity && identity.color) {
+      tab.classList.add(prefix + identity.color);
+    }
   },
 
   countContainerTabs(userContextId = 0) {

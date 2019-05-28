@@ -1970,9 +1970,7 @@ Function GetArchToInstall
   StrCpy $ArchToInstall ${ARCH_X86}
 
   ${If} ${IsNativeARM64}
-    ; Disable installing the AArch64 build for this version
-    ; because we aren't publishing those builds yet.
-    ;StrCpy $ArchToInstall ${ARCH_AARCH64}
+    StrCpy $ArchToInstall ${ARCH_AARCH64}
     Return
   ${EndIf}
 

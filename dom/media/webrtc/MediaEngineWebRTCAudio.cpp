@@ -46,8 +46,8 @@ extern LazyLogModule gMediaManagerLog;
 
 MediaEngineWebRTCMicrophoneSource::MediaEngineWebRTCMicrophoneSource(
     RefPtr<AudioDeviceInfo> aInfo, const nsString& aDeviceName,
-    const nsCString& aDeviceUUID, uint32_t aMaxChannelCount,
-    bool aDelayAgnostic, bool aExtendedFilter)
+    const nsCString& aDeviceUUID, const nsString& aDeviceGroup,
+    uint32_t aMaxChannelCount, bool aDelayAgnostic, bool aExtendedFilter)
     : mTrackID(TRACK_NONE),
       mPrincipal(PRINCIPAL_HANDLE_NONE),
       mDeviceInfo(std::move(aInfo)),
@@ -55,6 +55,7 @@ MediaEngineWebRTCMicrophoneSource::MediaEngineWebRTCMicrophoneSource(
       mExtendedFilter(aExtendedFilter),
       mDeviceName(aDeviceName),
       mDeviceUUID(aDeviceUUID),
+      mDeviceGroup(aDeviceGroup),
       mDeviceMaxChannelCount(aMaxChannelCount),
       mSettings(new nsMainThreadPtrHolder<
                 media::Refcountable<dom::MediaTrackSettings>>(
@@ -82,6 +83,10 @@ nsString MediaEngineWebRTCMicrophoneSource::GetName() const {
 
 nsCString MediaEngineWebRTCMicrophoneSource::GetUUID() const {
   return mDeviceUUID;
+}
+
+nsString MediaEngineWebRTCMicrophoneSource::GetGroupId() const {
+  return mDeviceGroup;
 }
 
 // GetBestFitnessDistance returns the best distance the capture device can offer
@@ -443,7 +448,7 @@ nsresult MediaEngineWebRTCMicrophoneSource::Deallocate(
     const RefPtr<const AllocationHandle>&) {
   AssertIsOnOwningThread();
 
-  MOZ_ASSERT(mState == kStopped);
+  MOZ_ASSERT(mState == kStopped || mState == kAllocated);
 
   class EndTrackMessage : public ControlMessage {
    public:
@@ -654,7 +659,7 @@ AudioInputProcessing::AudioInputProcessing(
 
 void AudioInputProcessing::Disconnect(MediaStreamGraphImpl* aGraph) {
   // This method is just for asserts.
-  MOZ_ASSERT(aGraph->CurrentDriver()->OnThread());
+  MOZ_ASSERT(aGraph->OnGraphThread());
 }
 
 void MediaEngineWebRTCMicrophoneSource::Shutdown() {
@@ -671,7 +676,7 @@ void MediaEngineWebRTCMicrophoneSource::Shutdown() {
 }
 
 bool AudioInputProcessing::PassThrough(MediaStreamGraphImpl* aGraph) const {
-  MOZ_ASSERT(aGraph->CurrentDriver()->OnThread());
+  MOZ_ASSERT(aGraph->OnGraphThread());
   return mSkipProcessing;
 }
 
@@ -851,7 +856,7 @@ void AudioInputProcessing::NotifyOutputData(MediaStreamGraphImpl* aGraph,
                                             AudioDataValue* aBuffer,
                                             size_t aFrames, TrackRate aRate,
                                             uint32_t aChannels) {
-  MOZ_ASSERT(aGraph->CurrentDriver()->OnThread());
+  MOZ_ASSERT(aGraph->OnGraphThread());
   MOZ_ASSERT(mEnabled);
 
   if (!mPacketizerOutput || mPacketizerOutput->PacketSize() != aRate / 100u ||
@@ -1096,7 +1101,7 @@ void AudioInputProcessing::NotifyInputData(MediaStreamGraphImpl* aGraph,
                                            const AudioDataValue* aBuffer,
                                            size_t aFrames, TrackRate aRate,
                                            uint32_t aChannels) {
-  MOZ_ASSERT(aGraph->CurrentDriver()->OnThread());
+  MOZ_ASSERT(aGraph->OnGraphThread());
   TRACE_AUDIO_CALLBACK();
 
   MOZ_ASSERT(mEnabled);
@@ -1132,7 +1137,7 @@ void AudioInputProcessing::NotifyInputData(MediaStreamGraphImpl* aGraph,
   } while (0)
 
 void AudioInputProcessing::DeviceChanged(MediaStreamGraphImpl* aGraph) {
-  MOZ_ASSERT(aGraph->CurrentDriver()->OnThread());
+  MOZ_ASSERT(aGraph->OnGraphThread());
   // Reset some processing
   ResetProcessingIfNeeded(gain_control);
   ResetProcessingIfNeeded(echo_cancellation);
@@ -1161,6 +1166,10 @@ nsCString MediaEngineWebRTCAudioCaptureSource::GetUUID() const {
 
   // Remove {} and the null terminator
   return nsCString(Substring(asciiString, 1, NSID_LENGTH - 3));
+}
+
+nsString MediaEngineWebRTCAudioCaptureSource::GetGroupId() const {
+  return NS_LITERAL_STRING(u"AudioCaptureGroup");
 }
 
 void MediaEngineWebRTCAudioCaptureSource::SetTrack(

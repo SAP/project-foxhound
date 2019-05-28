@@ -1,5 +1,5 @@
 const URL = "ftp://localhost/bug365133/";
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const tests = [
   [ /* Unix style listing, space at the end of filename */
@@ -89,7 +89,7 @@ function storeData() {
   };
 
   converter.onStartRequest(channel, null);
-  converter.onDataAvailable(channel, null, stream, 0, 0);
+  converter.onDataAvailable(channel, stream, 0, 0);
   channel.pending = false;
   converter.onStopRequest(channel, null, Cr.NS_OK);
 }

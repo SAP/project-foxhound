@@ -93,7 +93,6 @@ static const JSClass gPrototypeJSClass = {
 // Constructors/Destructors
 nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
     : mMarkedForDeath(false),
-      mUsingContentXBLScope(false),
       mPrototypeBinding(aBinding),
       mBoundElement(nullptr) {
   NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
@@ -155,8 +154,7 @@ nsXBLBinding* nsXBLBinding::GetBindingWithContent() {
 }
 
 void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
-                                        nsIContent* aElement,
-                                        bool aChromeOnlyContent) {
+                                        nsIContent* aElement) {
   // We need to ensure two things.
   // (1) The anonymous content should be fooled into thinking it's in the bound
   // element's document, assuming that the bound element is in a document
@@ -172,10 +170,6 @@ void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
   for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree();
-    if (aChromeOnlyContent) {
-      child->SetFlags(NODE_CHROME_ONLY_ACCESS |
-                      NODE_IS_ROOT_OF_CHROME_ONLY_ACCESS);
-    }
     child->SetFlags(NODE_IS_ANONYMOUS_ROOT);
     nsresult rv = child->BindToTree(doc, aElement, mBoundElement);
     if (NS_FAILED(rv)) {
@@ -192,7 +186,8 @@ void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
     // FIXME(emilio): Is this needed anymore? Do we really use <linkset> or
     // <link> from XBL stuff?
     if (doc && doc->IsXULDocument()) {
-      doc->AsXULDocument()->AddSubtreeToDocument(child);
+      MOZ_ASSERT(!child->IsXULElement(nsGkAtoms::linkset),
+                 "Linkset not allowed in XBL.");
     }
 #endif
   }
@@ -213,21 +208,6 @@ void nsXBLBinding::UnbindAnonymousContent(Document* aDocument,
 void nsXBLBinding::SetBoundElement(Element* aElement) {
   mBoundElement = aElement;
   if (mNextBinding) mNextBinding->SetBoundElement(aElement);
-
-  if (!mBoundElement) {
-    return;
-  }
-
-  // Compute whether we're using an XBL scope.
-  //
-  // We disable XBL scopes for remote XUL, where we care about compat more
-  // than security. So we need to know whether we're using an XBL scope so that
-  // we can decide what to do about untrusted events when "allowuntrusted"
-  // is not given in the handler declaration.
-  nsCOMPtr<nsIGlobalObject> go = mBoundElement->OwnerDoc()->GetScopeObject();
-  NS_ENSURE_TRUE_VOID(go && go->GetGlobalJSObject());
-  mUsingContentXBLScope = xpc::UseContentXBLScope(
-      JS::GetObjectRealmOrNull(go->GetGlobalJSObject()));
 }
 
 bool nsXBLBinding::HasStyleSheets() const {
@@ -284,8 +264,7 @@ void nsXBLBinding::GenerateAnonymousContent() {
 
     // Do this after looking for <children> as this messes up the parent
     // pointer which would make the GetNextNode call above fail
-    BindAnonymousContent(mContent, mBoundElement,
-                         mPrototypeBinding->ChromeOnlyContent());
+    BindAnonymousContent(mContent, mBoundElement);
 
     // Insert explicit children into insertion points
     if (mDefaultInsertionPoint && mInsertionPoints.IsEmpty()) {
@@ -463,8 +442,7 @@ void nsXBLBinding::InstallEventHandlers() {
 
           bool hasAllowUntrustedAttr = curr->HasAllowUntrustedAttr();
           if ((hasAllowUntrustedAttr && curr->AllowUntrustedEvents()) ||
-              (!hasAllowUntrustedAttr && !isChromeDoc &&
-               !mUsingContentXBLScope)) {
+              (!hasAllowUntrustedAttr && !isChromeDoc)) {
             flags.mAllowUntrustedEvents = true;
           }
 
@@ -479,7 +457,6 @@ void nsXBLBinding::InstallEventHandlers() {
       for (i = 0; i < keyHandlers->Count(); ++i) {
         nsXBLKeyEventHandler* handler = keyHandlers->ObjectAt(i);
         handler->SetIsBoundToChrome(isChromeDoc);
-        handler->SetUsingContentXBLScope(mUsingContentXBLScope);
 
         nsAutoString type;
         handler->GetEventName(type);
@@ -524,13 +501,6 @@ nsresult nsXBLBinding::InstallImplementation() {
   if (AllowScripts()) return mPrototypeBinding->InstallImplementation(this);
 
   return NS_OK;
-}
-
-nsAtom* nsXBLBinding::GetBaseTag(int32_t* aNameSpaceID) {
-  nsAtom* tag = mPrototypeBinding->GetBaseTag(aNameSpaceID);
-  if (!tag && mNextBinding) return mNextBinding->GetBaseTag(aNameSpaceID);
-
-  return tag;
 }
 
 void nsXBLBinding::AttributeChanged(nsAtom* aAttribute, int32_t aNameSpaceID,

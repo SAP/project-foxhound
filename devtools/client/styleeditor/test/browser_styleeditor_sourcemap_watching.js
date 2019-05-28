@@ -16,8 +16,7 @@ const TRANSITIONS_PREF = "devtools.styleeditor.transitions";
 
 const CSS_TEXT = "* { color: blue }";
 
-const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm", {});
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
+const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 add_task(async function() {
   await new Promise(resolve => {
@@ -126,7 +125,7 @@ function read(srcChromeURL) {
     uri: srcChromeURL,
     loadUsingSystemPrincipal: true,
   });
-  const input = channel.open2();
+  const input = channel.open();
   scriptableStream.init(input);
 
   let data = "";

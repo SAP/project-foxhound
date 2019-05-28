@@ -37,7 +37,7 @@ NS_QUERYFRAME_HEAD(nsSVGImageFrame)
 NS_QUERYFRAME_TAIL_INHERITING(SVGGeometryFrame)
 
 nsIFrame* NS_NewSVGImageFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsSVGImageFrame(aStyle);
+  return new (aPresShell) nsSVGImageFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGImageFrame)
@@ -88,8 +88,9 @@ void nsSVGImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   imageLoader->AddNativeObserver(mListener);
 }
 
-/* virtual */ void nsSVGImageFrame::DestroyFrom(
-    nsIFrame* aDestructRoot, PostDestroyData& aPostDestroyData) {
+/* virtual */
+void nsSVGImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                                  PostDestroyData& aPostDestroyData) {
   if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
     DecApproximateVisibleCount();
   }
@@ -119,7 +120,7 @@ nsresult nsSVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
     if (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y ||
         aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
       nsLayoutUtils::PostRestyleEvent(
-          mContent->AsElement(), nsRestyleHint(0),
+          mContent->AsElement(), RestyleHint{0},
           nsChangeHint_InvalidateRenderingObservers);
       nsSVGUtils::ScheduleReflowSVG(this);
       return NS_OK;
@@ -512,7 +513,7 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
     mFrame->InvalidateFrame();
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
-                                    nsRestyleHint(0),
+                                    RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }
@@ -521,7 +522,7 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     // No new dimensions, so we don't need to call
     // nsSVGUtils::InvalidateAndScheduleBoundsUpdate.
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
-                                    nsRestyleHint(0),
+                                    RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
     mFrame->InvalidateFrame();
   }
@@ -536,7 +537,7 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     }
     mFrame->InvalidateFrame();
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
-                                    nsRestyleHint(0),
+                                    RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }

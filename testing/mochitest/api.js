@@ -4,10 +4,8 @@
 
 /* globals ExtensionAPI */
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function loadChromeScripts(win) {
   Services.scriptloader.loadSubScript("chrome://mochikit/content/chrome-harness.js", win);
@@ -39,6 +37,9 @@ const windowTracker = {
 };
 
 function androidStartup() {
+  // Bug 1526086 - we shouldn't need to do this, but otherwise we hang at
+  // shutdown trying to write the startup cache.
+  Services.obs.notifyObservers(null, "startupcache-invalidate");
   // Only browser chrome tests need help starting.
   let testRoot = Services.prefs.getStringPref("mochitest.testRoot", "");
   if (testRoot.endsWith("/chrome")) {
@@ -98,7 +99,7 @@ function loadMochitest(e) {
 
   // for mochitest-plain, navigating to the url is all we need
   if (!IS_THUNDERBIRD) {
-    win.loadURI(url, null, null, null, null, null, null, null,
+    win.loadURI(url, null, null, null, null, null, null,
       Services.scriptSecurityManager.getSystemPrincipal());
   }
   if (flavor == "mochitest") {

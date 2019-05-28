@@ -11,10 +11,9 @@
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
-#include "nsIDocShell.h"
+#include "nsDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsISecurityEventSink.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsIWebProgress.h"
 
@@ -179,6 +178,25 @@ void nsSecureBrowserUIImpl::CheckForContentBlockingEvents() {
     mEvent |= STATE_LOADED_TRACKING_CONTENT;
   }
 
+  // Has fingerprinting content been blocked or loaded?
+  if (doc->GetHasFingerprintingContentBlocked()) {
+    mEvent |= STATE_BLOCKED_FINGERPRINTING_CONTENT;
+  }
+
+  if (doc->GetHasFingerprintingContentLoaded()) {
+    mEvent |= STATE_LOADED_FINGERPRINTING_CONTENT;
+  }
+
+  // Has cryptomining content been blocked or loaded?
+  if (doc->GetHasCryptominingContentBlocked()) {
+    mEvent |= STATE_BLOCKED_CRYPTOMINING_CONTENT;
+  }
+
+  if (doc->GetHasCryptominingContentLoaded()) {
+    mEvent |= STATE_LOADED_CRYPTOMINING_CONTENT;
+  }
+
+  // Other block types.
   if (doc->GetHasCookiesBlockedByPermission()) {
     mEvent |= STATE_COOKIES_BLOCKED_BY_PERMISSION;
   }
@@ -202,9 +220,8 @@ void nsSecureBrowserUIImpl::CheckForContentBlockingEvents() {
 
 // Helper function to determine if the given URI can be considered secure.
 // Essentially, only "https" URIs can be considered secure. However, the URI we
-// have may be e.g. view-source:https://example.com or
-// wyciwyg://https://example.com, in which case we have to evaluate the
-// innermost URI.
+// have may be e.g. view-source:https://example.com, in which case we have to
+// evaluate the innermost URI.
 static nsresult URICanBeConsideredSecure(
     nsIURI* uri, /* out */ bool& canBeConsideredSecure) {
   MOZ_ASSERT(uri);
@@ -221,38 +238,8 @@ static nsresult URICanBeConsideredSecure(
   MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
           ("  innermost URI is '%s'", innermostURI->GetSpecOrDefault().get()));
 
-  // Unfortunately, wyciwyg URIs don't know about innermost URIs, so we have to
-  // manually get the innermost URI if we have such a URI.
-  bool isWyciwyg;
-  nsresult rv = innermostURI->SchemeIs("wyciwyg", &isWyciwyg);
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-            ("  nsIURI->SchemeIs failed"));
-    return rv;
-  }
-
-  if (isWyciwyg) {
-    nsCOMPtr<nsIURI> nonWyciwygURI;
-    rv = nsContentUtils::RemoveWyciwygScheme(innermostURI,
-                                             getter_AddRefs(nonWyciwygURI));
-    if (NS_FAILED(rv)) {
-      MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-              ("  nsContentUtils::RemoveWyciwygScheme failed"));
-      return rv;
-    }
-    if (!nonWyciwygURI) {
-      MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-              ("  apparently that wasn't a valid wyciwyg URI"));
-      return NS_ERROR_FAILURE;
-    }
-    innermostURI = nonWyciwygURI;
-    MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-            ("  innermost URI is now '%s'",
-             innermostURI->GetSpecOrDefault().get()));
-  }
-
   bool isHttps;
-  rv = innermostURI->SchemeIs("https", &isHttps);
+  nsresult rv = innermostURI->SchemeIs("https", &isHttps);
   if (NS_FAILED(rv)) {
     MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
             ("  nsIURI->SchemeIs failed"));
@@ -416,14 +403,12 @@ nsSecureBrowserUIImpl::OnLocationChange(nsIWebProgress* aWebProgress,
   }
 
   nsCOMPtr<nsIDocShell> docShell = do_QueryReferent(mDocShell);
-  nsCOMPtr<nsISecurityEventSink> eventSink = do_QueryInterface(docShell);
-  if (eventSink) {
+  if (docShell) {
     MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
             ("  calling OnSecurityChange %p %x", aRequest, mState));
-    Unused << eventSink->OnSecurityChange(aRequest, mState);
+    nsDocShell::Cast(docShell)->nsDocLoader::OnSecurityChange(aRequest, mState);
   } else {
-    MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-            ("  no docShell or couldn't QI it to nsISecurityEventSink?"));
+    MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug, ("  no docShell?"));
   }
 
   return NS_OK;

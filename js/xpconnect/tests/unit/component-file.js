@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.importGlobalProperties(['File']);
 
 
@@ -90,11 +90,7 @@ FileComponent.prototype =
   // nsIClassInfo
   flags: 0,
 
-  getInterfaces: function getInterfaces(aCount) {
-    var interfaces = [Ci.nsIClassInfo];
-    aCount.value = interfaces.length;
-    return interfaces;
-  },
+  interfaces: [Ci.nsIClassInfo],
 
   getScriptableHelper: function getScriptableHelper() {
     return null;

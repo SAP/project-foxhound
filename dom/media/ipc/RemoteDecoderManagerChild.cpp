@@ -7,7 +7,7 @@
 
 #include "base/task.h"
 
-#include "RemoteVideoDecoderChild.h"
+#include "RemoteDecoderChild.h"
 
 namespace mozilla {
 
@@ -18,7 +18,8 @@ StaticRefPtr<AbstractThread> sRemoteDecoderManagerChildAbstractThread;
 // Only accessed from sRemoteDecoderManagerChildThread
 static StaticRefPtr<RemoteDecoderManagerChild> sRemoteDecoderManagerChild;
 
-/* static */ void RemoteDecoderManagerChild::InitializeThread() {
+/* static */
+void RemoteDecoderManagerChild::InitializeThread() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!sRemoteDecoderManagerChildThread) {
@@ -32,7 +33,8 @@ static StaticRefPtr<RemoteDecoderManagerChild> sRemoteDecoderManagerChild;
   }
 }
 
-/* static */ void RemoteDecoderManagerChild::InitForContent(
+/* static */
+void RemoteDecoderManagerChild::InitForContent(
     Endpoint<PRemoteDecoderManagerChild>&& aVideoManager) {
   InitializeThread();
   sRemoteDecoderManagerChildThread->Dispatch(
@@ -41,7 +43,8 @@ static StaticRefPtr<RemoteDecoderManagerChild> sRemoteDecoderManagerChild;
       NS_DISPATCH_NORMAL);
 }
 
-/* static */ void RemoteDecoderManagerChild::Shutdown() {
+/* static */
+void RemoteDecoderManagerChild::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (sRemoteDecoderManagerChildThread) {
@@ -62,32 +65,37 @@ static StaticRefPtr<RemoteDecoderManagerChild> sRemoteDecoderManagerChild;
   }
 }
 
-/* static */ RemoteDecoderManagerChild*
-RemoteDecoderManagerChild::GetSingleton() {
+/* static */
+RemoteDecoderManagerChild* RemoteDecoderManagerChild::GetSingleton() {
   MOZ_ASSERT(NS_GetCurrentThread() == GetManagerThread());
   return sRemoteDecoderManagerChild;
 }
 
-/* static */ nsIThread* RemoteDecoderManagerChild::GetManagerThread() {
+/* static */
+nsIThread* RemoteDecoderManagerChild::GetManagerThread() {
   return sRemoteDecoderManagerChildThread;
 }
 
-/* static */ AbstractThread*
-RemoteDecoderManagerChild::GetManagerAbstractThread() {
+/* static */
+AbstractThread* RemoteDecoderManagerChild::GetManagerAbstractThread() {
   return sRemoteDecoderManagerChildAbstractThread;
 }
 
-PRemoteVideoDecoderChild*
-RemoteDecoderManagerChild::AllocPRemoteVideoDecoderChild(
-    const VideoInfo& /* not used */, const float& /* not used */,
+PRemoteDecoderChild* RemoteDecoderManagerChild::AllocPRemoteDecoderChild(
+    const RemoteDecoderInfoIPDL& /* not used */,
     const CreateDecoderParams::OptionSet& /* not used */, bool* /* not used */,
     nsCString* /* not used */) {
-  return new RemoteVideoDecoderChild();
+  // RemoteDecoderModule is responsible for creating RemoteDecoderChild
+  // classes.
+  MOZ_ASSERT(false,
+             "RemoteDecoderManagerChild cannot create "
+             "RemoteDecoderChild classes");
+  return nullptr;
 }
 
-bool RemoteDecoderManagerChild::DeallocPRemoteVideoDecoderChild(
-    PRemoteVideoDecoderChild* actor) {
-  RemoteVideoDecoderChild* child = static_cast<RemoteVideoDecoderChild*>(actor);
+bool RemoteDecoderManagerChild::DeallocPRemoteDecoderChild(
+    PRemoteDecoderChild* actor) {
+  RemoteDecoderChild* child = static_cast<RemoteDecoderChild*>(actor);
   child->IPDLActorDestroyed();
   return true;
 }

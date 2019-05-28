@@ -105,7 +105,6 @@
               nWord = nWord.nextWord;
             }
             pWord = cWord.prevWord;
-
           } else if (this.mOffset < cWord.start) {
             while (this.mOffset < cWord.start) {
               cWord = pWord;
@@ -345,8 +344,8 @@
             }
           }
 
-          func.call(null, kCaretOffset, boundary, text, startOffset, endOffset,
-                    aID, isOk1, isOk2, isOk3);
+          func(kCaretOffset, boundary, text, startOffset, endOffset,
+               aID, isOk1, isOk2, isOk3);
         }
       };
 

@@ -17,10 +17,6 @@ MOCHITEST_CHROME_MANIFESTS += [
     'content/test/chrome/chrome.ini',
 ]
 
-TESTING_JS_MODULES += [
-    'content/test/sanitize/SiteDataTestUtils.jsm',
-]
-
 BROWSER_CHROME_MANIFESTS += [
     'content/test/about/browser.ini',
     'content/test/alerts/browser.ini',
@@ -31,15 +27,16 @@ BROWSER_CHROME_MANIFESTS += [
     'content/test/general/browser.ini',
     'content/test/historySwipeAnimation/browser.ini',
     'content/test/keyboard/browser.ini',
+    'content/test/menubar/browser.ini',
     'content/test/metaTags/browser.ini',
     'content/test/pageActions/browser.ini',
     'content/test/pageinfo/browser.ini',
     'content/test/performance/browser.ini',
     'content/test/performance/hidpi/browser.ini',
+    'content/test/performance/legacyurlbar/browser.ini',
     'content/test/performance/lowdpi/browser.ini',
     'content/test/permissions/browser.ini',
     'content/test/plugins/browser.ini',
-    'content/test/plugins/xbl/browser.ini',
     'content/test/popupNotifications/browser.ini',
     'content/test/popups/browser.ini',
     'content/test/referrer/browser.ini',

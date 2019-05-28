@@ -4,9 +4,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   schema: "resource:///modules/policies/schema.jsm",
@@ -54,7 +53,6 @@ function addMissingColumns() {
  */
 
 function generateActivePolicies(data) {
-
   let new_cont = document.getElementById("activeContent");
   new_cont.classList.add("active-policies");
 
@@ -90,6 +88,15 @@ function generateActivePolicies(data) {
       row.appendChild(col(JSON.stringify(data[policyName])));
       row.classList.add(color_class, "last_row");
       new_cont.appendChild(row);
+    }
+  }
+
+  if (policy_count < 1) {
+    let current_tab = document.querySelector(".active");
+    if (Services.policies.status == Services.policies.ACTIVE) {
+      current_tab.classList.add("no-specified-policies");
+    } else {
+      current_tab.classList.add("inactive-service");
     }
   }
 
@@ -208,7 +215,6 @@ function generateErrors() {
       new_cont.appendChild(row);
     }
   }
-
   if (!flag) {
     let errors_tab = document.getElementById("category-errors");
     errors_tab.style.display = "none";

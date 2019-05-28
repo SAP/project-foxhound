@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OGLShaderProgram.h"
+
 #include <stdint.h>  // for uint32_t
 #include <sstream>   // for ostringstream
 #include "gfxEnv.h"
@@ -25,7 +26,7 @@ using namespace std;
 #define GAUSSIAN_KERNEL_HALF_WIDTH 11
 #define GAUSSIAN_KERNEL_STEP 0.2
 
-void AddUniforms(ProgramProfileOGL &aProfile) {
+static void AddUniforms(ProgramProfileOGL &aProfile) {
   // This needs to be kept in sync with the KnownUniformName enum
   static const char *sKnownUniformNames[] = {"uLayerTransform",
                                              "uLayerTransformInverse",
@@ -153,8 +154,8 @@ void ShaderConfigOGL::SetDynamicGeometry(bool aEnabled) {
   SetFeature(ENABLE_DYNAMIC_GEOMETRY, aEnabled);
 }
 
-/* static */ ProgramProfileOGL ProgramProfileOGL::GetProfileFor(
-    ShaderConfigOGL aConfig) {
+/* static */
+ProgramProfileOGL ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig) {
   ProgramProfileOGL result;
   ostringstream fs, vs;
 

@@ -1,5 +1,5 @@
 /* run some tests on the data: protocol handler */
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // The behaviour wrt spaces is:
 // - Textual content keeps all spaces
@@ -58,7 +58,7 @@ function run_test() {
       loadUsingSystemPrincipal: true
     });
     chan.contentType = "foo/bar"; // should be ignored
-    chan.asyncOpen2(new ChannelListener(on_read_complete, i));
+    chan.asyncOpen(new ChannelListener(on_read_complete, i));
   }
 }
 

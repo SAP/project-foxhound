@@ -38,7 +38,7 @@ namespace dom {
 // template parameter.  We can avoid having multiple instantiations of them by
 // pulling them out into this helper class.
 class MaybeCrossOriginObjectMixins {
- protected:
+ public:
   /**
    * Implementation of
    * <https://html.spec.whatwg.org/multipage/browsers.html#isplatformobjectsameorigin-(-o-)>.
@@ -46,9 +46,9 @@ class MaybeCrossOriginObjectMixins {
    * same-compartment may not be same-Realm.  "obj" can be a WindowProxy, a
    * Window, or a Location.
    */
-  static bool IsPlatformObjectSameOrigin(JSContext* cx,
-                                         JS::Handle<JSObject*> obj);
+  static bool IsPlatformObjectSameOrigin(JSContext* cx, JSObject* obj);
 
+ protected:
   /**
    * Implementation of
    * <https://html.spec.whatwg.org/multipage/browsers.html#crossorigingetownpropertyhelper-(-o,-p-)>.
@@ -315,7 +315,16 @@ class MaybeCrossOriginObject : public Base,
   /**
    * Spidermonkey-internal hook for enumerating objects.
    */
-  JSObject* enumerate(JSContext* cx, JS::Handle<JSObject*> proxy) const final;
+  bool enumerate(JSContext* cx, JS::Handle<JSObject*> proxy,
+                 JS::AutoIdVector& props) const final;
+
+  /**
+   * Spidermonkey-internal hook used for instanceof.  We need to override this
+   * because otherwise we can end up doing instanceof work in the wrong
+   * compartment.
+   */
+  bool hasInstance(JSContext* cx, JS::Handle<JSObject*> proxy,
+                   JS::MutableHandle<JS::Value> v, bool* bp) const final;
 
   /**
    * Spidermonkey-internal hook used by Object.prototype.toString.  Subclasses

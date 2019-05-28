@@ -27,7 +27,8 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsSubDocumentFrame)
 
-  explicit nsSubDocumentFrame(ComputedStyle* aStyle);
+  explicit nsSubDocumentFrame(ComputedStyle* aStyle,
+                              nsPresContext* aPresContext);
 
 #ifdef DEBUG_FRAME_DUMP
   void List(FILE* out = stderr, const char* aPrefix = "",
@@ -100,11 +101,6 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   bool ReflowFinished() override;
   void ReflowCallbackCanceled() override;
 
-  bool ShouldClampScrollPosition() {
-    nsFrameLoader* frameLoader = FrameLoader();
-    return !frameLoader || frameLoader->ShouldClampScrollPosition();
-  }
-
   /**
    * Return true if pointer event hit-testing should be allowed to target
    * content in the subdocument.
@@ -117,15 +113,14 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
     }
   }
 
-  mozilla::layout::RenderFrame* GetRenderFrame() const;
+  void UnsetFrameLoader() { mFrameLoader = nullptr; }
+  nsFrameLoader* FrameLoader() const;
 
  protected:
   friend class AsyncFrameInit;
 
   // Helper method to look up the HTML marginwidth & marginheight attributes.
   mozilla::CSSIntSize GetMarginAttributes();
-
-  nsFrameLoader* FrameLoader() const;
 
   bool IsInline() { return mIsInline; }
 

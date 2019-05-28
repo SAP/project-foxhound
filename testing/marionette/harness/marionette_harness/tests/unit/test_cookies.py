@@ -34,7 +34,7 @@ class CookieTest(MarionetteTestCase):
 
     def test_adding_a_cookie_that_expired_in_the_past(self):
         cookie = self.COOKIE_A.copy()
-        cookie["expiry"] = calendar.timegm(time.gmtime()) - 1
+        cookie["expiry"] = calendar.timegm(time.gmtime()) - (60 * 60 * 24)
         self.marionette.add_cookie(cookie)
         cookies = self.marionette.get_cookies()
         self.assertEquals(0, len(cookies))

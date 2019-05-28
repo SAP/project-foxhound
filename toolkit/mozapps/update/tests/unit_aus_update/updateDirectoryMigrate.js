@@ -93,7 +93,7 @@ function getOldUpdateLog(aLogLeafName) {
   return updateLog;
 }
 
-function run_test() {
+async function run_test() {
   setupTestCommon(null);
 
   debugDump("testing that the update directory is migrated after a successful update");
@@ -115,37 +115,32 @@ function run_test() {
             "there should not be an active update");
   Assert.equal(gUpdateManager.updateCount, 1,
                "the update manager update count" + MSG_SHOULD_EQUAL);
-  executeSoon(waitForUpdateXMLFiles);
-}
+  await waitForUpdateXMLFiles();
 
-/**
- * Called after the call to waitForUpdateXMLFiles finishes.
- */
-function waitForUpdateXMLFilesFinished() {
   let cancelations = Services.prefs.getIntPref(PREF_APP_UPDATE_CANCELATIONS, 0);
   Assert.equal(cancelations, 0,
                "the " + PREF_APP_UPDATE_CANCELATIONS + " preference " +
                MSG_SHOULD_EQUAL);
 
   let oldDir = getOldUpdatesRootDir();
-  let newDir = getUpdatesRootDir();
+  let newDir = getUpdateDirFile();
   if (oldDir.path != newDir.path) {
     Assert.ok(!oldDir.exists(),
               "Old update directory should have been deleted after migration");
   }
 
-  let log = getUpdateLog(FILE_UPDATE_LOG);
+  log = getUpdateDirFile(FILE_UPDATE_LOG);
   Assert.ok(!log.exists(), MSG_SHOULD_NOT_EXIST);
 
-  log = getUpdateLog(FILE_LAST_UPDATE_LOG);
+  log = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
   Assert.ok(log.exists(), MSG_SHOULD_EXIST);
   Assert.equal(readFile(log), "Last Update Log",
                "the last update log contents" + MSG_SHOULD_EQUAL);
 
-  log = getUpdateLog(FILE_BACKUP_UPDATE_LOG);
+  log = getUpdateDirFile(FILE_BACKUP_UPDATE_LOG);
   Assert.ok(!log.exists(), MSG_SHOULD_NOT_EXIST);
 
-  let dir = getUpdatesPatchDir();
+  let dir = getUpdateDirFile(DIR_PATCH);
   Assert.ok(dir.exists(), MSG_SHOULD_EXIST);
 
   doTestFinish();

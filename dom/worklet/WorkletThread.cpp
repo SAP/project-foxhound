@@ -266,8 +266,8 @@ WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-/* static */ void WorkletThread::EnsureCycleCollectedJSContext(
-    JSRuntime* aParentRuntime) {
+/* static */
+void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
   if (ccjscx) {
     MOZ_ASSERT(ccjscx->GetAsWorkletJSContext());
@@ -285,7 +285,6 @@ WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
   // FIXME: JSSettings
   // FIXME: JS_SetNativeStackQuota
   // FIXME: JS_SetSecurityCallbacks
-  // FIXME: JS::SetAsmJSCacheOps
   // FIXME: JS::SetAsyncTaskCallbacks
   // FIXME: JS_AddInterruptCallback
   // FIXME: JS::SetCTypesActivityCallback
@@ -336,7 +335,8 @@ void WorkletThread::TerminateInternal() {
   NS_DispatchToMainThread(runnable);
 }
 
-/* static */ void WorkletThread::DeleteCycleCollectedJSContext() {
+/* static */
+void WorkletThread::DeleteCycleCollectedJSContext() {
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
   if (!ccjscx) {
     return;
@@ -347,12 +347,14 @@ void WorkletThread::TerminateInternal() {
   delete workletjscx;
 }
 
-/* static */ bool WorkletThread::IsOnWorkletThread() {
+/* static */
+bool WorkletThread::IsOnWorkletThread() {
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
   return ccjscx && ccjscx->GetAsWorkletJSContext();
 }
 
-/* static */ void WorkletThread::AssertIsOnWorkletThread() {
+/* static */
+void WorkletThread::AssertIsOnWorkletThread() {
   MOZ_ASSERT(IsOnWorkletThread());
 }
 

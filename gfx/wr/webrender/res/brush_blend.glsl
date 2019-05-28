@@ -4,6 +4,12 @@
 
 #define VECS_PER_SPECIFIC_BRUSH 3
 
+#define COMPONENT_TRANSFER_IDENTITY 0
+#define COMPONENT_TRANSFER_TABLE 1
+#define COMPONENT_TRANSFER_DISCRETE 2
+#define COMPONENT_TRANSFER_LINEAR 3
+#define COMPONENT_TRANSFER_GAMMA 4
+
 #include shared,prim_shared,brush
 
 // Interpolated UV coordinates to sample.
@@ -16,6 +22,8 @@ flat varying int vOp;
 flat varying mat3 vColorMat;
 flat varying vec3 vColorOffset;
 flat varying vec4 vUvClipBounds;
+flat varying int vTableAddress;
+flat varying int vFuncs[4];
 
 #ifdef WR_VERTEX_SHADER
 
@@ -37,10 +45,7 @@ void brush_vs(
     // PictureTask src_task = fetch_picture_task(user_data.x);
     vec2 texture_size = vec2(textureSize(sColor0, 0).xy);
     vec2 f = (vi.local_pos - local_rect.p0) / local_rect.size;
-    ImageResourceExtra extra_data = fetch_image_resource_extra(user_data.x);
-    vec2 x = mix(extra_data.st_tl, extra_data.st_tr, f.x);
-    vec2 y = mix(extra_data.st_bl, extra_data.st_br, f.x);
-    f = mix(x, y, f.y);
+    f = get_image_quad_uv(user_data.x, f);
     vec2 uv = mix(uv0, uv1, f);
     float perspective_interpolate = (brush_flags & BRUSH_FLAG_PERSPECTIVE_INTERPOLATION) != 0 ? 1.0 : 0.0;
 
@@ -58,8 +63,20 @@ void brush_vs(
     float amount = float(user_data.z) / 65536.0;
     float invAmount = 1.0 - amount;
 
-    vOp = user_data.y;
+    vOp = user_data.y & 0xffff;
     vAmount = amount;
+
+    // This assignment is only used for component transfer filters but this
+    // assignment has to be done here and not in the component transfer case
+    // below because it doesn't get executed on Windows because of a suspected
+    // miscompile of this shader on Windows. See
+    // https://github.com/servo/webrender/wiki/Driver-issues#bug-1505871---assignment-to-varying-flat-arrays-inside-switch-statement-of-vertex-shader-suspected-miscompile-on-windows
+    // default: just to satisfy angle_shader_validation.rs which needs one
+    // default: for every switch, even in comments.
+    vFuncs[0] = (user_data.y >> 28) & 0xf; // R
+    vFuncs[1] = (user_data.y >> 24) & 0xf; // G
+    vFuncs[2] = (user_data.y >> 20) & 0xf; // B
+    vFuncs[3] = (user_data.y >> 16) & 0xf; // A
 
     switch (vOp) {
         case 2: {
@@ -112,6 +129,11 @@ void brush_vs(
             vColorOffset = offset_data.rgb;
             break;
         }
+        case 13: {
+            // Component Transfer
+            vTableAddress = user_data.z;
+            break;
+        }
         default: break;
     }
 }
@@ -150,6 +172,60 @@ vec3 LinearToSrgb(vec3 color) {
     return if_then_else(lessThanEqual(color, vec3(0.0031308)), c1, c2);
 }
 
+// This function has to be factored out due to the following issue:
+// https://github.com/servo/webrender/wiki/Driver-issues#bug-1532245---switch-statement-inside-control-flow-inside-switch-statement-fails-to-compile-on-some-android-phones
+// (and now the words "default: default:" so angle_shader_validation.rs passes)
+vec4 ComponentTransfer(vec4 colora) {
+    // We push a different amount of data to the gpu cache depending on the
+    // function type.
+    // Identity => 0 blocks
+    // Table/Discrete => 64 blocks (256 values)
+    // Linear => 1 block (2 values)
+    // Gamma => 1 block (3 values)
+    // We loop through the color components and increment the offset (for the
+    // next color component) into the gpu cache based on how many blocks that
+    // function type put into the gpu cache.
+    // Table/Discrete use a 256 entry look up table.
+    // Linear/Gamma are a simple calculation.
+    int offset = 0;
+    vec4 texel;
+    int k;
+
+    for (int i = 0; i < 4; i++) {
+        switch (vFuncs[i]) {
+            case COMPONENT_TRANSFER_IDENTITY:
+                break;
+            case COMPONENT_TRANSFER_TABLE:
+            case COMPONENT_TRANSFER_DISCRETE:
+                // fetch value from lookup table
+                k = int(floor(colora[i]*255.0));
+                texel = fetch_from_gpu_cache_1(vTableAddress + offset + k/4);
+                colora[i] = clamp(texel[k % 4], 0.0, 1.0);
+                // offset plus 256/4 blocks
+                offset = offset + 64;
+                break;
+            case COMPONENT_TRANSFER_LINEAR:
+                // fetch the two values for use in the linear equation
+                texel = fetch_from_gpu_cache_1(vTableAddress + offset);
+                colora[i] = clamp(texel[0] * colora[i] + texel[1], 0.0, 1.0);
+                // offset plus 1 block
+                offset = offset + 1;
+                break;
+            case COMPONENT_TRANSFER_GAMMA:
+                // fetch the three values for use in the gamma equation
+                texel = fetch_from_gpu_cache_1(vTableAddress + offset);
+                colora[i] = clamp(texel[0] * pow(colora[i], texel[1]) + texel[2], 0.0, 1.0);
+                // offset plus 1 block
+                offset = offset + 1;
+                break;
+            default:
+                // shouldn't happen
+                break;
+        }
+    }
+    return colora;
+}
+
 Fragment brush_fs() {
     float perspective_divisor = mix(gl_FragCoord.w, 1.0, vLayerAndPerspective.y);
     vec2 uv = vUv * perspective_divisor;
@@ -179,6 +255,12 @@ Fragment brush_fs() {
             break;
         case 12:
             color = LinearToSrgb(color);
+            break;
+        case 13: // Component Transfer
+            vec4 colora = alpha != 0.0 ? Cs / alpha : Cs;
+            colora = ComponentTransfer(colora);
+            color = colora.rgb;
+            alpha = colora.a;
             break;
         default:
             color = vColorMat * color + vColorOffset;

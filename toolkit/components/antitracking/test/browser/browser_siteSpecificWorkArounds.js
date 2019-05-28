@@ -21,7 +21,7 @@ AntiTracking.runTest("localStorage with a tracker that is whitelisted via a pref
       Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
     });
   },
-  [["urlclassifier.trackingAnnotationSkipURLs", "tracking.example.org"]],
+  [["urlclassifier.trackingAnnotationSkipURLs", "TRACKING.EXAMPLE.ORG"]],
   false, // run the window.open() test
   false, // run the user interaction test
   0, // don't expect blocking notifications
@@ -58,12 +58,13 @@ AntiTracking.runTest("localStorage with a tracker that is whitelisted via a fanc
 
 AntiTracking.runTest("localStorage with a tracker that is whitelisted via a misconfigured pref",
   async _ => {
+    is(window.localStorage, null, "LocalStorage is null");
     try {
       localStorage.foo = 42;
       ok(false, "LocalStorage cannot be used!");
     } catch (e) {
       ok(true, "LocalStorage cannot be used!");
-      is(e.name, "SecurityError", "We want a security error message.");
+      is(e.name, "TypeError", "We want a type error message.");
     }
   },
   async _ => {

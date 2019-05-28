@@ -59,7 +59,7 @@ bool nsTextBoxFrame::gInsertSeparatorBeforeAccessKey = false;
 bool nsTextBoxFrame::gInsertSeparatorPrefInitialized = false;
 
 nsIFrame* NS_NewTextBoxFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsTextBoxFrame(aStyle);
+  return new (aPresShell) nsTextBoxFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTextBoxFrame)
@@ -92,8 +92,9 @@ nsresult nsTextBoxFrame::AttributeChanged(int32_t aNameSpaceID,
   return NS_OK;
 }
 
-nsTextBoxFrame::nsTextBoxFrame(ComputedStyle* aStyle)
-    : nsLeafBoxFrame(aStyle, kClassID),
+nsTextBoxFrame::nsTextBoxFrame(ComputedStyle* aStyle,
+                               nsPresContext* aPresContext)
+    : nsLeafBoxFrame(aStyle, aPresContext, kClassID),
       mAccessKeyInfo(nullptr),
       mCropType(CropRight),
       mAscent(0),
@@ -887,17 +888,15 @@ void nsTextBoxFrame::RecomputeTitle() {
 }
 
 void nsTextBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
+  nsLeafBoxFrame::DidSetComputedStyle(aOldComputedStyle);
+
   if (!aOldComputedStyle) {
     // We're just being initialized
     return;
   }
 
-  const nsStyleText* oldTextStyle = aOldComputedStyle->PeekStyleText();
-  // We should really have oldTextStyle here, since we asked for our
-  // nsStyleText during Init(), but if it's not there for some reason
-  // just assume the worst and recompute mTitle.
-  if (!oldTextStyle ||
-      oldTextStyle->mTextTransform != StyleText()->mTextTransform) {
+  const nsStyleText* oldTextStyle = aOldComputedStyle->StyleText();
+  if (oldTextStyle->mTextTransform != StyleText()->mTextTransform) {
     RecomputeTitle();
     UpdateAccessTitle();
   }
@@ -966,7 +965,8 @@ nsRect nsTextBoxFrame::GetComponentAlphaBounds() const {
 
 bool nsTextBoxFrame::ComputesOwnOverflowArea() { return true; }
 
-/* virtual */ void nsTextBoxFrame::MarkIntrinsicISizesDirty() {
+/* virtual */
+void nsTextBoxFrame::MarkIntrinsicISizesDirty() {
   mNeedsRecalc = true;
   nsLeafBoxFrame::MarkIntrinsicISizesDirty();
 }

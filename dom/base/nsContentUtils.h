@@ -132,6 +132,7 @@ class TextEditor;
 namespace dom {
 class ContentFrameMessageManager;
 struct CustomElementDefinition;
+class DataTransfer;
 class DocumentFragment;
 class Element;
 class Event;
@@ -143,8 +144,8 @@ struct LifecycleCallbackArgs;
 struct LifecycleAdoptedCallbackArgs;
 class MessageBroadcaster;
 class NodeInfo;
-class nsIContentChild;
-class nsIContentParent;
+class ContentChild;
+class ContentParent;
 class TabChild;
 class Selection;
 class TabParent;
@@ -217,9 +218,6 @@ class nsContentUtils {
 
  public:
   static nsresult Init();
-
-  // Strip off "wyciwyg://n/" part of a URL. aURI must have "wyciwyg" scheme.
-  static nsresult RemoveWyciwygScheme(nsIURI* aURI, nsIURI** aReturn);
 
   static bool IsCallerChrome();
   static bool ThreadsafeIsCallerChrome();
@@ -306,7 +304,11 @@ class nsContentUtils {
   // This function can be called both in the main thread and worker threads.
   static bool ShouldResistFingerprinting();
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell);
-  static bool ShouldResistFingerprinting(Document* aDoc);
+  static bool ShouldResistFingerprinting(nsIPrincipal* aPrincipal);
+  static bool ShouldResistFingerprinting(const Document* aDoc);
+
+  // Prevent system colors from being exposed to CSS or canvas.
+  static bool UseStandinsForNativeColors();
 
   // A helper function to calculate the rounded window size for fingerprinting
   // resistance. The rounded size is based on the chrome UI size and available
@@ -757,13 +759,14 @@ class nsContentUtils {
   // If the pref doesn't exist or if it isn't ALLOW_ACTION, false is
   // returned, otherwise true is returned. Always returns true for the
   // system principal, and false for a null principal.
-  static bool IsSitePermAllow(nsIPrincipal* aPrincipal, const char* aType);
+  static bool IsSitePermAllow(nsIPrincipal* aPrincipal,
+                              const nsACString& aType);
 
   // Get a permission-manager setting for the given principal and type.
   // If the pref doesn't exist or if it isn't DENY_ACTION, false is
   // returned, otherwise true is returned. Always returns false for the
   // system principal, and true for a null principal.
-  static bool IsSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
+  static bool IsSitePermDeny(nsIPrincipal* aPrincipal, const nsACString& aType);
 
   // Get a permission-manager setting for the given principal and type.
   // If the pref doesn't exist or if it isn't ALLOW_ACTION, false is
@@ -771,7 +774,8 @@ class nsContentUtils {
   // system principal, and false for a null principal.
   // This version checks the permission for an exact host match on
   // the principal
-  static bool IsExactSitePermAllow(nsIPrincipal* aPrincipal, const char* aType);
+  static bool IsExactSitePermAllow(nsIPrincipal* aPrincipal,
+                                   const nsACString& aType);
 
   // Get a permission-manager setting for the given principal and type.
   // If the pref doesn't exist or if it isn't DENY_ACTION, false is
@@ -779,7 +783,8 @@ class nsContentUtils {
   // system principal, and true for a null principal.
   // This version checks the permission for an exact host match on
   // the principal
-  static bool IsExactSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
+  static bool IsExactSitePermDeny(nsIPrincipal* aPrincipal,
+                                  const nsACString& aType);
 
   // Returns true if aDoc1 and aDoc2 have equal NodePrincipal()s.
   static bool HaveEqualPrincipals(Document* aDoc1, Document* aDoc2);
@@ -998,6 +1003,15 @@ class nsContentUtils {
   static bool IsInSameAnonymousTree(const nsINode* aNode,
                                     const nsIContent* aContent);
 
+  /*
+   * Traverse the parent chain from aElement up to aStop, and return true if
+   * there's an interactive html content; false otherwise.
+   *
+   * Note: This crosses shadow boundaries but not document boundaries.
+   */
+  static bool IsInInteractiveHTMLContent(const Element* aElement,
+                                         const Element* aStop);
+
   /**
    * Return the nsIXPConnect service.
    */
@@ -1214,7 +1228,9 @@ class nsContentUtils {
   /**
    * Returns true if aDocument is a chrome document
    */
-  static bool IsChromeDoc(const Document* aDocument);
+  static bool IsChromeDoc(const Document* aDocument) {
+    return aDocument && aDocument->NodePrincipal() == sSystemPrincipal;
+  }
 
   /**
    * Returns true if aDocument is in a docshell whose parent is the same type
@@ -1237,7 +1253,9 @@ class nsContentUtils {
    * display purposes.  Returns false for null documents or documents
    * which do not belong to a docshell.
    */
-  static bool IsInChromeDocshell(Document* aDocument);
+  static bool IsInChromeDocshell(const Document* aDocument) {
+    return aDocument && aDocument->IsInChromeDocShell();
+  }
 
   /**
    * Return the content policy service
@@ -1403,13 +1421,29 @@ class nsContentUtils {
    * @param aTextEditor         Optional.  If this is called by editor,
    *                            editor should set this.  Otherwise, leave
    *                            nullptr.
+   * @param aOptions            Optional.  If aEditorInputType value requires
+   *                            some additional data, they should be properly
+   *                            set with this argument.
    */
   MOZ_CAN_RUN_SCRIPT
-  static nsresult DispatchInputEvent(Element* aEventTarget);
+  static nsresult DispatchInputEvent(Element* aEventTarget) {
+    return DispatchInputEvent(aEventTarget, mozilla::EditorInputType::eUnknown,
+                              nullptr, InputEventOptions());
+  }
+  struct MOZ_STACK_CLASS InputEventOptions final {
+    InputEventOptions() = default;
+    explicit InputEventOptions(const nsAString& aData)
+        : mData(aData), mDataTransfer(nullptr) {}
+    explicit InputEventOptions(mozilla::dom::DataTransfer* aDataTransfer);
+
+    nsString mData;
+    mozilla::dom::DataTransfer* mDataTransfer;
+  };
   MOZ_CAN_RUN_SCRIPT
   static nsresult DispatchInputEvent(Element* aEventTarget,
                                      mozilla::EditorInputType aEditorInputType,
-                                     mozilla::TextEditor* aTextEditor);
+                                     mozilla::TextEditor* aTextEditor,
+                                     const InputEventOptions& aOptions);
 
   /**
    * This method creates and dispatches a untrusted event.
@@ -2520,7 +2554,7 @@ class nsContentUtils {
    * @result          whether the given string is matches the pattern.
    */
   static bool IsPatternMatching(nsAString& aValue, nsAString& aPattern,
-                                Document* aDocument);
+                                const Document* aDocument);
 
   /**
    * Calling this adds support for
@@ -2800,19 +2834,18 @@ class nsContentUtils {
       const bool& aIsPrivateData, nsIPrincipal* aRequestingPrincipal,
       const nsContentPolicyType& aContentPolicyType,
       nsITransferable* aTransferable,
-      mozilla::dom::nsIContentParent* aContentParent,
+      mozilla::dom::ContentParent* aContentParent,
       mozilla::dom::TabChild* aTabChild);
 
   static void TransferablesToIPCTransferables(
       nsIArray* aTransferables, nsTArray<mozilla::dom::IPCDataTransfer>& aIPC,
-      bool aInSyncMessage, mozilla::dom::nsIContentChild* aChild,
-      mozilla::dom::nsIContentParent* aParent);
+      bool aInSyncMessage, mozilla::dom::ContentChild* aChild,
+      mozilla::dom::ContentParent* aParent);
 
   static void TransferableToIPCTransferable(
       nsITransferable* aTransferable,
       mozilla::dom::IPCDataTransfer* aIPCDataTransfer, bool aInSyncMessage,
-      mozilla::dom::nsIContentChild* aChild,
-      mozilla::dom::nsIContentParent* aParent);
+      mozilla::dom::ContentChild* aChild, mozilla::dom::ContentParent* aParent);
 
   /*
    * Get the pixel data from the given source surface and return it as a buffer.
@@ -2967,10 +3000,9 @@ class nsContentUtils {
 
   /*
    * Checks if storage for the given principal is permitted by the user's
-   * preferences. The caller is assumed to not be a third-party iframe.
-   * (if that is possible, the caller should use StorageAllowedForWindow)
+   * preferences. This method should be used only by ServiceWorker loading.
    */
-  static StorageAccess StorageAllowedForPrincipal(nsIPrincipal* aPrincipal);
+  static StorageAccess StorageAllowedForServiceWorker(nsIPrincipal* aPrincipal);
 
   /*
    * Returns true if this document should disable storages because of the
@@ -3151,17 +3183,6 @@ class nsContentUtils {
   static nsresult CreateJSValueFromSequenceOfObject(
       JSContext* aCx, const mozilla::dom::Sequence<JSObject*>& aTransfer,
       JS::MutableHandle<JS::Value> aValue);
-
-  /**
-   * Returns whether or not UA Widget is enabled, controlled by pref
-   * dom.ua_widget.enabled.
-   *
-   * When enabled, UA Widget will replace legacy XBL when rendering
-   * JS-implemented web content widgets (videocontrols/datetimebox/etc.)
-   *
-   * It is really enabled only if Shadow DOM is also enabled.
-   */
-  static bool IsUAWidgetEnabled() { return sIsUAWidgetEnabled; }
 
   /**
    * Returns true if reserved key events should be prevented from being sent
@@ -3364,13 +3385,14 @@ class nsContentUtils {
       CallOnRemoteChildFunction aCallback, void* aArg);
 
   /**
-   * Gets the current cookie lifetime policy for a given principal by checking
-   * with preferences and the permission manager.
+   * Gets the cookie lifetime policy for a given cookieSettings and a given
+   * principal by checking the permission value.
    *
-   * Used in the implementation of InternalStorageAllowedForPrincipal.
+   * Used in the implementation of InternalStorageAllowedCheck.
    */
-  static void GetCookieLifetimePolicyForPrincipal(nsIPrincipal* aPrincipal,
-                                                  uint32_t* aLifetimePolicy);
+  static void GetCookieLifetimePolicyFromCookieSettings(
+      nsICookieSettings* aCookieSettings, nsIPrincipal* aPrincipal,
+      uint32_t* aLifetimePolicy);
 
   /*
    * Checks if storage for a given principal is permitted by the user's
@@ -3381,12 +3403,14 @@ class nsContentUtils {
    * allow a channel instead of the window reference when determining 3rd party
    * status.
    *
-   * Used in the implementation of StorageAllowedForWindow and
-   * StorageAllowedForPrincipal.
+   * Used in the implementation of StorageAllowedForWindow,
+   * StorageAllowedForChannel and StorageAllowedForServiceWorker.
    */
-  static StorageAccess InternalStorageAllowedForPrincipal(
-      nsIPrincipal* aPrincipal, nsPIDOMWindowInner* aWindow, nsIURI* aURI,
-      nsIChannel* aChannel, uint32_t& aRejectedReason);
+  static StorageAccess InternalStorageAllowedCheck(nsIPrincipal* aPrincipal,
+                                                   nsPIDOMWindowInner* aWindow,
+                                                   nsIURI* aURI,
+                                                   nsIChannel* aChannel,
+                                                   uint32_t& aRejectedReason);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(
@@ -3446,7 +3470,6 @@ class nsContentUtils {
   static bool sIsUpgradableDisplayContentPrefEnabled;
   static bool sIsFrameTimingPrefEnabled;
   static bool sIsFormAutofillAutocompleteEnabled;
-  static bool sIsUAWidgetEnabled;
   // Taintfox
   static bool sEncodeDecodeURLHash;
   static bool sGettersDecodeURLHash;
@@ -3505,6 +3528,8 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
   switch (aType) {
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD:
+    case nsIContentPolicy::TYPE_INTERNAL_MODULE:
+    case nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:

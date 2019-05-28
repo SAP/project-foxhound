@@ -8,6 +8,7 @@
 
 #include "mozIStorageConnection.h"
 #include "mozIStorageService.h"
+#include "mozIThirdPartyUtil.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIFile.h"
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include "GeckoProfiler.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Telemetry.h"
@@ -41,8 +43,11 @@
 #include "mozilla/dom/simpledb/ActorsParent.h"
 #include "mozilla/dom/StorageActivityService.h"
 #include "mozilla/dom/StorageDBUpdater.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/net/MozURL.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
@@ -118,6 +123,7 @@ namespace dom {
 namespace quota {
 
 using namespace mozilla::ipc;
+using mozilla::net::MozURL;
 
 // We want profiles to be platform-independent so we always need to replace
 // the same characters on every platform. Windows has the most extensive set
@@ -214,6 +220,8 @@ enum AppId {
 #define WEB_APPS_STORE_FILE_NAME "webappsstore.sqlite"
 #define LS_ARCHIVE_FILE_NAME "ls-archive.sqlite"
 #define LS_ARCHIVE_TMP_FILE_NAME "ls-archive-tmp.sqlite"
+
+const char kProfileDoChangeTopic[] = "profile-do-change";
 
 /******************************************************************************
  * SQLite functions
@@ -413,86 +421,30 @@ class DirectoryLockImpl final : public DirectoryLock {
   ~DirectoryLockImpl();
 };
 
-class QuotaManager::CreateRunnable final : public BackgroundThreadObject,
-                                           public Runnable {
-  nsCOMPtr<nsIEventTarget> mMainEventTarget;
-  nsTArray<nsCOMPtr<nsIRunnable>> mCallbacks;
-  nsString mBaseDirPath;
-  RefPtr<QuotaManager> mManager;
-  nsresult mResultCode;
+class QuotaManager::Observer final : public nsIObserver {
+  static Observer* sInstance;
 
-  enum class State {
-    Initial,
-    CreatingManager,
-    RegisteringObserver,
-    CallingCallbacks,
-    Completed
-  };
-
-  State mState;
+  bool mPendingProfileChange;
+  bool mShutdownComplete;
 
  public:
-  explicit CreateRunnable(nsIEventTarget* aMainEventTarget)
-      : Runnable("dom::quota::QuotaManager::CreateRunnable"),
-        mMainEventTarget(aMainEventTarget),
-        mResultCode(NS_OK),
-        mState(State::Initial) {
-    AssertIsOnBackgroundThread();
-  }
+  static nsresult Initialize();
 
-  void AddCallback(nsIRunnable* aCallback) {
-    AssertIsOnOwningThread();
-    MOZ_ASSERT(aCallback);
-
-    mCallbacks.AppendElement(aCallback);
-  }
+  static void ShutdownCompleted();
 
  private:
-  ~CreateRunnable() {}
+  Observer() : mPendingProfileChange(false), mShutdownComplete(false) {
+    MOZ_ASSERT(NS_IsMainThread());
+  }
+
+  ~Observer() { MOZ_ASSERT(NS_IsMainThread()); }
 
   nsresult Init();
 
-  nsresult CreateManager();
-
-  nsresult RegisterObserver();
-
-  void CallCallbacks();
-
-  State GetNextState(nsCOMPtr<nsIEventTarget>& aThread);
-
-  NS_DECL_NSIRUNNABLE
-};
-
-class QuotaManager::ShutdownRunnable final : public Runnable {
-  // Only touched on the main thread.
-  bool& mDone;
-
- public:
-  explicit ShutdownRunnable(bool& aDone)
-      : Runnable("dom::quota::QuotaManager::ShutdownRunnable"), mDone(aDone) {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
-
- private:
-  ~ShutdownRunnable() {}
-
-  NS_DECL_NSIRUNNABLE
-};
-
-class QuotaManager::ShutdownObserver final : public nsIObserver {
-  nsCOMPtr<nsIEventTarget> mBackgroundThread;
-
- public:
-  explicit ShutdownObserver(nsIEventTarget* aBackgroundThread)
-      : mBackgroundThread(aBackgroundThread) {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
+  nsresult Shutdown();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
-
- private:
-  ~ShutdownObserver() { MOZ_ASSERT(NS_IsMainThread()); }
 };
 
 namespace {
@@ -700,12 +652,6 @@ class OriginOperationBase : public BackgroundThreadObject, public Runnable {
     // Not yet run.
     State_Initial,
 
-    // Running initialization on the main thread.
-    State_Initializing,
-
-    // Running initialization on the owning thread.
-    State_FinishingInit,
-
     // Running quota manager initialization on the owning thread.
     State_CreatingQuotaManager,
 
@@ -772,12 +718,6 @@ class OriginOperationBase : public BackgroundThreadObject, public Runnable {
   void AdvanceState() {
     switch (mState) {
       case State_Initial:
-        mState = State_Initializing;
-        return;
-      case State_Initializing:
-        mState = State_FinishingInit;
-        return;
-      case State_FinishingInit:
         mState = State_CreatingQuotaManager;
         return;
       case State_CreatingQuotaManager:
@@ -800,8 +740,6 @@ class OriginOperationBase : public BackgroundThreadObject, public Runnable {
   NS_IMETHOD
   Run() override;
 
-  virtual nsresult DoInitOnMainThread() { return NS_OK; }
-
   virtual void Open() = 0;
 
   nsresult DirectoryOpen();
@@ -814,8 +752,6 @@ class OriginOperationBase : public BackgroundThreadObject, public Runnable {
 
  private:
   nsresult Init();
-
-  nsresult InitOnMainThread();
 
   nsresult FinishInit();
 
@@ -937,6 +873,10 @@ class Quota final : public PQuotaParent {
 
   void StartIdleMaintenance();
 
+  bool VerifyRequestParams(const UsageRequestParams& aParams) const;
+
+  bool VerifyRequestParams(const RequestParams& aParams) const;
+
   // IPDL methods.
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -961,6 +901,9 @@ class Quota final : public PQuotaParent {
   virtual mozilla::ipc::IPCResult RecvStartIdleMaintenance() override;
 
   virtual mozilla::ipc::IPCResult RecvStopIdleMaintenance() override;
+
+  virtual mozilla::ipc::IPCResult RecvAbortOperationsForProcess(
+      const ContentParentId& aContentParentId) override;
 };
 
 class QuotaUsageRequestBase : public NormalOriginOperationBase,
@@ -1032,8 +975,6 @@ class GetOriginUsageOp final : public QuotaUsageRequestBase {
  private:
   ~GetOriginUsageOp() {}
 
-  MOZ_IS_CLASS_INIT virtual nsresult DoInitOnMainThread() override;
-
   virtual nsresult DoDirectoryWork(QuotaManager* aQuotaManager) override;
 
   void GetResponse(UsageRequestResponse& aResponse) override;
@@ -1103,8 +1044,6 @@ class InitOriginOp final : public QuotaRequestBase {
  private:
   ~InitOriginOp() {}
 
-  nsresult DoInitOnMainThread() override;
-
   nsresult DoDirectoryWork(QuotaManager* aQuotaManager) override;
 
   void GetResponse(RequestResponse& aResponse) override;
@@ -1156,8 +1095,6 @@ class ClearOriginOp final : public ClearRequestBase {
  private:
   ~ClearOriginOp() {}
 
-  nsresult DoInitOnMainThread() override;
-
   void GetResponse(RequestResponse& aResponse) override;
 };
 
@@ -1171,8 +1108,6 @@ class ClearDataOp final : public ClearRequestBase {
 
  private:
   ~ClearDataOp() {}
-
-  nsresult DoInitOnMainThread() override;
 
   void GetResponse(RequestResponse& aResponse) override;
 };
@@ -1189,9 +1124,6 @@ class PersistRequestBase : public QuotaRequestBase {
 
  protected:
   explicit PersistRequestBase(const PrincipalInfo& aPrincipalInfo);
-
- private:
-  nsresult DoInitOnMainThread() override;
 };
 
 class PersistedOp final : public PersistRequestBase {
@@ -1220,6 +1152,10 @@ class PersistOp final : public PersistRequestBase {
   void GetResponse(RequestResponse& aResponse) override;
 };
 
+/*******************************************************************************
+ * Other class declarations
+ ******************************************************************************/
+
 class StoragePressureRunnable final : public Runnable {
   const uint64_t mUsage;
 
@@ -1233,6 +1169,35 @@ class StoragePressureRunnable final : public Runnable {
 
   NS_DECL_NSIRUNNABLE
 };
+
+/*******************************************************************************
+ * Helper classes
+ ******************************************************************************/
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+
+class PrincipalVerifier final : public Runnable {
+  nsTArray<PrincipalInfo> mPrincipalInfos;
+
+ public:
+  static already_AddRefed<PrincipalVerifier> CreateAndDispatch(
+      nsTArray<PrincipalInfo>&& aPrincipalInfos);
+
+ private:
+  explicit PrincipalVerifier(nsTArray<PrincipalInfo>&& aPrincipalInfos)
+      : Runnable("dom::quota::PrincipalVerifier"),
+        mPrincipalInfos(std::move(aPrincipalInfos)) {
+    AssertIsOnIOThread();
+  }
+
+  virtual ~PrincipalVerifier() = default;
+
+  bool IsPrincipalInfoValid(const PrincipalInfo& aPrincipalInfo);
+
+  NS_DECL_NSIRUNNABLE
+};
+
+#endif
 
 /*******************************************************************************
  * Helper Functions
@@ -1353,25 +1318,25 @@ void ReportInternalError(const char* aFile, uint32_t aLine, const char* aStr) {
 
 namespace {
 
+nsString gBaseDirPath;
+
+#ifdef DEBUG
+bool gQuotaManagerInitialized = false;
+#endif
+
 StaticRefPtr<QuotaManager> gInstance;
 bool gCreateFailed = false;
-StaticRefPtr<QuotaManager::CreateRunnable> gCreateRunnable;
 mozilla::Atomic<bool> gShutdown(false);
 
 // Constants for temporary storage limit computing.
 static const int32_t kDefaultFixedLimitKB = -1;
 static const uint32_t kDefaultChunkSizeKB = 10 * 1024;
-int32_t gFixedLimitKB = kDefaultFixedLimitKB;
-uint32_t gChunkSizeKB = kDefaultChunkSizeKB;
+Atomic<int32_t, Relaxed> gFixedLimitKB(kDefaultFixedLimitKB);
+Atomic<uint32_t, Relaxed> gChunkSizeKB(kDefaultChunkSizeKB);
 
-bool gTestingEnabled = false;
+Atomic<bool> gTestingEnabled(false);
 
-class StorageOperationBase : public Runnable {
-  mozilla::Mutex mMutex;
-  mozilla::CondVar mCondVar;
-  nsresult mMainThreadResultCode;
-  bool mWaiting;
-
+class StorageOperationBase {
  protected:
   struct OriginProps;
 
@@ -1383,15 +1348,11 @@ class StorageOperationBase : public Runnable {
 
  public:
   StorageOperationBase(nsIFile* aDirectory, bool aPersistent)
-      : Runnable("dom::quota::StorageOperationBase"),
-        mMutex("StorageOperationBase::mMutex"),
-        mCondVar(mMutex, "StorageOperationBase::mCondVar"),
-        mMainThreadResultCode(NS_OK),
-        mWaiting(true),
-        mDirectory(aDirectory),
-        mPersistent(aPersistent) {
+      : mDirectory(aDirectory), mPersistent(aPersistent) {
     AssertIsOnIOThread();
   }
+
+  NS_INLINE_DECL_REFCOUNTING(StorageOperationBase)
 
  protected:
   virtual ~StorageOperationBase() {}
@@ -1415,12 +1376,6 @@ class StorageOperationBase : public Runnable {
   nsresult ProcessOriginDirectories();
 
   virtual nsresult ProcessOriginDirectory(const OriginProps& aOriginProps) = 0;
-
- private:
-  nsresult RunOnMainThread();
-
-  NS_IMETHOD
-  Run() override;
 };
 
 struct StorageOperationBase::OriginProps {
@@ -1473,6 +1428,15 @@ class MOZ_STACK_CLASS OriginParser final {
     eExpectingPort,
     eExpectingEmptyTokenOrDriveLetterOrPathnameComponent,
     eExpectingEmptyTokenOrPathnameComponent,
+
+    // We transit from eExpectingHost to this state when we encounter a host
+    // beginning with "[" which indicates an IPv6 literal. Because we mangle the
+    // IPv6 ":" delimiter to be a "+", we will receive separate tokens for each
+    // portion of the IPv6 address, including a final token that ends with "]".
+    // (Note that we do not mangle "[" or "]".) Note that the URL spec
+    // explicitly disclaims support for "<zone_id>" and so we don't have to deal
+    // with that.
+    eExpectingIPV6Token,
     eComplete,
     eHandledTrailingSeparator
   };
@@ -1495,6 +1459,9 @@ class MOZ_STACK_CLASS OriginParser final {
   bool mMaybeDriveLetter;
   bool mError;
 
+  // Number of group which a IPv6 address has. Should be less than 9.
+  uint8_t mIPGroup;
+
  public:
   OriginParser(const nsACString& aOrigin,
                const OriginAttributes& aOriginAttributes)
@@ -1508,7 +1475,8 @@ class MOZ_STACK_CLASS OriginParser final {
         mInIsolatedMozBrowser(false),
         mUniversalFileOrigin(false),
         mMaybeDriveLetter(false),
-        mError(false) {}
+        mError(false),
+        mIPGroup(0) {}
 
   static ResultType ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
                                 OriginAttributes* aAttrs);
@@ -2141,6 +2109,40 @@ nsresult GetTemporaryStorageLimit(nsIFile* aDirectory, uint64_t aCurrentUsage,
  * Exported functions
  ******************************************************************************/
 
+void InitializeQuotaManager() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!gQuotaManagerInitialized);
+
+  if (!QuotaManager::IsRunningGTests()) {
+    // This service has to be started on the main thread currently.
+    nsCOMPtr<mozIStorageService> ss;
+    if (NS_WARN_IF(!(ss = do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID)))) {
+      NS_WARNING("Failed to get storage service!");
+    }
+  }
+
+  if (NS_FAILED(QuotaManager::Initialize())) {
+    NS_WARNING("Failed to initialize quota manager!");
+  }
+
+  if (NS_FAILED(Preferences::AddAtomicIntVarCache(
+          &gFixedLimitKB, PREF_FIXED_LIMIT, kDefaultFixedLimitKB)) ||
+      NS_FAILED(Preferences::AddAtomicUintVarCache(
+          &gChunkSizeKB, PREF_CHUNK_SIZE, kDefaultChunkSizeKB))) {
+    NS_WARNING("Unable to respond to temp storage pref changes!");
+  }
+
+  if (NS_FAILED(Preferences::AddAtomicBoolVarCache(
+          &gTestingEnabled, PREF_TESTING_FEATURES, false))) {
+    NS_WARNING("Unable to respond to testing pref changes!");
+  }
+
+#ifdef DEBUG
+  gQuotaManagerInitialized = true;
+#endif
+}
+
 PQuotaParent* AllocPQuotaParent() {
   AssertIsOnBackgroundThread();
 
@@ -2158,6 +2160,14 @@ bool DeallocPQuotaParent(PQuotaParent* aActor) {
   MOZ_ASSERT(aActor);
 
   RefPtr<Quota> actor = dont_AddRef(static_cast<Quota*>(aActor));
+  return true;
+}
+
+bool RecvShutdownQuotaManager() {
+  AssertIsOnBackgroundThread();
+
+  QuotaManager::ShutdownInstance();
+
   return true;
 }
 
@@ -2261,250 +2271,153 @@ void DirectoryLockImpl::NotifyOpenListener() {
   mQuotaManager->RemovePendingDirectoryLock(this);
 }
 
-nsresult QuotaManager::CreateRunnable::Init() {
+QuotaManager::Observer* QuotaManager::Observer::sInstance = nullptr;
+
+// static
+nsresult QuotaManager::Observer::Initialize() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mState == State::Initial);
 
-  nsresult rv;
+  RefPtr<Observer> observer = new Observer();
 
-  nsCOMPtr<nsIFile> baseDir;
-  rv = NS_GetSpecialDirectory(NS_APP_INDEXEDDB_PARENT_DIR,
-                              getter_AddRefs(baseDir));
-  if (NS_FAILED(rv)) {
-    rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                                getter_AddRefs(baseDir));
-  }
+  nsresult rv = observer->Init();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  rv = baseDir->GetPath(mBaseDirPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  Unused << NextGenLocalStorageEnabled();
+  sInstance = observer;
 
   return NS_OK;
 }
 
-nsresult QuotaManager::CreateRunnable::CreateManager() {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(mState == State::CreatingManager);
+// static
+void QuotaManager::Observer::ShutdownCompleted() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(sInstance);
 
-  mManager = new QuotaManager();
-
-  nsresult rv = mManager->Init(mBaseDirPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
+  sInstance->mShutdownComplete = true;
 }
 
-nsresult QuotaManager::CreateRunnable::RegisterObserver() {
+nsresult QuotaManager::Observer::Init() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mState == State::RegisteringObserver);
 
-  if (NS_FAILED(Preferences::AddIntVarCache(&gFixedLimitKB, PREF_FIXED_LIMIT,
-                                            kDefaultFixedLimitKB)) ||
-      NS_FAILED(Preferences::AddUintVarCache(&gChunkSizeKB, PREF_CHUNK_SIZE,
-                                             kDefaultChunkSizeKB))) {
-    NS_WARNING("Unable to respond to temp storage pref changes!");
-  }
-
-  if (NS_FAILED(Preferences::AddBoolVarCache(&gTestingEnabled,
-                                             PREF_TESTING_FEATURES, false))) {
-    NS_WARNING("Unable to respond to testing pref changes!");
-  }
-
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  if (NS_WARN_IF(!observerService)) {
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_WARN_IF(!obs)) {
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIObserver> observer = new ShutdownObserver(mOwningThread);
-
-  nsresult rv = observerService->AddObserver(
-      observer, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID, false);
+  nsresult rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  // This service has to be started on the main thread currently.
-  nsCOMPtr<mozIStorageService> ss =
-      do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
+  rv = obs->AddObserver(this, kProfileDoChangeTopic, false);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
     return rv;
   }
 
-  QuotaManagerService* qms = QuotaManagerService::GetOrCreate();
-  if (NS_WARN_IF(!qms)) {
+  rv = obs->AddObserver(this, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID, false);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    obs->RemoveObserver(this, kProfileDoChangeTopic);
+    obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
     return rv;
-  }
-
-  qms->NoteLiveManager(mManager);
-
-  for (RefPtr<Client>& client : mManager->mClients) {
-    client->DidInitialize(mManager);
   }
 
   return NS_OK;
 }
 
-void QuotaManager::CreateRunnable::CallCallbacks() {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(mState == State::CallingCallbacks);
+nsresult QuotaManager::Observer::Shutdown() {
+  MOZ_ASSERT(NS_IsMainThread());
 
-  gCreateRunnable = nullptr;
-
-  if (NS_FAILED(mResultCode)) {
-    gCreateFailed = true;
-  } else {
-    gInstance = mManager;
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_WARN_IF(!obs)) {
+    return NS_ERROR_FAILURE;
   }
 
-  mManager = nullptr;
+  MOZ_ALWAYS_SUCCEEDS(
+      obs->RemoveObserver(this, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID));
+  MOZ_ALWAYS_SUCCEEDS(obs->RemoveObserver(this, kProfileDoChangeTopic));
+  MOZ_ALWAYS_SUCCEEDS(obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID));
 
-  nsTArray<nsCOMPtr<nsIRunnable>> callbacks;
-  mCallbacks.SwapElements(callbacks);
+  sInstance = nullptr;
 
-  for (nsCOMPtr<nsIRunnable>& callback : callbacks) {
-    Unused << callback->Run();
-  }
+  // In general, the instance will have died after the latter removal call, so
+  // it's not safe to do anything after that point.
+  // However, Shutdown is currently called from Observe which is called by the
+  // Observer Service which holds a strong reference to the observer while the
+  // Observe method is being called.
+
+  return NS_OK;
 }
 
-auto QuotaManager::CreateRunnable::GetNextState(
-    nsCOMPtr<nsIEventTarget>& aThread) -> State {
-  switch (mState) {
-    case State::Initial:
-      aThread = mOwningThread;
-      return State::CreatingManager;
-    case State::CreatingManager:
-      if (mMainEventTarget) {
-        aThread = mMainEventTarget;
-      } else {
-        aThread = GetMainThreadEventTarget();
-      }
-      return State::RegisteringObserver;
-    case State::RegisteringObserver:
-      aThread = mOwningThread;
-      return State::CallingCallbacks;
-    case State::CallingCallbacks:
-      aThread = nullptr;
-      return State::Completed;
-    default:
-      MOZ_CRASH("Bad state!");
-  }
-}
+NS_IMPL_ISUPPORTS(QuotaManager::Observer, nsIObserver)
 
 NS_IMETHODIMP
-QuotaManager::CreateRunnable::Run() {
+QuotaManager::Observer::Observe(nsISupports* aSubject, const char* aTopic,
+                                const char16_t* aData) {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
 
-  switch (mState) {
-    case State::Initial:
-      rv = Init();
-      break;
-
-    case State::CreatingManager:
-      rv = CreateManager();
-      break;
-
-    case State::RegisteringObserver:
-      rv = RegisterObserver();
-      break;
-
-    case State::CallingCallbacks:
-      CallCallbacks();
-      rv = NS_OK;
-      break;
-
-    case State::Completed:
-    default:
-      MOZ_CRASH("Bad state!");
-  }
-
-  nsCOMPtr<nsIEventTarget> thread;
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    if (NS_SUCCEEDED(mResultCode)) {
-      mResultCode = rv;
+  if (!strcmp(aTopic, kProfileDoChangeTopic)) {
+    nsCOMPtr<nsIFile> baseDir;
+    rv = NS_GetSpecialDirectory(NS_APP_INDEXEDDB_PARENT_DIR,
+                                getter_AddRefs(baseDir));
+    if (NS_FAILED(rv)) {
+      rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                  getter_AddRefs(baseDir));
+    }
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
     }
 
-    mState = State::CallingCallbacks;
-    thread = mOwningThread;
-  } else {
-    mState = GetNextState(thread);
-  }
-
-  if (thread) {
-    MOZ_ALWAYS_SUCCEEDS(thread->Dispatch(this, NS_DISPATCH_NORMAL));
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-QuotaManager::ShutdownRunnable::Run() {
-  if (NS_IsMainThread()) {
-    mDone = true;
+    rv = baseDir->GetPath(gBaseDirPath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
 
     return NS_OK;
   }
 
-  AssertIsOnBackgroundThread();
+  if (!strcmp(aTopic, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID)) {
+    // mPendingProfileChange is our re-entrancy guard (the nested event loop
+    // below may cause re-entrancy).
+    if (mPendingProfileChange) {
+      return NS_OK;
+    }
 
-  RefPtr<QuotaManager> quotaManager = gInstance.get();
-  if (quotaManager) {
-    quotaManager->Shutdown();
+    AutoRestore<bool> pending(mPendingProfileChange);
+    mPendingProfileChange = true;
 
-    gInstance = nullptr;
+    mShutdownComplete = false;
+
+    PBackgroundChild* backgroundActor =
+        BackgroundChild::GetOrCreateForCurrentThread();
+    if (NS_WARN_IF(!backgroundActor)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (NS_WARN_IF(!backgroundActor->SendShutdownQuotaManager())) {
+      return NS_ERROR_FAILURE;
+    }
+
+    MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return mShutdownComplete; }));
+
+    gBaseDirPath.Truncate();
+
+    return NS_OK;
   }
 
-  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
+  if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    rv = Shutdown();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
 
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(QuotaManager::ShutdownObserver, nsIObserver)
-
-NS_IMETHODIMP
-QuotaManager::ShutdownObserver::Observe(nsISupports* aSubject,
-                                        const char* aTopic,
-                                        const char16_t* aData) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!strcmp(aTopic, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID));
-  MOZ_ASSERT(gInstance);
-
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  if (NS_WARN_IF(!observerService)) {
-    return NS_ERROR_FAILURE;
+    return NS_OK;
   }
 
-  // Unregister ourselves from the observer service first to make sure the
-  // nested event loop below will not cause re-entrancy issues.
-  Unused << observerService->RemoveObserver(
-      this, PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID);
-
-  QuotaManagerService* qms = QuotaManagerService::Get();
-  MOZ_ASSERT(qms);
-
-  qms->NoteShuttingDownManager();
-
-  for (RefPtr<Client>& client : gInstance->mClients) {
-    client->WillShutdown();
-  }
-
-  bool done = false;
-
-  RefPtr<ShutdownRunnable> shutdownRunnable = new ShutdownRunnable(done);
-  MOZ_ALWAYS_SUCCEEDS(
-      mBackgroundThread->Dispatch(shutdownRunnable, NS_DISPATCH_NORMAL));
-
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return done; }));
-
+  NS_WARNING("Unknown observer topic!");
   return NS_OK;
 }
 
@@ -2836,6 +2749,18 @@ QuotaManager::~QuotaManager() {
   MOZ_ASSERT(!gInstance || gInstance == this);
 }
 
+// static
+nsresult QuotaManager::Initialize() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv = Observer::Initialize();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
 void QuotaManager::GetOrCreate(nsIRunnable* aCallback,
                                nsIEventTarget* aMainEventTarget) {
   AssertIsOnBackgroundThread();
@@ -2846,23 +2771,19 @@ void QuotaManager::GetOrCreate(nsIRunnable* aCallback,
   }
 
   if (gInstance || gCreateFailed) {
-    MOZ_ASSERT(!gCreateRunnable);
     MOZ_ASSERT_IF(gCreateFailed, !gInstance);
-
-    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(aCallback));
   } else {
-    if (!gCreateRunnable) {
-      gCreateRunnable = new CreateRunnable(aMainEventTarget);
-      if (aMainEventTarget) {
-        MOZ_ALWAYS_SUCCEEDS(
-            aMainEventTarget->Dispatch(gCreateRunnable, NS_DISPATCH_NORMAL));
-      } else {
-        MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(gCreateRunnable));
-      }
-    }
+    RefPtr<QuotaManager> manager = new QuotaManager();
 
-    gCreateRunnable->AddCallback(aCallback);
+    nsresult rv = manager->Init(gBaseDirPath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      gCreateFailed = true;
+    } else {
+      gInstance = manager;
+    }
   }
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(aCallback));
 }
 
 // static
@@ -2873,6 +2794,24 @@ QuotaManager* QuotaManager::Get() {
 
 // static
 bool QuotaManager::IsShuttingDown() { return gShutdown; }
+
+// static
+void QuotaManager::ShutdownInstance() {
+  AssertIsOnBackgroundThread();
+
+  if (gInstance) {
+    gInstance->Shutdown();
+
+    gInstance = nullptr;
+  }
+
+  RefPtr<Runnable> runnable =
+      NS_NewRunnableFunction("dom::quota::QuotaManager::ShutdownCompleted",
+                             []() { Observer::ShutdownCompleted(); });
+  MOZ_ASSERT(runnable);
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable.forget()));
+}
 
 // static
 bool QuotaManager::IsOSMetadata(const nsAString& aFileName) {
@@ -3221,7 +3160,7 @@ nsresult QuotaManager::Init(const nsAString& aBasePath) {
   mClients.AppendElement(asmjscache::CreateClient());
   mClients.AppendElement(cache::CreateQuotaClient());
   mClients.AppendElement(simpledb::CreateQuotaClient());
-  if (CachedNextGenLocalStorageEnabled()) {
+  if (NextGenLocalStorageEnabled()) {
     mClients.AppendElement(localstorage::CreateQuotaClient());
   } else {
     mClients.SetLength(Client::TypeMax());
@@ -3631,6 +3570,66 @@ nsresult QuotaManager::GetDirectoryMetadata2(
   rv = binaryStream->ReadBoolean(&dummy);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
+  }
+
+  rv = binaryStream->Close();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+ if (!origin.EqualsLiteral(kChromeOrigin)) {
+    OriginAttributes originAttributes;
+    nsCString originNoSuffix;
+    if (NS_WARN_IF(!originAttributes.PopulateFromOrigin(origin,
+                                                        originNoSuffix))) {
+      return NS_ERROR_FAILURE;
+    }
+
+    RefPtr<MozURL> url;
+    rv = MozURL::Init(getter_AddRefs(url), originNoSuffix);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    nsCString baseDomain;
+    rv = url->BaseDomain(baseDomain);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    nsCString upToDateGroup = baseDomain + suffix;
+
+    if (group != upToDateGroup) {
+      group = upToDateGroup;
+
+      rv = CreateDirectoryMetadata(
+          aDirectory, timestamp, suffix, group, origin);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+      rv = CreateDirectoryMetadata2(
+          aDirectory, timestamp, persisted, suffix, group, origin);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+  #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+      ContentPrincipalInfo contentPrincipalInfo;
+      contentPrincipalInfo.attrs() = originAttributes;
+      contentPrincipalInfo.originNoSuffix() = originNoSuffix;
+      contentPrincipalInfo.spec() = originNoSuffix;
+      contentPrincipalInfo.baseDomain() = baseDomain;
+
+      PrincipalInfo principalInfo(contentPrincipalInfo);
+
+      nsTArray<PrincipalInfo> principalInfos;
+      principalInfos.AppendElement(principalInfo);
+
+      RefPtr<PrincipalVerifier> principalVerifier =
+          PrincipalVerifier::CreateAndDispatch(std::move(principalInfos));
+  #endif
+    }
   }
 
   *aTimestamp = timestamp;
@@ -5341,6 +5340,109 @@ void QuotaManager::GetStorageId(PersistenceType aPersistenceType,
 }
 
 // static
+bool QuotaManager::IsPrincipalInfoValid(const PrincipalInfo& aPrincipalInfo) {
+  switch (aPrincipalInfo.type()) {
+    // A system principal is acceptable.
+    case PrincipalInfo::TSystemPrincipalInfo: {
+      return true;
+    }
+
+    // Validate content principals to ensure that the spec, originNoSuffix and
+    // baseDomain are sane.
+    case PrincipalInfo::TContentPrincipalInfo: {
+      const ContentPrincipalInfo& info =
+          aPrincipalInfo.get_ContentPrincipalInfo();
+
+      // Verify the principal spec parses.
+      RefPtr<MozURL> specURL;
+      nsresult rv = MozURL::Init(getter_AddRefs(specURL), info.spec());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+      }
+
+      // Verify the principal originNoSuffix matches spec.
+      nsCString originNoSuffix;
+      specURL->Origin(originNoSuffix);
+
+      if (NS_WARN_IF(originNoSuffix != info.originNoSuffix())) {
+        QM_WARNING("originNoSuffix (%s) doesn't match passed one (%s)!",
+                   originNoSuffix.get(), info.originNoSuffix().get());
+        return false;
+      }
+
+      if (NS_WARN_IF(info.originNoSuffix().EqualsLiteral(kChromeOrigin))) {
+        return false;
+      }
+
+      // Verify the principal baseDomain exists.
+      if (NS_WARN_IF(info.baseDomain().IsVoid())) {
+        return false;
+      }
+
+      // Verify the principal baseDomain matches spec.
+      nsCString baseDomain;
+      rv = specURL->BaseDomain(baseDomain);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+      }
+
+      if (NS_WARN_IF(baseDomain != info.baseDomain())) {
+        QM_WARNING("baseDomain (%s) doesn't match passed one (%s)!",
+                   baseDomain.get(), info.baseDomain().get());
+        return false;
+      }
+
+      return true;
+    }
+
+    default: { break; }
+  }
+
+  // Null and expanded principals are not acceptable.
+  return false;
+}
+
+// static
+void QuotaManager::GetInfoFromValidatedPrincipalInfo(
+    const PrincipalInfo& aPrincipalInfo, nsACString* aSuffix,
+    nsACString* aGroup, nsACString* aOrigin) {
+  MOZ_ASSERT(IsPrincipalInfoValid(aPrincipalInfo));
+
+  switch (aPrincipalInfo.type()) {
+    case PrincipalInfo::TSystemPrincipalInfo: {
+      GetInfoForChrome(aSuffix, aGroup, aOrigin);
+      return;
+    }
+
+    case PrincipalInfo::TContentPrincipalInfo: {
+      const ContentPrincipalInfo& info =
+          aPrincipalInfo.get_ContentPrincipalInfo();
+
+      nsCString suffix;
+      info.attrs().CreateSuffix(suffix);
+
+      if (aSuffix) {
+        aSuffix->Assign(suffix);
+      }
+
+      if (aGroup) {
+        aGroup->Assign(info.baseDomain() + suffix);
+      }
+
+      if (aOrigin) {
+        aOrigin->Assign(info.originNoSuffix() + suffix);
+      }
+
+      return;
+    }
+
+    default: { break; }
+  }
+
+  MOZ_CRASH("Should never get here!");
+}
+
+// static
 nsresult QuotaManager::GetInfoFromPrincipal(nsIPrincipal* aPrincipal,
                                             nsACString* aSuffix,
                                             nsACString* aGroup,
@@ -5377,28 +5479,11 @@ nsresult QuotaManager::GetInfoFromPrincipal(nsIPrincipal* aPrincipal,
   if (aGroup) {
     nsCString baseDomain;
     rv = aPrincipal->GetBaseDomain(baseDomain);
-    if (NS_FAILED(rv)) {
-      // A hack for JetPack.
-
-      nsCOMPtr<nsIURI> uri;
-      rv = aPrincipal->GetURI(getter_AddRefs(uri));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      bool isIndexedDBURI = false;
-      rv = uri->SchemeIs("indexedDB", &isIndexedDBURI);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (isIndexedDBURI) {
-        rv = NS_OK;
-      }
-    }
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (baseDomain.IsEmpty()) {
-      aGroup->Assign(origin);
-    } else {
-      aGroup->Assign(baseDomain + suffix);
-    }
+    MOZ_ASSERT(!baseDomain.IsEmpty());
+
+    aGroup->Assign(baseDomain + suffix);
   }
 
   if (aOrigin) {
@@ -5431,9 +5516,6 @@ nsresult QuotaManager::GetInfoFromWindow(nsPIDOMWindowOuter* aWindow,
 // static
 void QuotaManager::GetInfoForChrome(nsACString* aSuffix, nsACString* aGroup,
                                     nsACString* aOrigin) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(nsContentUtils::LegacyIsCallerChromeOrNativeCode());
-
   if (aSuffix) {
     aSuffix->Assign(EmptyCString());
   }
@@ -6002,16 +6084,6 @@ OriginOperationBase::Run() {
       break;
     }
 
-    case State_Initializing: {
-      rv = InitOnMainThread();
-      break;
-    }
-
-    case State_FinishingInit: {
-      rv = FinishInit();
-      break;
-    }
-
     case State_CreatingQuotaManager: {
       rv = QuotaManagerOpen();
       break;
@@ -6078,38 +6150,6 @@ void OriginOperationBase::Finish(nsresult aResult) {
 nsresult OriginOperationBase::Init() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState == State_Initial);
-
-  AdvanceState();
-
-  if (mNeedsMainThreadInit) {
-    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
-  } else {
-    AdvanceState();
-    MOZ_ALWAYS_SUCCEEDS(Run());
-  }
-
-  return NS_OK;
-}
-
-nsresult OriginOperationBase::InitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mState == State_Initializing);
-
-  nsresult rv = DoInitOnMainThread();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  AdvanceState();
-
-  MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(this, NS_DISPATCH_NORMAL));
-
-  return NS_OK;
-}
-
-nsresult OriginOperationBase::FinishInit() {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(mState == State_FinishingInit);
 
   if (QuotaManager::IsShuttingDown()) {
     return NS_ERROR_FAILURE;
@@ -6355,6 +6395,124 @@ void Quota::StartIdleMaintenance() {
   quotaManager->StartIdleMaintenance();
 }
 
+bool Quota::VerifyRequestParams(const UsageRequestParams& aParams) const {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != UsageRequestParams::T__None);
+
+  switch (aParams.type()) {
+    case UsageRequestParams::TAllUsageParams:
+      break;
+
+    case UsageRequestParams::TOriginUsageParams: {
+      const OriginUsageParams& params = aParams.get_OriginUsageParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    default:
+      MOZ_CRASH("Should never get here!");
+  }
+
+  return true;
+}
+
+bool Quota::VerifyRequestParams(const RequestParams& aParams) const {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != RequestParams::T__None);
+
+  switch (aParams.type()) {
+    case RequestParams::TInitParams:
+    case RequestParams::TInitTemporaryStorageParams:
+      break;
+
+    case RequestParams::TInitOriginParams: {
+      const InitOriginParams& params = aParams.get_InitOriginParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    case RequestParams::TClearOriginParams: {
+      const ClearResetOriginParams& params =
+          aParams.get_ClearOriginParams().commonParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    case RequestParams::TResetOriginParams: {
+      const ClearResetOriginParams& params =
+          aParams.get_ResetOriginParams().commonParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    case RequestParams::TClearDataParams: {
+      if (BackgroundParent::IsOtherProcessActor(Manager())) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    case RequestParams::TClearAllParams:
+    case RequestParams::TResetAllParams:
+      break;
+
+    case RequestParams::TPersistedParams: {
+      const PersistedParams& params = aParams.get_PersistedParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    case RequestParams::TPersistParams: {
+      const PersistParams& params = aParams.get_PersistParams();
+
+      if (NS_WARN_IF(
+              !QuotaManager::IsPrincipalInfoValid(params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      break;
+    }
+
+    default:
+      MOZ_CRASH("Should never get here!");
+  }
+
+  return true;
+}
+
 void Quota::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnBackgroundThread();
 #ifdef DEBUG
@@ -6367,6 +6525,18 @@ PQuotaUsageRequestParent* Quota::AllocPQuotaUsageRequestParent(
     const UsageRequestParams& aParams) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParams.type() != UsageRequestParams::T__None);
+
+#ifdef DEBUG
+  // Always verify parameters in DEBUG builds!
+  bool trustParams = false;
+#else
+  bool trustParams = !BackgroundParent::IsOtherProcessActor(Manager());
+#endif
+
+  if (!trustParams && NS_WARN_IF(!VerifyRequestParams(aParams))) {
+    ASSERT_UNLESS_FUZZING();
+    return nullptr;
+  }
 
   RefPtr<QuotaUsageRequestBase> actor;
 
@@ -6420,14 +6590,16 @@ PQuotaRequestParent* Quota::AllocPQuotaRequestParent(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParams.type() != RequestParams::T__None);
 
-  if (aParams.type() == RequestParams::TClearDataParams) {
-    PBackgroundParent* actor = Manager();
-    MOZ_ASSERT(actor);
+#ifdef DEBUG
+  // Always verify parameters in DEBUG builds!
+  bool trustParams = false;
+#else
+  bool trustParams = !BackgroundParent::IsOtherProcessActor(Manager());
+#endif
 
-    if (BackgroundParent::IsOtherProcessActor(actor)) {
-      ASSERT_UNLESS_FUZZING();
-      return nullptr;
-    }
+  if (!trustParams && NS_WARN_IF(!VerifyRequestParams(aParams))) {
+    ASSERT_UNLESS_FUZZING();
+    return nullptr;
   }
 
   RefPtr<QuotaRequestBase> actor;
@@ -6557,6 +6729,32 @@ mozilla::ipc::IPCResult Quota::RecvStopIdleMaintenance() {
   }
 
   quotaManager->StopIdleMaintenance();
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Quota::RecvAbortOperationsForProcess(
+    const ContentParentId& aContentParentId) {
+  AssertIsOnBackgroundThread();
+
+  PBackgroundParent* actor = Manager();
+  MOZ_ASSERT(actor);
+
+  if (BackgroundParent::IsOtherProcessActor(actor)) {
+    ASSERT_UNLESS_FUZZING();
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  if (QuotaManager::IsShuttingDown()) {
+    return IPC_OK();
+  }
+
+  QuotaManager* quotaManager = QuotaManager::Get();
+  if (!quotaManager) {
+    return IPC_OK();
+  }
+
+  quotaManager->AbortOperationsForProcess(aContentParentId);
 
   return IPC_OK();
 }
@@ -6879,36 +7077,14 @@ bool GetOriginUsageOp::Init(Quota* aQuota) {
     return false;
   }
 
-  mNeedsMainThreadInit = true;
-
-  return true;
-}
-
-nsresult GetOriginUsageOp::DoInitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(GetState() == State_Initializing);
-  MOZ_ASSERT(mNeedsMainThreadInit);
-
-  const PrincipalInfo& principalInfo = mParams.principalInfo();
-
-  nsresult rv;
-  nsCOMPtr<nsIPrincipal> principal =
-      PrincipalInfoToPrincipal(principalInfo, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   // Figure out which origin we're dealing with.
   nsCString origin;
-  rv =
-      QuotaManager::GetInfoFromPrincipal(principal, &mSuffix, &mGroup, &origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  QuotaManager::GetInfoFromValidatedPrincipalInfo(mParams.principalInfo(),
+                                                  &mSuffix, &mGroup, &origin);
 
   mOriginScope.SetFromOrigin(origin);
 
-  return NS_OK;
+  return true;
 }
 
 nsresult GetOriginUsageOp::DoDirectoryWork(QuotaManager* aQuotaManager) {
@@ -7065,36 +7241,14 @@ bool InitOriginOp::Init(Quota* aQuota) {
 
   mPersistenceType.SetValue(mParams.persistenceType());
 
-  mNeedsMainThreadInit = true;
-
-  return true;
-}
-
-nsresult InitOriginOp::DoInitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(GetState() == State_Initializing);
-  MOZ_ASSERT(mNeedsMainThreadInit);
-
-  const PrincipalInfo& principalInfo = mParams.principalInfo();
-
-  nsresult rv;
-  nsCOMPtr<nsIPrincipal> principal =
-      PrincipalInfoToPrincipal(principalInfo, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   // Figure out which origin we're dealing with.
   nsCString origin;
-  rv =
-      QuotaManager::GetInfoFromPrincipal(principal, &mSuffix, &mGroup, &origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  QuotaManager::GetInfoFromValidatedPrincipalInfo(mParams.principalInfo(),
+                                                  &mSuffix, &mGroup, &origin);
 
   mOriginScope.SetFromOrigin(origin);
 
-  return NS_OK;
+  return true;
 }
 
 nsresult InitOriginOp::DoDirectoryWork(QuotaManager* aQuotaManager) {
@@ -7398,37 +7552,10 @@ bool ClearOriginOp::Init(Quota* aQuota) {
     mPersistenceType.SetValue(mParams.persistenceType());
   }
 
-  if (mParams.clientTypeIsExplicit()) {
-    MOZ_ASSERT(mParams.clientType() != Client::TYPE_MAX);
-
-    mClientType.SetValue(mParams.clientType());
-  }
-
-  mNeedsMainThreadInit = true;
-
-  return true;
-}
-
-nsresult ClearOriginOp::DoInitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(GetState() == State_Initializing);
-  MOZ_ASSERT(mNeedsMainThreadInit);
-
-  const PrincipalInfo& principalInfo = mParams.principalInfo();
-
-  nsresult rv;
-  nsCOMPtr<nsIPrincipal> principal =
-      PrincipalInfoToPrincipal(principalInfo, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   // Figure out which origin we're dealing with.
   nsCString origin;
-  rv = QuotaManager::GetInfoFromPrincipal(principal, nullptr, nullptr, &origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  QuotaManager::GetInfoFromValidatedPrincipalInfo(mParams.principalInfo(),
+                                                  nullptr, nullptr, &origin);
 
   if (mParams.matchAll()) {
     mOriginScope.SetFromPrefix(origin);
@@ -7436,7 +7563,13 @@ nsresult ClearOriginOp::DoInitOnMainThread() {
     mOriginScope.SetFromOrigin(origin);
   }
 
-  return NS_OK;
+  if (mParams.clientTypeIsExplicit()) {
+    MOZ_ASSERT(mParams.clientType() != Client::TYPE_MAX);
+
+    mClientType.SetValue(mParams.clientType());
+  }
+
+  return true;
 }
 
 void ClearOriginOp::GetResponse(RequestResponse& aResponse) {
@@ -7464,19 +7597,9 @@ bool ClearDataOp::Init(Quota* aQuota) {
     return false;
   }
 
-  mNeedsMainThreadInit = true;
+  mOriginScope.SetFromPattern(mParams.pattern());
 
   return true;
-}
-
-nsresult ClearDataOp::DoInitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(GetState() == State_Initializing);
-  MOZ_ASSERT(mNeedsMainThreadInit);
-
-  mOriginScope.SetFromJSONPattern(mParams.pattern());
-
-  return NS_OK;
 }
 
 void ClearDataOp::GetResponse(RequestResponse& aResponse) {
@@ -7500,34 +7623,14 @@ bool PersistRequestBase::Init(Quota* aQuota) {
 
   mPersistenceType.SetValue(PERSISTENCE_TYPE_DEFAULT);
 
-  mNeedsMainThreadInit = true;
-
-  return true;
-}
-
-nsresult PersistRequestBase::DoInitOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(GetState() == State_Initializing);
-  MOZ_ASSERT(mNeedsMainThreadInit);
-
-  nsresult rv;
-  nsCOMPtr<nsIPrincipal> principal =
-      PrincipalInfoToPrincipal(mPrincipalInfo, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   // Figure out which origin we're dealing with.
   nsCString origin;
-  rv =
-      QuotaManager::GetInfoFromPrincipal(principal, &mSuffix, &mGroup, &origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  QuotaManager::GetInfoFromValidatedPrincipalInfo(mPrincipalInfo, &mSuffix,
+                                                  &mGroup, &origin);
 
   mOriginScope.SetFromOrigin(origin);
 
-  return NS_OK;
+  return true;
 }
 
 PersistedOp::PersistedOp(const RequestParams& aParams)
@@ -7706,6 +7809,94 @@ void PersistOp::GetResponse(RequestResponse& aResponse) {
   aResponse = PersistResponse();
 }
 
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+
+// static
+already_AddRefed<PrincipalVerifier> PrincipalVerifier::CreateAndDispatch(
+    nsTArray<PrincipalInfo>&& aPrincipalInfos) {
+  AssertIsOnIOThread();
+
+  RefPtr<PrincipalVerifier> verifier =
+      new PrincipalVerifier(std::move(aPrincipalInfos));
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(verifier));
+
+  return verifier.forget();
+}
+
+bool PrincipalVerifier::IsPrincipalInfoValid(
+    const PrincipalInfo& aPrincipalInfo) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  switch (aPrincipalInfo.type()) {
+    // A system principal is acceptable.
+    case PrincipalInfo::TSystemPrincipalInfo: {
+      return true;
+    }
+
+    case PrincipalInfo::TContentPrincipalInfo: {
+      const ContentPrincipalInfo& info =
+          aPrincipalInfo.get_ContentPrincipalInfo();
+
+      nsCOMPtr<nsIURI> uri;
+      nsresult rv = NS_NewURI(getter_AddRefs(uri), info.spec());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+      }
+
+      nsCOMPtr<nsIPrincipal> principal =
+          BasePrincipal::CreateCodebasePrincipal(uri, info.attrs());
+      if (NS_WARN_IF(!principal)) {
+        return false;
+      }
+
+      nsCString originNoSuffix;
+      rv = principal->GetOriginNoSuffix(originNoSuffix);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+      }
+
+      if (NS_WARN_IF(originNoSuffix != info.originNoSuffix())) {
+        QM_WARNING("originNoSuffix (%s) doesn't match passed one (%s)!",
+                   originNoSuffix.get(), info.originNoSuffix().get());
+        return false;
+      }
+
+      nsCString baseDomain;
+      rv = principal->GetBaseDomain(baseDomain);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+      }
+
+      if (NS_WARN_IF(baseDomain != info.baseDomain())) {
+        QM_WARNING("baseDomain (%s) doesn't match passed one (%s)!",
+                   baseDomain.get(), info.baseDomain().get());
+        return false;
+      }
+
+      return true;
+    }
+
+    default: { break; }
+  }
+
+  // Null and expanded principals are not acceptable.
+  return false;
+}
+
+NS_IMETHODIMP
+PrincipalVerifier::Run() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  for (auto& principalInfo : mPrincipalInfos) {
+    MOZ_DIAGNOSTIC_ASSERT(IsPrincipalInfoValid(principalInfo));
+  }
+
+  return NS_OK;
+}
+
+#endif
+
 nsresult StorageOperationBase::GetDirectoryMetadata(nsIFile* aDirectory,
                                                     int64_t& aTimestamp,
                                                     nsACString& aGroup,
@@ -7845,26 +8036,71 @@ nsresult StorageOperationBase::ProcessOriginDirectories() {
   AssertIsOnIOThread();
   MOZ_ASSERT(!mOriginProps.IsEmpty());
 
-  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
+  nsresult rv;
 
-  {
-    mozilla::MutexAutoLock autolock(mMutex);
-    while (mWaiting) {
-      mCondVar.Wait();
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  nsTArray<PrincipalInfo> principalInfos;
+#endif
+
+  for (auto& originProps : mOriginProps) {
+    switch (originProps.mType) {
+      case OriginProps::eChrome: {
+        QuotaManager::GetInfoForChrome(
+            &originProps.mSuffix, &originProps.mGroup, &originProps.mOrigin);
+        break;
+      }
+
+      case OriginProps::eContent: {
+        RefPtr<MozURL> specURL;
+        nsresult rv = MozURL::Init(getter_AddRefs(specURL), originProps.mSpec);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return rv;
+        }
+
+        nsCString originNoSuffix;
+        specURL->Origin(originNoSuffix);
+
+        nsCString baseDomain;
+        rv = specURL->BaseDomain(baseDomain);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return rv;
+        }
+
+        ContentPrincipalInfo contentPrincipalInfo;
+        contentPrincipalInfo.attrs() = originProps.mAttrs;
+        contentPrincipalInfo.originNoSuffix() = originNoSuffix;
+        contentPrincipalInfo.spec() = originProps.mSpec;
+        contentPrincipalInfo.baseDomain() = baseDomain;
+
+        PrincipalInfo principalInfo(contentPrincipalInfo);
+
+        QuotaManager::GetInfoFromValidatedPrincipalInfo(
+            principalInfo, &originProps.mSuffix, &originProps.mGroup,
+            &originProps.mOrigin);
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+        principalInfos.AppendElement(principalInfo);
+#endif
+
+        break;
+      }
+
+      case OriginProps::eObsolete: {
+        // There's no way to get info for obsolete origins.
+        break;
+      }
+
+      default:
+        MOZ_CRASH("Bad type!");
     }
   }
 
-  if (NS_WARN_IF(NS_FAILED(mMainThreadResultCode))) {
-    return mMainThreadResultCode;
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  if (!principalInfos.IsEmpty()) {
+    RefPtr<PrincipalVerifier> principalVerifier =
+        PrincipalVerifier::CreateAndDispatch(std::move(principalInfos));
   }
-
-  // Verify that the bounce to the main thread didn't start the shutdown
-  // sequence.
-  if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsresult rv;
+#endif
 
   // Don't try to upgrade obsolete origins, remove them right after we detect
   // them.
@@ -7885,77 +8121,6 @@ nsresult StorageOperationBase::ProcessOriginDirectories() {
       return rv;
     }
   }
-
-  return NS_OK;
-}
-
-nsresult StorageOperationBase::RunOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mOriginProps.IsEmpty());
-
-  nsresult rv;
-
-  for (uint32_t count = mOriginProps.Length(), index = 0; index < count;
-       index++) {
-    OriginProps& originProps = mOriginProps[index];
-
-    switch (originProps.mType) {
-      case OriginProps::eChrome: {
-        QuotaManager::GetInfoForChrome(
-            &originProps.mSuffix, &originProps.mGroup, &originProps.mOrigin);
-        break;
-      }
-
-      case OriginProps::eContent: {
-        nsCOMPtr<nsIURI> uri;
-        rv = NS_NewURI(getter_AddRefs(uri), originProps.mSpec);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
-
-        nsCOMPtr<nsIPrincipal> principal =
-            BasePrincipal::CreateCodebasePrincipal(uri, originProps.mAttrs);
-        if (NS_WARN_IF(!principal)) {
-          return NS_ERROR_FAILURE;
-        }
-
-        rv = QuotaManager::GetInfoFromPrincipal(principal, &originProps.mSuffix,
-                                                &originProps.mGroup,
-                                                &originProps.mOrigin);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
-
-        break;
-      }
-
-      case OriginProps::eObsolete: {
-        // There's no way to get info for obsolete origins.
-        break;
-      }
-
-      default:
-        MOZ_CRASH("Bad type!");
-    }
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-StorageOperationBase::Run() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsresult rv = RunOnMainThread();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    mMainThreadResultCode = rv;
-  }
-
-  MutexAutoLock lock(mMutex);
-  MOZ_ASSERT(mWaiting);
-
-  mWaiting = false;
-  mCondVar.Notify();
 
   return NS_OK;
 }
@@ -8057,6 +8222,9 @@ auto OriginParser::Parse(nsACString& aSpec, OriginAttributes* aAttrs)
   }
 
   MOZ_ASSERT(mState == eComplete || mState == eHandledTrailingSeparator);
+
+  // For IPv6 URL, it should at least have three groups.
+  MOZ_ASSERT_IF(mIPGroup > 0, mIPGroup >= 3);
 
   if (mAppId == kNoAppId) {
     *aAttrs = mOriginAttributes;
@@ -8288,6 +8456,16 @@ void OriginParser::HandleToken(const nsDependentCSubstring& aToken) {
 
       mHost = aToken;
 
+      if (aToken.First() == '[') {
+        MOZ_ASSERT(mIPGroup == 0);
+
+        ++mIPGroup;
+        mState = eExpectingIPV6Token;
+
+        MOZ_ASSERT(mTokenizer.hasMoreTokens());
+        return;
+      }
+
       mState = mTokenizer.hasMoreTokens() ? eExpectingPort : eComplete;
 
       return;
@@ -8375,6 +8553,22 @@ void OriginParser::HandleToken(const nsDependentCSubstring& aToken) {
       }
 
       HandlePathnameComponent(aToken);
+
+      return;
+    }
+
+    case eExpectingIPV6Token: {
+      // A safe check for preventing infinity recursion.
+      if (++mIPGroup > 8) {
+        mError = true;
+        return;
+      }
+
+      mHost.AppendLiteral(":");
+      mHost.Append(aToken);
+      if (!aToken.IsEmpty() && aToken.Last() == ']') {
+        mState = mTokenizer.hasMoreTokens() ? eExpectingPort : eComplete;
+      }
 
       return;
     }

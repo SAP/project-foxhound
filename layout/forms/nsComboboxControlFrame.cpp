@@ -59,6 +59,7 @@
 
 using namespace mozilla;
 using namespace mozilla::gfx;
+using mozilla::dom::Document;
 
 NS_IMETHODIMP
 nsComboboxControlFrame::RedisplayTextEvent::Run() {
@@ -112,7 +113,8 @@ nsComboboxControlFrame* nsComboboxControlFrame::sFocused = nullptr;
 nsComboboxControlFrame* NS_NewComboboxControlFrame(nsIPresShell* aPresShell,
                                                    ComputedStyle* aStyle,
                                                    nsFrameState aStateFlags) {
-  nsComboboxControlFrame* it = new (aPresShell) nsComboboxControlFrame(aStyle);
+  nsComboboxControlFrame* it = new (aPresShell)
+      nsComboboxControlFrame(aStyle, aPresShell->GetPresContext());
 
   if (it) {
     // set the state flags (if any are provided)
@@ -217,8 +219,9 @@ static int32_t gReflowInx = -1;
 //-- Done with macros
 //------------------------------------------------------
 
-nsComboboxControlFrame::nsComboboxControlFrame(ComputedStyle* aStyle)
-    : nsBlockFrame(aStyle, kClassID),
+nsComboboxControlFrame::nsComboboxControlFrame(ComputedStyle* aStyle,
+                                               nsPresContext* aPresContext)
+    : nsBlockFrame(aStyle, aPresContext, kClassID),
       mDisplayFrame(nullptr),
       mButtonFrame(nullptr),
       mDropdownFrame(nullptr),
@@ -289,8 +292,6 @@ void nsComboboxControlFrame::SetFocus(bool aOn, bool aRepaint) {
 }
 
 void nsComboboxControlFrame::ShowPopup(bool aShowPopup) {
-  // TODO(kuoe0) Remove this function when content-select is enabled.
-
   nsView* view = mDropdownFrame->GetView();
   nsViewManager* viewManager = view->GetViewManager();
 
@@ -318,15 +319,6 @@ void nsComboboxControlFrame::ShowPopup(bool aShowPopup) {
 }
 
 bool nsComboboxControlFrame::ShowList(bool aShowList) {
-  // TODO(kuoe0) Remove this function when content-select is enabled.
-  //
-  // This function is used to handle the widget/view stuff, so we just return
-  // when content-select is enabled. And the following callee, ShowPopup(), will
-  // also be ignored, it is only used to show and hide the widget.
-  if (nsLayoutUtils::IsContentSelectEnabled()) {
-    return true;
-  }
-
   nsView* view = mDropdownFrame->GetView();
   if (aShowList) {
     NS_ASSERTION(
@@ -433,8 +425,7 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
       std::max(kidReflowInput.ComputedISize(), forcedISize));
 
   // ensure we start off hidden
-  if (!nsLayoutUtils::IsContentSelectEnabled() && !mDroppedDown &&
-      GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (!mDroppedDown && GetStateBits() & NS_FRAME_FIRST_REFLOW) {
     nsView* view = mDropdownFrame->GetView();
     nsViewManager* viewManager = view->GetViewManager();
     viewManager->SetViewVisibility(view, nsViewVisibility_kHide);
@@ -618,7 +609,7 @@ nsComboboxControlFrame::AbsolutelyPositionDropDown() {
   mLastDropDownAfterScreenBCoord = nscoord_MIN;
   GetAvailableDropdownSpace(wm, &before, &after, &translation);
   if (before <= 0 && after <= 0) {
-    if (!nsLayoutUtils::IsContentSelectEnabled() && IsDroppedDown()) {
+    if (IsDroppedDown()) {
       // Hide the view immediately to minimize flicker.
       nsView* view = mDropdownFrame->GetView();
       view->GetViewManager()->SetViewVisibility(view, nsViewVisibility_kHide);
@@ -867,10 +858,7 @@ nsresult nsComboboxControlFrame::GetFrameName(nsAString& aResult) const {
 #endif
 
 void nsComboboxControlFrame::ShowDropDown(bool aDoDropDown) {
-  if (!nsLayoutUtils::IsContentSelectEnabled()) {
-    // TODO(kuoe0) remove this assertion after content-select is enabled
-    MOZ_ASSERT(!XRE_IsContentProcess());
-  }
+  MOZ_ASSERT(!XRE_IsContentProcess());
   mDelayedShowDropDown = false;
   EventStates eventStates = mContent->AsElement()->State();
   if (aDoDropDown && eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
@@ -1207,7 +1195,8 @@ class nsComboboxDisplayFrame final : public nsBlockFrame {
 
   nsComboboxDisplayFrame(ComputedStyle* aStyle,
                          nsComboboxControlFrame* aComboBox)
-      : nsBlockFrame(aStyle, kClassID), mComboBox(aComboBox) {}
+      : nsBlockFrame(aStyle, aComboBox->PresContext(), kClassID),
+        mComboBox(aComboBox) {}
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -1285,7 +1274,7 @@ nsIFrame* nsComboboxControlFrame::CreateFrameForDisplayNode() {
   // create the ComputedStyle for the anonymous block frame and text frame
   RefPtr<ComputedStyle> computedStyle;
   computedStyle = styleSet->ResolveInheritingAnonymousBoxStyle(
-      nsCSSAnonBoxes::mozDisplayComboboxControlFrame(), mComputedStyle);
+      PseudoStyleType::mozDisplayComboboxControlFrame, mComputedStyle);
 
   RefPtr<ComputedStyle> textComputedStyle;
   textComputedStyle =
@@ -1318,7 +1307,7 @@ void nsComboboxControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
 
-  if (!nsLayoutUtils::IsContentSelectEnabled() && mDroppedDown) {
+  if (mDroppedDown) {
     MOZ_ASSERT(mDropdownFrame, "mDroppedDown without frame");
     nsView* view = mDropdownFrame->GetView();
     MOZ_ASSERT(view);
@@ -1391,8 +1380,7 @@ bool nsComboboxControlFrame::Rollup(uint32_t aCount, bool aFlush,
     mListControlFrame->CaptureMouseEvents(false);
   }
 
-  if (!nsLayoutUtils::IsContentSelectEnabled() && aFlush &&
-      weakFrame.IsAlive()) {
+  if (aFlush && weakFrame.IsAlive()) {
     // The popup's visibility doesn't update until the minimize animation has
     // finished, so call UpdateWidgetGeometry to update it right away.
     nsViewManager* viewManager = mDropdownFrame->GetView()->GetViewManager();
@@ -1410,10 +1398,6 @@ bool nsComboboxControlFrame::Rollup(uint32_t aCount, bool aFlush,
 }
 
 nsIWidget* nsComboboxControlFrame::GetRollupWidget() {
-  if (nsLayoutUtils::IsContentSelectEnabled()) {
-    return nullptr;
-  }
-
   nsView* view = mDropdownFrame->GetView();
   MOZ_ASSERT(view);
   return view->GetWidget();
@@ -1465,8 +1449,7 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   // draw a focus indicator only when focus rings should be drawn
-  Document* doc = mContent->GetComposedDoc();
-  if (doc) {
+  if (Document* doc = mContent->GetComposedDoc()) {
     nsPIDOMWindowOuter* window = doc->GetWindow();
     if (window && window->ShouldShowFocusRing()) {
       nsPresContext* presContext = PresContext();

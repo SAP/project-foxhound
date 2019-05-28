@@ -104,8 +104,8 @@ void SVGAutoRenderState::SetPaintingToWindow(bool aPaintingToWindow) {
   mPaintingToWindow = aPaintingToWindow;
 }
 
-/* static */ bool SVGAutoRenderState::IsPaintingToWindow(
-    DrawTarget* aDrawTarget) {
+/* static */
+bool SVGAutoRenderState::IsPaintingToWindow(DrawTarget* aDrawTarget) {
   void* state = aDrawTarget->GetUserData(&sSVGAutoRenderStateKey);
   if (state) {
     return static_cast<SVGAutoRenderState*>(state)->mPaintingToWindow;
@@ -697,7 +697,8 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     // Since we only uses nsSVGUtils with SVG elements, not like mask on an
     // HTML element, we should treat an unresolvable mask as no-mask here.
     if (maskUsage.shouldGenerateMaskLayer && maskFrame) {
-      uint8_t maskMode = aFrame->StyleSVGReset()->mMask.mLayers[0].mMaskMode;
+      StyleMaskMode maskMode =
+          aFrame->StyleSVGReset()->mMask.mLayers[0].mMaskMode;
       nsSVGMaskFrame::MaskParams params(&aContext, aFrame, aTransform,
                                         maskUsage.opacity, &maskTransform,
                                         maskMode, aImgParams);
@@ -1193,7 +1194,8 @@ bool nsSVGUtils::CanOptimizeOpacity(nsIFrame* aFrame) {
     return false;
   }
 
-  if (nsLayoutUtils::HasAnimationOfProperty(aFrame, eCSSProperty_opacity)) {
+  if (nsLayoutUtils::HasAnimationOfPropertySet(
+          aFrame, nsCSSPropertyIDSet::OpacityProperties())) {
     return false;
   }
 
@@ -1269,17 +1271,19 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   return strokeExtents;
 }
 
-/*static*/ gfxRect nsSVGUtils::PathExtentsToMaxStrokeExtents(
-    const gfxRect& aPathExtents, nsTextFrame* aFrame,
-    const gfxMatrix& aMatrix) {
+/*static*/
+gfxRect nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                                  nsTextFrame* aFrame,
+                                                  const gfxMatrix& aMatrix) {
   NS_ASSERTION(nsSVGUtils::IsInSVGTextSubtree(aFrame),
                "expected an nsTextFrame for SVG text");
   return ::PathExtentsToMaxStrokeExtents(aPathExtents, aFrame, 0.5, aMatrix);
 }
 
-/*static*/ gfxRect nsSVGUtils::PathExtentsToMaxStrokeExtents(
-    const gfxRect& aPathExtents, SVGGeometryFrame* aFrame,
-    const gfxMatrix& aMatrix) {
+/*static*/
+gfxRect nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                                  SVGGeometryFrame* aFrame,
+                                                  const gfxMatrix& aMatrix) {
   bool strokeMayHaveCorners =
       !SVGContentUtils::ShapeTypeHasNoCorners(aFrame->GetContent());
 
@@ -1291,6 +1295,8 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
 
   // The stroke can extend even further for paths that can be affected by
   // stroke-miterlimit.
+  // We only need to do this if the limit is greater than 1, but it's probably
+  // not worth optimizing for that.
   bool affectedByMiterlimit = aFrame->GetContent()->IsAnyOfSVGElements(
       nsGkAtoms::path, nsGkAtoms::polyline, nsGkAtoms::polygon);
 
@@ -1308,7 +1314,8 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
 
 // ----------------------------------------------------------------------
 
-/* static */ nscolor nsSVGUtils::GetFallbackOrPaintColor(
+/* static */
+nscolor nsSVGUtils::GetFallbackOrPaintColor(
     ComputedStyle* aComputedStyle, nsStyleSVGPaint nsStyleSVG::*aFillOrStroke) {
   const nsStyleSVGPaint& paint = aComputedStyle->StyleSVG()->*aFillOrStroke;
   ComputedStyle* styleIfVisited = aComputedStyle->GetStyleIfVisited();
@@ -1349,9 +1356,11 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   return color;
 }
 
-/* static */ void nsSVGUtils::MakeFillPatternFor(
-    nsIFrame* aFrame, gfxContext* aContext, GeneralPattern* aOutPattern,
-    imgDrawingParams& aImgParams, SVGContextPaint* aContextPaint) {
+/* static */
+void nsSVGUtils::MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
+                                    GeneralPattern* aOutPattern,
+                                    imgDrawingParams& aImgParams,
+                                    SVGContextPaint* aContextPaint) {
   const nsStyleSVG* style = aFrame->StyleSVG();
   if (style->mFill.Type() == eStyleSVGPaintType_None) {
     return;
@@ -1415,9 +1424,11 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   aOutPattern->InitColorPattern(ToDeviceColor(color));
 }
 
-/* static */ void nsSVGUtils::MakeStrokePatternFor(
-    nsIFrame* aFrame, gfxContext* aContext, GeneralPattern* aOutPattern,
-    imgDrawingParams& aImgParams, SVGContextPaint* aContextPaint) {
+/* static */
+void nsSVGUtils::MakeStrokePatternFor(nsIFrame* aFrame, gfxContext* aContext,
+                                      GeneralPattern* aOutPattern,
+                                      imgDrawingParams& aImgParams,
+                                      SVGContextPaint* aContextPaint) {
   const nsStyleSVG* style = aFrame->StyleSVG();
   if (style->mStroke.Type() == eStyleSVGPaintType_None) {
     return;
@@ -1481,9 +1492,10 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   aOutPattern->InitColorPattern(ToDeviceColor(color));
 }
 
-/* static */ float nsSVGUtils::GetOpacity(nsStyleSVGOpacitySource aOpacityType,
-                                          const float& aOpacity,
-                                          SVGContextPaint* aContextPaint) {
+/* static */
+float nsSVGUtils::GetOpacity(nsStyleSVGOpacitySource aOpacityType,
+                             const float& aOpacity,
+                             SVGContextPaint* aContextPaint) {
   float opacity = 1.0f;
   switch (aOpacityType) {
     case eStyleSVGOpacitySource_Normal:
@@ -1532,7 +1544,6 @@ float nsSVGUtils::GetStrokeWidth(nsIFrame* aFrame,
   }
 
   SVGElement* ctx = static_cast<SVGElement*>(content);
-
   return SVGContentUtils::CoordToFloat(ctx, style->mStrokeWidth);
 }
 

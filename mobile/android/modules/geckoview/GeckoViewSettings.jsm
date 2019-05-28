@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewSettings"];
 
-ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewModule} = ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
@@ -119,3 +119,5 @@ class GeckoViewSettings extends GeckoViewModule {
     this.window.docShell.displayMode = aMode;
   }
 }
+
+const {debug, warn} = GeckoViewSettings.initLogging("GeckoViewSettings"); // eslint-disable-line no-unused-vars

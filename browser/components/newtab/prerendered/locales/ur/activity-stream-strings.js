@@ -40,7 +40,7 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "ٹھیک ہے مجھے سمجھ آگئی ہے",
   "prefs_home_header": "Firefox ابتائی مواد",
   "prefs_home_description": "Choose what content you want on your Firefox Home screen.",
-  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_header": "Firefox ابتدائی صفحہ",
   "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
   "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} row;{num} rows",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Start browsing, and we’ll show some of the great articles, videos, and other pages you’ve recently visited or bookmarked here.",
   "topstories_empty_state": "You’ve caught up. Check back later for more top stories from {provider}. Can’t wait? Select a popular topic to find more great stories from around the web.",
-  "manual_migration_explanation2": "Try Firefox with the bookmarks, history and passwords from another browser.",
-  "manual_migration_cancel_button": "نہیں شکریہ",
-  "manual_migration_import_button": "ابھی درآمد کری",
   "error_fallback_default_info": "Oops, something went wrong loading this content.",
   "error_fallback_default_refresh_suggestion": "Refresh page to try again.",
   "section_menu_action_remove_section": "صیغہ ہٹائیں",
@@ -110,5 +107,7 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "رازداری کا نوٹس",
   "firstrun_continue_to_login": "جاری رکھیں",
   "firstrun_skip_login": "Skip this step",
-  "context_menu_title": "مینیو کھولیں"
+  "context_menu_title": "مینیو کھولیں",
+  "manual_migration_cancel_button": "نہیں شکریہ",
+  "manual_migration_import_button": "ابھی درآمد کری"
 };

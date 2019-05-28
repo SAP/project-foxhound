@@ -108,7 +108,8 @@ namespace dom {
 static bool sVibratorEnabled = false;
 static uint32_t sMaxVibrateMS = 0;
 static uint32_t sMaxVibrateListLen = 0;
-static const char* kVibrationPermissionType = "vibration";
+static const nsLiteralCString kVibrationPermissionType =
+    NS_LITERAL_CSTRING("vibration");
 
 /* static */
 void Navigator::Init() {
@@ -242,8 +243,10 @@ void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
     }
   }
 
-  nsresult rv =
-      GetUserAgent(window, aCallerType == CallerType::System, aUserAgent);
+  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+
+  nsresult rv = GetUserAgent(window, doc ? doc->NodePrincipal() : nullptr,
+                             aCallerType == CallerType::System, aUserAgent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
   }
@@ -271,8 +274,10 @@ void Navigator::GetAppCodeName(nsAString& aAppCodeName, ErrorResult& aRv) {
 
 void Navigator::GetAppVersion(nsAString& aAppVersion, CallerType aCallerType,
                               ErrorResult& aRv) const {
+  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+
   nsresult rv = GetAppVersion(
-      aAppVersion,
+      aAppVersion, doc ? doc->NodePrincipal() : nullptr,
       /* aUsePrefOverriddenValue = */ aCallerType != CallerType::System);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
@@ -280,7 +285,9 @@ void Navigator::GetAppVersion(nsAString& aAppVersion, CallerType aCallerType,
 }
 
 void Navigator::GetAppName(nsAString& aAppName, CallerType aCallerType) const {
-  AppName(aAppName,
+  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+
+  AppName(aAppName, doc ? doc->NodePrincipal() : nullptr,
           /* aUsePrefOverriddenValue = */ aCallerType != CallerType::System);
 }
 
@@ -293,8 +300,8 @@ void Navigator::GetAppName(nsAString& aAppName, CallerType aCallerType) const {
  *
  * An empty array will be returned if there is no valid languages.
  */
-/* static */ void Navigator::GetAcceptLanguages(
-    nsTArray<nsString>& aLanguages) {
+/* static */
+void Navigator::GetAcceptLanguages(nsTArray<nsString>& aLanguages) {
   MOZ_ASSERT(NS_IsMainThread());
 
   aLanguages.Clear();
@@ -367,8 +374,10 @@ void Navigator::GetLanguages(nsTArray<nsString>& aLanguages) {
 
 void Navigator::GetPlatform(nsAString& aPlatform, CallerType aCallerType,
                             ErrorResult& aRv) const {
+  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+
   nsresult rv = GetPlatform(
-      aPlatform,
+      aPlatform, doc ? doc->NodePrincipal() : nullptr,
       /* aUsePrefOverriddenValue = */ aCallerType != CallerType::System);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
@@ -380,7 +389,7 @@ void Navigator::GetOscpu(nsAString& aOSCPU, CallerType aCallerType,
   if (aCallerType != CallerType::System) {
     // If fingerprinting resistance is on, we will spoof this value. See
     // nsRFPService.h for details about spoofed values.
-    if (nsContentUtils::ShouldResistFingerprinting()) {
+    if (nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
       aOSCPU.AssignLiteral(SPOOFED_OSCPU);
       return;
     }
@@ -516,7 +525,7 @@ void Navigator::GetBuildID(nsAString& aBuildID, CallerType aCallerType,
   if (aCallerType != CallerType::System) {
     // If fingerprinting resistance is on, we will spoof this value. See
     // nsRFPService.h for details about spoofed values.
-    if (nsContentUtils::ShouldResistFingerprinting()) {
+    if (nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
       aBuildID.AssignLiteral(LEGACY_BUILD_ID);
       return;
     }
@@ -664,28 +673,6 @@ void VibrateWindowListener::RemoveListener() {
 
 }  // namespace
 
-void Navigator::AddIdleObserver(MozIdleObserver& aIdleObserver,
-                                ErrorResult& aRv) {
-  if (!mWindow) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
-  if (NS_FAILED(mWindow->RegisterIdleObserver(aIdleObserver))) {
-    NS_WARNING("Failed to add idle observer.");
-  }
-}
-
-void Navigator::RemoveIdleObserver(MozIdleObserver& aIdleObserver,
-                                   ErrorResult& aRv) {
-  if (!mWindow) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
-  if (NS_FAILED(mWindow->UnregisterIdleObserver(aIdleObserver))) {
-    NS_WARNING("Failed to remove idle observer.");
-  }
-}
-
 void Navigator::SetVibrationPermission(bool aPermitted, bool aPersistent) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -805,7 +792,7 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
   // The maxTouchPoints is going to reveal the detail of users' hardware. So,
   // we will spoof it into 0 if fingerprinting resistance is on.
   if (aCallerType != CallerType::System &&
-      nsContentUtils::ShouldResistFingerprinting()) {
+      nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
     return 0;
   }
 
@@ -1039,8 +1026,7 @@ class BeaconStreamListener final : public nsIStreamListener {
 NS_IMPL_ISUPPORTS(BeaconStreamListener, nsIStreamListener, nsIRequestObserver)
 
 NS_IMETHODIMP
-BeaconStreamListener::OnStartRequest(nsIRequest* aRequest,
-                                     nsISupports* aContext) {
+BeaconStreamListener::OnStartRequest(nsIRequest* aRequest) {
   // release the loadgroup first
   mLoadGroup = nullptr;
 
@@ -1049,13 +1035,12 @@ BeaconStreamListener::OnStartRequest(nsIRequest* aRequest,
 }
 
 NS_IMETHODIMP
-BeaconStreamListener::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                                    nsresult aStatus) {
+BeaconStreamListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BeaconStreamListener::OnDataAvailable(nsIRequest* aRequest, nsISupports* ctxt,
+BeaconStreamListener::OnDataAvailable(nsIRequest* aRequest,
                                       nsIInputStream* inStr,
                                       uint64_t sourceOffset, uint32_t count) {
   MOZ_ASSERT(false);
@@ -1220,8 +1205,8 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   channel->SetLoadGroup(loadGroup);
 
   RefPtr<BeaconStreamListener> beaconListener = new BeaconStreamListener();
-  rv = channel->AsyncOpen2(beaconListener);
-  // do not throw if security checks fail within asyncOpen2
+  rv = channel->AsyncOpen(beaconListener);
+  // do not throw if security checks fail within asyncOpen
   NS_ENSURE_SUCCESS(rv, false);
 
   // make the beaconListener hold a strong reference to the loadgroup
@@ -1546,13 +1531,14 @@ already_AddRefed<nsPIDOMWindowInner> Navigator::GetWindowFromGlobal(
 }
 
 nsresult Navigator::GetPlatform(nsAString& aPlatform,
+                                nsIPrincipal* aCallerPrincipal,
                                 bool aUsePrefOverriddenValue) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aUsePrefOverriddenValue) {
     // If fingerprinting resistance is on, we will spoof this value. See
     // nsRFPService.h for details about spoofed values.
-    if (nsContentUtils::ShouldResistFingerprinting()) {
+    if (nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
       aPlatform.AssignLiteral(SPOOFED_PLATFORM);
       return NS_OK;
     }
@@ -1594,14 +1580,16 @@ nsresult Navigator::GetPlatform(nsAString& aPlatform,
   return rv;
 }
 
-/* static */ nsresult Navigator::GetAppVersion(nsAString& aAppVersion,
-                                               bool aUsePrefOverriddenValue) {
+/* static */
+nsresult Navigator::GetAppVersion(nsAString& aAppVersion,
+                                  nsIPrincipal* aCallerPrincipal,
+                                  bool aUsePrefOverriddenValue) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aUsePrefOverriddenValue) {
     // If fingerprinting resistance is on, we will spoof this value. See
     // nsRFPService.h for details about spoofed values.
-    if (nsContentUtils::ShouldResistFingerprinting()) {
+    if (nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
       aAppVersion.AssignLiteral(SPOOFED_APPVERSION);
       return NS_OK;
     }
@@ -1637,14 +1625,15 @@ nsresult Navigator::GetPlatform(nsAString& aPlatform,
   return rv;
 }
 
-/* static */ void Navigator::AppName(nsAString& aAppName,
-                                     bool aUsePrefOverriddenValue) {
+/* static */
+void Navigator::AppName(nsAString& aAppName, nsIPrincipal* aCallerPrincipal,
+                        bool aUsePrefOverriddenValue) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aUsePrefOverriddenValue) {
     // If fingerprinting resistance is on, we will spoof this value. See
     // nsRFPService.h for details about spoofed values.
-    if (nsContentUtils::ShouldResistFingerprinting()) {
+    if (nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
       aAppName.AssignLiteral(SPOOFED_APPNAME);
       return;
     }
@@ -1667,12 +1656,14 @@ void Navigator::ClearUserAgentCache() {
 }
 
 nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
+                                 nsIPrincipal* aCallerPrincipal,
                                  bool aIsCallerChrome, nsAString& aUserAgent) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // We will skip the override and pass to httpHandler to get spoofed userAgent
   // when 'privacy.resistFingerprinting' is true.
-  if (!aIsCallerChrome && !nsContentUtils::ShouldResistFingerprinting()) {
+  if (!aIsCallerChrome &&
+      !nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
     nsAutoString override;
     nsresult rv =
         mozilla::Preferences::GetString("general.useragent.override", override);
@@ -1686,12 +1677,10 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   // When the caller is content and 'privacy.resistFingerprinting' is true,
   // return a spoofed userAgent which reveals the platform but not the
   // specific OS version, etc.
-  if (!aIsCallerChrome && nsContentUtils::ShouldResistFingerprinting()) {
+  if (!aIsCallerChrome &&
+      nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
     nsAutoCString spoofedUA;
-    nsresult rv = nsRFPService::GetSpoofedUserAgent(spoofedUA, false);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    nsRFPService::GetSpoofedUserAgent(spoofedUA, false);
     CopyASCIItoUTF16(spoofedUA, aUserAgent);
     return NS_OK;
   }
@@ -1715,7 +1704,8 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   // ignore the User-Agent header from the document channel when
   // 'privacy.resistFingerprinting' is true.
   if (!aWindow ||
-      (nsContentUtils::ShouldResistFingerprinting() && !aIsCallerChrome)) {
+      (nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal) &&
+       !aIsCallerChrome)) {
     return NS_OK;
   }
 

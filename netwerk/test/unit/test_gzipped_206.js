@@ -1,6 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var httpserver = null;
@@ -61,7 +60,7 @@ function continue_test(request, data) {
   Assert.equal(17, data.length);
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
-  chan.asyncOpen2(new ChannelListener(finish_test, null, CL_EXPECT_GZIP));
+  chan.asyncOpen(new ChannelListener(finish_test, null, CL_EXPECT_GZIP));
 }
 
 var enforcePref;
@@ -89,6 +88,6 @@ function run_test() {
 
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
-  chan.asyncOpen2(new ChannelListener(continue_test, null, CL_EXPECT_GZIP | CL_IGNORE_CL));
+  chan.asyncOpen(new ChannelListener(continue_test, null, CL_EXPECT_GZIP | CL_IGNORE_CL));
   do_test_pending();
 }

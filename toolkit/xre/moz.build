@@ -4,6 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+include('../components/telemetry/telemetry-constants.mozbuild')
+
 with Files('**'):
     BUG_COMPONENT = ('Toolkit', 'Startup and Profile System')
 
@@ -72,7 +74,7 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'MacApplicationDelegate.mm',
         'MacAutoreleasePool.mm',
         'MacLaunchHelper.mm',
-        'nsCommandLineServiceMac.cpp',
+        'nsCommandLineServiceMac.mm',
         'nsNativeAppSupportCocoa.mm',
         'updaterfileutils_osx.mm',
     ]
@@ -92,6 +94,11 @@ elif 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
 else:
     UNIFIED_SOURCES += [
         'nsNativeAppSupportDefault.cpp',
+    ]
+
+if CONFIG['MOZ_HAS_REMOTE']:
+    LOCAL_INCLUDES += [
+        '../components/remote',
     ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
@@ -156,6 +163,10 @@ if CONFIG['MOZ_PDF_PRINTING']:
         '../components/printingui',
     ]
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -187,6 +198,7 @@ if CONFIG['OS_ARCH'] == 'Linux' and 'lib64' in CONFIG['libdir']:
     DEFINES['HAVE_USR_LIB64_DIR'] = True
 
 DEFINES['GRE_MILESTONE'] = CONFIG['GRE_MILESTONE']
+DEFINES['MOZ_APP_VERSION_DISPLAY'] = CONFIG['MOZ_APP_VERSION_DISPLAY']
 
 for var in ('APP_VERSION', 'APP_ID'):
     DEFINES[var] = CONFIG['MOZ_%s' % var]
@@ -226,6 +238,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     LOCAL_INCLUDES += [
         '/widget',
         '/widget/cocoa',
+        '/xpcom/base',
     ]
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
@@ -234,9 +247,6 @@ CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']
-    LOCAL_INCLUDES += [
-        '/widget/xremoteclient',
-    ]
 
 DEFINES['TOPOBJDIR'] = TOPOBJDIR
 FINAL_TARGET_PP_FILES += [

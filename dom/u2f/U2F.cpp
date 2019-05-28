@@ -16,7 +16,7 @@
 #include "nsURLParsers.h"
 
 #ifdef OS_WIN
-#include "WinWebAuthnManager.h"
+#  include "WinWebAuthnManager.h"
 #endif
 
 using namespace mozilla::ipc;
@@ -132,7 +132,7 @@ U2F::~U2F() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mTransaction.isSome()) {
-    RejectTransaction(NS_ERROR_ABORT);
+    ClearTransaction();
   }
 
   if (mChild) {
@@ -164,8 +164,8 @@ void U2F::Init(ErrorResult& aRv) {
   }
 }
 
-/* virtual */ JSObject* U2F::WrapObject(JSContext* aCx,
-                                        JS::Handle<JSObject*> aGivenProto) {
+/* virtual */
+JSObject* U2F::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return U2F_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -207,7 +207,7 @@ void U2F::Register(const nsAString& aAppId,
 
   // Evaluate the AppID
   nsString adjustedAppId(aAppId);
-  if (!EvaluateAppID(mParent, mOrigin, U2FOperation::Register, adjustedAppId)) {
+  if (!EvaluateAppID(mParent, mOrigin, adjustedAppId)) {
     RegisterResponse response;
     response.mErrorCode.Construct(
         static_cast<uint32_t>(ErrorCode::BAD_REQUEST));
@@ -357,7 +357,7 @@ void U2F::Sign(const nsAString& aAppId, const nsAString& aChallenge,
 
   // Evaluate the AppID
   nsString adjustedAppId(aAppId);
-  if (!EvaluateAppID(mParent, mOrigin, U2FOperation::Sign, adjustedAppId)) {
+  if (!EvaluateAppID(mParent, mOrigin, adjustedAppId)) {
     SignResponse response;
     response.mErrorCode.Construct(
         static_cast<uint32_t>(ErrorCode::BAD_REQUEST));

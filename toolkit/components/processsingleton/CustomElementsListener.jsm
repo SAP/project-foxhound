@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Set up Custom Elements for XUL and XHTML documents before anything else
 // happens. Anything loaded here should be considered part of core XUL functionality.
@@ -15,7 +15,11 @@ Services.obs.addObserver({
       doc.contentType == "application/vnd.mozilla.xul+xml" ||
       doc.contentType == "application/xhtml+xml" ||
       doc.contentType == "text/html"
-    )) {
+    ) &&
+        // People shouldn't be using our built-in custom elements in
+        // system-principal about:blank anyway, and trying to support that
+        // causes responsiveness regressions.  So let's not support it.
+        doc.URL != "about:blank") {
       Services.scriptloader.loadSubScript(
         "chrome://global/content/customElements.js", doc.ownerGlobal);
     }

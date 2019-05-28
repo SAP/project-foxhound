@@ -15,7 +15,7 @@ allprojects {
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
 
-        compileSdkVersion = 26
+        compileSdkVersion = 28
         targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         minSdkVersion = tryInt(mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION)
         manifestPlaceholders = [
@@ -31,13 +31,6 @@ allprojects {
             maven {
                 url repository
             }
-        }
-        // For in tree dependencies.
-        // TODO: remove this once
-        // https://issuetracker.google.com/issues/120951637 is resolved. See
-        // also Bug 1514374.
-        maven {
-            url "file://${gradle.mozconfig.topsrcdir}/mobile/android/gradle/m2repo"
         }
     }
 
@@ -88,7 +81,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'org.mozilla.apilint:apilint:0.1.7'
+        classpath 'org.mozilla.apilint:apilint:0.1.8'
         classpath 'com.android.tools.build:gradle:3.1.4'
         classpath 'com.getkeepsafe.dexcount:dexcount-gradle-plugin:0.8.2'
         classpath 'org.apache.commons:commons-exec:1.3'

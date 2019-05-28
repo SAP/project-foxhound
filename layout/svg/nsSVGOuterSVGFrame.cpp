@@ -59,13 +59,15 @@ void nsSVGOuterSVGFrame::UnregisterForeignObject(
 
 nsContainerFrame* NS_NewSVGOuterSVGFrame(nsIPresShell* aPresShell,
                                          ComputedStyle* aStyle) {
-  return new (aPresShell) nsSVGOuterSVGFrame(aStyle);
+  return new (aPresShell)
+      nsSVGOuterSVGFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGOuterSVGFrame)
 
-nsSVGOuterSVGFrame::nsSVGOuterSVGFrame(ComputedStyle* aStyle)
-    : nsSVGDisplayContainerFrame(aStyle, kClassID),
+nsSVGOuterSVGFrame::nsSVGOuterSVGFrame(ComputedStyle* aStyle,
+                                       nsPresContext* aPresContext)
+    : nsSVGDisplayContainerFrame(aStyle, aPresContext, kClassID),
       mCallingReflowSVG(false),
       mFullZoom(PresContext()->GetFullZoom()),
       mViewportInitialized(false),
@@ -77,8 +79,8 @@ nsSVGOuterSVGFrame::nsSVGOuterSVGFrame(ComputedStyle* aStyle)
 // helper
 static inline bool DependsOnIntrinsicSize(const nsIFrame* aEmbeddingFrame) {
   const nsStylePosition* pos = aEmbeddingFrame->StylePosition();
-  const nsStyleCoord& width = pos->mWidth;
-  const nsStyleCoord& height = pos->mHeight;
+  const auto& width = pos->mWidth;
+  const auto& height = pos->mHeight;
 
   // XXX it would be nice to know if the size of aEmbeddingFrame's containing
   // block depends on aEmbeddingFrame, then we'd know if we can return false
@@ -144,8 +146,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
 //----------------------------------------------------------------------
 // reflowing
 
-/* virtual */ nscoord nsSVGOuterSVGFrame::GetMinISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsSVGOuterSVGFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_MIN_INLINE_SIZE(this, result);
 
@@ -154,8 +156,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
   return result;
 }
 
-/* virtual */ nscoord nsSVGOuterSVGFrame::GetPrefISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsSVGOuterSVGFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_PREF_INLINE_SIZE(this, result);
 
@@ -195,7 +197,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
   return result;
 }
 
-/* virtual */ IntrinsicSize nsSVGOuterSVGFrame::GetIntrinsicSize() {
+/* virtual */
+IntrinsicSize nsSVGOuterSVGFrame::GetIntrinsicSize() {
   // XXXjwatt Note that here we want to return the CSS width/height if they're
   // specified and we're embedded inside an nsIObjectLoadingContent.
 
@@ -224,7 +227,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
   return intrinsicSize;
 }
 
-/* virtual */ nsSize nsSVGOuterSVGFrame::GetIntrinsicRatio() {
+/* virtual */
+nsSize nsSVGOuterSVGFrame::GetIntrinsicRatio() {
   // We only have an intrinsic size/ratio if our width and height attributes
   // are both specified and set to non-percentage values, or we have a viewBox
   // rect: http://www.w3.org/TR/SVGMobile12/coords.html#IntrinsicSizing
@@ -481,12 +485,17 @@ void nsSVGOuterSVGFrame::Reflow(nsPresContext* aPresContext,
   // overflow rects here! (Again, see bug 875175.)
   //
   aDesiredSize.SetOverflowAreasToDesiredBounds();
-  if (!mIsRootContent) {
-    aDesiredSize.mOverflowAreas.VisualOverflow().UnionRect(
-        aDesiredSize.mOverflowAreas.VisualOverflow(),
-        anonKid->GetVisualOverflowRect() + anonKid->GetPosition());
+
+  // An outer SVG will be here as a nondisplay if it fails the conditional
+  // processing test. In that case, we don't maintain its overflow.
+  if (!HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
+    if (!mIsRootContent) {
+      aDesiredSize.mOverflowAreas.VisualOverflow().UnionRect(
+          aDesiredSize.mOverflowAreas.VisualOverflow(),
+          anonKid->GetVisualOverflowRect() + anonKid->GetPosition());
+    }
+    FinishAndStoreOverflow(&aDesiredSize);
   }
-  FinishAndStoreOverflow(&aDesiredSize);
 
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,
                  ("exit nsSVGOuterSVGFrame::Reflow: size=%d,%d",
@@ -503,8 +512,8 @@ void nsSVGOuterSVGFrame::DidReflow(nsPresContext* aPresContext,
   PresShell()->SynthesizeMouseMove(false);
 }
 
-/* virtual */ void nsSVGOuterSVGFrame::UnionChildOverflow(
-    nsOverflowAreas& aOverflowAreas) {
+/* virtual */
+void nsSVGOuterSVGFrame::UnionChildOverflow(nsOverflowAreas& aOverflowAreas) {
   // See the comments in Reflow above.
 
   // WARNING!! Keep this in sync with Reflow above!
@@ -605,9 +614,7 @@ void nsDisplayOuterSVG::Paint(nsDisplayListBuilder* aBuilder,
       viewportRect.TopLeft(), appUnitsPerDevPixel);
 
   aContext->Save();
-  imgDrawingParams imgParams(aBuilder->ShouldSyncDecodeImages()
-                                 ? imgIContainer::FLAG_SYNC_DECODE
-                                 : imgIContainer::FLAG_SYNC_DECODE_IF_FAST);
+  imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
   // We include the offset of our frame and a scale from device pixels to user
   // units (i.e. CSS px) in the matrix that we pass to our children):
   gfxMatrix tm = nsSVGUtils::GetCSSPxToDevPxMatrix(mFrame) *
@@ -928,7 +935,8 @@ void nsSVGOuterSVGFrame::AppendDirectlyOwnedAnonBoxes(
 
 nsContainerFrame* NS_NewSVGOuterSVGAnonChildFrame(nsIPresShell* aPresShell,
                                                   ComputedStyle* aStyle) {
-  return new (aPresShell) nsSVGOuterSVGAnonChildFrame(aStyle);
+  return new (aPresShell)
+      nsSVGOuterSVGAnonChildFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGOuterSVGAnonChildFrame)

@@ -1,5 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 add_task(async function() {
   info("Starting subResources test");
 
@@ -266,43 +264,6 @@ add_task(async function testUserInteractionHeuristic() {
         ok(false, "Unknown message");
       });
       ifr.contentWindow.postMessage({ callback: msg.nonBlockingCallback }, "*");
-    });
-  });
-
-  info("Now ensure that the storage access is removed if the cookie policy is changed.");
-  await SpecialPowers.pushPrefEnv({"set": [
-    ["network.cookie.cookieBehavior", Ci.nsICookieService.BEHAVIOR_REJECT],
-  ]});
-  await ContentTask.spawn(browser, {}, async obj => {
-    await new content.Promise(resolve => {
-      let ifr = content.document.querySelectorAll("iframe");
-      ifr = ifr[ifr.length - 1];
-
-      let msg = {};
-      msg.blockingCallback = (async _ => {
-        await noStorageAccessInitially();
-      }).toString();
-
-      content.addEventListener("message", function msg(event) {
-        if (event.data.type == "finish") {
-          content.removeEventListener("message", msg);
-          resolve();
-          return;
-        }
-
-        if (event.data.type == "ok") {
-          ok(event.data.what, event.data.msg);
-          return;
-        }
-
-        if (event.data.type == "info") {
-          info(event.data.msg);
-          return;
-        }
-
-        ok(false, "Unknown message");
-      });
-      ifr.contentWindow.postMessage({ callback: msg.blockingCallback }, "*");
     });
   });
 

@@ -10,9 +10,18 @@ with Files('**'):
 XPIDL_SOURCES += [
     'nsIURIClassifier.idl',
     'nsIUrlClassifierFeature.idl',
+    'nsIUrlClassifierSkipListService.idl',
 ]
 
 XPIDL_MODULE = 'url-classifier'
+
+EXTRA_JS_MODULES += [
+    'UrlClassifierSkipListService.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
 
 DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
 DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True
@@ -22,12 +31,15 @@ UNIFIED_SOURCES += [
     'nsChannelClassifier.cpp',
     'UrlClassifierCommon.cpp',
     'UrlClassifierFeatureBase.cpp',
-    'UrlClassifierFeatureCryptomining.cpp',
+    'UrlClassifierFeatureCryptominingAnnotation.cpp',
+    'UrlClassifierFeatureCryptominingProtection.cpp',
     'UrlClassifierFeatureCustomTables.cpp',
     'UrlClassifierFeatureFactory.cpp',
-    'UrlClassifierFeatureFingerprinting.cpp',
+    'UrlClassifierFeatureFingerprintingAnnotation.cpp',
+    'UrlClassifierFeatureFingerprintingProtection.cpp',
     'UrlClassifierFeatureFlash.cpp',
     'UrlClassifierFeatureLoginReputation.cpp',
+    'UrlClassifierFeaturePhishingProtection.cpp',
     'UrlClassifierFeatureResult.cpp',
     'UrlClassifierFeatureTrackingAnnotation.cpp',
     'UrlClassifierFeatureTrackingProtection.cpp',

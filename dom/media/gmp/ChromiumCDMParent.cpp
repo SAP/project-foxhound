@@ -61,8 +61,6 @@ RefPtr<ChromiumCDMParent::InitPromise> ChromiumCDMParent::Init(
                                     !aMainThread ? "true" : "false")),
         __func__);
   }
-  mCDMCallback = aCDMCallback;
-  mMainThread = aMainThread;
 
   RefPtr<ChromiumCDMParent::InitPromise> promise =
       mInitPromise.Ensure(__func__);
@@ -70,7 +68,7 @@ RefPtr<ChromiumCDMParent::InitPromise> ChromiumCDMParent::Init(
   SendInit(aAllowDistinctiveIdentifier, aAllowPersistentState)
       ->Then(
           AbstractThread::GetCurrent(), __func__,
-          [self](bool aSuccess) {
+          [self, aCDMCallback](bool aSuccess) {
             if (!aSuccess) {
               GMP_LOG(
                   "ChromiumCDMParent::Init() failed with callback from "
@@ -84,6 +82,7 @@ RefPtr<ChromiumCDMParent::InitPromise> ChromiumCDMParent::Init(
             }
             GMP_LOG(
                 "ChromiumCDMParent::Init() succeeded with callback from child");
+            self->mCDMCallback = aCDMCallback;
             self->mInitPromise.ResolveIfExists(true /* unused */, __func__);
           },
           [self](ResponseRejectReason&& aReason) {
@@ -270,7 +269,7 @@ bool ChromiumCDMParent::InitCDMInputBuffer(gmp::CDMInputBuffer& aBuffer,
           ? crypto.mIV
           : crypto.mConstantIV;
   aBuffer = gmp::CDMInputBuffer(
-      shmem, crypto.mKeyId, iv, aSample->mTime.ToMicroseconds(),
+      std::move(shmem), crypto.mKeyId, iv, aSample->mTime.ToMicroseconds(),
       aSample->mDuration.ToMicroseconds(), crypto.mPlainSizes,
       crypto.mEncryptedSizes, crypto.mCryptByteBlock, crypto.mSkipByteBlock,
       encryptionScheme);
@@ -291,7 +290,7 @@ bool ChromiumCDMParent::SendBufferToCDM(uint32_t aSizeInBytes) {
   if (!AllocShmem(aSizeInBytes, Shmem::SharedMemory::TYPE_BASIC, &shmem)) {
     return false;
   }
-  if (!SendGiveBuffer(shmem)) {
+  if (!SendGiveBuffer(std::move(shmem))) {
     DeallocShmem(shmem);
     return false;
   }
@@ -713,7 +712,7 @@ ipc::IPCResult ChromiumCDMParent::RecvDecodedShmem(const CDMVideoFrame& aFrame,
 
   // Return the shmem to the CDM so the shmem can be reused to send us
   // another frame.
-  if (!SendGiveBuffer(aShmem)) {
+  if (!SendGiveBuffer(std::move(aShmem))) {
     mDecodePromise.RejectIfExists(
         MediaResult(NS_ERROR_OUT_OF_MEMORY,
                     RESULT_DETAIL("Can't return shmem to CDM process")),

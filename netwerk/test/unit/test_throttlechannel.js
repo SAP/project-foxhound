@@ -1,7 +1,7 @@
 // Test nsIThrottledInputChannel interface.
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function test_handler(metadata, response) {
   const originalBody = "the response";
@@ -31,7 +31,7 @@ function run_test() {
   let tic = channel.QueryInterface(Ci.nsIThrottledInputChannel);
   tic.throttleQueue = tq;
 
-  channel.asyncOpen2(new ChannelListener(() => {
+  channel.asyncOpen(new ChannelListener(() => {
     ok(tq.bytesProcessed() > 0, "throttled queue processed some bytes");
 
     httpserver.stop(do_test_finished);

@@ -209,9 +209,9 @@ uint32_t gNurseryPurpleBufferEntryCount = 0;
 
 void ClearNurseryPurpleBuffer();
 
-void SuspectUsingNurseryPurpleBuffer(void* aPtr,
-                                     nsCycleCollectionParticipant* aCp,
-                                     nsCycleCollectingAutoRefCnt* aRefCnt) {
+static void SuspectUsingNurseryPurpleBuffer(
+    void* aPtr, nsCycleCollectionParticipant* aCp,
+    nsCycleCollectingAutoRefCnt* aRefCnt) {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
   MOZ_ASSERT(gNurseryPurpleBufferEnabled);
   if (gNurseryPurpleBufferEntryCount == NURSERY_PURPLE_BUFFER_SIZE) {
@@ -2630,6 +2630,10 @@ void nsCycleCollector::ForgetSkippable(js::SliceBudget& aBudget,
                                        bool aAsyncSnowWhiteFreeing) {
   CheckThreadSafety();
 
+  if (mFreeingSnowWhite) {
+    return;
+  }
+
   mozilla::Maybe<mozilla::AutoGlobalTimelineMarker> marker;
   if (NS_IsMainThread()) {
     marker.emplace("nsCycleCollector::ForgetSkippable",
@@ -3720,7 +3724,8 @@ void nsCycleCollector_forgetJSContext() {
   }
 }
 
-/* static */ CycleCollectedJSContext* CycleCollectedJSContext::Get() {
+/* static */
+CycleCollectedJSContext* CycleCollectedJSContext::Get() {
   CollectorData* data = sCollectorData.get();
   if (data) {
     return data->mContext;

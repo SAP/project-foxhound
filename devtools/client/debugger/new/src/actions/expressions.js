@@ -5,7 +5,6 @@
 // @flow
 
 import {
-  getCurrentThread,
   getExpression,
   getExpressions,
   getSelectedFrame,
@@ -13,7 +12,9 @@ import {
   getSourceFromId,
   getSelectedSource,
   getSelectedScopeMappings,
-  getSelectedFrameBindings
+  getSelectedFrameBindings,
+  getCurrentThread,
+  getIsPaused
 } from "../selectors";
 import { PROMISE } from "./utils/middleware/promise";
 import { wrapExpression } from "../utils/expressions";
@@ -59,7 +60,8 @@ export function autocomplete(input: string, cursor: number) {
     if (!input) {
       return;
     }
-    const frameId = getSelectedFrameId(getState());
+    const thread = getCurrentThread(getState());
+    const frameId = getSelectedFrameId(getState(), thread);
     const result = await client.autocomplete(input, cursor, frameId);
     await dispatch({ type: "AUTOCOMPLETE", input, result });
   };
@@ -117,8 +119,8 @@ export function evaluateExpressions() {
   return async function({ dispatch, getState, client }: ThunkArgs) {
     const expressions = getExpressions(getState()).toJS();
     const inputs = expressions.map(({ input }) => input);
-    const frameId = getSelectedFrameId(getState());
     const thread = getCurrentThread(getState());
+    const frameId = getSelectedFrameId(getState(), thread);
     const results = await client.evaluateExpressions(inputs, {
       frameId,
       thread
@@ -135,7 +137,8 @@ function evaluateExpression(expression: Expression) {
     }
 
     let input = expression.input;
-    const frame = getSelectedFrame(getState());
+    const thread = getCurrentThread(getState());
+    const frame = getSelectedFrame(getState(), thread);
 
     if (frame) {
       const { location } = frame;
@@ -151,8 +154,7 @@ function evaluateExpression(expression: Expression) {
       }
     }
 
-    const frameId = getSelectedFrameId(getState());
-    const thread = getCurrentThread(getState());
+    const frameId = getSelectedFrameId(getState(), thread);
 
     return dispatch({
       type: "EVALUATE_EXPRESSION",
@@ -172,8 +174,10 @@ function evaluateExpression(expression: Expression) {
  */
 export function getMappedExpression(expression: string) {
   return async function({ dispatch, getState, client, sourceMaps }: ThunkArgs) {
-    const mappings = getSelectedScopeMappings(getState());
-    const bindings = getSelectedFrameBindings(getState());
+    const state = getState();
+    const thread = getCurrentThread(getState());
+    const mappings = getSelectedScopeMappings(state, thread);
+    const bindings = getSelectedFrameBindings(state, thread);
 
     // We bail early if we do not need to map the expression. This is important
     // because mapping an expression can be slow if the parser worker is
@@ -190,7 +194,7 @@ export function getMappedExpression(expression: string) {
       expression,
       mappings,
       bindings || [],
-      features.mapExpressionBindings,
+      features.mapExpressionBindings && getIsPaused(state, thread),
       features.mapAwaitExpression
     );
   };

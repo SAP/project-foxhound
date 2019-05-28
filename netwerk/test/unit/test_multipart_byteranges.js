@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -72,11 +72,11 @@ var multipartListener = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     this._buffer = "";
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     try {
       this._buffer = this._buffer.concat(read_stream(stream, count));
       dump("BUFFEEE: " + this._buffer + "\n\n");
@@ -85,7 +85,7 @@ var multipartListener = {
     }
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     try {
       responseHandler(request, this._buffer);
     } catch (ex) {
@@ -108,6 +108,6 @@ function run_test()
 					 null);
 
   var chan = make_channel(uri);
-  chan.asyncOpen2(conv, null);
+  chan.asyncOpen(conv, null);
   do_test_pending();
 }

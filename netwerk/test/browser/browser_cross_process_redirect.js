@@ -23,9 +23,7 @@ function ProcessChooser(tabParent, from, to, rejectPromise = false) {
   this.rejectPromise = rejectPromise;
 
   this.registered = true;
-  Services.obs.addObserver(this, "http-on-examine-response");
-  Services.obs.addObserver(this, "http-on-examine-merged-response");
-  Services.obs.addObserver(this, "http-on-examine-cached-response");
+  Services.obs.addObserver(this, "http-on-may-change-process");
 }
 
 ProcessChooser.prototype = {
@@ -34,9 +32,7 @@ ProcessChooser.prototype = {
       return;
     }
     this.registered = false;
-    Services.obs.removeObserver(this, "http-on-examine-response");
-    Services.obs.removeObserver(this, "http-on-examine-merged-response");
-    Services.obs.removeObserver(this, "http-on-examine-cached-response");
+    Services.obs.removeObserver(this, "http-on-may-change-process");
   },
 
   examine(aChannel) {
@@ -83,9 +79,7 @@ ProcessChooser.prototype = {
 
   observe(aSubject, aTopic, aData) {
     switch (aTopic) {
-      case "http-on-examine-response":
-      case "http-on-examine-cached-response":
-      case "http-on-examine-merged-response":
+      case "http-on-may-change-process":
         this.examine(aSubject.QueryInterface(Ci.nsIHttpChannel));
         break;
       default:
@@ -128,13 +122,13 @@ add_task(async function() {
   await ContentTask.spawn(browser2, null, async function(arg) {
     function ChannelListener(childListener) { this.childListener = childListener; }
     ChannelListener.prototype = {
-      onStartRequest: function(aRequest, aContext) {
+      onStartRequest: function(aRequest) {
         info("onStartRequest");
         let channel = aRequest.QueryInterface(Ci.nsIChannel);
         Assert.equal(channel.URI.spec, this.childListener.URI, "Make sure the channel has the proper URI");
         Assert.equal(channel.originalURI.spec, this.childListener.originalURI, "Make sure the originalURI is correct");
       },
-      onStopRequest: function(aRequest, aContext, aStatusCode) {
+      onStopRequest: function(aRequest, aStatusCode) {
         info("onStopRequest");
         Assert.equal(aStatusCode, Cr.NS_OK, "Check the status code");
         Assert.equal(this.gotData, true, "Check that the channel received data");

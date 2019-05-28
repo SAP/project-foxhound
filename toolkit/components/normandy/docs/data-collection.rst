@@ -83,6 +83,14 @@ reported under the key ``normandy/recipe/<recipe id>``:
    The recipe was executed successfully.
 
 
+Additionally, Normandy reports a `keyed scalar`_ to measure recipe
+freshness. This scalar is called ``normandy.recipe_freshness``, and it
+corresponds to the ``last_modified`` date of each recipe (using its ID
+as the key), reported as seconds since 1970 in UTC.
+
+.. _keyed scalar: https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/collection/scalars.html
+
+
 Enrollment
 -----------
 Normandy records enrollment and unenrollment of users into studies, and
@@ -137,7 +145,7 @@ Unenrollment
            preference was changed on the user branch while Normandy was
            inactive. This could mean that the value was manually
            changed in a profile while Firefox was not running.
-         * ``"unknown"``: A reason was not specificied. This should be
+         * ``"unknown"``: A reason was not specified. This should be
            considered a bug.
 
 Add-on Studies
@@ -158,6 +166,32 @@ Enrollment
 Enroll Failure
    method
       The string ``"enrollFailed"``
+   object
+      The string ``"addon_study"``
+   value
+      The name of the study (``recipe.arguments.name``).
+   reason
+      A string containing the filename and line number of the code
+      that failed, and the name of the error thrown. This information
+      is purposely limited to avoid leaking personally identifiable
+      information. This should be considered a bug.
+
+Update
+   method
+      The string ``"update"``,
+   object
+      The string ``"addon_study"``,
+   value
+      The name of the study (``recipe.arguments.name``).
+   extra
+      addonId
+         The add-on's ID (example: ``"feature-study@shield.mozilla.com"``).
+      addonVersion
+         The add-on's version (example: ``"1.2.3"``).
+
+Update Failure
+   method
+      The string ``"updateFailed"``
    object
       The string ``"addon_study"``
    value

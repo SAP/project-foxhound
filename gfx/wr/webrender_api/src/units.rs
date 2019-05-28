@@ -12,10 +12,12 @@
 //! The terms "layer" and "stacking context" can be used interchangeably
 //! in the context of coordinate systems.
 
-use app_units::Au;
+pub use app_units::Au;
 use euclid::{Length, TypedRect, TypedScale, TypedSize2D, TypedTransform3D, TypedTranslation2D};
 use euclid::{TypedPoint2D, TypedPoint3D, TypedVector2D, TypedVector3D, TypedSideOffsets2D};
-use DirtyRect;
+use euclid::HomogeneousVector;
+// local imports
+use image::DirtyRect;
 
 /// Geometry in the coordinate system of the render target (screen or intermediate
 /// surface) in physical pixels.
@@ -32,6 +34,16 @@ pub type DeviceRect = TypedRect<f32, DevicePixel>;
 pub type DevicePoint = TypedPoint2D<f32, DevicePixel>;
 pub type DeviceVector2D = TypedVector2D<f32, DevicePixel>;
 pub type DeviceSize = TypedSize2D<f32, DevicePixel>;
+pub type DeviceHomogeneousVector = HomogeneousVector<f32, DevicePixel>;
+
+/// Geometry in the coordinate system of the framebuffer in physical pixels.
+/// It's Y-flipped comparing to DevicePixel.
+#[derive(Hash, Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct FramebufferPixel;
+
+pub type FramebufferIntPoint = TypedPoint2D<i32, FramebufferPixel>;
+pub type FramebufferIntSize = TypedSize2D<i32, FramebufferPixel>;
+pub type FramebufferIntRect = TypedRect<i32, FramebufferPixel>;
 
 /// Geometry in the coordinate system of a Picture (intermediate
 /// surface) in physical pixels.

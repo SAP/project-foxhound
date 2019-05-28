@@ -32,15 +32,6 @@ static bool WaiveAccessors(JSContext* cx,
   return true;
 }
 
-bool WaiveXrayWrapper::getPropertyDescriptor(
-    JSContext* cx, HandleObject wrapper, HandleId id,
-    MutableHandle<PropertyDescriptor> desc) const {
-  return CrossCompartmentWrapper::getPropertyDescriptor(cx, wrapper, id,
-                                                        desc) &&
-         WrapperFactory::WaiveXrayAndWrap(cx, desc.value()) &&
-         WaiveAccessors(cx, desc);
-}
-
 bool WaiveXrayWrapper::getOwnPropertyDescriptor(
     JSContext* cx, HandleObject wrapper, HandleId id,
     MutableHandle<PropertyDescriptor> desc) const {
@@ -55,17 +46,6 @@ bool WaiveXrayWrapper::get(JSContext* cx, HandleObject wrapper,
                            MutableHandleValue vp) const {
   return CrossCompartmentWrapper::get(cx, wrapper, receiver, id, vp) &&
          WrapperFactory::WaiveXrayAndWrap(cx, vp);
-}
-
-JSObject* WaiveXrayWrapper::enumerate(JSContext* cx, HandleObject proxy) const {
-  RootedObject obj(cx, CrossCompartmentWrapper::enumerate(cx, proxy));
-  if (!obj) {
-    return nullptr;
-  }
-  if (!WrapperFactory::WaiveXrayAndWrap(cx, &obj)) {
-    return nullptr;
-  }
-  return obj;
 }
 
 bool WaiveXrayWrapper::call(JSContext* cx, HandleObject wrapper,

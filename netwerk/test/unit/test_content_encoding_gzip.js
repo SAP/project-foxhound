@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -64,7 +64,7 @@ function startIter() {
       prefs.setCharPref("network.http.accept-encoding", "gzip, deflate");
     }
     var channel = setupChannel(tests[index].url);
-    channel.asyncOpen2(new ChannelListener(completeIter, channel, tests[index].flags));
+    channel.asyncOpen(new ChannelListener(completeIter, channel, tests[index].flags));
 }
 
 function completeIter(request, data, ctx) {

@@ -140,12 +140,6 @@
     "minbytes": 0,
     "maxbytes": 114688
   },
-  "c:\\windows\\system32\\gdi32full.dll": {
-    "mincount": 0,
-    "maxcount": 2,
-    "minbytes": 0,
-    "maxbytes": 24576
-  },
   "c:\\windows\\system32\\kernel32.dll": {
     "mincount": 0,
     "maxcount": 2,
@@ -208,6 +202,12 @@
     "maxcount": 2,
     "minbytes": 0,
     "maxbytes": 8192
+  },
+  "{firefox}\\browser\\features\\formautofill@mozilla.org.xpi": {
+    "mincount": 0,
+    "maxcount": 6,
+    "minbytes": 0,
+    "maxbytes": 393216
   },
   "{firefox}\\browser\\features\\flyweb@mozilla.org.xpi": {
     "mincount": 0,

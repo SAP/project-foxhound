@@ -18,6 +18,12 @@
  *   Add-on ID for this particular study.
  * @property {string} addonUrl
  *   URL that the study add-on was installed from.
+ * @property {int} extensionApiId
+ *   The ID used to look up the extension in Normandy's API.
+ * @property {string} extensionHash
+ *   The hash of the XPI file.
+ * @property {string} extensionHashAlgorithm
+ *   The algorithm used to hash the XPI file.
  * @property {string} addonVersion
  *   Study add-on version number
  * @property {string} studyStartDate
@@ -26,8 +32,7 @@
  *   Date when the study was ended.
  */
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "IndexedDB", "resource://gre/modules/IndexedDB.jsm");
 ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
@@ -195,6 +200,15 @@ var AddonStudies = {
   async add(study) {
     const db = await getDatabase();
     return getStore(db, "readwrite").add(study);
+  },
+
+  /**
+   * Update a study in storage.
+   * @return {Promise<void, Error>} Resolves when the study is updated, or rejects with an error.
+   */
+  async update(study) {
+    const db = await getDatabase();
+    return getStore(db, "readwrite").put(study);
   },
 
   /**

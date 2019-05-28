@@ -104,8 +104,8 @@ var EXPORTED_SYMBOLS = [
   "PanelView",
 ];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm");
 
@@ -412,7 +412,7 @@ var PanelMultiView = class extends AssociatedToNode {
     this._panel.removeEventListener("popuppositioned", this);
     this._panel.removeEventListener("popupshown", this);
     this._panel.removeEventListener("popuphidden", this);
-    this.window.removeEventListener("keydown", this);
+    this.window.removeEventListener("keydown", this, true);
     this.node = this._openPopupPromise = this._openPopupCancelCallback =
       this._viewContainer = this._viewStack = this._transitionDetails = null;
   }
@@ -1057,11 +1057,13 @@ var PanelMultiView = class extends AssociatedToNode {
     // view based on the space that will be available. We cannot just use
     // window.screen.availTop and availHeight because these may return an
     // incorrect value when the window spans multiple screens.
-    let anchorBox = this._panel.anchorNode.boxObject;
-    let screen = this._screenManager.screenForRect(anchorBox.screenX,
-                                                   anchorBox.screenY,
-                                                   anchorBox.width,
-                                                   anchorBox.height);
+    let anchor = this._panel.anchorNode;
+    let anchorRect = anchor.getBoundingClientRect();
+
+    let screen = this._screenManager.screenForRect(anchor.screenX,
+                                                   anchor.screenY,
+                                                   anchorRect.width,
+                                                   anchorRect.height);
     let availTop = {}, availHeight = {};
     screen.GetAvailRect({}, availTop, {}, availHeight);
     let cssAvailTop = availTop.value / screen.defaultCSSScaleFactor;
@@ -1070,9 +1072,9 @@ var PanelMultiView = class extends AssociatedToNode {
     // based on whether the panel will open towards the top or the bottom.
     let maxHeight;
     if (this._panel.alignmentPosition.startsWith("before_")) {
-      maxHeight = anchorBox.screenY - cssAvailTop;
+      maxHeight = anchor.screenY - cssAvailTop;
     } else {
-      let anchorScreenBottom = anchorBox.screenY + anchorBox.height;
+      let anchorScreenBottom = anchor.screenY + anchorRect.height;
       let cssAvailHeight = availHeight.value / screen.defaultCSSScaleFactor;
       maxHeight = cssAvailTop + cssAvailHeight - anchorScreenBottom;
     }
@@ -1112,7 +1114,14 @@ var PanelMultiView = class extends AssociatedToNode {
       case "popupshowing": {
         this._viewContainer.setAttribute("panelopen", "true");
         if (!this.node.hasAttribute("disablekeynav")) {
-          this.window.addEventListener("keydown", this);
+          // We add the keydown handler on the window so that it handles key
+          // presses when a panel appears but doesn't get focus, as happens
+          // when a button to open a panel is clicked with the mouse.
+          // However, this means the listener is on an ancestor of the panel,
+          // which means that handlers such as ToolbarKeyboardNavigator are
+          // deeper in the tree. Therefore, this must be a capturing listener
+          // so we get the event first.
+          this.window.addEventListener("keydown", this, true);
           this._panel.addEventListener("mousemove", this);
         }
         break;
@@ -1141,7 +1150,7 @@ var PanelMultiView = class extends AssociatedToNode {
         this._transitioning = false;
         this._viewContainer.removeAttribute("panelopen");
         this._cleanupTransitionPhase();
-        this.window.removeEventListener("keydown", this);
+        this.window.removeEventListener("keydown", this, true);
         this._panel.removeEventListener("mousemove", this);
         this.closeAllViews();
 
@@ -1333,8 +1342,9 @@ var PanelView = class extends AssociatedToNode {
         if (element.closest("[hidden]")) {
           continue;
         }
+
         // Take the label for toolbarbuttons; it only exists on those elements.
-        element = element.labelElement || element;
+        element = element.multilineLabel || element;
 
         let bounds = element.getBoundingClientRect();
         let previous = gMultiLineElementsMap.get(element);

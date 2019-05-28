@@ -60,15 +60,6 @@ using namespace mozilla::loader;
 
 ProcessType ScriptPreloader::sProcessType;
 
-// This type correspond to js::vm::XDRAlignment type, which is used as a size
-// reference for alignment of XDR buffers.
-using XDRAlign = uint16_t;
-static const uint8_t sAlignPadding[sizeof(XDRAlign)] = {0, 0};
-
-static inline size_t ComputeByteAlignment(size_t bytes, size_t align) {
-  return (align - (bytes % align)) % align;
-}
-
 nsresult ScriptPreloader::CollectReports(nsIHandleReportCallback* aHandleReport,
                                          nsISupports* aData, bool aAnonymize) {
   MOZ_COLLECT_REPORT(
@@ -540,8 +531,6 @@ Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
   }
 
   auto data = mCacheData.get<uint8_t>();
-  uint8_t* start = data.get();
-  MOZ_ASSERT(reinterpret_cast<uintptr_t>(start) % sizeof(XDRAlign) == 0);
   auto end = data + size;
 
   if (memcmp(MAGIC, data.get(), sizeof(MAGIC))) {
@@ -566,10 +555,6 @@ Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
 
     InputBuffer buf(header);
 
-    size_t len = data.get() - start;
-    size_t alignLen = ComputeByteAlignment(len, sizeof(XDRAlign));
-    data += alignLen;
-
     size_t offset = 0;
     while (!buf.finished()) {
       auto script = MakeUnique<CachedScript>(*this, buf);
@@ -587,9 +572,6 @@ Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
       }
       offset += script->mSize;
 
-      MOZ_ASSERT(reinterpret_cast<uintptr_t>(scriptData.get()) %
-                     sizeof(XDRAlign) ==
-                 0);
       script->mXDRRange.emplace(scriptData, scriptData + script->mSize);
 
       // Don't pre-decode the script unless it was used in this process type
@@ -739,7 +721,6 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
     OutputBuffer buf;
     size_t offset = 0;
     for (auto script : scripts) {
-      MOZ_ASSERT(offset % sizeof(XDRAlign) == 0);
       script->mOffset = offset;
       script->Code(buf);
 
@@ -749,22 +730,11 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
     uint8_t headerSize[4];
     LittleEndian::writeUint32(headerSize, buf.cursor());
 
-    size_t len = 0;
     MOZ_TRY(Write(fd, MAGIC, sizeof(MAGIC)));
-    len += sizeof(MAGIC);
     MOZ_TRY(Write(fd, headerSize, sizeof(headerSize)));
-    len += sizeof(headerSize);
     MOZ_TRY(Write(fd, buf.Get(), buf.cursor()));
-    len += buf.cursor();
-    size_t alignLen = ComputeByteAlignment(len, sizeof(XDRAlign));
-    if (alignLen) {
-      MOZ_TRY(Write(fd, sAlignPadding, alignLen));
-      len += alignLen;
-    }
     for (auto script : scripts) {
-      MOZ_ASSERT(script->mSize % sizeof(XDRAlign) == 0);
       MOZ_TRY(Write(fd, script->Range().begin().get(), script->mSize));
-      len += script->mSize;
 
       if (script->mScript) {
         script->FreeData();
@@ -899,12 +869,23 @@ JSScript* ScriptPreloader::GetCachedScript(JSContext* cx,
   // If a script is used by both the parent and the child, it's stored only
   // in the child cache.
   if (mChildCache) {
-    auto script = mChildCache->GetCachedScript(cx, path);
+    RootedScript script(cx, mChildCache->GetCachedScriptInternal(cx, path));
     if (script) {
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::HitChild);
       return script;
     }
   }
 
+  RootedScript script(cx, GetCachedScriptInternal(cx, path));
+  Telemetry::AccumulateCategorical(
+      script ? Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::Hit
+             : Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::Miss);
+  return script;
+}
+
+JSScript* ScriptPreloader::GetCachedScriptInternal(JSContext* cx,
+                                                   const nsCString& path) {
   auto script = mScripts.Get(path);
   if (script) {
     return WaitForCachedScript(cx, script);
@@ -939,6 +920,8 @@ JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
       LOG(Info, "Script is small enough to recompile on main thread\n");
 
       script->mReadyToExecute = true;
+      Telemetry::ScalarAdd(
+          Telemetry::ScalarID::SCRIPT_PRELOADER_MAINTHREAD_RECOMPILE, 1);
     } else {
       while (!script->mReadyToExecute) {
         mal.Wait();
@@ -948,14 +931,17 @@ JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
       }
     }
 
-    LOG(Debug, "Waited %fms\n", (TimeStamp::Now() - start).ToMilliseconds());
+    double waitedMS = (TimeStamp::Now() - start).ToMilliseconds();
+    Telemetry::Accumulate(Telemetry::SCRIPT_PRELOADER_WAIT_TIME, int(waitedMS));
+    LOG(Debug, "Waited %fms\n", waitedMS);
   }
 
   return script->GetJSScript(cx);
 }
 
-/* static */ void ScriptPreloader::OffThreadDecodeCallback(
-    JS::OffThreadToken* token, void* context) {
+/* static */
+void ScriptPreloader::OffThreadDecodeCallback(JS::OffThreadToken* token,
+                                              void* context) {
   auto cache = static_cast<ScriptPreloader*>(context);
 
   cache->mMonitor.AssertNotCurrentThreadOwns();

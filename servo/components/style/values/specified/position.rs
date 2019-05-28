@@ -17,6 +17,7 @@ use crate::values::generics::position::ZIndex as GenericZIndex;
 use crate::values::specified::transform::OriginComponent;
 use crate::values::specified::{AllowQuirks, Integer, LengthPercentage};
 use crate::values::{Either, None_};
+use crate::Zero;
 use cssparser::Parser;
 use selectors::parser::SelectorParseErrorKind;
 use servo_arc::Arc;
@@ -731,15 +732,3 @@ impl GridTemplateAreas {
 
 /// A specified value for the `z-index` property.
 pub type ZIndex = GenericZIndex<Integer>;
-
-impl Parse for ZIndex {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if input.try(|i| i.expect_ident_matching("auto")).is_ok() {
-            return Ok(GenericZIndex::Auto);
-        }
-        Ok(GenericZIndex::Integer(Integer::parse(context, input)?))
-    }
-}

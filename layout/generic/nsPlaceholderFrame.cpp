@@ -29,7 +29,8 @@ using namespace mozilla::gfx;
 nsPlaceholderFrame* NS_NewPlaceholderFrame(nsIPresShell* aPresShell,
                                            ComputedStyle* aStyle,
                                            nsFrameState aTypeBits) {
-  return new (aPresShell) nsPlaceholderFrame(aStyle, aTypeBits);
+  return new (aPresShell)
+      nsPlaceholderFrame(aStyle, aPresShell->GetPresContext(), aTypeBits);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsPlaceholderFrame)
@@ -40,28 +41,29 @@ NS_QUERYFRAME_HEAD(nsPlaceholderFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
 #endif
 
-/* virtual */ nsSize nsPlaceholderFrame::GetXULMinSize(
-    nsBoxLayoutState& aBoxLayoutState) {
+/* virtual */
+nsSize nsPlaceholderFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
   nsSize size(0, 0);
   DISPLAY_MIN_SIZE(this, size);
   return size;
 }
 
-/* virtual */ nsSize nsPlaceholderFrame::GetXULPrefSize(
-    nsBoxLayoutState& aBoxLayoutState) {
+/* virtual */
+nsSize nsPlaceholderFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
   nsSize size(0, 0);
   DISPLAY_PREF_SIZE(this, size);
   return size;
 }
 
-/* virtual */ nsSize nsPlaceholderFrame::GetXULMaxSize(
-    nsBoxLayoutState& aBoxLayoutState) {
+/* virtual */
+nsSize nsPlaceholderFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
   nsSize size(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
   DISPLAY_MAX_SIZE(this, size);
   return size;
 }
 
-/* virtual */ void nsPlaceholderFrame::AddInlineMinISize(
+/* virtual */
+void nsPlaceholderFrame::AddInlineMinISize(
     gfxContext* aRenderingContext, nsIFrame::InlineMinISizeData* aData) {
   // Override AddInlineMinWith so that *nothing* happens.  In
   // particular, we don't want to zero out |aData->mTrailingWhitespace|,
@@ -78,7 +80,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
   }
 }
 
-/* virtual */ void nsPlaceholderFrame::AddInlinePrefISize(
+/* virtual */
+void nsPlaceholderFrame::AddInlinePrefISize(
     gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData) {
   // Override AddInlinePrefWith so that *nothing* happens.  In
   // particular, we don't want to zero out |aData->mTrailingWhitespace|,
@@ -184,7 +187,8 @@ void nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-/* virtual */ bool nsPlaceholderFrame::CanContinueTextRun() const {
+/* virtual */
+bool nsPlaceholderFrame::CanContinueTextRun() const {
   if (!mOutOfFlowFrame) {
     return false;
   }
@@ -216,8 +220,9 @@ ComputedStyle* nsPlaceholderFrame::GetLayoutParentStyleForOutOfFlow(
   // Lie about our pseudo so we can step out of all anon boxes and
   // pseudo-elements.  The other option would be to reimplement the
   // {ib} split gunk here.
-  *aProviderFrame =
-      CorrectStyleParentFrame(GetParent(), nsGkAtoms::placeholderFrame);
+  //
+  // See the hack in CorrectStyleParentFrame for why we pass `MAX`.
+  *aProviderFrame = CorrectStyleParentFrame(GetParent(), PseudoStyleType::MAX);
   return *aProviderFrame ? (*aProviderFrame)->Style() : nullptr;
 }
 
@@ -267,7 +272,7 @@ void nsPlaceholderFrame::List(FILE* out, const char* aPrefix,
 
   if (mOutOfFlowFrame) {
     str += " outOfFlowFrame=";
-    nsFrame::ListTag(str, mOutOfFlowFrame);
+    str += mOutOfFlowFrame->ListTag();
   }
   fprintf_stderr(out, "%s\n", str.get());
 }

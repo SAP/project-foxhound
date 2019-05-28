@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const BUGID = "369787";
 var server = null;
@@ -16,7 +16,7 @@ function change_content_type() {
 
 function TestListener() {
 }
-TestListener.prototype.onStartRequest = function(request, context) {
+TestListener.prototype.onStartRequest = function(request) {
   try {
     // request might be different from channel
     channel = request.QueryInterface(Ci.nsIChannel);
@@ -27,7 +27,7 @@ TestListener.prototype.onStartRequest = function(request, context) {
     throw ex;
   }
 }
-TestListener.prototype.onStopRequest = function(request, context, status) {
+TestListener.prototype.onStopRequest = function(request, status) {
   try {
     change_content_type();
   } catch (ex) {
@@ -60,7 +60,7 @@ function run_test() {
     loadUsingSystemPrincipal: true
   });
   channel.QueryInterface(Ci.nsIHttpChannel);
-  channel.asyncOpen2(new TestListener());
+  channel.asyncOpen(new TestListener());
 
   do_test_pending();
 }

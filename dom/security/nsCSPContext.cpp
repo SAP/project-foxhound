@@ -121,7 +121,8 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
                          nsISupports* aRequestContext,
                          const nsACString& aMimeTypeGuess,
                          nsIURI* aOriginalURIIfRedirect,
-                         bool aSendViolationReports, int16_t* outDecision) {
+                         bool aSendViolationReports, const nsAString& aNonce,
+                         int16_t* outDecision) {
   if (CSPCONTEXTLOGENABLED()) {
     CSPCONTEXTLOG(("nsCSPContext::ShouldLoad, aContentLocation: %s",
                    aContentLocation->GetSpecOrDefault().get()));
@@ -155,18 +156,8 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
     return NS_OK;
   }
 
-  nsAutoString nonce;
   bool parserCreated = false;
   if (!isPreload) {
-    if (aContentType == nsIContentPolicy::TYPE_SCRIPT ||
-        aContentType == nsIContentPolicy::TYPE_STYLESHEET) {
-      nsCOMPtr<Element> element = do_QueryInterface(aRequestContext);
-      if (element && element->IsHTMLElement()) {
-        // XXXbz What about SVG elements that can have nonce?
-        element->GetAttribute(NS_LITERAL_STRING("nonce"), nonce);
-      }
-    }
-
     nsCOMPtr<nsIScriptElement> script = do_QueryInterface(aRequestContext);
     if (script && script->GetParserCreated() != mozilla::dom::NOT_FROM_PARSER) {
       parserCreated = true;
@@ -177,7 +168,7 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
       permitsInternal(dir,
                       nullptr,  // aTriggeringElement
                       aCSPEventListener, aContentLocation,
-                      aOriginalURIIfRedirect, nonce, isPreload,
+                      aOriginalURIIfRedirect, aNonce, isPreload,
                       false,  // allow fallback to default-src
                       aSendViolationReports,
                       true,  // send blocked URI in violation reports
@@ -260,6 +251,40 @@ nsCSPContext::~nsCSPContext() {
   for (uint32_t i = 0; i < mPolicies.Length(); i++) {
     delete mPolicies[i];
   }
+}
+
+/* static */
+bool nsCSPContext::Equals(nsIContentSecurityPolicy* aCSP,
+                          nsIContentSecurityPolicy* aOtherCSP) {
+  if (aCSP == aOtherCSP) {
+    // fast path for pointer equality
+    return true;
+  }
+
+  uint32_t policyCount = 0;
+  if (aCSP) {
+    aCSP->GetPolicyCount(&policyCount);
+  }
+
+  uint32_t otherPolicyCount = 0;
+  if (aOtherCSP) {
+    aOtherCSP->GetPolicyCount(&otherPolicyCount);
+  }
+
+  if (policyCount != otherPolicyCount) {
+    return false;
+  }
+
+  nsAutoString policyStr, otherPolicyStr;
+  for (uint32_t i = 0; i < policyCount; ++i) {
+    aCSP->GetPolicyString(i, policyStr);
+    aOtherCSP->GetPolicyString(i, otherPolicyStr);
+    if (!policyStr.Equals(otherPolicyStr)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 nsresult nsCSPContext::InitFromOther(nsCSPContext* aOtherContext,
@@ -391,7 +416,14 @@ nsCSPContext::AppendPolicy(const nsAString& aPolicyString, bool aReportOnly,
     }
 
     mPolicies.AppendElement(policy);
+
+    // set the flag on the document for CSP telemetry
+    nsCOMPtr<Document> doc = do_QueryReferent(mLoadingContext);
+    if (doc) {
+      doc->SetHasCSP(true);
+    }
   }
+
   return NS_OK;
 }
 
@@ -681,9 +713,6 @@ nsCSPContext::SetRequestContext(Document* aDocument, nsIPrincipal* aPrincipal) {
     // console messages until it becomes available, see flushConsoleMessages
     mQueueUpMessages = !mInnerWindowID;
     mCallingChannelLoadGroup = aDocument->GetDocumentLoadGroup();
-
-    // set the flag on the document for CSP telemetry
-    aDocument->SetHasCSP(true);
     mEventTarget = aDocument->EventTargetFor(TaskCategory::Other);
   } else {
     CSPCONTEXTLOG(
@@ -1025,6 +1054,7 @@ nsresult nsCSPContext::SendReports(
                          mLoadingPrincipal,
                          nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                          nsIContentPolicy::TYPE_CSP_REPORT,
+                         nullptr,  // nsICookieSettings
                          nullptr,  // PerformanceStorage
                          nullptr,  // aLoadGroup
                          nullptr,  // aCallbacks
@@ -1110,7 +1140,7 @@ nsresult nsCSPContext::SendReports(
 
     RefPtr<CSPViolationReportListener> listener =
         new CSPViolationReportListener();
-    rv = reportChannel->AsyncOpen2(listener);
+    rv = reportChannel->AsyncOpen(listener);
 
     // AsyncOpen should not fail, but could if there's no load group (like if
     // SetRequestContext is not given a channel).  This should fail quietly and
@@ -1604,7 +1634,6 @@ nsresult AppendSegmentToString(nsIInputStream* aInputStream, void* aClosure,
 
 NS_IMETHODIMP
 CSPViolationReportListener::OnDataAvailable(nsIRequest* aRequest,
-                                            nsISupports* aContext,
                                             nsIInputStream* aInputStream,
                                             uint64_t aOffset, uint32_t aCount) {
   uint32_t read;
@@ -1615,14 +1644,12 @@ CSPViolationReportListener::OnDataAvailable(nsIRequest* aRequest,
 
 NS_IMETHODIMP
 CSPViolationReportListener::OnStopRequest(nsIRequest* aRequest,
-                                          nsISupports* aContext,
                                           nsresult aStatus) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-CSPViolationReportListener::OnStartRequest(nsIRequest* aRequest,
-                                           nsISupports* aContext) {
+CSPViolationReportListener::OnStartRequest(nsIRequest* aRequest) {
   return NS_OK;
 }
 

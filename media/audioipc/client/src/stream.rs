@@ -12,13 +12,9 @@ use cubeb_backend::{ffi, DeviceRef, Error, Result, Stream, StreamOps};
 use futures::Future;
 use futures_cpupool::{CpuFuture, CpuPool};
 use std::ffi::CString;
-use std::fs::File;
 use std::os::raw::c_void;
-use std::os::unix::io::FromRawFd;
-use std::os::unix::net;
 use std::ptr;
 use std::sync::mpsc;
-use tokio_uds::UnixStream;
 use ClientContext;
 use {assert_not_in_callback, set_in_callback};
 
@@ -65,15 +61,16 @@ impl rpc::Server for CallbackServer {
     type Request = CallbackReq;
     type Response = CallbackResp;
     type Future = CpuFuture<Self::Response, ()>;
-    type Transport = Framed<UnixStream, LengthDelimitedCodec<Self::Response, Self::Request>>;
+    type Transport = Framed<audioipc::AsyncMessageStream, LengthDelimitedCodec<Self::Response, Self::Request>>;
 
     fn process(&mut self, req: Self::Request) -> Self::Future {
         match req {
-            CallbackReq::Data(nframes, frame_size) => {
+            CallbackReq::Data { nframes, input_frame_size, output_frame_size } => {
                 trace!(
-                    "stream_thread: Data Callback: nframes={} frame_size={}",
+                    "stream_thread: Data Callback: nframes={} input_fs={} output_fs={}",
                     nframes,
-                    frame_size
+                    input_frame_size,
+                    output_frame_size,
                 );
 
                 // Clone values that need to be moved into the cpu pool thread.
@@ -92,14 +89,14 @@ impl rpc::Server for CallbackServer {
                     // TODO: This is proof-of-concept. Make it better.
                     let input_ptr: *const u8 = match input_shm {
                         Some(shm) => shm
-                            .get_slice(nframes as usize * frame_size)
+                            .get_slice(nframes as usize * input_frame_size)
                             .unwrap()
                             .as_ptr(),
                         None => ptr::null(),
                     };
                     let output_ptr: *mut u8 = match output_shm {
                         Some(ref mut shm) => shm
-                            .get_mut_slice(nframes as usize * frame_size)
+                            .get_mut_slice(nframes as usize * output_frame_size)
                             .unwrap()
                             .as_mut_ptr(),
                         None => ptr::null_mut(),
@@ -154,21 +151,21 @@ impl<'ctx> ClientStream<'ctx> {
         let rpc = ctx.rpc();
         let data = try!(send_recv!(rpc, StreamInit(init_params) => StreamCreated()));
 
-        debug!("token = {}, fds = {:?}", data.token, data.fds);
+        debug!("token = {}, handles = {:?}", data.token, data.platform_handles);
 
-        let stm = data.fds[0];
-        let stream = unsafe { net::UnixStream::from_raw_fd(stm) };
+        let stm = data.platform_handles[0];
+        let stream = unsafe { audioipc::MessageStream::from_raw_fd(stm.as_raw()) };
 
-        let input = data.fds[1];
-        let input_file = unsafe { File::from_raw_fd(input) };
+        let input = data.platform_handles[1];
+        let input_file = unsafe { input.into_file() };
         let input_shm = if has_input {
             Some(SharedMemSlice::from(&input_file, SHM_AREA_SIZE).unwrap())
         } else {
             None
         };
 
-        let output = data.fds[2];
-        let output_file = unsafe { File::from_raw_fd(output) };
+        let output = data.platform_handles[2];
+        let output_file = unsafe { output.into_file() };
         let output_shm = if has_output {
             Some(SharedMemMutSlice::from(&output_file, SHM_AREA_SIZE).unwrap())
         } else {
@@ -190,7 +187,7 @@ impl<'ctx> ClientStream<'ctx> {
 
         let (wait_tx, wait_rx) = mpsc::channel();
         ctx.remote().spawn(move |handle| {
-            let stream = UnixStream::from_stream(stream, handle).unwrap();
+            let stream = stream.into_tokio_ipc(handle).unwrap();
             let transport = framed(stream, Default::default());
             rpc::bind_server(transport, server, handle);
             wait_tx.send(()).unwrap();

@@ -2,20 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import json
 import os
 import platform
-import signal
 import subprocess
 import sys
-from collections import defaultdict
 
-from mozprocess import ProcessHandlerMixin
+import mozfile
 
 from mozlint import result
+from mozlint.pathutils import expand_exclusions
 from mozlint.util import pip
-from mozlint.pathutils import get_ancestors_by_name
-
 
 here = os.path.abspath(os.path.dirname(__file__))
 FLAKE8_REQUIREMENTS_PATH = os.path.join(here, 'flake8_requirements.txt')
@@ -64,16 +63,84 @@ if platform.system() == 'Windows':
 else:
     bindir = os.path.join(sys.prefix, 'bin')
 
-results = []
+
+class NothingToLint(Exception):
+    """Exception used to bail out of flake8's internals if all the specified
+    files were excluded.
+    """
 
 
-class Flake8Process(ProcessHandlerMixin):
-    def __init__(self, config, *args, **kwargs):
-        self.config = config
-        kwargs['processOutputLine'] = [self.process_line]
-        ProcessHandlerMixin.__init__(self, *args, **kwargs)
+def setup(root, **lintargs):
+    if not pip.reinstall_program(FLAKE8_REQUIREMENTS_PATH):
+        print(FLAKE8_INSTALL_ERROR)
+        return 1
 
-    def process_line(self, line):
+
+def lint(paths, config, **lintargs):
+    from flake8.main.application import Application
+
+    root = lintargs['root']
+    config_path = os.path.join(root, '.flake8')
+
+    if lintargs.get('fix'):
+        fix_cmd = [
+            os.path.join(bindir, 'autopep8'),
+            '--global-config', config_path,
+            '--in-place', '--recursive',
+        ]
+
+        if config.get('exclude'):
+            fix_cmd.extend(['--exclude', ','.join(config['exclude'])])
+
+        subprocess.call(fix_cmd + paths)
+
+    # Run flake8.
+    app = Application()
+
+    output_file = mozfile.NamedTemporaryFile()
+    flake8_cmd = [
+        '--config', config_path,
+        '--output-file', output_file.name,
+        '--format', '{"path":"%(path)s","lineno":%(row)s,'
+                    '"column":%(col)s,"rule":"%(code)s","message":"%(text)s"}',
+        '--filename', ','.join(['*.{}'.format(e) for e in config['extensions']]),
+    ]
+
+    orig_make_file_checker_manager = app.make_file_checker_manager
+
+    def wrap_make_file_checker_manager(self):
+        """Flake8 is very inefficient when it comes to applying exclusion
+        rules, using `expand_exclusions` to turn directories into a list of
+        relevant python files is an order of magnitude faster.
+
+        Hooking into flake8 here also gives us a convenient place to merge the
+        `exclude` rules specified in the root .flake8 with the ones added by
+        tools/lint/mach_commands.py.
+        """
+        config.setdefault('exclude', []).extend(self.options.exclude)
+        self.options.exclude = None
+        self.args = self.args + list(expand_exclusions(paths, config, root))
+
+        if not self.args:
+            raise NothingToLint
+        return orig_make_file_checker_manager()
+
+    app.make_file_checker_manager = wrap_make_file_checker_manager.__get__(app, Application)
+
+    # Make sure to run from repository root so exlusions are joined to the
+    # repository root and not the current working directory.
+    oldcwd = os.getcwd()
+    os.chdir(root)
+    try:
+        app.run(flake8_cmd)
+    except NothingToLint:
+        pass
+    finally:
+        os.chdir(oldcwd)
+
+    results = []
+
+    def process_line(line):
         # Escape slashes otherwise JSON conversion will not work
         line = line.replace('\\', '\\\\')
         try:
@@ -85,73 +152,7 @@ class Flake8Process(ProcessHandlerMixin):
         if res.get('code') in LINE_OFFSETS:
             res['lineoffset'] = LINE_OFFSETS[res['code']]
 
-        results.append(result.from_config(self.config, **res))
+        results.append(result.from_config(config, **res))
 
-    def run(self, *args, **kwargs):
-        # flake8 seems to handle SIGINT poorly. Handle it here instead
-        # so we can kill the process without a cryptic traceback.
-        orig = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        ProcessHandlerMixin.run(self, *args, **kwargs)
-        signal.signal(signal.SIGINT, orig)
-
-
-def run_process(config, cmd):
-    proc = Flake8Process(config, cmd)
-    proc.run()
-    try:
-        proc.wait()
-    except KeyboardInterrupt:
-        proc.kill()
-        return 1
-
-
-def setup(root):
-    if not pip.reinstall_program(FLAKE8_REQUIREMENTS_PATH):
-        print(FLAKE8_INSTALL_ERROR)
-        return 1
-
-
-def lint(paths, config, **lintargs):
-    # TODO don't store results in a global
-    global results
-    results = []
-
-    cmdargs = [
-        os.path.join(bindir, 'flake8'),
-        '--format', '{"path":"%(path)s","lineno":%(row)s,'
-                    '"column":%(col)s,"rule":"%(code)s","message":"%(text)s"}',
-        '--filename', ','.join(['*.{}'.format(e) for e in config['extensions']]),
-    ]
-
-    fix_cmdargs = [
-        os.path.join(bindir, 'autopep8'),
-        '--global-config', os.path.join(lintargs['root'], '.flake8'),
-        '--in-place', '--recursive',
-    ]
-
-    if config.get('exclude'):
-        fix_cmdargs.extend(['--exclude', ','.join(config['exclude'])])
-
-    # Run any paths with a .flake8 file in the directory separately so
-    # it gets picked up. This means only .flake8 files that live in
-    # directories that are explicitly included will be considered.
-    # See bug 1277851
-    paths_by_config = defaultdict(list)
-    for path in paths:
-        configs = get_ancestors_by_name('.flake8', path, lintargs['root'])
-        paths_by_config[os.pathsep.join(configs) if configs else 'default'].append(path)
-
-    for configs, paths in paths_by_config.items():
-        if lintargs.get('fix'):
-            subprocess.call(fix_cmdargs + paths)
-
-        cmd = cmdargs[:]
-        if configs != 'default':
-            configs = reversed(configs.split(os.pathsep))
-            cmd.extend(['--append-config={}'.format(c) for c in configs])
-
-        cmd.extend(paths)
-        if run_process(config, cmd):
-            break
-
+    map(process_line, output_file.readlines())
     return results

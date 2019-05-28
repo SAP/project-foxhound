@@ -14,6 +14,8 @@ use boilerplate::{Example, HandyDandyRectBuilder};
 use gleam::gl;
 use std::mem;
 use webrender::api::*;
+use webrender::api::units::*;
+
 
 struct ImageGenerator {
     patterns: [[u8; 3]; 6],
@@ -90,7 +92,7 @@ impl Example for App {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        _framebuffer_size: DeviceIntSize,
+        _framebuffer_size: FramebufferIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {

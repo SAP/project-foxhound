@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Shared Places Import - change other consumers if you change this: */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
@@ -78,7 +78,8 @@ var SelectBookmarkDialog = {
     var names = [];
     var selectedNode = bookmarks.selectedNode;
     if (PlacesUtils.nodeIsFolder(selectedNode)) {
-      var contents = PlacesUtils.getFolderContents(selectedNode.bookmarkGuid).root;
+      let concreteGuid = PlacesUtils.getConcreteItemGuid(selectedNode);
+      var contents = PlacesUtils.getFolderContents(concreteGuid).root;
       var cc = contents.childCount;
       for (var i = 0; i < cc; ++i) {
         var node = contents.getChild(i);

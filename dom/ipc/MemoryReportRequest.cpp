@@ -4,7 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsMemoryReporterManager.h"
 #include "MemoryReportRequest.h"
+#include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/ipc/FileDescriptorUtils.h"
+
+using namespace mozilla::ipc;
 
 namespace mozilla {
 namespace dom {
@@ -50,7 +55,7 @@ NS_IMPL_ISUPPORTS(MemoryReportRequestClient, nsIRunnable)
 
 /* static */ void MemoryReportRequestClient::Start(
     uint32_t aGeneration, bool aAnonymize, bool aMinimizeMemoryUsage,
-    const MaybeFileDesc& aDMDFile, const nsACString& aProcessString,
+    const Maybe<FileDescriptor>& aDMDFile, const nsACString& aProcessString,
     const ReportCallback& aReportCallback,
     const FinishCallback& aFinishCallback) {
   RefPtr<MemoryReportRequestClient> request = new MemoryReportRequestClient(
@@ -71,16 +76,17 @@ NS_IMPL_ISUPPORTS(MemoryReportRequestClient, nsIRunnable)
 }
 
 MemoryReportRequestClient::MemoryReportRequestClient(
-    uint32_t aGeneration, bool aAnonymize, const MaybeFileDesc& aDMDFile,
-    const nsACString& aProcessString, const ReportCallback& aReportCallback,
+    uint32_t aGeneration, bool aAnonymize,
+    const Maybe<FileDescriptor>& aDMDFile, const nsACString& aProcessString,
+    const ReportCallback& aReportCallback,
     const FinishCallback& aFinishCallback)
     : mGeneration(aGeneration),
       mAnonymize(aAnonymize),
       mProcessString(aProcessString),
       mReportCallback(aReportCallback),
       mFinishCallback(aFinishCallback) {
-  if (aDMDFile.type() == MaybeFileDesc::TFileDescriptor) {
-    mDMDFile = aDMDFile.get_FileDescriptor();
+  if (aDMDFile.isSome()) {
+    mDMDFile = aDMDFile.value();
   }
 }
 

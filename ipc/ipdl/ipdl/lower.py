@@ -5,11 +5,14 @@
 import re
 from copy import deepcopy
 from collections import OrderedDict
+import itertools
 
 import ipdl.ast
 import ipdl.builtin
 from ipdl.cxx.ast import *
+from ipdl.direct_call import VIRTUAL_CALL_CLASSES, DIRECT_CALL_OVERRIDES
 from ipdl.type import ActorType, UnionType, TypeVisitor, builtinHeaderIncludes
+
 
 # -----------------------------------------------------------------------------
 # "Public" interface to lowering
@@ -235,6 +238,8 @@ E.g., |Foo[]| --> |ArrayOfFoo|."""
     # sync with grammar.
     if ipdltype.isIPDL() and ipdltype.isArray():
         return 'ArrayOf' + ipdltype.basetype.name()
+    if ipdltype.isIPDL() and ipdltype.isMaybe():
+        return 'Maybe' + ipdltype.basetype.name()
     return ipdltype.name()
 
 
@@ -244,7 +249,7 @@ For example: |Actor[]| would turn into |Array<ActorParent*>|, so this
 function would return true for |Actor[]|."""
     return (ipdltype.isIPDL()
             and (ipdltype.isActor()
-                 or (ipdltype.isArray()
+                 or ((ipdltype.isArray() or ipdltype.isMaybe())
                      and _hasVisibleActor(ipdltype.basetype))))
 
 
@@ -294,6 +299,11 @@ def _makeResolver(returns, side):
 
 def _cxxArrayType(basetype, const=False, ref=False):
     return Type('nsTArray', T=basetype, const=const, ref=ref, hasimplicitcopyctor=False)
+
+
+def _cxxMaybeType(basetype, const=False, ref=False):
+    return Type('mozilla::Maybe', T=basetype, const=const, ref=ref,
+                hasimplicitcopyctor=basetype.hasimplicitcopyctor)
 
 
 def _cxxManagedContainerType(basetype, const=False, ref=False):
@@ -496,6 +506,10 @@ class _ConvertToCxxType(TypeVisitor):
         basecxxtype = a.basetype.accept(self)
         return _cxxArrayType(basecxxtype)
 
+    def visitMaybeType(self, m):
+        basecxxtype = m.basetype.accept(self)
+        return _cxxMaybeType(basecxxtype)
+
     def visitShmemType(self, s):
         return Type(self.typename(s))
 
@@ -540,7 +554,7 @@ def _cxxConstRefType(ipdltype, side):
     if ipdltype.isIPDL() and ipdltype.isByteBuf():
         t.ref = True
         return t
-    if ipdltype.isIPDL() and ipdltype.isArray():
+    if ipdltype.isIPDL() and (ipdltype.isArray() or ipdltype.isMaybe()):
         # Keep same constness as inner type.
         inner = _cxxConstRefType(ipdltype.basetype, side)
         t.const = inner.const or not inner.ref
@@ -567,6 +581,16 @@ def _cxxTypeCanMoveSend(ipdltype):
 
 
 def _cxxTypeNeedsMove(ipdltype):
+    if _cxxTypeNeedsMoveForSend(ipdltype):
+        return True
+
+    if ipdltype.isIPDL():
+        return ipdltype.isArray() or ipdltype.isEndpoint()
+
+    return False
+
+
+def _cxxTypeNeedsMoveForSend(ipdltype):
     if ipdltype.isUniquePtr():
         return True
 
@@ -574,8 +598,9 @@ def _cxxTypeNeedsMove(ipdltype):
         return ipdltype.isMoveonly()
 
     if ipdltype.isIPDL():
-        return (ipdltype.isArray() or
-                ipdltype.isShmem() or
+        if ipdltype.isMaybe() or ipdltype.isArray():
+            return _cxxTypeNeedsMove(ipdltype.basetype)
+        return (ipdltype.isShmem() or
                 ipdltype.isByteBuf() or
                 ipdltype.isEndpoint())
 
@@ -623,11 +648,11 @@ def _cxxConstPtrToType(ipdltype, side):
 
 
 def _allocMethod(ptype, side):
-    return ExprVar('Alloc' + ptype.name() + side.title())
+    return 'Alloc' + ptype.name() + side.title()
 
 
 def _deallocMethod(ptype, side):
-    return ExprVar('Dealloc' + ptype.name() + side.title())
+    return 'Dealloc' + ptype.name() + side.title()
 
 ##
 # A _HybridDecl straddles IPDL and C++ decls.  It knows which C++
@@ -644,16 +669,8 @@ info needed by later passes, along with a basic name for the decl."""
         self.ipdltype = ipdltype
         self.name = name
 
-    def isCopyable(self):
-        return not _cxxTypeNeedsMove(self.ipdltype)
-
     def var(self):
         return ExprVar(self.name)
-
-    def mayMoveExpr(self):
-        if self.isCopyable():
-            return self.var()
-        return ExprMove(self.var())
 
     def bareType(self, side, fq=False):
         """Return this decl's unqualified C++ type."""
@@ -682,6 +699,8 @@ necessarily a C++ reference."""
         """Return this decl's C++ Type with inparam semantics."""
         if self.ipdltype.isIPDL() and self.ipdltype.isActor():
             return self.bareType(side)
+        elif _cxxTypeNeedsMoveForSend(self.ipdltype):
+            return self.rvalueRefType(side)
         return self.constRefType(side)
 
     def moveType(self, side):
@@ -745,6 +764,16 @@ class _CompoundTypeComponent(_HybridDecl):
 
 
 class StructDecl(ipdl.ast.StructDecl, HasFQName):
+    def fields_ipdl_order(self):
+        for f in self.fields:
+            yield f
+
+    def fields_member_order(self):
+        assert len(self.packed_field_order) == len(self.fields)
+
+        for i in self.packed_field_order:
+            yield self.fields[i]
+
     @staticmethod
     def upgrade(structDecl):
         assert isinstance(structDecl, ipdl.ast.StructDecl)
@@ -956,13 +985,13 @@ class MessageDecl(ipdl.ast.MessageDecl):
         name = _recvPrefix(self.decl.type) + self.baseName()
         if self.decl.type.isCtor():
             name += 'Constructor'
-        return ExprVar(name)
+        return name
 
     def sendMethod(self):
         name = _sendPrefix(self.decl.type) + self.baseName()
         if self.decl.type.isCtor():
             name += 'Constructor'
-        return ExprVar(name)
+        return name
 
     def hasReply(self):
         return (self.decl.type.hasReply()
@@ -1069,7 +1098,13 @@ class MessageDecl(ipdl.ast.MessageDecl):
         cxxargs = []
 
         if paramsems == 'move':
-            cxxargs.extend([p.mayMoveExpr() for p in self.params])
+            # We don't std::move() RefPtr<T> types because current Recv*()
+            # implementors take these parameters as T*, and
+            # std::move(RefPtr<T>) doesn't coerce to T*.
+            cxxargs.extend([
+                p.var() if p.ipdltype.isCxx() and p.ipdltype.isRefcounted() else ExprMove(p.var())
+                for p in self.params
+            ])
         elif paramsems == 'in':
             cxxargs.extend([p.var() for p in self.params])
         else:
@@ -1287,6 +1322,32 @@ class TranslationUnit(ipdl.ast.TranslationUnit):
 
 # -----------------------------------------------------------------------------
 
+pod_types = {
+    'bool': 1,
+    'int8_t': 1,
+    'uint8_t': 1,
+    'int16_t': 2,
+    'uint16_t': 2,
+    'int32_t': 4,
+    'uint32_t': 4,
+    'int64_t': 8,
+    'uint64_t': 8,
+    'float': 4,
+    'double': 8,
+}
+max_pod_size = max(pod_types.values())
+# We claim that all types we don't recognize are automatically "bigger"
+# than pod types for ease of sorting.
+pod_size_sentinel = max_pod_size * 2
+
+
+def pod_size(ipdltype):
+    if not isinstance(ipdltype, ipdl.type.ImportedCxxType):
+        return pod_size_sentinel
+
+    return pod_types.get(ipdltype.name(), pod_size_sentinel)
+
+
 class _DecorateWithCxxStuff(ipdl.ast.Visitor):
     """Phase 1 of lowering: decorate the IPDL AST with information
 relevant to C++ code generation.
@@ -1358,7 +1419,20 @@ with some new IPDL/C++ nodes that are tuned for C++ codegen."""
                                                   side='child'))
                 else:
                     newfields.append(_StructField(ftype, f.name, sd))
+
+            # Compute a permutation of the fields for in-memory storage such
+            # that the memory layout of the structure will be well-packed.
+            permutation = range(len(newfields))
+
+            # Note that the results of `pod_size` ensure that non-POD fields
+            # sort before POD ones.
+            def size(idx):
+                return pod_size(newfields[idx].ipdltype)
+
+            permutation.sort(key=size, reverse=True)
+
             sd.fields = newfields
+            sd.packed_field_order = permutation
             StructDecl.upgrade(sd)
 
         if sd.decl.fullname is not None:
@@ -1783,9 +1857,33 @@ class _ParamTraits():
                                  args=[ExprLiteral.String(reason)]))
 
     @classmethod
-    def write(cls, var, msgvar, actor):
+    def writeSentinel(cls, msgvar, sentinelKey):
+        return [
+            Whitespace('// Sentinel = ' + repr(sentinelKey) + '\n', indent=True),
+            StmtExpr(ExprCall(ExprSelect(msgvar, '->', 'WriteSentinel'),
+                              args=[ExprLiteral.Int(hashfunc(sentinelKey))]))
+        ]
+
+    @classmethod
+    def readSentinel(cls, msgvar, itervar, sentinelKey, sentinelFail):
+        # Read the sentinel
+        assert sentinelKey
+        read = ExprCall(ExprSelect(msgvar, '->', 'ReadSentinel'),
+                        args=[itervar, ExprLiteral.Int(hashfunc(sentinelKey))])
+        ifsentinel = StmtIf(ExprNot(read))
+        ifsentinel.addifstmts(sentinelFail)
+
+        return [
+            Whitespace('// Sentinel = ' + repr(sentinelKey) + '\n', indent=True),
+            ifsentinel,
+        ]
+
+    @classmethod
+    def write(cls, var, msgvar, actor, ipdltype=None):
         # WARNING: This doesn't set AutoForActor for you, make sure this is
         # only called when the actor is already correctly set.
+        if ipdltype and _cxxTypeNeedsMoveForSend(ipdltype):
+            var = ExprMove(var)
         return ExprCall(ExprVar('WriteIPDLParam'), args=[msgvar, actor, var])
 
     @classmethod
@@ -1798,11 +1896,50 @@ class _ParamTraits():
             block.addstmt(_abortIfFalse(var, 'NULL actor value passed to non-nullable param'))
 
         block.addstmts([
-            StmtExpr(cls.write(var, msgvar, actor)),
-            Whitespace('// Sentinel = ' + repr(sentinelKey) + '\n', indent=True),
-            StmtExpr(ExprCall(ExprSelect(msgvar, '->', 'WriteSentinel'),
-                              args=[ExprLiteral.Int(hashfunc(sentinelKey))]))
+            StmtExpr(cls.write(var, msgvar, actor, ipdltype)),
         ])
+        block.addstmts(cls.writeSentinel(msgvar, sentinelKey))
+        return block
+
+    @classmethod
+    def bulkSentinelKey(cls, fields):
+        return ' | '.join(f.basename for f in fields)
+
+    @classmethod
+    def checkedBulkWrite(cls, size, fields):
+        block = Block()
+        first = fields[0]
+
+        block.addstmts([
+            StmtExpr(ExprCall(ExprSelect(cls.msgvar, '->', 'WriteBytes'),
+                              args=[ExprAddrOf(ExprCall(first.getMethod(thisexpr=cls.var,
+                                                                        sel='.'))),
+                                    ExprLiteral.Int(size * len(fields))]))
+        ])
+        block.addstmts(cls.writeSentinel(cls.msgvar, cls.bulkSentinelKey(fields)))
+
+        return block
+
+    @classmethod
+    def checkedBulkRead(cls, size, fields):
+        block = Block()
+        first = fields[0]
+
+        readbytes = ExprCall(ExprSelect(cls.msgvar, '->', 'ReadBytesInto'),
+                             args=[cls.itervar,
+                                   ExprAddrOf(ExprCall(first.getMethod(thisexpr=cls.var,
+                                                                       sel='->'))),
+                                   ExprLiteral.Int(size * len(fields))])
+        ifbad = StmtIf(ExprNot(readbytes))
+        errmsg = 'Error bulk reading fields from %s' % first.ipdltype.name()
+        ifbad.addifstmts([cls.fatalError(errmsg),
+                          StmtReturn.FALSE])
+        block.addstmt(ifbad)
+        block.addstmts(cls.readSentinel(cls.msgvar,
+                                        cls.itervar,
+                                        cls.bulkSentinelKey(fields),
+                                        errfnSentinel()(errmsg)))
+
         return block
 
     @classmethod
@@ -1826,15 +1963,8 @@ class _ParamTraits():
             ifnull.addifstmts(errfn(*paramtype))
             block.addstmt(ifnull)
 
-        # Read the sentinel
-        assert sentinelKey
-        block.addstmt(Whitespace('// Sentinel = ' + repr(sentinelKey) + '\n',
-                                 indent=True))
-        read = ExprCall(ExprSelect(msgvar, '->', 'ReadSentinel'),
-                        args=[itervar, ExprLiteral.Int(hashfunc(sentinelKey))])
-        ifsentinel = StmtIf(ExprNot(read))
-        ifsentinel.addifstmts(errfnSentinel(*paramtype))
-        block.addstmt(ifsentinel)
+        block.addstmts(cls.readSentinel(msgvar, itervar, sentinelKey,
+                                        errfnSentinel(*paramtype)))
 
         return block
 
@@ -1932,8 +2062,20 @@ class _ParamTraits():
         iffreed = StmtIf(ExprBinary(_FREED_ACTOR_ID, '==', idvar))
         iffreed.addifstmt(cls.fatalError("actor has been |delete|d"))
         ifnull.addelsestmt(iffreed)
+        #   MOZ_ASSERT(aActor->GetIPCChannel() == var->GetIPCChannel(), "...")
+        ifnull.addelsestmt(
+            StmtExpr(ExprCall(ExprVar("MOZ_ASSERT"), args=[
+                ExprBinary(
+                    ExprCall(ExprSelect(cls.actor, '->', 'GetIPCChannel')),
+                    '==',
+                    ExprCall(ExprSelect(cls.var, '->', 'GetIPCChannel'))
+                ),
+                ExprLiteral.String("Actor must be from the same channel as the"
+                                   " actor it's being sent over"),
+            ]))
+        )
 
-        # IPC::WriteParam(..)
+        # IPC::WriteIPDLParam(..)
         write += [ifnull,
                   StmtExpr(cls.write(idvar, cls.msgvar, cls.actor))]
 
@@ -1977,25 +2119,39 @@ class _ParamTraits():
         write = []
         read = []
 
-        for f in sd.fields:
-            writefield = cls.checkedWrite(f.ipdltype,
-                                          get('.', f),
-                                          cls.msgvar,
-                                          sentinelKey=f.basename,
-                                          actor=cls.actor)
-            readfield = cls._checkedRead(f.ipdltype,
-                                         ExprAddrOf(get('->', f)), f.basename,
-                                         '\'' + f.getMethod().name + '\' ' +
-                                         '(' + f.ipdltype.name() + ') member of ' +
-                                         '\'' + structtype.name() + '\'')
+        for (size, fields) in itertools.groupby(sd.fields_member_order(),
+                                                lambda f: pod_size(f.ipdltype)):
+            fields = list(fields)
 
-            # Wrap the read/write in a side check if the field is special.
-            if f.special:
-                writefield = cls.ifsideis(f.side, writefield)
-                readfield = cls.ifsideis(f.side, readfield)
+            if size == pod_size_sentinel:
+                for f in fields:
+                    writefield = cls.checkedWrite(f.ipdltype,
+                                                  get('.', f),
+                                                  cls.msgvar,
+                                                  sentinelKey=f.basename,
+                                                  actor=cls.actor)
+                    readfield = cls._checkedRead(f.ipdltype,
+                                                 ExprAddrOf(get('->', f)), f.basename,
+                                                 '\'' + f.getMethod().name + '\' ' +
+                                                 '(' + f.ipdltype.name() + ') member of ' +
+                                                 '\'' + structtype.name() + '\'')
 
-            write.append(writefield)
-            read.append(readfield)
+                    # Wrap the read/write in a side check if the field is special.
+                    if f.special:
+                        writefield = cls.ifsideis(f.side, writefield)
+                        readfield = cls.ifsideis(f.side, readfield)
+
+                    write.append(writefield)
+                    read.append(readfield)
+            else:
+                for f in fields:
+                    assert not f.special
+
+                writefield = cls.checkedBulkWrite(size, fields)
+                readfield = cls.checkedBulkRead(size, fields)
+
+                write.append(writefield)
+                read.append(readfield)
 
         read.append(StmtReturn.TRUE)
 
@@ -2070,7 +2226,7 @@ class _ParamTraits():
             ct = c.bareType(fq=True)
             readcase.addstmts([
                 StmtDecl(Decl(ct, tmpvar.name), init=c.defaultValue(fq=True)),
-                StmtExpr(ExprAssn(ExprDeref(cls.var), tmpvar)),
+                StmtExpr(ExprAssn(ExprDeref(cls.var), ExprMove(tmpvar))),
                 cls._checkedRead(c.ipdltype,
                                  ExprAddrOf(ExprCall(ExprSelect(cls.var, '->',
                                                                 c.getTypeName()))),
@@ -2159,6 +2315,9 @@ before this struct.  Some types generate multiple kinds.'''
     def visitArrayType(self, t):
         return TypeVisitor.visitArrayType(self, t)
 
+    def visitMaybeType(self, m):
+        return TypeVisitor.visitMaybeType(self, m)
+
     def visitShmemType(self, s):
         if s in self.visited:
             return
@@ -2191,6 +2350,37 @@ before this struct.  Some types generate multiple kinds.'''
     def visitStateType(self, v): assert 0
 
 
+def _fieldStaticAssertions(sd):
+    staticasserts = []
+    for (size, fields) in itertools.groupby(sd.fields_member_order(),
+                                            lambda f: pod_size(f.ipdltype)):
+        if size == pod_size_sentinel:
+            continue
+
+        fields = list(fields)
+        if len(fields) == 1:
+            continue
+
+        # If we get here, we have a list of fields of some certain size that we
+        # would like to assume are laid out consecutively in memory with no
+        # padding between fields.  The types of the fields (integers, booleans,
+        # and floats) are such that we don't have to worry about internal
+        # padding in the fields themselves.  We check our assumptions via
+        # static_assert.
+        start_offset = ExprCall(ExprVar('offsetof'),
+                                args=[ExprVar(sd.name), fields[0].memberVar()])
+        end_offset = ExprCall(ExprVar('offsetof'),
+                              args=[ExprVar(sd.name), fields[-1].memberVar()])
+        diff = ExprBinary(end_offset, '-', start_offset)
+        eqcheck = ExprBinary(diff, '==', ExprLiteral.Int(size * (len(fields) - 1)))
+        assert_ = ExprCall(ExprVar('static_assert'),
+                           args=[eqcheck,
+                                 ExprLiteral.String("Bad assumptions about field layout!")])
+        staticasserts.append(StmtExpr(assert_))
+
+    return staticasserts
+
+
 def _generateCxxStruct(sd):
     ''' '''
     # compute all the typedefs and forward decls we need to make
@@ -2210,12 +2400,14 @@ def _generateCxxStruct(sd):
     constreftype = Type(sd.name, const=True, ref=True)
 
     def fieldsAsParamList():
-        return [Decl(f.inType(), f.argVar().name) for f in sd.fields]
+        return [Decl(f.inType(), f.argVar().name) for f in sd.fields_ipdl_order()]
 
     # If this is an empty struct (no fields), then the default ctor
     # and "create-with-fields" ctors are equivalent.  So don't bother
     # with the default ctor.
     if len(sd.fields):
+        assert len(sd.fields) == len(sd.packed_field_order)
+
         # Struct()
         defctor = ConstructorDefn(ConstructorDecl(sd.name, force_inline=True))
 
@@ -2224,7 +2416,8 @@ def _generateCxxStruct(sd):
         # normally to their default values, and will initialize any actor member
         # pointers to the correct default value of `nullptr`. Other C++ types
         # with custom constructors must also provide a default constructor.
-        defctor.memberinits = [ExprMemberInit(f.memberVar()) for f in sd.fields]
+        defctor.memberinits = [ExprMemberInit(f.memberVar())
+                               for f in sd.fields_member_order()]
         struct.addstmts([defctor, Whitespace.NL])
 
     # Struct(const field1& _f1, ...)
@@ -2233,7 +2426,7 @@ def _generateCxxStruct(sd):
                                               force_inline=True))
     valctor.memberinits = [ExprMemberInit(f.memberVar(),
                                           args=[f.argVar()])
-                           for f in sd.fields]
+                           for f in sd.fields_member_order()]
     struct.addstmts([valctor, Whitespace.NL])
 
     # The default copy, move, and assignment constructors, and the default
@@ -2246,7 +2439,7 @@ def _generateCxxStruct(sd):
         params=[Decl(constreftype, ovar.name)],
         ret=Type.BOOL,
         const=True))
-    for f in sd.fields:
+    for f in sd.fields_ipdl_order():
         ifneq = StmtIf(ExprNot(
             ExprBinary(ExprCall(f.getMethod()), '==',
                        ExprCall(f.getMethod(ovar)))))
@@ -2267,7 +2460,7 @@ def _generateCxxStruct(sd):
 
     # field1& f1()
     # const field1& f1() const
-    for f in sd.fields:
+    for f in sd.fields_ipdl_order():
         get = MethodDefn(MethodDecl(f.getMethod().name,
                                     params=[],
                                     ret=f.refType(),
@@ -2285,9 +2478,23 @@ def _generateCxxStruct(sd):
     # private:
     struct.addstmt(Label.PRIVATE)
 
+    # Static assertions to ensure our assumptions about field layout match
+    # what the compiler is actually producing.  We define this as a member
+    # function, rather than throwing the assertions in the constructor or
+    # similar, because we don't want to evaluate the static assertions every
+    # time the header file containing the structure is included.
+    staticasserts = _fieldStaticAssertions(sd)
+    if staticasserts:
+        method = MethodDefn(MethodDecl('StaticAssertions',
+                                       params=[],
+                                       ret=Type.VOID,
+                                       const=True))
+        method.addstmts(staticasserts)
+        struct.addstmts([method])
+
     # members
     struct.addstmts([StmtDecl(Decl(f.bareType(), f.memberVar().name))
-                     for f in sd.fields])
+                     for f in sd.fields_member_order()])
 
     return forwarddeclstmts, fulldecltypes, struct
 
@@ -2495,7 +2702,7 @@ def _generateCxxUnion(ud):
             StmtExpr(ExprAssn(mtypevar, c.enumvar()))])
         cls.addstmts([copyctor, Whitespace.NL])
 
-        if not _cxxTypeCanMove(c.ipdltype):
+        if not _cxxTypeCanMove(c.ipdltype) or _cxxTypeNeedsMoveForSend(c.ipdltype):
             continue
         movector = ConstructorDefn(ConstructorDecl(
             ud.name, params=[Decl(c.forceMoveType(), othervar.name)]))
@@ -2602,7 +2809,7 @@ def _generateCxxUnion(ud):
         cls.addstmts([opeq, Whitespace.NL])
 
         # Union& operator=(T&&)
-        if not _cxxTypeCanMove(c.ipdltype):
+        if not _cxxTypeCanMove(c.ipdltype) or _cxxTypeNeedsMoveForSend(c.ipdltype):
             continue
 
         opeq = MethodDefn(MethodDecl(
@@ -2939,6 +3146,18 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         )
 
         # make the .cpp file
+        if (self.protocol.name, self.side) not in VIRTUAL_CALL_CLASSES:
+            if (self.protocol.name, self.side) in DIRECT_CALL_OVERRIDES:
+                (_, header_file) = DIRECT_CALL_OVERRIDES[self.protocol.name, self.side]
+            else:
+                assert self.protocol.name.startswith("P")
+                header_file = "{}/{}{}.h".format(
+                    "/".join(n.name for n in self.protocol.namespaces),
+                    self.protocol.name[1:],
+                    self.side.capitalize(),
+                )
+            self.externalIncludes.add(header_file)
+
         cf.addthings([
             _DISCLAIMER,
             Whitespace.NL,
@@ -3121,7 +3340,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 implicit = (not isdtor)
                 returnsems = 'resolver' if md.decl.type.isAsync() else 'out'
                 recvDecl = MethodDecl(
-                    md.recvMethod().name,
+                    md.recvMethod(),
                     params=md.makeCxxParams(paramsems='move', returnsems=returnsems,
                                             side=self.side, implicit=implicit),
                     ret=Type('mozilla::ipc::IPCResult'),
@@ -3131,27 +3350,32 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                     defaultRecv = MethodDefn(recvDecl)
                     defaultRecv.addstmt(StmtReturn(ExprCall(ExprVar('IPC_OK'))))
                     self.cls.addstmt(defaultRecv)
-                else:
+                elif (self.protocol.name, self.side) in VIRTUAL_CALL_CLASSES:
+                    # If we're using virtual calls, we need the methods to be
+                    # declared on the base class.
                     recvDecl.methodspec = MethodSpec.PURE
                     self.cls.addstmt(StmtDecl(recvDecl))
 
-        for md in p.messageDecls:
-            managed = md.decl.type.constructedType()
-            if not ptype.isManagerOf(managed) or md.decl.type.isDtor():
-                continue
+        # If we're using virtual calls, we need the methods to be declared on
+        # the base class.
+        if (self.protocol.name, self.side) in VIRTUAL_CALL_CLASSES:
+            for md in p.messageDecls:
+                managed = md.decl.type.constructedType()
+                if not ptype.isManagerOf(managed) or md.decl.type.isDtor():
+                    continue
 
-            # add the Alloc/Dealloc interface for managed actors
-            actortype = md.actorDecl().bareType(self.side)
+                # add the Alloc/Dealloc interface for managed actors
+                actortype = md.actorDecl().bareType(self.side)
 
-            self.cls.addstmt(StmtDecl(MethodDecl(
-                _allocMethod(managed, self.side).name,
-                params=md.makeCxxParams(side=self.side, implicit=False),
-                ret=actortype, methodspec=MethodSpec.PURE)))
+                self.cls.addstmt(StmtDecl(MethodDecl(
+                    _allocMethod(managed, self.side),
+                    params=md.makeCxxParams(side=self.side, implicit=False),
+                    ret=actortype, methodspec=MethodSpec.PURE)))
 
-            self.cls.addstmt(StmtDecl(MethodDecl(
-                _deallocMethod(managed, self.side).name,
-                params=[Decl(actortype, 'aActor')],
-                ret=Type.BOOL, methodspec=MethodSpec.PURE)))
+                self.cls.addstmt(StmtDecl(MethodDecl(
+                    _deallocMethod(managed, self.side),
+                    params=[Decl(actortype, 'aActor')],
+                    ret=Type.BOOL, methodspec=MethodSpec.PURE)))
 
         # ActorDestroy() method; default is no-op
         if self.side == 'parent':
@@ -3565,8 +3789,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
             foreachdealloc = forLoopOverHashtable(managedVar, itervar)
             foreachdealloc.addstmts([
-                StmtExpr(ExprCall(_deallocMethod(managed, self.side),
-                                  args=[actorFromIter(itervar)]))
+                StmtExpr(self.thisCall(_deallocMethod(managed, self.side),
+                                       [actorFromIter(itervar)]))
             ])
 
             block = StmtBlock()
@@ -3671,8 +3895,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                         "actor not managed by this!"),
                     Whitespace.NL,
                     StmtExpr(_callRemoveManagedActor(containervar, actorvar)),
-                    StmtExpr(ExprCall(_deallocMethod(manageeipdltype, self.side),
-                                      args=[actorvar])),
+                    StmtExpr(self.thisCall(_deallocMethod(manageeipdltype, self.side),
+                                           [actorvar])),
                     StmtReturn()
                 ])
                 switchontype.addcase(CaseLabel(_protocolId(manageeipdltype).name),
@@ -3720,6 +3944,27 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     # serialization/deserialization and dispatching handlers for
     # received messages.
     ##
+
+    def thisCall(self, function, args):
+        # If we're a direct call type, we cast `this` to the derived class
+        # before performing the call. Otherwise just emit the virtual call.
+        if (self.protocol.name, self.side) in VIRTUAL_CALL_CLASSES:
+            return ExprCall(ExprVar(function), args=args)
+
+        if (self.protocol.name, self.side) in DIRECT_CALL_OVERRIDES:
+            (class_name, _) = DIRECT_CALL_OVERRIDES[self.protocol.name, self.side]
+        else:
+            assert self.protocol.name.startswith("P")
+            class_name = "{}{}".format(self.protocol.name[1:], self.side.capitalize())
+        return ExprCall(
+            ExprSelect(
+                ExprCast(ExprVar("this"), Type(class_name, ptr=True), static=True),
+                "->",
+                ExprVar(function)
+            ),
+            args=args
+        )
+
     def visitMessageDecl(self, md):
         isctor = md.decl.type.isCtor()
         isdtor = md.decl.type.isDtor()
@@ -4041,13 +4286,6 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         case.addstmt(StmtReturn(_Result.Processed))
         return (lbl, case)
 
-    @staticmethod
-    def hasMoveableParams(md):
-        for param in md.decl.type.params:
-            if _cxxTypeCanMoveSend(param):
-                return True
-        return False
-
     def genAsyncSendMethod(self, md):
         method = MethodDefn(self.makeSendMethodDecl(md))
         msgvar, stmts = self.makeMessage(md, errfnSend)
@@ -4060,16 +4298,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                         + sendstmts
                         + [StmtReturn(retvar)])
 
-        if self.hasMoveableParams(md):
-            movemethod = MethodDefn(self.makeSendMethodDecl(md, paramsems='move'))
-            movemethod.addstmts(stmts
-                                + [Whitespace.NL]
-                                + self.genVerifyMessage(md.decl.type.verify, md.params,
-                                                        errfnSend, ExprVar('msg__'))
-                                + sendstmts
-                                + [StmtReturn(retvar)])
-        else:
-            movemethod = None
+        movemethod = None
 
         # Add the promise overload if we need one.
         if md.returns:
@@ -4108,21 +4337,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             + [Whitespace.NL,
                 StmtReturn.TRUE])
 
-        if self.hasMoveableParams(md):
-            movemethod = MethodDefn(self.makeSendMethodDecl(md, paramsems='move'))
-            movemethod.addstmts(
-                serstmts
-                + self.genVerifyMessage(md.decl.type.verify, md.params, errfnSend,
-                                        ExprVar('msg__'))
-                + [Whitespace.NL,
-                    StmtDecl(Decl(Type('Message'), replyvar.name))]
-                + sendstmts
-                + [failif]
-                + desstmts
-                + [Whitespace.NL,
-                    StmtReturn.TRUE])
-        else:
-            movemethod = None
+        movemethod = None
 
         return method, movemethod
 
@@ -4602,12 +4817,12 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
         args = [p.var() for p in md.params] + [resolvefn, rejectfn]
         stmts += [Whitespace.NL,
-                  StmtExpr(ExprCall(ExprVar(md.sendMethod().name), args=args)),
+                  StmtExpr(ExprCall(ExprVar(md.sendMethod()), args=args)),
                   StmtReturn(retpromise)]
         return stmts
 
     def callAllocActor(self, md, retsems, side):
-        return ExprCall(
+        return self.thisCall(
             _allocMethod(md.decl.type.constructedType(), side),
             args=md.makeCxxArgs(retsems=retsems, retcallsems='out',
                                 implicit=False))
@@ -4638,11 +4853,15 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         retsems = 'in'
         if md.decl.type.isAsync() and md.returns:
             retsems = 'resolver'
-        failif = StmtIf(ExprNot(
-            ExprCall(md.recvMethod(),
-                     args=md.makeCxxArgs(paramsems='move', retsems=retsems,
-                                         retcallsems='out',
-                                         implicit=implicit))))
+        failif = StmtIf(ExprNot(self.thisCall(
+            md.recvMethod(),
+            md.makeCxxArgs(
+                paramsems='move',
+                retsems=retsems,
+                retcallsems='out',
+                implicit=implicit
+            )
+        )))
         failif.addifstmts([
             _protocolErrorBreakpoint('Handler returned error code!'),
             Whitespace('// Error handled in mozilla::ipc::IPCResult\n', indent=True),
@@ -4669,7 +4888,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             returnsems = 'out'
             rettype = Type.BOOL
         decl = MethodDecl(
-            md.sendMethod().name,
+            md.sendMethod(),
             params=md.makeCxxParams(paramsems, returnsems=returnsems,
                                     side=self.side, implicit=implicit),
             warn_unused=(self.side == 'parent' and returnsems != 'callback'),
@@ -4773,16 +4992,22 @@ methodDefns."""
 
     for i, stmt in enumerate(cls.stmts):
         if isinstance(stmt, MethodDefn) and not stmt.decl.force_inline:
-            decl, defn = _splitMethodDefn(stmt, cls)
+            decl, defn = _splitMethodDeclDefn(stmt, cls)
             cls.stmts[i] = StmtDecl(decl)
-            defns.addstmts([defn, Whitespace.NL])
+            if defn:
+                defns.addstmts([defn, Whitespace.NL])
 
     return cls, defns
 
 
-def _splitMethodDefn(md, cls):
+def _splitMethodDeclDefn(md, cls):
+    # Pure methods have decls but no defns.
+    if md.decl.methodspec == MethodSpec.PURE:
+        return md.decl, None
+
     saveddecl = deepcopy(md.decl)
     md.decl.cls = cls
+    # Don't emit method specifiers on method defns.
     md.decl.methodspec = MethodSpec.NONE
     md.decl.warn_unused = False
     md.decl.only_for_definition = True

@@ -6,8 +6,8 @@
 
 this.EXPORTED_SYMBOLS = ["ExtensionStorageIDB"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/IndexedDB.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {IndexedDB} = ChromeUtils.import("resource://gre/modules/IndexedDB.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
@@ -288,16 +288,19 @@ class ExtensionStorageLocalIDB extends IndexedDB {
 
     const objectStore = this.objectStore(IDB_DATA_STORENAME, "readwrite");
 
+    let promises = [];
+
     for (let key of keys) {
-      let oldValue = await objectStore.get(key);
-      changes[key] = {oldValue};
-
-      if (oldValue) {
-        changed = true;
-      }
-
-      await objectStore.delete(key);
+      promises.push(objectStore.getKey(key).then(async foundKey => {
+        if (foundKey === key) {
+          changed = true;
+          changes[key] = {oldValue: await objectStore.get(key)};
+          return objectStore.delete(key);
+        }
+      }));
     }
+
+    await Promise.all(promises);
 
     return changed ? changes : null;
   }

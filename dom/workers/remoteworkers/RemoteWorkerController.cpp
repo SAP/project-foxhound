@@ -17,10 +17,10 @@ using namespace ipc;
 
 namespace dom {
 
-/* static */ already_AddRefed<RemoteWorkerController>
-RemoteWorkerController::Create(const RemoteWorkerData& aData,
-                               RemoteWorkerObserver* aObserver,
-                               base::ProcessId aProcessId) {
+/* static */
+already_AddRefed<RemoteWorkerController> RemoteWorkerController::Create(
+    const RemoteWorkerData& aData, RemoteWorkerObserver* aObserver,
+    base::ProcessId aProcessId) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aObserver);
@@ -217,6 +217,20 @@ void RemoteWorkerController::AddPortIdentifier(
 
   MOZ_ASSERT(mState == eReady);
   Unused << mActor->SendExecOp(RemoteWorkerPortIdentifierOp(aPortIdentifier));
+}
+
+void RemoteWorkerController::ForgetActorAndTerminate() {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  // The actor has been destroyed without a proper close() notification. Let's
+  // inform the observer.
+  if (mState == eReady) {
+    mObserver->Terminated();
+  }
+
+  mActor = nullptr;
+  Terminate();
 }
 
 void RemoteWorkerController::Terminate() {

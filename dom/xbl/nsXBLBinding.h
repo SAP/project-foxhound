@@ -97,8 +97,7 @@ class nsXBLBinding final {
   bool ImplementsInterface(REFNSIID aIID) const;
 
   void GenerateAnonymousContent();
-  void BindAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
-                            bool aNativeAnon);
+  void BindAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement);
   static void UnbindAnonymousContent(mozilla::dom::Document* aDocument,
                                      nsIContent* aAnonParent,
                                      bool aNullParent = true);
@@ -109,7 +108,6 @@ class nsXBLBinding final {
   void ExecuteDetachedHandler();
   void UnhookEventHandlers();
 
-  nsAtom* GetBaseTag(int32_t* aNameSpaceID);
   nsXBLBinding* RootBinding();
 
   // Resolve all the fields for this binding and all ancestor bindings on the
@@ -152,7 +150,6 @@ class nsXBLBinding final {
   // MEMBER VARIABLES
  protected:
   bool mMarkedForDeath;
-  bool mUsingContentXBLScope;
 
   nsXBLPrototypeBinding*
       mPrototypeBinding;  // Weak, but we're holding a ref to the docinfo

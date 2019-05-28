@@ -23,17 +23,14 @@ namespace layers {
 static StaticRefPtr<CompositorThreadHolder> sCompositorThreadHolder;
 static bool sFinishedCompositorShutDown = false;
 
-CompositorThreadHolder* GetCompositorThreadHolder() {
-  return sCompositorThreadHolder;
-}
-
 base::Thread* CompositorThread() {
   return sCompositorThreadHolder
              ? sCompositorThreadHolder->GetCompositorThread()
              : nullptr;
 }
 
-/* static */ MessageLoop* CompositorThreadHolder::Loop() {
+/* static */
+MessageLoop* CompositorThreadHolder::Loop() {
   return CompositorThread() ? CompositorThread()->message_loop() : nullptr;
 }
 
@@ -53,7 +50,8 @@ CompositorThreadHolder::~CompositorThreadHolder() {
   }
 }
 
-/* static */ void CompositorThreadHolder::DestroyCompositorThread(
+/* static */
+void CompositorThreadHolder::DestroyCompositorThread(
     base::Thread* aCompositorThread) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -139,7 +137,8 @@ void CompositorThreadHolder::Shutdown() {
   CompositorBridgeParent::FinishShutdown();
 }
 
-/* static */ bool CompositorThreadHolder::IsInCompositorThread() {
+/* static */
+bool CompositorThreadHolder::IsInCompositorThread() {
   return CompositorThread() &&
          CompositorThread()->thread_id() == PlatformThread::CurrentId();
 }

@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Selvä",
   "prefs_home_header": "Firefoxin aloitussivun sisältö",
   "prefs_home_description": "Valitse Firefoxin aloitussivulle haluamasi sisältö.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Firefoxin aloitussivu",
+  "prefs_content_discovery_description": "Firefoxin aloitussivun sisällön esittely näyttää laadukkaita ja olennaisia artikkeleita ympäri verkkoa.",
+  "prefs_content_discovery_button": "Poista sisällön esittely käytöstä",
   "prefs_section_rows_option": "{num} rivi;{num} riviä",
   "prefs_search_header": "Verkkohaku",
   "prefs_topsites_description": "Useimmin vierailemasi sivustot",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Tallenna tykkäämäsi tekstit Pocketiin ja ravitse mieltäsi kiinnostavilla teksteillä.",
   "highlights_empty_state": "Ala selata, niin tässä alkaa näkyä hyviä juttuja, videoita ja muita sivuja, joilla olet käynyt hiljattain tai jotka olet lisännyt kirjanmerkkeihin.",
   "topstories_empty_state": "Ei enempää suosituksia juuri nyt. Katso myöhemmin uudestaan lisää ykkösjuttuja lähteestä {provider}. Etkö malta odottaa? Valitse suosittu aihe ja löydä lisää hyviä juttuja ympäri verkkoa.",
-  "manual_migration_explanation2": "Kokeile Firefoxia toisesta selaimesta tuotujen kirjanmerkkien, historian ja salasanojen kanssa.",
-  "manual_migration_cancel_button": "Ei kiitos",
-  "manual_migration_import_button": "Tuo nyt",
   "error_fallback_default_info": "Hups, jotain meni vikaan tätä sisältöä ladattaessa.",
   "error_fallback_default_refresh_suggestion": "Yritä uudestaan päivittämällä sivu.",
   "section_menu_action_remove_section": "Poista osio",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Jatka",
   "firstrun_skip_login": "Ohita tämä vaihe",
   "context_menu_title": "Avaa valikko",
-  "pocket_learn_more": "Lue lisää"
+  "manual_migration_explanation2": "Kokeile Firefoxia toisesta selaimesta tuotujen kirjanmerkkien, historian ja salasanojen kanssa.",
+  "manual_migration_cancel_button": "Ei kiitos",
+  "manual_migration_import_button": "Tuo nyt"
 };

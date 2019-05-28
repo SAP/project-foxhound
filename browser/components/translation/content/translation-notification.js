@@ -15,7 +15,7 @@ class MozTranslationNotification extends MozElements.Notification {
             <description class="translation-welcome-headline" anonid="welcomeHeadline"/>
             <description class="translation-welcome-body" anonid="welcomeBody"/>
             <hbox align="center">
-              <label anonid="learnMore" class="plain text-link" onclick="openTrustedLinkIn('https://support.mozilla.org/kb/automatic-translation', 'tab'); this.parentNode.parentNode.parentNode.hidePopup();"/>
+              <label anonid="learnMore" class="plain" onclick="openTrustedLinkIn('https://support.mozilla.org/kb/automatic-translation', 'tab'); this.parentNode.parentNode.parentNode.hidePopup();" is="text-link"/>
               <spacer flex="1"/>
               <button class="translate-infobar-element" anonid="thanksButton" onclick="this.parentNode.parentNode.parentNode.hidePopup();"/>
             </hbox>
@@ -281,9 +281,9 @@ class MozTranslationNotification extends MozElements.Notification {
   optionsShowing() {
     // Get the source language name.
     let lang;
-    if (this.state == Translation.STATE_OFFER)
+    if (this.state == Translation.STATE_OFFER) {
       lang = this._getAnonElt("detectedLanguage").value;
-    else {
+    } else {
       lang = this._getAnonElt("fromLanguage").value;
 
       // If we have never attempted to translate the page before the

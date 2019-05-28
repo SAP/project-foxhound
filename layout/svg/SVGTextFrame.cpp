@@ -984,7 +984,7 @@ void TextRenderedRun::GetClipEdges(nscoord& aVisIStartEdge,
   // white space, as the nsTextFrame when painting does not include them when
   // interpreting clip edges.
   nsTextFrame::TrimmedOffsets trimmedOffsets =
-      mFrame->GetTrimmedOffsets(mFrame->GetContent()->GetText(), true);
+      mFrame->GetTrimmedOffsets(mFrame->GetContent()->GetText());
   TrimOffsets(frameOffset, frameLength, trimmedOffsets);
 
   // Convert the trimmed whole-nsTextFrame offset/length into skipped
@@ -1293,8 +1293,8 @@ class TextNodeCorrespondenceRecorder {
   uint32_t mNodeCharIndex;
 };
 
-/* static */ void TextNodeCorrespondenceRecorder::RecordCorrespondence(
-    SVGTextFrame* aRoot) {
+/* static */
+void TextNodeCorrespondenceRecorder::RecordCorrespondence(SVGTextFrame* aRoot) {
   if (aRoot->GetStateBits() & NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY) {
     // Resolve bidi so that continuation frames are created if necessary:
     aRoot->MaybeResolveBidiForAnonymousBlockChild();
@@ -1889,7 +1889,7 @@ TextRenderedRun TextRenderedRunIterator::Next() {
     uint32_t untrimmedOffset = offset;
     uint32_t untrimmedLength = length;
     nsTextFrame::TrimmedOffsets trimmedOffsets =
-        frame->GetTrimmedOffsets(frame->GetContent()->GetText(), true);
+        frame->GetTrimmedOffsets(frame->GetContent()->GetText());
     TrimOffsets(offset, length, trimmedOffsets);
     charIndex += offset - untrimmedOffset;
 
@@ -2371,7 +2371,8 @@ bool CharIterator::IsOriginalCharTrimmed() const {
     nsIContent* content = mFrameForTrimCheck->GetContent();
     nsTextFrame::TrimmedOffsets trim = mFrameForTrimCheck->GetTrimmedOffsets(
         content->GetText(),
-        /* aTrimAfter */ true, mPostReflow);
+        (mPostReflow ? nsTextFrame::TrimmedOffsetFlags::kDefaultTrimFlags
+                     : nsTextFrame::TrimmedOffsetFlags::kNotPostReflow));
     TrimOffsets(offset, length, trim);
     mTrimmedOffset = offset;
     mTrimmedLength = length;
@@ -2893,9 +2894,7 @@ void nsDisplaySVGText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
                  gfxMatrix::Translation(devPixelOffset);
 
   gfxContext* ctx = aCtx;
-  imgDrawingParams imgParams(aBuilder->ShouldSyncDecodeImages()
-                                 ? imgIContainer::FLAG_SYNC_DECODE
-                                 : imgIContainer::FLAG_SYNC_DECODE_IF_FAST);
+  imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
   static_cast<SVGTextFrame*>(mFrame)->PaintSVG(*ctx, tm, imgParams);
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, imgParams.result);
 }
@@ -2911,7 +2910,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
 // Implementation
 
 nsIFrame* NS_NewSVGTextFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) SVGTextFrame(aStyle);
+  return new (aPresShell) SVGTextFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(SVGTextFrame)
@@ -3016,8 +3015,7 @@ void SVGTextFrame::ReflowSVGNonDisplayText() {
   // element is within a <mask>, say, the element referencing the <mask> will
   // be updated, which will then cause this SVGTextFrame to be painted and
   // in doing so cause the anonymous block frame to be reflowed.
-  nsLayoutUtils::PostRestyleEvent(mContent->AsElement(), nsRestyleHint(0),
-                                  nsChangeHint_InvalidateRenderingObservers);
+  SVGObserverUtils::InvalidateRenderingObservers(this);
 
   // Finally, we need to actually reflow the anonymous block frame and update
   // mPositions, in case we are being reflowed immediately after a DOM
@@ -3520,7 +3518,7 @@ void SVGTextFrame::ReflowSVG() {
     // Due to rounding issues when we have a transform applied, we sometimes
     // don't include an additional row of pixels.  For now, just inflate our
     // covered region.
-    mRect.Inflate(presContext->AppUnitsPerDevPixel() / mLastContextScale);
+    mRect.Inflate(ceil(presContext->AppUnitsPerDevPixel() / mLastContextScale));
   }
 
   if (mState & NS_FRAME_FIRST_REFLOW) {
@@ -3821,10 +3819,9 @@ nsresult SVGTextFrame::GetSubStringLength(nsIContent* aContent,
     // Trim the offset/length to remove any leading/trailing white space.
     uint32_t trimmedOffset = untrimmedOffset;
     uint32_t trimmedLength = untrimmedLength;
-    nsTextFrame::TrimmedOffsets trimmedOffsets =
-        frame->GetTrimmedOffsets(frame->GetContent()->GetText(),
-                                 /* aTrimAfter */ true,
-                                 /* aPostReflow */ false);
+    nsTextFrame::TrimmedOffsets trimmedOffsets = frame->GetTrimmedOffsets(
+        frame->GetContent()->GetText(),
+        nsTextFrame::TrimmedOffsetFlags::kNotPostReflow);
     TrimOffsets(trimmedOffset, trimmedLength, trimmedOffsets);
 
     textElementCharIndex += trimmedOffset - untrimmedOffset;
@@ -4432,7 +4429,7 @@ void SVGTextFrame::DetermineCharPositions(nsTArray<nsPoint>& aPositions) {
 
     // Any white space characters trimmed at the start of the line of text.
     nsTextFrame::TrimmedOffsets trimmedOffsets =
-        frame->GetTrimmedOffsets(frame->GetContent()->GetText(), true);
+        frame->GetTrimmedOffsets(frame->GetContent()->GetText());
     while (it.GetOriginalOffset() < trimmedOffsets.mStart) {
       aPositions.AppendElement(position);
       it.AdvanceOriginal(1);
@@ -4547,8 +4544,7 @@ static void ShiftAnchoredChunk(nsTArray<CharPosition>& aCharPositions,
 }
 
 void SVGTextFrame::AdjustChunksForLineBreaks() {
-  nsBlockFrame* block =
-      nsLayoutUtils::GetAsBlock(PrincipalChildList().FirstChild());
+  nsBlockFrame* block = do_QueryFrame(PrincipalChildList().FirstChild());
   NS_ASSERTION(block, "expected block frame");
 
   nsBlockFrame::LineIterator line = block->LinesBegin();
@@ -5028,7 +5024,7 @@ void SVGTextFrame::NotifyGlyphMetricsChange() {
   // frame tree changes (i.e. after frame construction).
   AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
                NS_STATE_SVG_POSITIONING_DIRTY);
-  nsLayoutUtils::PostRestyleEvent(mContent->AsElement(), nsRestyleHint(0),
+  nsLayoutUtils::PostRestyleEvent(mContent->AsElement(), RestyleHint{0},
                                   nsChangeHint_InvalidateRenderingObservers);
   ScheduleReflowSVG();
 }
@@ -5223,11 +5219,11 @@ bool SVGTextFrame::UpdateFontSizeScaleFactor() {
     // We can't scale the font sizes so that all of the text frames lie
     // within our ideal font size range, so we treat the minimum as more
     // important and just scale so that minSize = CLAMP_MIN_SIZE.
-    mFontSizeScaleFactor = CLAMP_MIN_SIZE / minTextRunSize;
+    mFontSizeScaleFactor = CLAMP_MIN_SIZE / minSize;
   } else if (minTextRunSize < CLAMP_MIN_SIZE) {
-    mFontSizeScaleFactor = CLAMP_MIN_SIZE / minTextRunSize;
+    mFontSizeScaleFactor = CLAMP_MIN_SIZE / minSize;
   } else {
-    mFontSizeScaleFactor = CLAMP_MAX_SIZE / maxTextRunSize;
+    mFontSizeScaleFactor = CLAMP_MAX_SIZE / maxSize;
   }
 
   return mFontSizeScaleFactor != oldFontSizeScaleFactor;

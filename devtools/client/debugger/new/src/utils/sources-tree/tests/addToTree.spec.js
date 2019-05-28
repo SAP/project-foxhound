@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 /* eslint max-nested-callbacks: ["error", 4]*/
 
-import { createSource } from "../../../reducers/sources";
+import { makeMockSource } from "../../../utils/test-mockup";
 
 import {
   addToTree,
@@ -19,15 +21,15 @@ type RawSource = {| url: string, id: string |};
 
 function createSourcesMap(sources: RawSource[]) {
   const sourcesMap = sources.reduce((map, source) => {
-    map[source.id] = createSource(source);
+    map[source.id] = makeMockSource(source.url, source.id);
     return map;
   }, {});
 
   return sourcesMap;
 }
 
-function createSourcesList(sources) {
-  return sources.map((s, i) => createSource(s));
+function createSourcesList(sources: { url: string, id?: string }[]) {
+  return sources.map((s, i) => makeMockSource(s.url, s.id));
 }
 
 function getChildNode(tree, ...path) {
@@ -37,10 +39,7 @@ function getChildNode(tree, ...path) {
 describe("sources-tree", () => {
   describe("addToTree", () => {
     it("should provide node API", () => {
-      const source = createSource({
-        url: "http://example.com/a/b/c.js",
-        id: "actor1"
-      });
+      const source = makeMockSource("http://example.com/a/b/c.js", "actor1");
 
       const root = createDirectoryNode("root", "", [
         createSourceNode("foo", "/foo", source)
@@ -58,13 +57,13 @@ describe("sources-tree", () => {
     });
 
     it("builds a path-based tree", () => {
-      const source1 = createSource({
-        url: "http://example.com/foo/source1.js",
-        id: "actor1"
-      });
+      const source1 = makeMockSource(
+        "http://example.com/foo/source1.js",
+        "actor1"
+      );
       const tree = createDirectoryNode("root", "", []);
 
-      addToTree(tree, source1, "http://example.com/");
+      addToTree(tree, source1, "http://example.com/", "");
       expect(tree.contents).toHaveLength(1);
 
       const base = tree.contents[0];
@@ -83,14 +82,14 @@ describe("sources-tree", () => {
       const sourceName = // eslint-disable-next-line max-len
         "B9724220.131821496;dc_ver=42.111;sz=468x60;u_sd=2;dc_adk=2020465299;ord=a53rpc;dc_rfl=1,https%3A%2F%2Fdavidwalsh.name%2F$0;xdt=1";
 
-      const source1 = createSource({
-        url: `https://example.com/foo/${sourceName}`,
-        id: "actor1"
-      });
+      const source1 = makeMockSource(
+        `https://example.com/foo/${sourceName}`,
+        "actor1"
+      );
 
       const tree = createDirectoryNode("root", "", []);
 
-      addToTree(tree, source1, "http://example.com/");
+      addToTree(tree, source1, "http://example.com/", "");
       const childNode = getChildNode(tree, 0, 0, 0);
       expect(childNode.name).toEqual(sourceName);
       expect(formatTree(tree)).toMatchSnapshot();
@@ -99,14 +98,14 @@ describe("sources-tree", () => {
     it("name does not include query params", () => {
       const sourceName = "name.js?bar=3";
 
-      const source1 = createSource({
-        url: `https://example.com/foo/${sourceName}`,
-        id: "actor1"
-      });
+      const source1 = makeMockSource(
+        `https://example.com/foo/${sourceName}`,
+        "actor1"
+      );
 
       const tree = createDirectoryNode("root", "", []);
 
-      addToTree(tree, source1, "http://example.com/");
+      addToTree(tree, source1, "http://example.com/", "");
       expect(formatTree(tree)).toMatchSnapshot();
     });
 
@@ -125,7 +124,8 @@ describe("sources-tree", () => {
       const sourceMap = createSourcesMap(sources);
       const tree = createTree({
         sources: sourceMap,
-        debugeeURL: ""
+        debuggeeUrl: "",
+        projectRoot: ""
       }).sourceTree;
       // expect(tree.contents).toHaveLength(1);
       const subtree = tree.contents[0];
@@ -144,7 +144,8 @@ describe("sources-tree", () => {
       const sourceMap = createSourcesMap(sources);
       const tree = createTree({
         sources: sourceMap,
-        debugeeURL: ""
+        debuggeeUrl: "",
+        projectRoot: ""
       }).sourceTree;
       expect(formatTree(tree)).toMatchSnapshot();
     });
@@ -164,7 +165,8 @@ describe("sources-tree", () => {
       const sourceMap = createSourcesMap(sources);
       const tree = createTree({
         sources: sourceMap,
-        debugeeURL: ""
+        debuggeeUrl: "",
+        projectRoot: ""
       }).sourceTree;
       expect(tree.contents).toHaveLength(1);
       const subtree = tree.contents[0];
@@ -173,23 +175,20 @@ describe("sources-tree", () => {
     });
 
     it("excludes javascript: URLs from the tree", () => {
-      const source1 = createSource({
-        url: "javascript:alert('Hello World')",
-        id: "actor1"
-      });
-      const source2 = createSource({
-        url: "http://example.com/source1.js",
-        id: "actor2"
-      });
-      const source3 = createSource({
-        url: "javascript:let i = 10; while (i > 0) i--; console.log(i);",
-        id: "actor3"
-      });
+      const source1 = makeMockSource(
+        "javascript:alert('Hello World')",
+        "actor1"
+      );
+      const source2 = makeMockSource("http://example.com/source1.js", "actor2");
+      const source3 = makeMockSource(
+        "javascript:let i = 10; while (i > 0) i--; console.log(i);",
+        "actor3"
+      );
       const tree = createDirectoryNode("root", "", []);
 
-      addToTree(tree, source1, "http://example.com/");
-      addToTree(tree, source2, "http://example.com/");
-      addToTree(tree, source3, "http://example.com/");
+      addToTree(tree, source1, "http://example.com/", "");
+      addToTree(tree, source2, "http://example.com/", "");
+      addToTree(tree, source3, "http://example.com/", "");
 
       const base = tree.contents[0];
       expect(tree.contents).toHaveLength(1);
@@ -200,13 +199,10 @@ describe("sources-tree", () => {
     });
 
     it("correctly parses file sources", () => {
-      const source = createSource({
-        url: "file:///a/b.js",
-        id: "actor1"
-      });
+      const source = makeMockSource("file:///a/b.js", "actor1");
       const tree = createDirectoryNode("root", "", []);
 
-      addToTree(tree, source, "file:///a/index.html");
+      addToTree(tree, source, "file:///a/index.html", "");
       expect(tree.contents).toHaveLength(1);
 
       const base = tree.contents[0];
@@ -236,7 +232,9 @@ describe("sources-tree", () => {
 
       const sources = createSourcesList(testData);
       const tree = createDirectoryNode("root", "", []);
-      sources.forEach(source => addToTree(tree, source, "https://unpkg.com/"));
+      sources.forEach(source =>
+        addToTree(tree, source, "https://unpkg.com/", "")
+      );
       expect(formatTree(tree)).toMatchSnapshot();
     });
 
@@ -255,7 +253,9 @@ describe("sources-tree", () => {
 
       const sources = createSourcesList(testData);
       const tree = createDirectoryNode("root", "", []);
-      sources.forEach(source => addToTree(tree, source, "https://unpkg.com/"));
+      sources.forEach(source =>
+        addToTree(tree, source, "https://unpkg.com/", "")
+      );
       expect(formatTree(tree)).toMatchSnapshot();
     });
 
@@ -288,7 +288,7 @@ describe("sources-tree", () => {
       const domain = "http://localhost:4242";
       const sources = createSourcesList(testData);
       const tree = createDirectoryNode("root", "", []);
-      sources.forEach(source => addToTree(tree, source, domain));
+      sources.forEach(source => addToTree(tree, source, domain, ""));
       expect(formatTree(tree)).toMatchSnapshot();
     });
   });

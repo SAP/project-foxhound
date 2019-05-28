@@ -10,6 +10,8 @@ user_pref("browser.newtabpage.activity-stream.asrouter.providers.snippets", "[]"
 user_pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);
 user_pref("browser.newtabpage.activity-stream.feeds.snippets", false);
 user_pref("browser.newtabpage.activity-stream.tippyTop.service.endpoint", "");
+user_pref("browser.newtabpage.activity-stream.discoverystream.config", "[]");
+
 // For Activity Stream firstrun page, use an empty string to avoid fetching.
 user_pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "");
 // Background thumbnails in particular cause grief, and disabling thumbnails
@@ -20,9 +22,6 @@ user_pref("browser.pagethumbnails.capturing_disabled", true);
 user_pref("browser.search.region", "US");
 // This will prevent HTTP requests for region defaults.
 user_pref("browser.search.geoSpecificDefaults", false);
-// Disable android snippets
-user_pref("browser.snippets.enabled", false);
-user_pref("browser.snippets.syncPromo.enabled", false);
 // Disable webapp updates.  Yes, it is supposed to be an integer.
 user_pref("browser.webapps.checkForUpdates", 0);
 // We do not wish to display datareporting policy notifications as it might
@@ -44,6 +43,8 @@ user_pref("general.useragent.updates.enabled", false);
 user_pref("gfx.webrender.all.qualified", false);
 user_pref("hangmonitor.timeout", 0); // no hang monitor
 user_pref("media.gmp-manager.updateEnabled", false);
+// Don't do network connections for mitm priming
+user_pref("security.certerrors.mitm.priming.enabled", false);
 // Make enablePrivilege continue to work for test code. :-(
 user_pref("security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true);
 user_pref("xpinstall.signatures.required", false);
@@ -56,3 +57,4 @@ user_pref("media.autoplay.ask-permission", false);
 user_pref("media.autoplay.block-webaudio", false);
 user_pref("media.allowed-to-play.enabled", true);
 user_pref("toolkit.telemetry.coverage.endpoint.base", "http://localhost");
+user_pref("layout.css.moz-binding.content.enabled", true); // Le sad

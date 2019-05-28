@@ -1,11 +1,7 @@
 "use strict";
 
-/* global sinon, UIState */
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js");
-
-registerCleanupFunction(function() {
-  delete window.sinon;
-});
+const {sinon} = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+/* global UIState */
 
 const lastModifiedFixture = 1507655615.87; // Approx Oct 10th 2017
 const mockTargets = [
@@ -88,6 +84,58 @@ add_task(async function bookmark() {
     hiddenPromise = promisePageActionPanelHidden();
     BrowserPageActions.panelNode.hidePopup();
     await hiddenPromise;
+  });
+});
+
+add_task(async function pinTabFromPanel() {
+  // Open an actionable page so that the main page action button appears.  (It
+  // does not appear on about:blank for example.)
+  let url = "http://example.com/";
+  await BrowserTestUtils.withNewTab(url, async () => {
+    // Open the panel and click Pin Tab.
+    await promisePageActionPanelOpen();
+
+    let pinTabButton = document.getElementById("pageAction-panel-pinTab");
+    Assert.equal(pinTabButton.label, "Pin Tab");
+    let hiddenPromise = promisePageActionPanelHidden();
+    EventUtils.synthesizeMouseAtCenter(pinTabButton, {});
+    await hiddenPromise;
+
+    Assert.ok(gBrowser.selectedTab.pinned, "Tab was pinned");
+
+    // Open the panel and click Unpin Tab.
+    Assert.equal(pinTabButton.label, "Unpin Tab");
+    await promisePageActionPanelOpen();
+
+    hiddenPromise = promisePageActionPanelHidden();
+    EventUtils.synthesizeMouseAtCenter(pinTabButton, {});
+    await hiddenPromise;
+
+    Assert.ok(!gBrowser.selectedTab.pinned, "Tab was unpinned");
+  });
+});
+
+
+add_task(async function pinTabFromURLBar() {
+  // Open an actionable page so that the main page action button appears.  (It
+  // does not appear on about:blank for example.)
+  let url = "http://example.com/";
+  await BrowserTestUtils.withNewTab(url, async () => {
+    // Add action to URL bar.
+    let action = PageActions._builtInActions.find(a => a.id == "pinTab");
+    action.pinnedToUrlbar = true;
+    registerCleanupFunction(() => action.pinnedToUrlbar = false);
+
+    // Click the Pin Tab button.
+    let pinTabButton = document.getElementById("pageAction-urlbar-pinTab");
+    EventUtils.synthesizeMouseAtCenter(pinTabButton, {});
+    await BrowserTestUtils.waitForCondition(() => gBrowser.selectedTab.pinned,
+      "Tab was pinned");
+
+    // Click the Unpin Tab button
+    EventUtils.synthesizeMouseAtCenter(pinTabButton, {});
+    await BrowserTestUtils.waitForCondition(() => !gBrowser.selectedTab.pinned,
+      "Tab was unpinned");
   });
 });
 
@@ -203,7 +251,7 @@ add_task(async function sendToDevice_syncNotReady_other_states() {
   // Open a tab that's sendable.
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     await promiseSyncReady();
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     sandbox.stub(gSync, "syncReady").get(() => false);
     sandbox.stub(UIState, "get").returns({ status: UIState.STATUS_NOT_VERIFIED });
     sandbox.stub(gSync, "isSendableURI").returns(true);
@@ -259,7 +307,7 @@ add_task(async function sendToDevice_syncNotReady_configured() {
   // Open a tab that's sendable.
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     await promiseSyncReady();
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     const syncReady = sandbox.stub(gSync, "syncReady").get(() => false);
     const hasSyncedThisSession = sandbox.stub(Weave.Service.clientsEngine, "hasSyncedThisSession").get(() => false);
     sandbox.stub(UIState, "get").returns({ status: UIState.STATUS_SIGNED_IN });
@@ -403,7 +451,7 @@ add_task(async function sendToDevice_noDevices() {
   // Open a tab that's sendable.
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     await promiseSyncReady();
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     sandbox.stub(gSync, "syncReady").get(() => true);
     sandbox.stub(Weave.Service.clientsEngine, "hasSyncedThisSession").get(() => true);
     sandbox.stub(Weave.Service.clientsEngine, "fxaDevices").get(() => []);
@@ -469,7 +517,7 @@ add_task(async function sendToDevice_devices() {
   // Open a tab that's sendable.
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     await promiseSyncReady();
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     sandbox.stub(gSync, "syncReady").get(() => true);
     sandbox.stub(Weave.Service.clientsEngine, "hasSyncedThisSession").get(() => true);
     sandbox.stub(UIState, "get").returns({ status: UIState.STATUS_SIGNED_IN });
@@ -535,7 +583,7 @@ add_task(async function sendToDevice_title() {
   await BrowserTestUtils.withNewTab("http://example.com/a", async otherBrowser => {
     await BrowserTestUtils.withNewTab("http://example.com/b", async () => {
       await promiseSyncReady();
-      const sandbox = sinon.sandbox.create();
+      const sandbox = sinon.createSandbox();
       sandbox.stub(gSync, "syncReady").get(() => true);
       sandbox.stub(Weave.Service.clientsEngine, "hasSyncedThisSession").get(() => true);
       sandbox.stub(UIState, "get").returns({ status: UIState.STATUS_SIGNED_IN });
@@ -592,7 +640,7 @@ add_task(async function sendToDevice_inUrlbar() {
   // Open a tab that's sendable.
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     await promiseSyncReady();
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     sandbox.stub(gSync, "syncReady").get(() => true);
     sandbox.stub(Weave.Service.clientsEngine, "hasSyncedThisSession").get(() => true);
     sandbox.stub(UIState, "get").returns({ status: UIState.STATUS_SIGNED_IN });
@@ -796,7 +844,7 @@ add_task(async function contextMenu() {
   // urlbar tests that run after this one can break if the mouse is left over
   // the area where the urlbar popup appears, which seems to happen due to the
   // above synthesized mouse events.  Move it over the urlbar.
-  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mousemove" });
+  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, { type: "mousemove" });
   gURLBar.focus();
 });
 

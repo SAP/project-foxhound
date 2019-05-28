@@ -42,6 +42,7 @@ function ReplayDebugger() {
 
   // We should have been connected to control.js by the call above.
   assert(this._control);
+  assert(this._searchControl);
 
   // Preferred direction of travel when not explicitly resumed.
   this._direction = Direction.NONE;
@@ -74,6 +75,9 @@ function ReplayDebugger() {
 
   // After we are done pausing, callback describing how to resume.
   this._resumeCallback = null;
+
+  // Information about all searches that exist.
+  this._searches = [];
 
   // Handler called when hitting the beginning/end of the recording, or when
   // a time warp target has been reached.
@@ -349,6 +353,65 @@ ReplayDebugger.prototype = {
   },
 
   /////////////////////////////////////////////////////////
+  // Search management
+  /////////////////////////////////////////////////////////
+
+  _forEachSearch(callback) {
+    for (const { position } of this._searches) {
+      callback(position);
+    }
+  },
+
+  _virtualConsoleLog(position, text, condition, callback) {
+    this._searches.push({ position, text, condition, callback, results: [] });
+    this._searchControl.reset();
+  },
+
+  _evaluateVirtualConsoleLog(search) {
+    const frameData = this._searchControl.sendRequest({
+      type: "getFrame",
+      index: NewestFrameIndex,
+    });
+    if (!("index" in frameData)) {
+      return null;
+    }
+    if (search.condition) {
+      const rv = this._searchControl.sendRequest({
+        type: "frameEvaluate",
+        index: frameData.index,
+        text: search.condition,
+        convertOptions: { snapshot: true },
+      });
+      const crv = this._convertCompletionValue(rv);
+      if ("return" in crv && !crv.return) {
+        return null;
+      }
+    }
+    const rv = this._searchControl.sendRequest({
+      type: "frameEvaluate",
+      index: frameData.index,
+      text: search.text,
+      convertOptions: { snapshot: true },
+    });
+    return this._convertCompletionValue(rv);
+  },
+
+  _onSearchPause(point) {
+    for (const search of this._searches) {
+      if (RecordReplayControl.positionSubsumes(search.position, point.position)) {
+        if (!search.results.some(existing => point.progress == existing.progress)) {
+          search.results.push(point);
+
+          const evaluateResult = this._evaluateVirtualConsoleLog(search);
+          if (evaluateResult) {
+            search.callback(point, evaluateResult);
+          }
+        }
+      }
+    }
+  },
+
+  /////////////////////////////////////////////////////////
   // Breakpoint management
   /////////////////////////////////////////////////////////
 
@@ -481,19 +544,21 @@ ReplayDebugger.prototype = {
     return data.map(source => this._addSource(source));
   },
 
+  adoptSource(source) {
+    assert(source._dbg == this);
+    return source;
+  },
+
   /////////////////////////////////////////////////////////
   // Object methods
   /////////////////////////////////////////////////////////
 
-  // Objects which |forConsole| is set are objects that were logged in console
-  // messages, and had their properties recorded so that they can be inspected
-  // without switching to a replaying child.
-  _getObject(id, forConsole) {
+  _getObject(id) {
     if (id && !this._objects[id]) {
       const data = this._sendRequest({ type: "getObject", id });
       switch (data.kind) {
       case "Object":
-        this._objects[id] = new ReplayDebuggerObject(this, data, forConsole);
+        this._objects[id] = new ReplayDebuggerObject(this, data);
         break;
       case "Environment":
         this._objects[id] = new ReplayDebuggerEnvironment(this, data);
@@ -502,25 +567,24 @@ ReplayDebugger.prototype = {
         ThrowError("Unknown object kind");
       }
     }
-    const rv = this._objects[id];
-    if (forConsole) {
-      rv._forConsole = true;
-    }
-    return rv;
+    return this._objects[id];
   },
 
-  _convertValue(value, forConsole) {
+  // Convert a value we received from the child.
+  _convertValue(value) {
     if (isNonNullObject(value)) {
       if (value.object) {
-        return this._getObject(value.object, forConsole);
-      } else if (value.special == "undefined") {
-        return undefined;
-      } else if (value.special == "NaN") {
-        return NaN;
-      } else if (value.special == "Infinity") {
-        return Infinity;
-      } else if (value.special == "-Infinity") {
-        return -Infinity;
+        return this._getObject(value.object);
+      }
+      if (value.snapshot) {
+        return new ReplayDebuggerObjectSnapshot(this, value.snapshot);
+      }
+      switch (value.special) {
+      case "undefined": return undefined;
+      case "Infinity": return Infinity;
+      case "-Infinity": return -Infinity;
+      case "NaN": return NaN;
+      case "0": return -0;
       }
     }
     return value;
@@ -535,6 +599,21 @@ ReplayDebugger.prototype = {
     }
     ThrowError("Unexpected completion value");
     return null; // For eslint
+  },
+
+  // Convert a value for sending to the child.
+  _convertValueForChild(value) {
+    if (isNonNullObject(value)) {
+      assert(value instanceof ReplayDebuggerObject);
+      return { object: value._data.id };
+    } else if (value === undefined ||
+               value == Infinity ||
+               value == -Infinity ||
+               Object.is(value, NaN) ||
+               Object.is(value, -0)) {
+      return { special: "" + value };
+    }
+    return value;
   },
 
   /////////////////////////////////////////////////////////
@@ -581,8 +660,7 @@ ReplayDebugger.prototype = {
     // other contents of the message can be left alone.
     if (message.messageType == "ConsoleAPI" && message.arguments) {
       for (let i = 0; i < message.arguments.length; i++) {
-        message.arguments[i] = this._convertValue(message.arguments[i],
-                                                  /* forConsole = */ true);
+        message.arguments[i] = this._convertValue(message.arguments[i]);
       }
     }
     return message;
@@ -662,6 +740,7 @@ ReplayDebuggerScript.prototype = {
   get format() { return this._data.format; },
 
   _forward(type, value) {
+    this._dbg._ensurePaused();
     return this._dbg._sendRequest({ type, id: this._data.id, value });
   },
 
@@ -670,6 +749,13 @@ ReplayDebuggerScript.prototype = {
   getSuccessorOffsets(pc) { return this._forward("getSuccessorOffsets", pc); },
   getPredecessorOffsets(pc) { return this._forward("getPredecessorOffsets", pc); },
   getAllColumnOffsets() { return this._forward("getAllColumnOffsets"); },
+  getOffsetMetadata(pc) { return this._forward("getOffsetMetadata", pc); },
+  getPossibleBreakpoints(query) {
+    return this._forward("getPossibleBreakpoints", query);
+  },
+  getPossibleBreakpointOffsets(query) {
+    return this._forward("getPossibleBreakpointOffsets", query);
+  },
 
   setBreakpoint(offset, handler) {
     this._dbg._setBreakpoint(() => { handler.hit(this._dbg.getNewestFrame()); },
@@ -681,6 +767,11 @@ ReplayDebuggerScript.prototype = {
     this._dbg._clearMatchingBreakpoints(({position, data}) => {
       return position.script == this._data.id && handler == data;
     });
+  },
+
+  replayVirtualConsoleLog(offset, text, condition, callback) {
+    this._dbg._virtualConsoleLog({ kind: "Break", script: this._data.id, offset },
+                                 text, condition, callback);
   },
 
   get isGeneratorFunction() { NYI(); },
@@ -823,17 +914,18 @@ ReplayDebuggerFrame.prototype = {
 // ReplayDebuggerObject
 ///////////////////////////////////////////////////////////////////////////////
 
-function ReplayDebuggerObject(dbg, data, forConsole) {
+function ReplayDebuggerObject(dbg, data) {
   this._dbg = dbg;
   this._data = data;
-  this._forConsole = forConsole;
   this._properties = null;
+  this._proxyData = null;
 }
 
 ReplayDebuggerObject.prototype = {
   _invalidate() {
     this._data = null;
     this._properties = null;
+    this._proxyData = null;
   },
 
   get callable() { return this._data.callable; },
@@ -852,18 +944,11 @@ ReplayDebuggerObject.prototype = {
   get boundArguments() { return this.isBoundFunction ? NYI() : undefined; },
   get global() { return this._dbg._getObject(this._data.global); },
   get isProxy() { return this._data.isProxy; },
+  get proto() { return this._dbg._getObject(this._data.proto); },
 
   isExtensible() { return this._data.isExtensible; },
   isSealed() { return this._data.isSealed; },
   isFrozen() { return this._data.isFrozen; },
-  unwrap() { return this.isProxy ? NYI() : this; },
-
-  get proto() {
-    // Don't allow inspection of the prototypes of objects logged to the
-    // console. This is a hack that prevents the object inspector from crawling
-    // the object's prototype chain.
-    return this._forConsole ? null : this._dbg._getObject(this._data.proto);
-  },
 
   unsafeDereference() {
     // Direct access to the referent is not currently available.
@@ -883,16 +968,15 @@ ReplayDebuggerObject.prototype = {
   getOwnPropertyDescriptor(name) {
     this._ensureProperties();
     const desc = this._properties[name];
-    return desc ? this._convertPropertyDescriptor(desc) : null;
+    return desc ? this._convertPropertyDescriptor(desc) : undefined;
   },
 
   _ensureProperties() {
     if (!this._properties) {
       const id = this._data.id;
-      const properties = this._forConsole
-        ? this._dbg._sendRequest({ type: "getObjectPropertiesForConsole", id })
-        : this._dbg._sendRequestAllowDiverge({ type: "getObjectProperties", id });
-      this._properties = {};
+      const properties =
+        this._dbg._sendRequestAllowDiverge({ type: "getObjectProperties", id });
+      this._properties = Object.create(null);
       properties.forEach(({name, desc}) => { this._properties[name] = desc; });
     }
   },
@@ -911,16 +995,60 @@ ReplayDebuggerObject.prototype = {
     return rv;
   },
 
+  _ensureProxyData() {
+    if (!this._proxyData) {
+      const data = this._dbg._sendRequestAllowDiverge({
+        type: "objectProxyData",
+        id: this._data.id,
+      });
+      if (data.exception) {
+        throw new Error(data.exception);
+      }
+      this._proxyData = data;
+    }
+  },
+
+  unwrap() {
+    if (!this.isProxy) {
+      return this;
+    }
+    this._ensureProxyData();
+    return this._dbg._convertValue(this._proxyData.unwrapped);
+  },
+
+  get proxyTarget() {
+    this._ensureProxyData();
+    return this._dbg._convertValue(this._proxyData.target);
+  },
+
+  get proxyHandler() {
+    this._ensureProxyData();
+    return this._dbg._convertValue(this._proxyData.handler);
+  },
+
+  call(thisv, ...args) {
+    return this.apply(thisv, args);
+  },
+
+  apply(thisv, args) {
+    thisv = this._dbg._convertValueForChild(thisv);
+    args = (args || []).map(v => this._dbg._convertValueForChild(v));
+
+    const rv = this._dbg._sendRequestAllowDiverge({
+      type: "objectApply",
+      id: this._data.id,
+      thisv,
+      args,
+    });
+    return this._dbg._convertCompletionValue(rv);
+  },
+
   get allocationSite() { NYI(); },
   get errorMessageName() { NYI(); },
   get errorNotes() { NYI(); },
   get errorLineNumber() { NYI(); },
   get errorColumnNumber() { NYI(); },
-  get proxyTarget() { NYI(); },
-  get proxyHandler() { NYI(); },
   get isPromise() { NYI(); },
-  call: NYI,
-  apply: NYI,
   asEnvironment: NYI,
   executeInGlobal: NYI,
   executeInGlobalWithBindings: NYI,
@@ -934,6 +1062,23 @@ ReplayDebuggerObject.prototype = {
   deleteProperty: NotAllowed,
   forceLexicalInitializationByName: NotAllowed,
 };
+
+///////////////////////////////////////////////////////////////////////////////
+// ReplayDebuggerObjectSnapshot
+///////////////////////////////////////////////////////////////////////////////
+
+// Create an object based on snapshot data which can be consulted without
+// communicating with the child process. This uses data provided by the child
+// process in the same format as for normal ReplayDebuggerObjects, except that
+// it does not contain references to any other objects.
+function ReplayDebuggerObjectSnapshot(dbg, data) {
+  this._dbg = dbg;
+  this._data = data;
+  this._properties = Object.create(null);
+  data.properties.forEach(({name, desc}) => { this._properties[name] = desc; });
+}
+
+ReplayDebuggerObjectSnapshot.prototype = ReplayDebuggerObject.prototype;
 
 ///////////////////////////////////////////////////////////////////////////////
 // ReplayDebuggerEnvironment

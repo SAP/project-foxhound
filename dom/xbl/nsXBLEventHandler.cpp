@@ -38,7 +38,8 @@ nsXBLEventHandler::HandleEvent(Event* aEvent) {
 
   if (!EventMatched(aEvent)) return NS_OK;
 
-  mProtoHandler->ExecuteHandler(aEvent->GetCurrentTarget(), aEvent);
+  RefPtr<EventTarget> currentTarget = aEvent->GetCurrentTarget();
+  mProtoHandler->ExecuteHandler(currentTarget, aEvent);
 
   return NS_OK;
 }
@@ -58,8 +59,7 @@ nsXBLKeyEventHandler::nsXBLKeyEventHandler(nsAtom* aEventType, uint8_t aPhase,
     : mEventType(aEventType),
       mPhase(aPhase),
       mType(aType),
-      mIsBoundToChrome(false),
-      mUsingContentXBLScope(false) {}
+      mIsBoundToChrome(false) {}
 
 nsXBLKeyEventHandler::~nsXBLKeyEventHandler() {}
 
@@ -77,8 +77,7 @@ bool nsXBLKeyEventHandler::ExecuteMatchedHandlers(
     bool hasAllowUntrustedAttr = handler->HasAllowUntrustedAttr();
     if ((event->IsTrusted() ||
          (hasAllowUntrustedAttr && handler->AllowUntrustedEvents()) ||
-         (!hasAllowUntrustedAttr && !mIsBoundToChrome &&
-          !mUsingContentXBLScope)) &&
+         (!hasAllowUntrustedAttr && !mIsBoundToChrome)) &&
         handler->KeyEventMatched(aKeyEvent, aCharCode, aIgnoreModifierState)) {
       handler->ExecuteHandler(target, aKeyEvent);
       executed = true;

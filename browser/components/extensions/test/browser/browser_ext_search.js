@@ -2,8 +2,12 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+
 const SEARCH_TERM = "test";
 const SEARCH_URL = "https://localhost/?q={searchTerms}";
+
+AddonTestUtils.initMochitest(this);
 
 add_task(async function test_search() {
   async function background(SEARCH_TERM) {
@@ -35,7 +39,7 @@ add_task(async function test_search() {
     browser.test.sendMessage("searchLoaded", result.url);
 
     // Search with tabId
-    let tab = await browser.tabs.create({});
+    let tab = await browser.tabs.create({url: "about:blank"});
     browser.search.search({query: SEARCH_TERM + "2", engine: "Search Test",
                            tabId: tab.id});
     result = await awaitSearchResult();
@@ -57,13 +61,14 @@ add_task(async function test_search() {
     useAddonManager: "temporary",
   });
   await extension.startup();
+  await AddonTestUtils.waitForSearchProviderStartup(extension);
 
   let addonEngines = await extension.awaitMessage("engines");
-  let engines = Services.search.getEngines().filter(engine => !engine.hidden);
+  let engines = (await Services.search.getEngines()).filter(engine => !engine.hidden);
   is(addonEngines.length, engines.length, "Engine lengths are the same.");
   let defaultEngine = addonEngines.filter(engine => engine.isDefault === true);
   is(defaultEngine.length, 1, "One default engine");
-  is(defaultEngine[0].name, Services.search.defaultEngine.name, "Default engine is correct");
+  is(defaultEngine[0].name, (await Services.search.getDefault()).name, "Default engine is correct");
 
   let url = await extension.awaitMessage("searchLoaded");
   is(url, SEARCH_URL.replace("{searchTerms}", SEARCH_TERM + "1"), "Loaded page matches search");

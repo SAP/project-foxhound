@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "OK, e mora vesh",
   "prefs_home_header": "Lëndë Firefox Home",
   "prefs_home_description": "Zgjidhni ç’lëndë doni në skenën tuaj Firefox.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Kreu i Firefox-it",
+  "prefs_content_discovery_description": "Zbulimi i Lëndës në Kreun e Firefox-it ju lejon të zbuloni në internet artikuj të cilësisë së lartë, dhe afër interesave tuaja.",
+  "prefs_content_discovery_button": "Çaktivizoje Zbulimin e Lëndës",
   "prefs_section_rows_option": "{num} rresht;{num} rreshta",
   "prefs_search_header": "Kërkim Web",
   "prefs_topsites_description": "Sajtet që vizitoni më tepër",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Ruajini në Pocket shkrimet që doni, dhe ushqejeni mendjen me lexime të mahnitshme.",
   "highlights_empty_state": "Filloni shfletimin, dhe do t'ju shfaqim disa nga artikujt, videot dhe të tjera faqe interesante që keni vizituar apo faqerojtur këtu kohët e fundit.",
   "topstories_empty_state": "Gjithë ç’kish, e dini. Rikontrolloni më vonë për më tepër histori nga {provider}. S’pritni dot? Përzgjidhni një temë popullore që të gjenden në internet më tepër histori të goditura.",
-  "manual_migration_explanation2": "Provojeni Firefox-in me faqerojtës, historik dhe fjalëkalime nga një tjetër shfletues.",
-  "manual_migration_cancel_button": "Jo, Faleminderit",
-  "manual_migration_import_button": "Importoje Tani",
   "error_fallback_default_info": "Hëm, diç shkoi ters në ngarkimin e kësaj lënde.",
   "error_fallback_default_refresh_suggestion": "Rifreskoni faqen që të riprovohet.",
   "section_menu_action_remove_section": "Hiqe Ndarjen",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Vazhdo",
   "firstrun_skip_login": "Anashkalojeni këtë hap",
   "context_menu_title": "Hape menunë",
-  "pocket_learn_more": "Mësoni Më Tepër"
+  "manual_migration_explanation2": "Provojeni Firefox-in me faqerojtës, historik dhe fjalëkalime nga një tjetër shfletues.",
+  "manual_migration_cancel_button": "Jo, Faleminderit",
+  "manual_migration_import_button": "Importoje Tani"
 };

@@ -51,7 +51,7 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/CompositorVsyncScheduler.h"
-#include "mozilla/layers/CrossProcessCompositorBridgeParent.h"
+#include "mozilla/layers/ContentCompositorBridgeParent.h"
 #include "mozilla/layers/FrameUniformityData.h"
 #include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/layers/LayerManagerComposite.h"
@@ -222,7 +222,7 @@ CompositorBridgeParent::LayerTreeState::LayerTreeState()
     : mApzcTreeManagerParent(nullptr),
       mParent(nullptr),
       mLayerManager(nullptr),
-      mCrossProcessParent(nullptr),
+      mContentCompositorBridgeParent(nullptr),
       mLayerTree(nullptr),
       mUpdatedPluginDataAvailable(false) {}
 
@@ -874,7 +874,8 @@ void CompositorBridgeParent::ScheduleComposition() {
 
 // Go down the composite layer tree, setting properties to match their
 // content-side counterparts.
-/* static */ void CompositorBridgeParent::SetShadowProperties(Layer* aLayer) {
+/* static */
+void CompositorBridgeParent::SetShadowProperties(Layer* aLayer) {
   ForEachNode<ForwardIterator>(aLayer, [](Layer* layer) {
     if (Layer* maskLayer = layer->GetMaskLayer()) {
       SetShadowProperties(maskLayer);
@@ -1167,7 +1168,8 @@ CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
   return sIndirectLayerTrees[aLayersId].mParent;
 }
 
-/*static*/ RefPtr<CompositorBridgeParent>
+/*static*/
+RefPtr<CompositorBridgeParent>
 CompositorBridgeParent::GetCompositorBridgeParentFromWindowId(
     const wr::WindowId& aWindowId) {
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
@@ -1650,7 +1652,7 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
   RefPtr<APZUpdater> oldApzUpdater;
   APZCTreeManagerParent* parent;
   bool scheduleComposition = false;
-  RefPtr<CrossProcessCompositorBridgeParent> cpcp;
+  RefPtr<ContentCompositorBridgeParent> cpcp;
   RefPtr<WebRenderBridgeParent> childWrBridge;
 
   {  // scope lock
@@ -1678,7 +1680,7 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
     }
     if (mWrBridge) {
       childWrBridge = sIndirectLayerTrees[child].mWrBridge;
-      cpcp = sIndirectLayerTrees[child].mCrossProcessParent;
+      cpcp = sIndirectLayerTrees[child].mContentCompositorBridgeParent;
     }
     parent = sIndirectLayerTrees[child].mApzcTreeManagerParent;
   }
@@ -1731,6 +1733,12 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
   MOZ_ASSERT(!mCompositor);
   MOZ_ASSERT(!mCompositorScheduler);
   MOZ_ASSERT(mWidget);
+
+#ifdef XP_WIN
+  if (mWidget && DeviceManagerDx::Get()->CanUseDComp()) {
+    mWidget->AsWindows()->EnsureCompositorWindow();
+  }
+#endif
 
   RefPtr<widget::CompositorWidget> widget = mWidget;
   wr::WrWindowId windowId = wr::NewWindowId();
@@ -1818,7 +1826,7 @@ Maybe<TimeStamp> CompositorBridgeParent::GetTestingTimeStamp() const {
   return mTestTime;
 }
 
-void EraseLayerState(LayersId aId) {
+static void EraseLayerState(LayersId aId) {
   RefPtr<APZUpdater> apz;
 
   {  // scope lock
@@ -1838,7 +1846,8 @@ void EraseLayerState(LayersId aId) {
   }
 }
 
-/*static*/ void CompositorBridgeParent::DeallocateLayerTreeId(LayersId aId) {
+/*static*/
+void CompositorBridgeParent::DeallocateLayerTreeId(LayersId aId) {
   MOZ_ASSERT(NS_IsMainThread());
   // Here main thread notifies compositor to remove an element from
   // sIndirectLayerTrees. This removed element might be queried soon.
@@ -1874,7 +1883,8 @@ ScopedLayerTreeRegistration::~ScopedLayerTreeRegistration() {
   sIndirectLayerTrees.erase(mLayersId);
 }
 
-/*static*/ void CompositorBridgeParent::SetControllerForLayerTree(
+/*static*/
+void CompositorBridgeParent::SetControllerForLayerTree(
     LayersId aLayersId, GeckoContentController* aController) {
   // This ref is adopted by UpdateControllerForLayersId().
   aController->AddRef();
@@ -1883,8 +1893,9 @@ ScopedLayerTreeRegistration::~ScopedLayerTreeRegistration() {
       aLayersId, aController));
 }
 
-/*static*/ already_AddRefed<IAPZCTreeManager>
-CompositorBridgeParent::GetAPZCTreeManager(LayersId aLayersId) {
+/*static*/
+already_AddRefed<IAPZCTreeManager> CompositorBridgeParent::GetAPZCTreeManager(
+    LayersId aLayersId) {
   EnsureLayerTreeMapReady();
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   LayerTreeMap::iterator cit = sIndirectLayerTrees.find(aLayersId);
@@ -1902,14 +1913,14 @@ CompositorBridgeParent::GetAPZCTreeManager(LayersId aLayersId) {
 static void InsertVsyncProfilerMarker(TimeStamp aVsyncTimestamp) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   if (profiler_thread_is_being_profiled()) {
-    profiler_add_marker("VsyncTimestamp",
-                        js::ProfilingStackFrame::Category::GRAPHICS,
+    profiler_add_marker("VsyncTimestamp", JS::ProfilingCategoryPair::GRAPHICS,
                         MakeUnique<VsyncMarkerPayload>(aVsyncTimestamp));
   }
 }
 #endif
 
-/*static */ void CompositorBridgeParent::PostInsertVsyncProfilerMarker(
+/*static */
+void CompositorBridgeParent::PostInsertVsyncProfilerMarker(
     TimeStamp aVsyncTimestamp) {
 #if defined(MOZ_GECKO_PROFILER)
   // Called in the vsync thread
@@ -1933,12 +1944,6 @@ CompositorBridgeParent::AllocPCompositorWidgetParent(
   widget::CompositorWidgetParent* widget =
       new widget::CompositorWidgetParent(aInitData, mOptions);
   widget->AddRef();
-
-#  ifdef XP_WIN
-  if (mOptions.UseWebRender() && DeviceManagerDx::Get()->CanUseDComp()) {
-    widget->AsWindows()->EnsureCompositorWindow();
-  }
-#  endif
 
   // Sending the constructor acts as initialization as well.
   mWidget = widget;
@@ -1981,7 +1986,7 @@ CompositorBridgeParent::LayerTreeState::GetCompositorController() const {
 
 MetricsSharingController*
 CompositorBridgeParent::LayerTreeState::CrossProcessSharingController() const {
-  return mCrossProcessParent;
+  return mContentCompositorBridgeParent;
 }
 
 MetricsSharingController*
@@ -2115,8 +2120,8 @@ void CompositorBridgeParent::NotifyDidComposite(TransactionId aTransactionId,
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachIndirectLayerTree([&](LayerTreeState* lts,
                                const LayersId& aLayersId) -> void {
-    if (lts->mCrossProcessParent && lts->mParent == this) {
-      CrossProcessCompositorBridgeParent* cpcp = lts->mCrossProcessParent;
+    if (lts->mContentCompositorBridgeParent && lts->mParent == this) {
+      ContentCompositorBridgeParent* cpcp = lts->mContentCompositorBridgeParent;
       cpcp->DidCompositeLocked(aLayersId, aId, aCompositeStart, aCompositeEnd);
     }
   });
@@ -2128,17 +2133,17 @@ void CompositorBridgeParent::InvalidateRemoteLayers() {
   Unused << PCompositorBridgeParent::SendInvalidateLayers(LayersId{0});
 
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
-  ForEachIndirectLayerTree(
-      [](LayerTreeState* lts, const LayersId& aLayersId) -> void {
-        if (lts->mCrossProcessParent) {
-          CrossProcessCompositorBridgeParent* cpcp = lts->mCrossProcessParent;
-          Unused << cpcp->SendInvalidateLayers(aLayersId);
-        }
-      });
+  ForEachIndirectLayerTree([](LayerTreeState* lts,
+                              const LayersId& aLayersId) -> void {
+    if (lts->mContentCompositorBridgeParent) {
+      ContentCompositorBridgeParent* cpcp = lts->mContentCompositorBridgeParent;
+      Unused << cpcp->SendInvalidateLayers(aLayersId);
+    }
+  });
 }
 
-void UpdateIndirectTree(LayersId aId, Layer* aRoot,
-                        const TargetConfig& aTargetConfig) {
+static void UpdateIndirectTree(LayersId aId, Layer* aRoot,
+                               const TargetConfig& aTargetConfig) {
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   sIndirectLayerTrees[aId].mRoot = aRoot;
   sIndirectLayerTrees[aId].mTargetConfig = aTargetConfig;
@@ -2157,7 +2162,8 @@ CompositorBridgeParent::GetIndirectShadowTree(LayersId aId) {
   return &cit->second;
 }
 
-/* static */ bool CompositorBridgeParent::CallWithIndirectShadowTree(
+/* static */
+bool CompositorBridgeParent::CallWithIndirectShadowTree(
     LayersId aId,
     const std::function<void(CompositorBridgeParent::LayerTreeState&)>& aFunc) {
   // Note that this does not make things universally threadsafe just because the
@@ -2197,8 +2203,8 @@ static CompositorBridgeParent::LayerTreeState* GetStateForRoot(
   return state;
 }
 
-/* static */ APZCTreeManagerParent*
-CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
+/* static */
+APZCTreeManagerParent* CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
     LayersId aContentLayersId) {
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   CompositorBridgeParent::LayerTreeState* state =
@@ -2206,7 +2212,8 @@ CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
   return state ? state->mApzcTreeManagerParent : nullptr;
 }
 
-/* static */ GeckoContentController*
+/* static */
+GeckoContentController*
 CompositorBridgeParent::GetGeckoContentControllerForRoot(
     LayersId aContentLayersId) {
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
@@ -2452,8 +2459,8 @@ int32_t RecordContentFrameTime(
       }
     };
     profiler_add_marker_for_thread(
-        profiler_current_thread_id(),
-        js::ProfilingStackFrame::Category::GRAPHICS, "CONTENT_FRAME_TIME",
+        profiler_current_thread_id(), JS::ProfilingCategoryPair::GRAPHICS,
+        "CONTENT_FRAME_TIME",
         MakeUnique<ContentFramePayload>(aTxnStart, aCompositeEnd));
   }
 #endif

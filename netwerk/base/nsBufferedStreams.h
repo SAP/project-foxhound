@@ -54,7 +54,7 @@ class nsBufferedStream : public nsISeekableStream {
   // is relative to mBufferStartOffset.
   uint32_t mFillPoint;
 
-  nsISupports* mStream;  // cast to appropriate subclass
+  nsCOMPtr<nsISupports> mStream;  // cast to appropriate subclass
 
   bool mBufferDisabled;
   bool mEOF;  // True if mStream is at EOF
@@ -90,10 +90,16 @@ class nsBufferedInputStream final : public nsBufferedStream,
 
   static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
-  nsIInputStream* Source() { return (nsIInputStream*)mStream; }
+  nsIInputStream* Source() { return (nsIInputStream*)mStream.get(); }
 
  protected:
   virtual ~nsBufferedInputStream() = default;
+
+  template <typename M>
+  void SerializeInternal(mozilla::ipc::InputStreamParams& aParams,
+                         FileDescriptorArray& aFileDescriptors,
+                         bool aDelayedStart, uint32_t aMaxSize,
+                         uint32_t* aSizeUsed, M* aManager);
 
   NS_IMETHOD Fill() override;
   NS_IMETHOD Flush() override { return NS_OK; }  // no-op for input streams
@@ -130,7 +136,7 @@ class nsBufferedOutputStream : public nsBufferedStream,
 
   static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
-  nsIOutputStream* Sink() { return (nsIOutputStream*)mStream; }
+  nsIOutputStream* Sink() { return (nsIOutputStream*)mStream.get(); }
 
  protected:
   virtual ~nsBufferedOutputStream() { nsBufferedOutputStream::Close(); }

@@ -44,6 +44,10 @@ static LazyLogModule sPNGDecoderAccountingLog("PNGDecoderAccounting");
 #  define MOZ_PNG_MAX_HEIGHT 0x7fffffff  // Unlimited
 #endif
 
+/* Controls the maximum chunk size configuration for libpng. We set this to a
+ * very large number, 256MB specifically. */
+static constexpr png_alloc_size_t kPngMaxChunkSize = 0x10000000;
+
 nsPNGDecoder::AnimFrameInfo::AnimFrameInfo()
     : mDispose(DisposalMethod::KEEP), mBlend(BlendMethod::OVER), mTimeout(0) {}
 
@@ -113,6 +117,7 @@ nsPNGDecoder::nsPNGDecoder(RasterImage* aImage)
       mPass(0),
       mFrameIsHidden(false),
       mDisablePremultipliedAlpha(false),
+      mGotInfoCallback(false),
       mNumFrames(0) {}
 
 nsPNGDecoder::~nsPNGDecoder() {
@@ -312,9 +317,7 @@ nsresult nsPNGDecoder::InitInternal() {
 
 #ifdef PNG_SET_USER_LIMITS_SUPPORTED
   png_set_user_limits(mPNG, MOZ_PNG_MAX_WIDTH, MOZ_PNG_MAX_HEIGHT);
-  if (mCMSMode != eCMSMode_Off) {
-    png_set_chunk_malloc_max(mPNG, 4000000L);
-  }
+  png_set_chunk_malloc_max(mPNG, kPngMaxChunkSize);
 #endif
 
 #ifdef PNG_READ_CHECK_FOR_INVALID_INDEX_SUPPORTED
@@ -534,6 +537,13 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
 
   nsPNGDecoder* decoder =
       static_cast<nsPNGDecoder*>(png_get_progressive_ptr(png_ptr));
+
+  if (decoder->mGotInfoCallback) {
+    MOZ_LOG(sPNGLog, LogLevel::Warning, ("libpng called info_callback more than once\n"));
+    return;
+  }
+
+  decoder->mGotInfoCallback = true;
 
   // Always decode to 24-bit RGB or 32-bit RGBA
   png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type,

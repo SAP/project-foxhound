@@ -7,7 +7,7 @@
 import * as firefox from "./firefox";
 import * as chrome from "./chrome";
 
-import { prefs, asyncStore } from "../utils/prefs";
+import { asyncStore, verifyPrefSchema } from "../utils/prefs";
 import { setupHelper } from "../utils/dbg";
 
 import {
@@ -17,14 +17,16 @@ import {
 } from "../utils/bootstrap";
 import { initialBreakpointsState } from "../reducers/breakpoints";
 
-function loadFromPrefs(actions: Object) {
-  const { pauseOnExceptions, pauseOnCaughtExceptions } = prefs;
-  if (pauseOnExceptions || pauseOnCaughtExceptions) {
-    return actions.pauseOnExceptions(
-      pauseOnExceptions,
-      pauseOnCaughtExceptions
-    );
-  }
+import type { Panel } from "./firefox/types";
+
+async function syncBreakpoints() {
+  const breakpoints = await asyncStore.pendingBreakpoints;
+  const breakpointValues = (Object.values(breakpoints): any);
+  breakpointValues.forEach(({ disabled, options, generatedLocation }) => {
+    if (!disabled) {
+      firefox.clientCommands.setBreakpoint(generatedLocation, options);
+    }
+  });
 }
 
 function syncXHRBreakpoints() {
@@ -57,12 +59,15 @@ function getClient(connection: any) {
 
 export async function onConnect(
   connection: Object,
-  { services, toolboxActions }: Object
+  sourceMaps: Object,
+  panel: Panel
 ) {
   // NOTE: the landing page does not connect to a JS process
   if (!connection) {
     return;
   }
+
+  verifyPrefSchema();
 
   const client = getClient(connection);
   const commands = client.clientCommands;
@@ -71,23 +76,21 @@ export async function onConnect(
 
   const { store, actions, selectors } = bootstrapStore(
     commands,
-    {
-      services,
-      toolboxActions
-    },
+    sourceMaps,
+    panel,
     initialState
   );
 
   const workers = bootstrapWorkers();
   await client.onConnect(connection, actions);
 
-  await loadFromPrefs(actions);
+  syncBreakpoints();
   syncXHRBreakpoints();
   setupHelper({
     store,
     actions,
     selectors,
-    workers: { ...workers, ...services },
+    workers: { ...workers, sourceMaps },
     connection,
     client: client.clientCommands
   });

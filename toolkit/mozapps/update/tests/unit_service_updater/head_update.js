@@ -2,11 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const IS_SERVICE_TEST = true;
-
 /* import-globals-from ../data/xpcshellUtilsAUS.js */
-load("../data/xpcshellUtilsAUS.js");
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-});
+load("xpcshellUtilsAUS.js");
+gIsServiceTest = true;

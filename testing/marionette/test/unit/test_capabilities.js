@@ -4,17 +4,16 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 
-const {InvalidArgumentError} = ChromeUtils.import("chrome://marionette/content/error.js", {});
+const {InvalidArgumentError} = ChromeUtils.import("chrome://marionette/content/error.js");
 const {
   Capabilities,
   PageLoadStrategy,
   Proxy,
   Timeouts,
   UnhandledPromptBehavior,
-} = ChromeUtils.import("chrome://marionette/content/capabilities.js", {});
+} = ChromeUtils.import("chrome://marionette/content/capabilities.js");
 
 add_test(function test_Timeouts_ctor() {
   let ts = new Timeouts();
@@ -387,6 +386,7 @@ add_test(function test_Capabilities_ctor() {
   ok(caps.has("rotatable"));
 
   equal(false, caps.get("moz:accessibilityChecks"));
+  ok(caps.has("moz:buildID"));
   ok(caps.has("moz:processID"));
   ok(caps.has("moz:profile"));
   equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
@@ -419,6 +419,7 @@ add_test(function test_Capabilities_toJSON() {
   equal(caps.get("rotatable"), json.rotatable);
 
   equal(caps.get("moz:accessibilityChecks"), json["moz:accessibilityChecks"]);
+  equal(caps.get("moz:buildID"), json["moz:buildID"]);
   equal(caps.get("moz:processID"), json["moz:processID"]);
   equal(caps.get("moz:profile"), json["moz:profile"]);
   equal(caps.get("moz:useNonSpecCompliantPointerOrigin"),

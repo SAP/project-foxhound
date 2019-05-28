@@ -3,7 +3,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://services-sync/UIState.jsm");
+const {UIState} = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
 const UIStateInternal = UIState._internal;
 
@@ -16,7 +16,7 @@ add_task(async function test_isReady_unconfigured() {
   // Does not trigger a refresh of the state since services.sync.username is undefined
   ok(!UIState.isReady());
   ok(!refreshState.called);
-  refreshState.reset();
+  refreshState.resetHistory();
 
   // On subsequent calls, only return true
   ok(UIState.isReady());
@@ -34,7 +34,7 @@ add_task(async function test_isReady_signedin() {
   // On the first call, returns false and triggers a refresh of the state
   ok(!UIState.isReady());
   ok(refreshState.calledOnce);
-  refreshState.reset();
+  refreshState.resetHistory();
 
   // On subsequent calls, only return true
   ok(UIState.isReady());
@@ -96,7 +96,6 @@ add_task(async function test_refreshState_syncButNoFxA() {
   UIStateInternal.fxAccounts = fxAccountsOrig;
   Services.prefs.clearUserPref("services.sync.lastSync");
   Services.prefs.clearUserPref("services.sync.username");
-
 });
 
 add_task(async function test_refreshState_signedin_profile_unavailable() {
@@ -241,7 +240,7 @@ add_task(async function test_observer_refreshState() {
     Services.obs.notifyObservers(null, topic);
     await uiUpdateObserved;
     ok(refreshState.calledOnce);
-    refreshState.reset();
+    refreshState.resetHistory();
   }
 
   refreshState.restore();

@@ -322,7 +322,7 @@ void nsSVGRenderingObserverProperty::OnRenderingChange() {
     // do that using a change hint (multiple change hints of the same type are
     // coalesced).
     nsLayoutUtils::PostRestyleEvent(frame->GetContent()->AsElement(),
-                                    nsRestyleHint(0),
+                                    RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
   }
 }
@@ -383,7 +383,7 @@ void SVGTextPathObserver::OnRenderingChange() {
   nsChangeHint changeHint =
       nsChangeHint(nsChangeHint_RepaintFrame | nsChangeHint_UpdateTextPath);
   frame->PresContext()->RestyleManager()->PostRestyleEvent(
-      frame->GetContent()->AsElement(), nsRestyleHint(0), changeHint);
+      frame->GetContent()->AsElement(), RestyleHint{0}, changeHint);
 }
 
 class SVGMarkerObserver final : public nsSVGRenderingObserverProperty {
@@ -414,7 +414,7 @@ void SVGMarkerObserver::OnRenderingChange() {
     nsSVGUtils::ScheduleReflowSVG(frame);
   }
   frame->PresContext()->RestyleManager()->PostRestyleEvent(
-      frame->GetContent()->AsElement(), nsRestyleHint(0),
+      frame->GetContent()->AsElement(), RestyleHint{0},
       nsChangeHint_RepaintFrame);
 }
 
@@ -458,6 +458,34 @@ class SVGMozElementObserver final : public nsSVGPaintingProperty {
   // Bug 1496065 has been filed to remove that support though.
   bool ObservesReflow() override { return true; }
 };
+
+class BackgroundClipRenderingObserver : public SVGRenderingObserver {
+ public:
+  explicit BackgroundClipRenderingObserver(nsIFrame* aFrame) : mFrame(aFrame) {}
+
+  NS_DECL_ISUPPORTS
+
+ private:
+  virtual ~BackgroundClipRenderingObserver() { StopObserving(); }
+
+  Element* GetReferencedElementWithoutObserving() final {
+    return mFrame->GetContent()->AsElement();
+  }
+
+  void OnRenderingChange() final;
+  bool ObservesReflow() final { return true; }
+
+  nsIFrame* mFrame;
+};
+
+NS_IMPL_ISUPPORTS(BackgroundClipRenderingObserver, nsIMutationObserver)
+
+void BackgroundClipRenderingObserver::OnRenderingChange() {
+  for (nsIFrame* f = mFrame; f;
+       f = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(f)) {
+    f->InvalidateFrame();
+  }
+}
 
 /**
  * In a filter chain, there can be multiple SVG reference filters.
@@ -675,7 +703,7 @@ void SVGFilterObserverListForCSSProp::OnRenderingChange() {
     changeHint |= nsChangeHint_UpdateOverflow;
   }
   frame->PresContext()->RestyleManager()->PostRestyleEvent(
-      frame->GetContent()->AsElement(), nsRestyleHint(0), changeHint);
+      frame->GetContent()->AsElement(), RestyleHint{0}, changeHint);
 }
 
 class SVGFilterObserverListForCanvasContext final
@@ -759,7 +787,7 @@ void SVGMaskObserverList::ResolveImage(uint32_t aIndex) {
 
   if (!image.IsResolved()) {
     MOZ_ASSERT(image.GetType() == nsStyleImageType::eStyleImageType_Image);
-    image.ResolveImage(mFrame->PresContext(), nullptr);
+    image.ResolveImage(*mFrame->PresContext()->Document(), nullptr);
 
     mozilla::css::ImageLoader* imageLoader =
         mFrame->PresContext()->Document()->StyleImageLoader();
@@ -966,7 +994,7 @@ typedef nsInterfaceHashtable<nsRefPtrHashKey<URLAndReferrerInfo>,
 using PaintingPropertyDescriptor =
     const mozilla::FramePropertyDescriptor<nsSVGPaintingProperty>*;
 
-void DestroyFilterProperty(SVGFilterObserverListForCSSProp* aProp) {
+static void DestroyFilterProperty(SVGFilterObserverListForCSSProp* aProp) {
   // SVGFilterObserverListForCSSProp is cycle-collected, so dropping the last
   // reference doesn't necessarily destroy it. We need to tell it that the
   // frame has now become invalid.
@@ -991,6 +1019,8 @@ NS_DECLARE_FRAME_PROPERTY_RELEASABLE(HrefAsTextPathProperty,
                                      SVGTextPathObserver)
 NS_DECLARE_FRAME_PROPERTY_DELETABLE(BackgroundImageProperty,
                                     URIObserverHashtable)
+NS_DECLARE_FRAME_PROPERTY_RELEASABLE(BackgroundClipObserverProperty,
+                                     BackgroundClipRenderingObserver)
 
 template <class T>
 static T* GetEffectProperty(
@@ -1353,6 +1383,19 @@ Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
     hashtable->Put(url, observer);
   }
   return observer->GetAndObserveReferencedElement();
+}
+
+Element* SVGObserverUtils::GetAndObserveBackgroundClip(nsIFrame* aFrame) {
+  bool found;
+  BackgroundClipRenderingObserver* obs =
+      aFrame->GetProperty(BackgroundClipObserverProperty(), &found);
+  if (!found) {
+    obs = new BackgroundClipRenderingObserver(aFrame);
+    NS_ADDREF(obs);
+    aFrame->AddProperty(BackgroundClipObserverProperty(), obs);
+  }
+
+  return obs->GetAndObserveReferencedElement();
 }
 
 nsSVGPaintServerFrame* SVGObserverUtils::GetAndObservePaintServer(

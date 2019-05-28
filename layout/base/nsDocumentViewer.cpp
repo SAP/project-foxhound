@@ -641,7 +641,8 @@ nsDocumentViewer::~nsDocumentViewer() {
  * This method is also called when an out of band document.write() happens.
  * In that case, the document passed in is the same as the previous document.
  */
-/* virtual */ void nsDocumentViewer::LoadStart(Document* aDocument) {
+/* virtual */
+void nsDocumentViewer::LoadStart(Document* aDocument) {
   MOZ_ASSERT(aDocument);
 
   if (!mDocument) {
@@ -689,9 +690,6 @@ nsresult nsDocumentViewer::SyncParentSubDocMap() {
 NS_IMETHODIMP
 nsDocumentViewer::SetContainer(nsIDocShell* aContainer) {
   mContainer = static_cast<nsDocShell*>(aContainer);
-  if (mPresContext) {
-    mPresContext->SetContainer(mContainer);
-  }
 
   // We're loading a new document into the window where this document
   // viewer lives, sync the parent document's frame element -> sub
@@ -758,18 +756,19 @@ nsresult nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow) {
   MOZ_ASSERT(
       p2a ==
       mPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
-  nscoord width = p2a * mBounds.width;
-  nscoord height = p2a * mBounds.height;
 
-  mViewManager->SetWindowDimensions(width, height);
-  mPresContext->SetVisibleArea(nsRect(0, 0, width, height));
-  mPresContext->SetTextZoom(mTextZoom);
-  mPresContext->SetFullZoom(mPageZoom);
-  mPresContext->SetOverrideDPPX(mOverrideDPPX);
+  {
+    nscoord width = p2a * mBounds.width;
+    nscoord height = p2a * mBounds.height;
+
+    mViewManager->SetWindowDimensions(width, height);
+    mPresContext->SetVisibleArea(nsRect(0, 0, width, height));
+    mPresContext->SetTextZoom(mTextZoom);
+    mPresContext->SetFullZoom(mPageZoom);
+    mPresContext->SetOverrideDPPX(mOverrideDPPX);
+  }
 
   p2a = mPresContext->AppUnitsPerDevPixel();  // zoom may have changed it
-  width = p2a * mBounds.width;
-  height = p2a * mBounds.height;
   if (aDoInitialReflow) {
     nsCOMPtr<nsIPresShell> shell = mPresShell;
     // Initial reflow
@@ -952,8 +951,6 @@ nsresult nsDocumentViewer::InitInternal(nsIWidget* aParentWidget,
       nsCOMPtr<nsILinkHandler> linkHandler;
       requestor->GetInterface(NS_GET_IID(nsILinkHandler),
                               getter_AddRefs(linkHandler));
-
-      mPresContext->SetContainer(mContainer);
       mPresContext->SetLinkHandler(linkHandler);
     }
 
@@ -1032,6 +1029,9 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
   // will depend on whether it's cached!
   if (window &&
       (NS_SUCCEEDED(aStatus) || aStatus == NS_ERROR_PARSED_DATA_CACHED)) {
+    // If this code changes, the code in nsDocLoader::DocLoaderIsEmpty
+    // that fires load events for document.open() cases might need to
+    // be updated too.
     nsEventStatus status = nsEventStatus_eIgnore;
     WidgetEvent event(true, eLoad);
     event.mFlags.mBubbles = false;
@@ -1098,7 +1098,9 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
             docShell, MakeUnique<DocLoadingTimelineMarker>("document::Load"));
       }
 
+      d->SetLoadEventFiring(true);
       EventDispatcher::Dispatch(window, mPresContext, &event, nullptr, &status);
+      d->SetLoadEventFiring(false);
       if (timing) {
         timing->NotifyLoadEventEnd();
       }
@@ -1475,7 +1477,6 @@ static void AttachContainerRecurse(nsIDocShell* aShell) {
     }
     RefPtr<nsPresContext> pc = viewer->GetPresContext();
     if (pc) {
-      pc->SetContainer(static_cast<nsDocShell*>(aShell));
       nsCOMPtr<nsILinkHandler> handler = do_QueryInterface(aShell);
       pc->SetLinkHandler(handler);
     }
@@ -1500,7 +1501,9 @@ NS_IMETHODIMP
 nsDocumentViewer::Open(nsISupports* aState, nsISHEntry* aSHEntry) {
   NS_ENSURE_TRUE(mPresShell, NS_ERROR_NOT_INITIALIZED);
 
-  if (mDocument) mDocument->SetContainer(mContainer);
+  if (mDocument) {
+    mDocument->SetContainer(mContainer);
+  }
 
   nsresult rv = InitInternal(mParentWidget, aState, mBounds, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2170,8 +2173,6 @@ nsDocumentViewer::Show(void) {
       if (linkHandler) {
         mPresContext->SetLinkHandler(linkHandler);
       }
-
-      mPresContext->SetContainer(mContainer);
     }
 
     if (mPresContext) {
@@ -2669,28 +2670,6 @@ NS_IMETHODIMP nsDocumentViewer::SetCommandNode(nsINode* aNode) {
   NS_ENSURE_STATE(root);
 
   root->SetPopupNode(aNode);
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsDocumentViewer::ScrollToNode(nsINode* aNode) {
-  NS_ENSURE_ARG(aNode);
-  NS_ENSURE_TRUE(mDocument, NS_ERROR_NOT_AVAILABLE);
-  nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-
-  // Get the nsIContent interface, because that's what we need to
-  // get the primary frame
-
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aNode));
-  NS_ENSURE_TRUE(content, NS_ERROR_FAILURE);
-
-  // Tell the PresShell to scroll to the primary frame of the content.
-  NS_ENSURE_SUCCESS(
-      presShell->ScrollContentIntoView(
-          content,
-          nsIPresShell::ScrollAxis(nsIPresShell::SCROLL_TOP,
-                                   nsIPresShell::SCROLL_ALWAYS),
-          nsIPresShell::ScrollAxis(), nsIPresShell::SCROLL_OVERFLOW_HIDDEN),
-      NS_ERROR_FAILURE);
   return NS_OK;
 }
 

@@ -4,15 +4,15 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/DelayedInit.jsm");
+var {DelayedInit} = ChromeUtils.import("resource://gre/modules/DelayedInit.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
   HistogramStopwatch: "resource://gre/modules/GeckoViewTelemetry.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "WindowEventDispatcher",
@@ -110,7 +110,7 @@ var ModuleManager = {
 
   updateRemoteTypeForURI(aURI) {
     const currentType =
-        this.browser.getAttribute("remoteType") || E10SUtils.NOT_REMOTE;
+        this.browser.remoteType || E10SUtils.NOT_REMOTE;
     const remoteType = E10SUtils.getRemoteTypeForURI(
         aURI, this.settings.useMultiprocess,
         currentType, this.browser.currentURI);
@@ -131,16 +131,16 @@ var ModuleManager = {
 
     // Now we're switching the remoteness (value of "remote" attr).
 
+    let disabledModules = [];
     this.forEach(module => {
-      if (module.enabled && module.impl) {
-        module.impl.onDisable();
+      if (module.enabled) {
+        module.enabled = false;
+        disabledModules.push(module);
       }
     });
 
     this.forEach(module => {
-      if (module.impl) {
-        module.impl.onDestroyBrowser();
-      }
+      module.onDestroyBrowser();
     });
 
     const parent = this.browser.parentNode;
@@ -161,10 +161,8 @@ var ModuleManager = {
 
     parent.appendChild(this.browser);
 
-    this.forEach(module => {
-      if (module.enabled && module.impl) {
-        module.impl.onEnable();
-      }
+    disabledModules.forEach(module => {
+      module.enabled = true;
     });
 
     this.browser.focus();
@@ -280,7 +278,6 @@ class ModuleInfo {
       this._impl.onSettingsUpdate();
     }
     this._loadPhase(this._onInitPhase);
-    this._onInitPhase = null;
 
     this.enabled = this._enabledOnInit;
   }
@@ -289,6 +286,14 @@ class ModuleInfo {
     if (this._impl) {
       this._impl.onDestroy();
     }
+  }
+
+  // Called before the browser is removed
+  onDestroyBrowser() {
+    if (this.impl) {
+      this.impl.onDestroyBrowser();
+    }
+    this._contentModuleLoaded = false;
   }
 
   /**
@@ -303,11 +308,8 @@ class ModuleInfo {
     }
 
     if (aPhase.resource && !this._impl) {
-      const scope = {};
-      const global = ChromeUtils.import(aPhase.resource, scope);
-      const tag = this._name.replace("GeckoView", "");
-      GeckoViewUtils.initLogging(tag, global);
-      this._impl = new scope[this._name](this);
+      const exports = ChromeUtils.import(aPhase.resource);
+      this._impl = new exports[this._name](this);
     }
 
     if (aPhase.frameScript && !this._contentModuleLoaded) {
@@ -348,7 +350,6 @@ class ModuleInfo {
 
     if (aEnabled) {
       this._loadPhase(this._onEnablePhase);
-      this._onEnablePhase = null;
       if (this._impl) {
         this._impl.onEnable();
         this._impl.onSettingsUpdate();
@@ -377,6 +378,9 @@ class ModuleInfo {
 
 function createBrowser() {
   const browser = window.browser = document.createElement("browser");
+  // Identify this `<browser>` element uniquely to Marionette, devtools, etc.
+  browser.permanentKey = {};
+
   browser.setAttribute("type", "content");
   browser.setAttribute("primary", "true");
   browser.setAttribute("flex", "1");
@@ -449,9 +453,9 @@ function startup() {
       resource: "resource://gre/modules/GeckoViewTab.jsm",
     },
   }, {
-    name: "GeckoViewTrackingProtection",
+    name: "GeckoViewContentBlocking",
     onEnable: {
-      resource: "resource://gre/modules/GeckoViewTrackingProtection.jsm",
+      resource: "resource://gre/modules/GeckoViewContentBlocking.jsm",
     },
   }]);
 

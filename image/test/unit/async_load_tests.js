@@ -6,8 +6,8 @@
  * var uri.
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var server = new HttpServer();
 server.registerDirectory("/", do_get_file(''));
@@ -125,7 +125,7 @@ function checkSecondChannelLoad()
   do_test_pending();
   var channel = NetUtil.newChannel({uri: uri, loadUsingSystemPrincipal: true});
   var channellistener = new ChannelListener();
-  channel.asyncOpen2(channellistener);
+  channel.asyncOpen(channellistener);
 
   var listener = new ImageListener(null,
                                    getChannelLoadImageStopCallback(channellistener,
@@ -150,7 +150,7 @@ function run_loadImageWithChannel_tests()
   do_test_pending();
   var channel =  NetUtil.newChannel({uri: uri, loadUsingSystemPrincipal: true});
   var channellistener = new ChannelListener();
-  channel.asyncOpen2(channellistener);
+  channel.asyncOpen(channellistener);
 
   var listener = new ImageListener(null,
                                    getChannelLoadImageStopCallback(channellistener,

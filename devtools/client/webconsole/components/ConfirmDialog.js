@@ -5,7 +5,6 @@
 "use strict";
 
 loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
-loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "HTMLTooltip", "devtools/client/shared/widgets/tooltip/HTMLTooltip", true);
 loader.lazyRequireGetter(this, "createPortal", "devtools/client/shared/vendor/react-dom", true);
 
@@ -30,7 +29,7 @@ class ConfirmDialog extends Component {
   static get propTypes() {
     return {
       // Console object.
-      hud: PropTypes.object.isRequired,
+      webConsoleUI: PropTypes.object.isRequired,
       // Update autocomplete popup state.
       autocompleteUpdate: PropTypes.func.isRequired,
       autocompleteClear: PropTypes.func.isRequired,
@@ -43,8 +42,8 @@ class ConfirmDialog extends Component {
   constructor(props) {
     super(props);
 
-    const { hud } = props;
-    hud.confirmDialog = this;
+    const { webConsoleUI } = props;
+    webConsoleUI.confirmDialog = this;
 
     this.cancel = this.cancel.bind(this);
     this.confirm = this.confirm.bind(this);
@@ -52,8 +51,8 @@ class ConfirmDialog extends Component {
   }
 
   componentDidMount() {
-    const doc = this.props.hud.document;
-    const toolbox = gDevTools.getToolbox(this.props.hud.owner.target);
+    const doc = this.props.webConsoleUI.document;
+    const toolbox = this.props.webConsoleUI.wrapper.toolbox;
     const tooltipDoc = toolbox ? toolbox.doc : doc;
     // The popup will be attached to the toolbox document or HUD document in the case
     // such as the browser console which doesn't have a toolbox.
@@ -70,7 +69,7 @@ class ConfirmDialog extends Component {
       this.tooltip.focus();
     } else {
       this.tooltip.hide();
-      this.props.hud.jsterm.focus();
+      this.props.webConsoleUI.jsterm.focus();
     }
   }
 

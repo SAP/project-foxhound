@@ -5,14 +5,13 @@
 /*
 * Test Permission Popup for Sideloaded Extensions.
 */
-const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", {});
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
 const ADDON_ID = "addon1@test.mozilla.org";
 
 AddonTestUtils.initMochitest(this);
 
 // Loading extension by sideloading method
 add_task(async function test() {
-
   await SpecialPowers.pushPrefEnv({
     set: [
       ["xpinstall.signatures.required", false],
@@ -80,8 +79,12 @@ add_task(async function test() {
 
   panel = await popupPromise;
   ok(PopupNotifications.isPanelOpen, "Permission popup should be visible");
+
+  let notificationPromise = acceptAppMenuNotificationWhenShown("addon-installed", ADDON_ID);
+
   panel.button.click();
   ok(!PopupNotifications.isPanelOpen, "Permission popup should be closed / closing");
+  await notificationPromise;
 
   addon = await AddonManager.getAddonByID(ADDON_ID);
   ok(addon.seen, "Seen flag should be true after permissions are accepted");

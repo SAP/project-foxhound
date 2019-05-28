@@ -971,8 +971,11 @@ uint32_t gfxTextRun::BreakAndMeasureText(
     if (aSuppressBreak != eSuppressAllBreaks &&
         (aSuppressBreak != eSuppressInitialBreak || i > aStart)) {
       bool atNaturalBreak = mCharacterGlyphs[i].CanBreakBefore() == 1;
+      // atHyphenationBreak indicates we're at a "soft" hyphen, where an extra
+      // hyphen glyph will need to be painted. It is NOT set for breaks at an
+      // explicit hyphen present in the text.
       bool atHyphenationBreak = !atNaturalBreak && haveHyphenation &&
-                                hyphenBuffer[i - aStart] != HyphenType::None;
+                                hyphenBuffer[i - aStart] > HyphenType::Explicit;
       bool atAutoHyphenWithManualHyphenInSameWord =
           atHyphenationBreak &&
           hyphenBuffer[i - aStart] == HyphenType::AutoWithManualInSameWord;
@@ -1954,7 +1957,7 @@ gfxFont* gfxFontGroup::GetDefaultFont() {
     mFamilyList.ToString(familiesString);
     SprintfLiteral(msg, "unable to find a usable font (%.220s)",
                    familiesString.get());
-    MOZ_CRASH_UNSAFE_OOL(msg);
+    MOZ_CRASH_UNSAFE(msg);
   }
 
   return mDefaultFont.get();

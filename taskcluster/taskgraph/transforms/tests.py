@@ -77,6 +77,11 @@ WINDOWS_WORKER_TYPES = {
       'virtual-with-gpu': 'aws-provisioner-v1/gecko-t-win10-64-gpu',
       'hardware': 'releng-hardware/gecko-t-win10-64-hw',
     },
+    'windows10-aarch64': {
+      'virtual': 'bitbar/gecko-t-win64-aarch64-laptop',
+      'virtual-with-gpu': 'bitbar/gecko-t-win64-aarch64-laptop',
+      'hardware': 'bitbar/gecko-t-win64-aarch64-laptop',
+    },
     'windows10-64-ccov': {
       'virtual': 'aws-provisioner-v1/gecko-t-win10-64',
       'virtual-with-gpu': 'aws-provisioner-v1/gecko-t-win10-64-gpu',
@@ -103,6 +108,11 @@ WINDOWS_WORKER_TYPES = {
       'hardware': 'releng-hardware/gecko-t-win10-64-hw',
     },
     'windows10-64-qr': {
+      'virtual': 'aws-provisioner-v1/gecko-t-win10-64',
+      'virtual-with-gpu': 'aws-provisioner-v1/gecko-t-win10-64-gpu',
+      'hardware': 'releng-hardware/gecko-t-win10-64-hw',
+    },
+    'windows10-64-pgo-qr': {
       'virtual': 'aws-provisioner-v1/gecko-t-win10-64',
       'virtual-with-gpu': 'aws-provisioner-v1/gecko-t-win10-64-gpu',
       'hardware': 'releng-hardware/gecko-t-win10-64-hw',
@@ -213,6 +223,14 @@ test_description_schema = Schema({
         'test-platform', 'project',
         Any(bool, 'both')),
 
+    # Whether to run this task with the socket process enabled (desktop-test
+    # only).  If 'both', run one task with and one task without.  Tasks with
+    # this enabled have have "-spi" appended to the test name and treeherder
+    # group.
+    Optional('socketprocess-e10s'): optionally_keyed_by(
+        'test-platform', 'project',
+        Any(bool, 'both')),
+
     # Whether the task should run with WebRender enabled or not.
     Optional('webrender'): bool,
 
@@ -237,7 +255,7 @@ test_description_schema = Schema({
     # unit tests on linux platforms and false otherwise
     Optional('allow-software-gl-layers'): bool,
 
-    # For tasks that will run in docker-worker or docker-engine, this is the
+    # For tasks that will run in docker-worker, this is the
     # name of the docker image or in-tree docker image to run the task in.  If
     # in-tree, then a dependency will be created automatically.  This is
     # generally `desktop-test`, or an image that acts an awful lot like it.
@@ -297,8 +315,13 @@ test_description_schema = Schema({
         # generally set in a per-kind transformation
         Optional('build-artifact-name'): basestring,
 
-        # If true, tooltool downloads will be enabled via relengAPIProxy.
-        Required('tooltool-downloads'): bool,
+        # If not false, tooltool downloads will be enabled via relengAPIProxy
+        # for either just public files, or all files.  Not supported on Windows
+        Required('tooltool-downloads'): Any(
+            False,
+            'public',
+            'internal',
+        ),
 
         # Add --blob-upload-branch=<project> mozharness parameter
         Optional('include-blob-upload-branch'): bool,
@@ -407,9 +430,12 @@ test_description_schema = Schema({
     ),
 
     # A list of artifacts to install from 'fetch' tasks.
-    Optional('fetches'): {
-        basestring: [basestring],
-    },
+    Optional('fetches'): optionally_keyed_by(
+        'test-platform',
+        {
+            basestring: [basestring]
+        }
+    ),
 }, required=True)
 
 
@@ -427,7 +453,7 @@ def set_defaults(config, tests):
         build_platform = test['build-platform']
         if build_platform.startswith('android'):
             # all Android test tasks download internal objects from tooltool
-            test['mozharness']['tooltool-downloads'] = True
+            test['mozharness']['tooltool-downloads'] = 'internal'
             test['mozharness']['actions'] = ['get-secrets']
             # Fennec is non-e10s; geckoview handled in set_target
             test['e10s'] = False
@@ -469,11 +495,12 @@ def set_defaults(config, tests):
         test.setdefault('docker-image', {'in-tree': 'desktop1604-test'})
         test.setdefault('checkout', False)
         test.setdefault('serviceworker-e10s', False)
+        test.setdefault('socketprocess-e10s', False)
         test.setdefault('require-signed-extensions', False)
 
         test['mozharness'].setdefault('extra-options', [])
         test['mozharness'].setdefault('requires-signed-builds', False)
-        test['mozharness'].setdefault('tooltool-downloads', False)
+        test['mozharness'].setdefault('tooltool-downloads', 'public')
         test['mozharness'].setdefault('set-moz-node-path', False)
         test['mozharness'].setdefault('chunked', False)
         test['mozharness'].setdefault('chunking-args', 'this-chunk')
@@ -578,6 +605,7 @@ def set_treeherder_machine_platform(config, tests):
         'macosx64/debug': 'osx-10-10/debug',
         'macosx64/opt': 'osx-10-10/opt',
         'win64-asan/opt': 'windows10-64/asan',
+        'win64-aarch64/opt': 'windows10-aarch64/opt',
         'win32-pgo/opt': 'windows7-32/pgo',
         'win64-pgo/opt': 'windows10-64/pgo',
         # The build names for Android platforms have partially evolved over the
@@ -600,6 +628,9 @@ def set_treeherder_machine_platform(config, tests):
             test['treeherder-machine-platform'] = test['test-platform']
         elif 'android-hw' in test['test-platform']:
             test['treeherder-machine-platform'] = test['test-platform']
+        elif 'android-em-7.0-x86_64' in test['test-platform']:
+            opt = test['test-platform'].split('/')[1]
+            test['treeherder-machine-platform'] = 'android-em-7-0-x86_64/'+opt
         elif 'android-em-7.0-x86' in test['test-platform']:
             opt = test['test-platform'].split('/')[1]
             test['treeherder-machine-platform'] = 'android-em-7-0-x86/'+opt
@@ -631,11 +662,13 @@ def set_tier(config, tests):
                                          'linux64-asan/opt',
                                          'linux64-qr/opt',
                                          'linux64-qr/debug',
+                                         'linux64-pgo-qr/opt',
                                          'windows7-32/debug',
                                          'windows7-32/opt',
                                          'windows7-32-pgo/opt',
                                          'windows7-32-devedition/opt',
                                          'windows7-32-nightly/opt',
+                                         'windows10-aarch64/opt',
                                          'windows10-64/debug',
                                          'windows10-64/opt',
                                          'windows10-64-pgo/opt',
@@ -644,6 +677,7 @@ def set_tier(config, tests):
                                          'windows10-64-asan/opt',
                                          'windows10-64-qr/opt',
                                          'windows10-64-qr/debug',
+                                         'windows10-64-pgo-qr/opt',
                                          'macosx64/opt',
                                          'macosx64/debug',
                                          'macosx64-nightly/opt',
@@ -653,6 +687,8 @@ def set_tier(config, tests):
                                          'android-em-4.3-arm7-api-16/opt',
                                          'android-em-4.3-arm7-api-16/debug',
                                          'android-em-4.2-x86/opt',
+                                         'android-em-7.0-x86_64/opt',
+                                         'android-em-7.0-x86_64/debug',
                                          'android-em-7.0-x86/opt']:
                 test['tier'] = 1
             else:
@@ -701,6 +737,7 @@ def handle_keyed_by(config, tests):
         'chunks',
         'serviceworker-e10s',
         'e10s',
+        'socketprocess-e10s',
         'suite',
         'run-on-projects',
         'os-groups',
@@ -713,6 +750,7 @@ def handle_keyed_by(config, tests):
         'workdir',
         'worker-type',
         'virtualization',
+        'fetches',
     ]
     for test in tests:
         for field in fields:
@@ -830,6 +868,10 @@ def handle_run_on_projects(config, tests):
 @transforms.add
 def split_serviceworker_e10s(config, tests):
     for test in tests:
+        if test['attributes'].get('socketprocess_e10s'):
+            yield test
+            continue
+
         sw = test.pop('serviceworker-e10s')
 
         test['serviceworker-e10s'] = False
@@ -855,9 +897,7 @@ def split_serviceworker_e10s(config, tests):
             test['treeherder-symbol'] = join_symbol(group, symbol)
             test['mozharness']['extra-options'].append(
                 '--setpref="dom.serviceWorkers.parent_intercept=true"')
-
-            if 'web-platform' in test['suite']:
-                test['tier'] = 2
+            test['tier'] = 2
         yield test
 
 
@@ -887,6 +927,39 @@ def split_e10s(config, tests):
                         test['mozharness']['extra-options'][i] += '-e10s'
             else:
                 test['mozharness']['extra-options'].append('--e10s')
+        yield test
+
+
+@transforms.add
+def split_socketprocess_e10s(config, tests):
+    for test in tests:
+        if test['attributes'].get('serviceworker_e10s'):
+            yield test
+            continue
+
+        sw = test.pop('socketprocess-e10s')
+
+        test['socketprocess-e10s'] = False
+        test['attributes']['socketprocess_e10s'] = False
+
+        if sw == 'both':
+            yield copy.deepcopy(test)
+            sw = True
+        if sw:
+            test['description'] += " with socket process enabled"
+            test['test-name'] += '-spi'
+            test['try-name'] += '-spi'
+            test['attributes']['socketprocess_e10s'] = True
+            group, symbol = split_symbol(test['treeherder-symbol'])
+            if group != '?':
+                group += '-spi'
+            else:
+                symbol += '-spi'
+            test['treeherder-symbol'] = join_symbol(group, symbol)
+            test['mozharness']['extra-options'].append(
+                '--setpref="media.peerconnection.mtransport_process=true"')
+            test['mozharness']['extra-options'].append(
+                '--setpref="network.process.enabled=true"')
         yield test
 
 
@@ -1040,6 +1113,8 @@ def set_worker_type(config, tests):
                 # some jobs like talos and reftest run on real h/w - those are all win10
                 if test_platform.startswith('windows10-64-ux'):
                     win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-64-ux']
+                elif test_platform.startswith('windows10-aarch64'):
+                    win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-aarch64']
                 else:
                     win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-64']
             else:

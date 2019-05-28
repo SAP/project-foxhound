@@ -23,6 +23,7 @@ from voluptuous import (
     Optional,
     Required,
 )
+from .task import task_description_schema
 
 DIGEST_RE = re.compile('^[0-9a-f]{64}$')
 
@@ -51,6 +52,16 @@ docker_image_schema = Schema({
 
     # List of package tasks this docker image depends on.
     Optional('packages'): [basestring],
+
+    Optional(
+        "index",
+        description="information for indexing this build so its artifacts can be discovered",
+    ): task_description_schema['index'],
+
+    Optional(
+        "cache",
+        description="Whether this image should be cached based on inputs.",
+    ): bool,
 })
 
 
@@ -112,7 +123,7 @@ def fill_template(config, tasks):
         if parent:
             args['DOCKER_IMAGE_PARENT'] = '{}:{}'.format(parent, context_hashes[parent])
 
-        args['TASKCLUSTER_ROOT_URL'] = get_root_url()
+        args['TASKCLUSTER_ROOT_URL'] = get_root_url(False)
 
         if not taskgraph.fast:
             context_path = os.path.join('taskcluster', 'docker', definition)
@@ -203,11 +214,16 @@ def fill_template(config, tasks):
             # Force images built against the in-tree image builder to
             # have a different digest by adding a fixed string to the
             # hashed data.
+            # Append to this data whenever the image builder's output behavior
+            # is changed, in order to force all downstream images to be rebuilt and
+            # cached distinctly.
             digest_data.append('image_builder')
+            # Updated for squashing images in Bug 1527394
+            digest_data.append('squashing layers')
 
         worker['caches'] = [{
             'type': 'persistent',
-            'name': 'level-{}-{}'.format(config.params['level'], cache_name),
+            'name': cache_name,
             'mount-point': '/builds/worker/checkouts',
         }]
 
@@ -228,8 +244,10 @@ def fill_template(config, tasks):
             worker['env']['DOCKER_IMAGE_PARENT_TASK'] = {
                 'task-reference': '<{}>'.format(parent),
             }
+        if 'index' in task:
+            taskdesc['index'] = task['index']
 
-        if not taskgraph.fast:
+        if task.get('cache', True) and not taskgraph.fast:
             taskdesc['cache'] = {
                 'type': 'docker-images.v2',
                 'name': image_name,

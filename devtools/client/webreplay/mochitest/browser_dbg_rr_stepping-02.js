@@ -6,8 +6,6 @@
 
 "use strict";
 
-// To disable all Web Replay tests, see browser.ini
-
 // Test fixes for some simple stepping bugs.
 add_task(async function() {
   const tab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
@@ -15,9 +13,9 @@ add_task(async function() {
   openTrustedLinkIn(EXAMPLE_URL + "doc_rr_basic.html", "current");
   await once(Services.ppmm, "RecordingFinished");
 
-  const toolbox = await attachDebugger(tab), client = toolbox.threadClient;
+  const { toolbox } = await attachDebugger(tab), client = toolbox.threadClient;
   await client.interrupt();
-  await setBreakpoint(client, "doc_rr_basic.html", 22);
+  const bp = await setBreakpoint(client, "doc_rr_basic.html", 22);
   await rewindToLine(client, 22);
   await stepInToLine(client, 25);
   await stepOverToLine(client, 26);
@@ -27,6 +25,7 @@ add_task(async function() {
   await reverseStepOutToLine(client, 26);
   await reverseStepOverToLine(client, 25);
 
+  await client.removeBreakpoint(bp);
   await toolbox.destroy();
   await gBrowser.removeTab(tab);
 });

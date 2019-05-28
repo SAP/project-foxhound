@@ -7,11 +7,10 @@
 
 const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
 const {PushRecord} = ChromeUtils.import("resource://gre/modules/PushRecord.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/IndexedDBHelper.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 const {
   PushCrypto,
@@ -21,7 +20,7 @@ const {
 var EXPORTED_SYMBOLS = ["PushServiceHttp2"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushServiceHttp2",
@@ -57,12 +56,12 @@ PushSubscriptionListener.prototype = {
     return this.QueryInterface(aIID);
   },
 
-  onStartRequest: function(aRequest, aContext) {
+  onStartRequest: function(aRequest) {
     console.debug("PushSubscriptionListener: onStartRequest()");
     // We do not do anything here.
   },
 
-  onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+  onDataAvailable: function(aRequest, aStream, aOffset, aCount) {
     console.debug("PushSubscriptionListener: onDataAvailable()");
     // Nobody should send data, but just to be sure, otherwise necko will
     // complain.
@@ -77,7 +76,7 @@ PushSubscriptionListener.prototype = {
     var data = inputStream.read(aCount);
   },
 
-  onStopRequest: function(aRequest, aContext, aStatusCode) {
+  onStopRequest: function(aRequest, aStatusCode) {
     console.debug("PushSubscriptionListener: onStopRequest()");
     if (!this._pushService) {
         return;
@@ -91,7 +90,7 @@ PushSubscriptionListener.prototype = {
   onPush: function(associatedChannel, pushChannel) {
     console.debug("PushSubscriptionListener: onPush()");
     var pushChannelListener = new PushChannelListener(this);
-    pushChannel.asyncOpen2(pushChannelListener);
+    pushChannel.asyncOpen(pushChannelListener);
   },
 
   disconnect: function() {
@@ -112,11 +111,11 @@ var PushChannelListener = function(pushSubscriptionListener) {
 
 PushChannelListener.prototype = {
 
-  onStartRequest: function(aRequest, aContext) {
+  onStartRequest: function(aRequest) {
     this._ackUri = aRequest.URI.spec;
   },
 
-  onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+  onDataAvailable: function(aRequest, aStream, aOffset, aCount) {
     console.debug("PushChannelListener: onDataAvailable()");
 
     if (aCount === 0) {
@@ -132,7 +131,7 @@ PushChannelListener.prototype = {
     this._message.push(chunk);
   },
 
-  onStopRequest: function(aRequest, aContext, aStatusCode) {
+  onStopRequest: function(aRequest, aStatusCode) {
     console.debug("PushChannelListener: onStopRequest()", "status code",
       aStatusCode);
     if (Components.isSuccessCode(aStatusCode) &&
@@ -170,9 +169,9 @@ var PushServiceDelete = function(resolve, reject) {
 
 PushServiceDelete.prototype = {
 
-  onStartRequest: function(aRequest, aContext) {},
+  onStartRequest: function(aRequest) {},
 
-  onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+  onDataAvailable: function(aRequest, aStream, aOffset, aCount) {
     // Nobody should send data, but just to be sure, otherwise necko will
     // complain.
     if (aCount === 0) {
@@ -186,7 +185,7 @@ PushServiceDelete.prototype = {
     var data = inputStream.read(aCount);
   },
 
-  onStopRequest: function(aRequest, aContext, aStatusCode) {
+  onStopRequest: function(aRequest, aStatusCode) {
 
     if (Components.isSuccessCode(aStatusCode)) {
        this._resolve();
@@ -211,9 +210,9 @@ var SubscriptionListener = function(aSubInfo, aResolve, aReject,
 
 SubscriptionListener.prototype = {
 
-  onStartRequest: function(aRequest, aContext) {},
+  onStartRequest: function(aRequest) {},
 
-  onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+  onDataAvailable: function(aRequest, aStream, aOffset, aCount) {
     console.debug("SubscriptionListener: onDataAvailable()");
 
     // We do not expect any data, but necko will complain if we do not consume
@@ -229,7 +228,7 @@ SubscriptionListener.prototype = {
     this._data.concat(inputStream.read(aCount));
   },
 
-  onStopRequest: function(aRequest, aContext, aStatus) {
+  onStopRequest: function(aRequest, aStatus) {
     console.debug("SubscriptionListener: onStopRequest()");
 
     // Check if pushService is still active.
@@ -426,7 +425,8 @@ var PushServiceHttp2 = {
     return serverURI.scheme == "https";
   },
 
-  connect: function(subscriptions, broadcastListeners) {
+  async connect(broadcastListeners) {
+    let subscriptions = await this._mainPushService.getAllUnexpired();
     this.startConnections(subscriptions);
   },
 
@@ -493,7 +493,7 @@ var PushServiceHttp2 = {
 
       var chan = this._makeChannel(this._serverURI.spec);
       chan.requestMethod = "POST";
-      chan.asyncOpen2(listener);
+      chan.asyncOpen(listener);
     })
     .catch(err => {
       if ("retry" in err) {
@@ -509,7 +509,7 @@ var PushServiceHttp2 = {
     return new Promise((resolve,reject) => {
       var chan = this._makeChannel(aUri);
       chan.requestMethod = "DELETE";
-      chan.asyncOpen2(new PushServiceDelete(resolve, reject));
+      chan.asyncOpen(new PushServiceDelete(resolve, reject));
     });
   },
 
@@ -543,10 +543,10 @@ var PushServiceHttp2 = {
     chan.notificationCallbacks = listener;
 
     try {
-      chan.asyncOpen2(listener);
+      chan.asyncOpen(listener);
     } catch (e) {
       console.error("listenForMsgs: Error connecting to push server.",
-        "asyncOpen2 failed", e);
+        "asyncOpen failed", e);
       conn.listener.disconnect();
       chan.cancel(Cr.NS_ERROR_ABORT);
       this._retryAfterBackoff(aSubscriptionUri, -1);

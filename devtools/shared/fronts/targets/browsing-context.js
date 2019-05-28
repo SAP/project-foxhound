@@ -5,14 +5,12 @@
 
 const {browsingContextTargetSpec} = require("devtools/shared/specs/targets/browsing-context");
 const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
+const { TargetMixin } = require("./target-mixin");
 
-loader.lazyRequireGetter(this, "ThreadClient", "devtools/shared/client/thread-client");
-
-class BrowsingContextTargetFront extends FrontClassWithSpec(browsingContextTargetSpec) {
-  constructor(client, form) {
-    super(client, form);
-
-    this.thread = null;
+class BrowsingContextTargetFront extends
+  TargetMixin(FrontClassWithSpec(browsingContextTargetSpec)) {
+  constructor(client) {
+    super(client);
 
     // Cache the value of some target properties that are being returned by `attach`
     // request and then keep them up-to-date in `reconfigure` request.
@@ -23,8 +21,8 @@ class BrowsingContextTargetFront extends FrontClassWithSpec(browsingContextTarge
     // RootFront.listTabs is going to update this state via `setIsSelected`  method
     this._selected = false;
 
-    // TODO: remove once ThreadClient becomes a front
-    this.client = client;
+    this._onTabNavigated = this._onTabNavigated.bind(this);
+    this._onFrameUpdate = this._onFrameUpdate.bind(this);
   }
 
   form(json) {
@@ -36,8 +34,8 @@ class BrowsingContextTargetFront extends FrontClassWithSpec(browsingContextTarge
 
     this.outerWindowID = json.outerWindowID;
     this.favicon = json.favicon;
-    this.title = json.title;
-    this.url = json.url;
+    this._title = json.title;
+    this._url = json.url;
   }
 
   // Reports if the related tab is selected. Only applies to BrowsingContextTarget
@@ -52,36 +50,64 @@ class BrowsingContextTargetFront extends FrontClassWithSpec(browsingContextTarge
   }
 
   /**
-   * Attach to a thread actor.
-   *
-   * @param object options
-   *        Configuration options.
+   * Event listener for `frameUpdate` event.
    */
-  attachThread(options = {}) {
-    if (this.thread) {
-      return Promise.resolve([{}, this.thread]);
+  _onFrameUpdate(packet) {
+    this.emit("frame-update", packet);
+  }
+
+  /**
+   * Event listener for `tabNavigated` event.
+   */
+  _onTabNavigated(packet) {
+    const event = Object.create(null);
+    event.url = packet.url;
+    event.title = packet.title;
+    event.nativeConsoleAPI = packet.nativeConsoleAPI;
+    event.isFrameSwitching = packet.isFrameSwitching;
+
+    // Keep the title unmodified when a developer toolbox switches frame
+    // for a tab (Bug 1261687), but always update the title when the target
+    // is a WebExtension (where the addon name is always included in the title
+    // and the url is supposed to be updated every time the selected frame changes).
+    if (!packet.isFrameSwitching || this.isWebExtension) {
+      this._url = packet.url;
+      this._title = packet.title;
     }
 
-    const packet = {
-      to: this._threadActor,
-      type: "attach",
-      options,
-    };
-    return this.client.request(packet).then(response => {
-      this.thread = new ThreadClient(this, this._threadActor);
-      this.client.registerClient(this.thread);
-      return [response, this.thread];
-    });
+    // Send any stored event payload (DOMWindow or nsIRequest) for backwards
+    // compatibility with non-remotable tools.
+    if (packet.state == "start") {
+      this.emit("will-navigate", event);
+    } else {
+      this.emit("navigate", event);
+    }
   }
 
   async attach() {
-    const response = await super.attach();
+    if (this._attach) {
+      return this._attach;
+    }
+    this._attach = (async () => {
+      // All Browsing context inherited target emit a few event that are being
+      // translated on the target class. Listen for them before attaching as they
+      // can start firing on attach call.
+      this.on("tabNavigated", this._onTabNavigated);
+      this.on("frameUpdate", this._onFrameUpdate);
 
-    this._threadActor = response.threadActor;
-    this.configureOptions.javascriptEnabled = response.javascriptEnabled;
-    this.traits = response.traits || {};
+      const response = await super.attach();
 
-    return response;
+      this._threadActor = response.threadActor;
+      this.configureOptions.javascriptEnabled = response.javascriptEnabled;
+      this.traits = response.traits || {};
+
+      // xpcshell tests from devtools/server/tests/unit/ are implementing
+      // fake BrowsingContextTargetActor which do not expose any console actor.
+      if (this.targetForm.consoleActor) {
+        await this.attachConsole();
+      }
+    })();
+    return this._attach;
   }
 
   async reconfigure({ options }) {
@@ -103,19 +129,24 @@ class BrowsingContextTargetFront extends FrontClassWithSpec(browsingContextTarge
         `Error while detaching the browsing context target front: ${e.message}`);
     }
 
-    if (this.thread) {
-      try {
-        await this.thread.detach();
-      } catch (e) {
-        console.warn(`Error while detaching the thread front: ${e.message}`);
-      }
-    }
-
-    this.destroy();
+    // Remove listeners set in attach
+    this.off("tabNavigated", this._onTabNavigated);
+    this.off("frameUpdate", this._onFrameUpdate);
 
     return response;
+  }
+
+  destroy() {
+    const promise = super.destroy();
+
+    // As detach isn't necessarily called on target's destroy
+    // (it isn't for local tabs), ensure removing listeners set in attach.
+    this.off("tabNavigated", this._onTabNavigated);
+    this.off("frameUpdate", this._onFrameUpdate);
+
+    return promise;
   }
 }
 
 exports.BrowsingContextTargetFront = BrowsingContextTargetFront;
-registerFront(BrowsingContextTargetFront);
+registerFront(exports.BrowsingContextTargetFront);

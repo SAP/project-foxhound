@@ -6,21 +6,20 @@
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
-  <script type="text/javascript" src="satchel_common.js"></script>
+  <script type="text/javascript" src="../../../satchel/test/satchel_common.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 
 <script>
-
 SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
                                     true]]});
 
 var chromeScript = runChecksAfterCommonInit();
 
 var setupScript = runInParent(function setup() {
-  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   var nsLoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1",
                                            Ci.nsILoginInfo, "init");
@@ -54,6 +53,7 @@ var setupScript = runInParent(function setup() {
 let sandboxed = document.getElementById("sandboxed");
 let uname;
 let pword;
+let hostname;
 
 // Check for expected username/password in form.
 function checkACForm(expectedUsername, expectedPassword) {
@@ -75,6 +75,7 @@ add_task(async function setup() {
   let frameDoc = SpecialPowers.wrap(sandboxed).contentDocument;
   uname = frameDoc.getElementById("form-basic-username");
   pword = frameDoc.getElementById("form-basic-password");
+  hostname = frameDoc.documentURIObject.host;
 });
 
 add_task(async function test_no_autofill() {
@@ -96,7 +97,7 @@ add_task(async function test_autocomplete_warning_no_logins() {
   let expectedMenuItems = [
     "This connection is not secure. Logins entered here could be compromised. Learn More",
   ];
-  checkArrayValues(results, expectedMenuItems, "Check all menuitems are displayed correctly.");
+  checkAutoCompleteResults(results, expectedMenuItems, hostname, "Check all menuitems are displayed correctly.");
 
   checkACForm("", "");
 });

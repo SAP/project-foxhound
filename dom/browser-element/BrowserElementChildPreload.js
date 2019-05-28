@@ -12,9 +12,8 @@ debug("loaded");
 
 var BrowserElementIsReady;
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/BrowserElementPromptService.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {BrowserElementPromptService} = ChromeUtils.import("resource://gre/modules/BrowserElementPromptService.jsm");
 
 var kLongestReturnedString = 128;
 
@@ -1031,7 +1030,7 @@ BrowserElementChild.prototype = {
         return;
       }
 
-      // Remove password and wyciwyg from uri.
+      // Remove password from uri.
       location = Cc["@mozilla.org/docshell/urifixup;1"]
         .getService(Ci.nsIURIFixup).createExposableURI(location);
 

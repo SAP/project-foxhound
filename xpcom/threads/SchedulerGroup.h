@@ -15,7 +15,6 @@
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
-#include "nsILabelableRunnable.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"
 
@@ -97,14 +96,10 @@ class SchedulerGroup : public LinkedListElement<SchedulerGroup> {
     return mEventCount == 0 ? NoLongerQueued : StillQueued;
   }
 
-  class Runnable final : public mozilla::Runnable,
-                         public nsIRunnablePriority,
-                         public nsILabelableRunnable {
+  class Runnable final : public mozilla::Runnable, public nsIRunnablePriority {
    public:
     Runnable(already_AddRefed<nsIRunnable>&& aRunnable, SchedulerGroup* aGroup,
              dom::DocGroup* aDocGroup);
-
-    bool GetAffectedSchedulerGroups(SchedulerGroupSet& aGroups) override;
 
     SchedulerGroup* Group() const { return mGroup; }
     dom::DocGroup* DocGroup() const;

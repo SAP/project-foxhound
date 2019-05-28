@@ -39,7 +39,7 @@ crashtest:
             default: default
     virtualization:
         by-test-platform:
-            windows10-64-qr/.*: virtual-with-gpu
+            windows10-64(?:-pgo)?-qr/.*: virtual-with-gpu
             default: virtual
     chunks:
         by-test-platform:
@@ -69,14 +69,16 @@ jsreftest:
     chunks:
         by-test-platform:
             android-em-4.3-arm7-api-16/debug: 100
-            android-em-7.0-x86/opt: 4
-            android-em-7.0-x86/debug: 8
+            android-em-7.0-x86_64/opt: 4
+            android-em-7.0-x86_64/debug: 8
             android-em.*: 40
             windows.*: 2
             windows10-64-ccov/debug: 5
             linux64-ccov/.*: 5
-            linux64-qr/.*: 4
+            linux64-qr/opt: 4
+            linux64-qr/debug: 5
             linux32/debug: 5
+            linux64/debug: 5
             macosx64-ccov/debug: 5
             default: 3
     max-run-time:

@@ -10,6 +10,7 @@
 #include "BRNameMatchingPolicy.h"
 #include "CTPolicyEnforcer.h"
 #include "CTVerifyResult.h"
+#include "EnterpriseRoots.h"
 #include "OCSPCache.h"
 #include "RootCertificateTelemetryUtils.h"
 #include "ScopedNSSTypes.h"
@@ -206,7 +207,8 @@ class CertVerifier {
                SHA1Mode sha1Mode, BRNameMatchingPolicy::Mode nameMatchingMode,
                NetscapeStepUpPolicy netscapeStepUpPolicy,
                CertificateTransparencyMode ctMode,
-               DistrustedCAPolicy distrustedCAPolicy);
+               DistrustedCAPolicy distrustedCAPolicy,
+               const Vector<EnterpriseCert>& thirdPartyCerts);
   ~CertVerifier();
 
   void ClearOCSPCache() { mOCSPCache.Clear(); }
@@ -225,6 +227,13 @@ class CertVerifier {
 
  private:
   OCSPCache mOCSPCache;
+  // We keep a copy of the bytes of each third party root to own.
+  Vector<EnterpriseCert> mThirdPartyCerts;
+  // This is a reusable, precomputed list of Inputs corresponding to each root
+  // in mThirdPartyCerts that wasn't too long to make an Input out of.
+  Vector<mozilla::pkix::Input> mThirdPartyRootInputs;
+  // Similarly, but with intermediates.
+  Vector<mozilla::pkix::Input> mThirdPartyIntermediateInputs;
 
   // We only have a forward declarations of these classes (see above)
   // so we must allocate dynamically.

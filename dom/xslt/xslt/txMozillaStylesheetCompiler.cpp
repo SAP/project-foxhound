@@ -197,7 +197,7 @@ txStylesheetSink::DidBuildModel(bool aTerminated) {
 }
 
 NS_IMETHODIMP
-txStylesheetSink::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
+txStylesheetSink::OnDataAvailable(nsIRequest* aRequest,
                                   nsIInputStream* aInputStream,
                                   uint64_t aOffset, uint32_t aCount) {
   if (!mCheckedForXML) {
@@ -216,12 +216,11 @@ txStylesheetSink::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
     }
   }
 
-  return mListener->OnDataAvailable(aRequest, mParser, aInputStream, aOffset,
-                                    aCount);
+  return mListener->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
-txStylesheetSink::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
+txStylesheetSink::OnStartRequest(nsIRequest* aRequest) {
   int32_t charsetSource = kCharsetFromDocTypeDefault;
 
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
@@ -265,12 +264,11 @@ txStylesheetSink::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
     }
   }
 
-  return mListener->OnStartRequest(aRequest, mParser);
+  return mListener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
-txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                                nsresult aStatusCode) {
+txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   bool success = true;
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
@@ -299,7 +297,7 @@ txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
     mCompiler->cancel(result, nullptr, spec.get());
   }
 
-  nsresult rv = mListener->OnStopRequest(aRequest, mParser, aStatusCode);
+  nsresult rv = mListener->OnStopRequest(aRequest, aStatusCode);
   mListener = nullptr;
   mParser = nullptr;
   return rv;
@@ -434,7 +432,7 @@ nsresult txCompileObserver::startLoad(nsIURI* aUri,
   parser->SetContentSink(sink);
   parser->Parse(aUri);
 
-  return channel->AsyncOpen2(sink);
+  return channel->AsyncOpen(sink);
 }
 
 nsresult TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,
@@ -563,7 +561,8 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
 
   rv = nsSyncLoadService::LoadDocument(
       uri, nsIContentPolicy::TYPE_XSLT, referrerPrincipal,
-      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, nullptr, false,
+      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, nullptr,
+      source ? source->OwnerDoc()->CookieSettings() : nullptr, false,
       aReferrerPolicy, getter_AddRefs(document));
   NS_ENSURE_SUCCESS(rv, rv);
 

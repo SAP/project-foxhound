@@ -191,6 +191,7 @@ static inline already_AddRefed<nsIChannel> SetupIPCheckChannel(bool ipv4) {
       getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
       nsIContentPolicy::TYPE_OTHER,
+      nullptr,  // nsICookieSettings
       nullptr,  // aPerformanceStorage
       nullptr,  // aLoadGroup
       nullptr,
@@ -237,13 +238,13 @@ NetworkConnectivityService::RecheckIPConnectivity() {
   nsresult rv;
   mIPv4Channel = SetupIPCheckChannel(/* ipv4 = */ true);
   if (mIPv4Channel) {
-    rv = mIPv4Channel->AsyncOpen2(this);
+    rv = mIPv4Channel->AsyncOpen(this);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   mIPv6Channel = SetupIPCheckChannel(/* ipv4 = */ false);
   if (mIPv6Channel) {
-    rv = mIPv6Channel->AsyncOpen2(this);
+    rv = mIPv6Channel->AsyncOpen(this);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -251,14 +252,12 @@ NetworkConnectivityService::RecheckIPConnectivity() {
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnStartRequest(nsIRequest *aRequest,
-                                           nsISupports *aContext) {
+NetworkConnectivityService::OnStartRequest(nsIRequest *aRequest) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
 NetworkConnectivityService::OnStopRequest(nsIRequest *aRequest,
-                                          nsISupports *aContext,
                                           nsresult aStatusCode) {
   if (aStatusCode == NS_ERROR_ABORT) {
     return NS_OK;
@@ -294,7 +293,6 @@ NetworkConnectivityService::OnStopRequest(nsIRequest *aRequest,
 
 NS_IMETHODIMP
 NetworkConnectivityService::OnDataAvailable(nsIRequest *aRequest,
-                                            nsISupports *aContext,
                                             nsIInputStream *aInputStream,
                                             uint64_t aOffset, uint32_t aCount) {
   nsAutoCString data;

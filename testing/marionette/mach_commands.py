@@ -9,10 +9,8 @@ import os
 import sys
 
 from mach.decorators import (
-    CommandArgument,
     CommandProvider,
     Command,
-    SubCommand,
 )
 
 from mozbuild.base import (
@@ -24,6 +22,7 @@ from mozbuild.base import (
 def create_parser_tests():
     from marionette_harness.runtests import MarionetteArguments
     from mozlog.structured import commandline
+
     parser = MarionetteArguments()
     commandline.add_logging_group(parser)
     return parser
@@ -68,7 +67,7 @@ def run_marionette(tests, binary=None, topsrcdir=None, **kwargs):
 class MarionetteTest(MachCommandBase):
     @Command("marionette-test",
              category="testing",
-             description="Remote control protocol to Gecko, used for functional UI tests and browser automation.",
+             description="Remote control protocol to Gecko, used for browser automation.",
              conditions=[conditions.is_firefox_or_android],
              parser=create_parser_tests,
              )
@@ -79,38 +78,11 @@ class MarionetteTest(MachCommandBase):
                 tests.append(obj["file_relpath"])
             del kwargs["test_objects"]
 
-        if not kwargs.get("binary") and conditions.is_firefox(self):
-            kwargs["binary"] = self.get_binary_path("app")
-        return run_marionette(tests, topsrcdir=self.topsrcdir, **kwargs)
-
-
-@CommandProvider
-class Marionette(MachCommandBase):
-
-    @property
-    def srcdir(self):
-        return os.path.join(self.topsrcdir, "testing/marionette")
-
-    @Command("marionette",
-             category="misc",
-             description="Remote control protocol to Gecko, used for functional UI tests and browser automation.",
-             conditions=[conditions.is_firefox_or_android],
-             )
-    def marionette(self):
-        self.parser.print_usage()
-        return 1
-
-    @SubCommand("marionette", "test",
-                description="Run browser automation tests based on Marionette harness.",
-                parser=create_parser_tests,
-                )
-    def marionette_test(self, tests, **kwargs):
-        if "test_objects" in kwargs:
-            tests = []
-            for obj in kwargs["test_objects"]:
-                tests.append(obj["file_relpath"])
-            del kwargs["test_objects"]
+        # Force disable e10s because it is not supported in Fennec
+        if kwargs.get("app") == "fennec":
+            kwargs["e10s"] = False
 
         if not kwargs.get("binary") and conditions.is_firefox(self):
             kwargs["binary"] = self.get_binary_path("app")
+
         return run_marionette(tests, topsrcdir=self.topsrcdir, **kwargs)

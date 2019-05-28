@@ -12,9 +12,9 @@
 // * it does a sanity check to ensure other cert verifier behavior is
 //   unmodified
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm", {});
-const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
-const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", {});
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js");
+const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", null);
 
 // First, we need to setup appInfo for the blocklist service to work
 var id = "xpcshell@tests.mozilla.org";
@@ -138,6 +138,7 @@ const certBlocklistJSON = `{
 
 function serveResponse(body) {
   return (req, response) => {
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setStatusLine(null, 200, "OK");
     response.write(body);
   };

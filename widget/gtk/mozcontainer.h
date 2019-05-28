@@ -9,6 +9,7 @@
 #define __MOZ_CONTAINER_H__
 
 #include <gtk/gtk.h>
+#include <functional>
 
 /*
  * MozContainer
@@ -78,6 +79,7 @@ struct _MozContainer {
   struct wl_callback *frame_callback_handler;
   gboolean surface_needs_clear;
   gboolean ready_to_draw;
+  std::function<void(void)> inital_draw_cb;
 #endif
   gboolean force_default_visual;
 };
@@ -100,6 +102,8 @@ gboolean moz_container_has_wl_egl_window(MozContainer *container);
 gboolean moz_container_surface_needs_clear(MozContainer *container);
 void moz_container_scale_changed(MozContainer *container,
                                  GtkAllocation *aAllocation);
+void moz_container_set_initial_draw_callback(
+    MozContainer *container, std::function<void(void)> inital_draw_cb);
 #endif
 
 #endif /* __MOZ_CONTAINER_H__ */

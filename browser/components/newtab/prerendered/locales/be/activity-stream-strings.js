@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Зразумела",
   "prefs_home_header": "Хатні экран Firefox",
   "prefs_home_description": "Выберыце пажаданае змесціва для хатняга экрана Firefox.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Хатняя старонка Firefox",
+  "prefs_content_discovery_description": "Выяўленне змесціва на хатняй старонцы Firefox дазволіць вам знаходзіць высакаякасныя рэлевантныя артыкулы з усяго сеціва.",
+  "prefs_content_discovery_button": "Адключыць выяўленне змесціва",
   "prefs_section_rows_option": "{num} радок;{num} радкі;{num} радкоў",
   "prefs_search_header": "Пошук у сеціве",
   "prefs_topsites_description": "Сайты, якія вы наведваеце найчасцей",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Захоўвайце ўлюбёныя гісторыі ў Pocket, і сілкуйце свой розум добрай чытанкай.",
   "highlights_empty_state": "Пачніце агляданне, і мы пакажам вам тут некаторыя з найлепшых артыкулаў, відэаролікаў і іншых старонак, якія вы нядаўна наведалі або дадалі ў закладкі.",
   "topstories_empty_state": "Гатова. Праверце пазней, каб убачыць больш матэрыялаў ад {provider}. Не жадаеце чакаць? Выберыце папулярную тэму, каб знайсці больш цікавых матэрыялаў з усяго Інтэрнэту.",
-  "manual_migration_explanation2": "Паспрабуйце Firefox з закладкамі, гісторыяй і паролямі з іншага браўзера.",
-  "manual_migration_cancel_button": "Не, дзякуй",
-  "manual_migration_import_button": "Імпартаваць зараз",
   "error_fallback_default_info": "Ох, нешта пайшло не так пры загрузцы гэтага змесціва.",
   "error_fallback_default_refresh_suggestion": "Абнавіць старонку, каб паўтарыць спробу.",
   "section_menu_action_remove_section": "Выдаліць раздзел",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Працягнуць",
   "firstrun_skip_login": "Прапусціць гэты крок",
   "context_menu_title": "Адкрыць меню",
-  "pocket_learn_more": "Падрабязней"
+  "manual_migration_explanation2": "Паспрабуйце Firefox з закладкамі, гісторыяй і паролямі з іншага браўзера.",
+  "manual_migration_cancel_button": "Не, дзякуй",
+  "manual_migration_import_button": "Імпартаваць зараз"
 };

@@ -6,9 +6,8 @@
 # received from the raptor control server
 from __future__ import absolute_import
 
-from output import Output
-
 from mozlog import get_proxy_logger
+from output import Output
 
 LOG = get_proxy_logger(component='results-handler')
 
@@ -35,8 +34,13 @@ class RaptorResultsHandler():
                             'test_name': test_name,
                             'page_cycle': page_cycle})
 
-    def add_page_timeout(self, test_name, page_url):
-        self.page_timeout_list.append({'test_name': test_name, 'url': page_url})
+    def add_page_timeout(self, test_name, page_url, pending_metrics):
+
+        pending_metrics = [key for key, value in pending_metrics.items() if value]
+
+        self.page_timeout_list.append({'test_name': test_name,
+                                       'url': page_url,
+                                       'pending_metrics': ", ".join(pending_metrics)})
 
     def add_supporting_data(self, supporting_data):
         ''' Supporting data is additional data gathered outside of the regular
@@ -66,17 +70,17 @@ class RaptorResultsHandler():
             self.supporting_data = []
         self.supporting_data.append(supporting_data)
 
-    def summarize_and_output(self, test_config):
+    def summarize_and_output(self, test_config, test_names):
         # summarize the result data, write to file and output PERFHERDER_DATA
         LOG.info("summarizing raptor test results")
         output = Output(self.results, self.supporting_data, test_config['subtest_alert_on'])
-        output.summarize()
+        output.summarize(test_names)
         output.summarize_screenshots(self.images)
         # only dump out supporting data (i.e. power) if actual Raptor test completed
         if self.supporting_data is not None and len(self.results) != 0:
             output.summarize_supporting_data()
-            output.output_supporting_data()
-        return output.output()
+            output.output_supporting_data(test_names)
+        return output.output(test_names)
 
 
 class RaptorTestResult():

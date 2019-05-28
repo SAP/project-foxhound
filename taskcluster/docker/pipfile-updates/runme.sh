@@ -36,8 +36,7 @@ fi
 if [ -n "${ARC_SECRET}" ] && getent hosts taskcluster
 then
   set +x # Don't echo these
-  # Until bug 1460015 is finished, use the old, baseUrl-style proxy URLs
-  secrets_url="${TASKCLUSTER_PROXY_URL}/secrets/v1/secret/${ARC_SECRET}"
+  secrets_url="${TASKCLUSTER_PROXY_URL}/api/secrets/v1/secret/${ARC_SECRET}"
   SECRET=$(curl "${secrets_url}")
   TOKEN=$(echo "${SECRET}" | jq -r '.secret.token')
 elif [ -n "${ARC_TOKEN}" ] # Allow for local testing.
@@ -59,6 +58,8 @@ END
   set -x
   chmod 600 "${HOME}/.arcrc"
 fi
+
+export HGPLAIN=1
 
 # shellcheck disable=SC2086
 /home/worker/scripts/update_pipfiles.sh -b "${BRANCH}" -p "${PIPFILE_DIRECTORY}" ${PIP_ARG}

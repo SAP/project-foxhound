@@ -72,6 +72,8 @@ class nsContentPermissionUtils {
       const nsTArray<PermissionRequest>& aRequests, Element* aElement,
       const IPC::Principal& aPrincipal,
       const IPC::Principal& aTopLevelPrincipal, const bool aIsHandlingUserInput,
+      const bool aUserHadInteractedWithDocument,
+      const DOMTimeStamp aDocumentDOMContentLoadedTimestamp,
       const TabId& aTabId);
 
   static nsresult AskPermission(nsIContentPermissionRequest* aRequest,
@@ -121,6 +123,10 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
   NS_IMETHOD GetWindow(mozIDOMWindow** aWindow) override;
   NS_IMETHOD GetElement(mozilla::dom::Element** aElement) override;
   NS_IMETHOD GetIsHandlingUserInput(bool* aIsHandlingUserInput) override;
+  NS_IMETHOD GetUserHadInteractedWithDocument(
+      bool* aUserHadInteractedWithDocument) override;
+  NS_IMETHOD GetDocumentDOMContentLoadedTimestamp(
+      DOMTimeStamp* aDocumentDOMContentLoadedTimestamp) override;
   NS_IMETHOD GetRequester(nsIContentPermissionRequester** aRequester) override;
   // Overrides for Allow() and Cancel() aren't provided by this class.
   // That is the responsibility of the subclasses.
@@ -143,7 +149,6 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
 
  protected:
   ContentPermissionRequestBase(nsIPrincipal* aPrincipal,
-                               bool aIsHandlingUserInput,
                                nsPIDOMWindowInner* aWindow,
                                const nsACString& aPrefName,
                                const nsACString& aType);
@@ -156,6 +161,8 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
   nsCString mPrefName;
   nsCString mType;
   bool mIsHandlingUserInput;
+  bool mUserHadInteractedWithDocument;
+  DOMTimeStamp mDocumentDOMContentLoadedTimestamp;
 };
 
 }  // namespace dom
@@ -222,11 +229,10 @@ class RemotePermissionRequest final
                           nsPIDOMWindowInner* aWindow);
 
   // It will be called when prompt dismissed.
-  virtual mozilla::ipc::IPCResult RecvNotifyResult(
-      const bool& aAllow,
-      InfallibleTArray<PermissionChoice>&& aChoices) override;
+  mozilla::ipc::IPCResult RecvNotifyResult(
+      const bool& aAllow, InfallibleTArray<PermissionChoice>&& aChoices);
 
-  virtual mozilla::ipc::IPCResult RecvGetVisibility() override;
+  mozilla::ipc::IPCResult RecvGetVisibility();
 
   void IPDLAddRef() {
     mIPCOpen = true;

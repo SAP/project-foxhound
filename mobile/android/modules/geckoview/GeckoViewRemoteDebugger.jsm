@@ -6,15 +6,15 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewRemoteDebugger"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "require", () => {
-  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
   return require;
 });
 
@@ -28,7 +28,7 @@ XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
   return SocketListener;
 });
 
-GeckoViewUtils.initLogging("RemoteDebugger", this);
+const {debug, warn} = GeckoViewUtils.initLogging("RemoteDebugger"); // eslint-disable-line no-unused-vars
 
 var GeckoViewRemoteDebugger = {
   observe(aSubject, aTopic, aData) {
@@ -47,6 +47,16 @@ var GeckoViewRemoteDebugger = {
     debug `onInit`;
     this._isEnabled = false;
     this._usbDebugger = new USBRemoteDebugger();
+
+    // This lets Marionette start listening (when it's enabled).  Both
+    // GeckoView and Marionette do most of their initialization in
+    // "profile-after-change", and there is no order enforced between
+    // them.  Therefore we defer asking Marionette to startup until
+    // after all "profile-after-change" handlers (including this one)
+    // have completed.
+    Services.tm.dispatchToMainThread(() => {
+        Services.obs.notifyObservers(null, "marionette-startup-requested");
+    });
   },
 
   onEnable() {
@@ -77,7 +87,7 @@ var GeckoViewRemoteDebugger = {
     if (packageName) {
       packageName = packageName + "/";
     } else {
-      warn `Missing env MOZ_ANDROID_PACKAGE_NAME. Unable to get pacakge name`;
+      warn `Missing env MOZ_ANDROID_PACKAGE_NAME. Unable to get package name`;
     }
 
     this._isEnabled = true;

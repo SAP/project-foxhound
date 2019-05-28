@@ -9,7 +9,7 @@
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/inspector.properties");
 
-const Editor = require("devtools/client/sourceeditor/editor");
+const Editor = require("devtools/client/shared/sourceeditor/editor");
 const beautify = require("devtools/shared/jsbeautify/beautify");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
@@ -184,6 +184,7 @@ EventTooltip.prototype = {
         editor: editor,
         handler: listener.handler,
         uri: listener.origin,
+        sourceActor: listener.sourceActor,
         dom0: listener.DOM0,
         native: listener.native,
         appended: false,
@@ -263,7 +264,7 @@ EventTooltip.prototype = {
     const header = event.currentTarget;
     const content = header.nextElementSibling;
 
-    const {uri} = this._eventEditors.get(content);
+    const {sourceActor, uri} = this._eventEditors.get(content);
 
     const location = this._parseLocation(uri);
     if (location) {
@@ -272,7 +273,7 @@ EventTooltip.prototype = {
 
       this._tooltip.hide();
 
-      toolbox.viewSourceInDebugger(location.url, location.line);
+      toolbox.viewSourceInDebugger(location.url, location.line, sourceActor);
     }
   },
 

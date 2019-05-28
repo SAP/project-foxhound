@@ -3,16 +3,13 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 .welcomebox {
-  width: calc(100% - 1px);
-
-  /* Offsetting it by 30px for the sources-header area */
-  height: calc(100% - 30px);
   position: absolute;
-  top: 30px;
+  top: var(--editor-header-height);
   left: 0;
+  bottom: 1px;
+  width: calc(100% - 1px);
   padding: 50px 0 0 0;
   text-align: center;
-  font-size: 1.25em;
   background-color: var(--theme-toolbar-background);
   font-weight: lighter;
   z-index: 10;
@@ -26,9 +23,7 @@
 .welcomebox .command-bar-button {
   position: absolute;
   top: auto;
-  offset-inline-end: 0;
   inset-inline-end: 0;
-  offset-inline-start: auto;
   inset-inline-start: auto;
   bottom: 0;
 }
@@ -36,6 +31,7 @@
 .alignlabel {
   display: flex;
   white-space: nowrap;
+  font-size: 1.25em;
 }
 
 .shortcutKeys {
@@ -57,7 +53,7 @@
 }
 
 .shortcutKey {
-  text-align: right;
+  text-align: end;
   padding-right: 10px;
   font-family: var(--monospace-font-family);
   font-size: 14px;
@@ -65,8 +61,14 @@
   color: var(--theme-body-color);
 }
 
+:root[platform="mac"] .welcomebox .shortcutKey,
+.launchpad-root[platform="mac"] .welcomebox .shortcutKey {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 500;
+}
+
 .shortcutLabel {
-  text-align: left;
+  text-align: start;
   padding-left: 10px;
   font-size: 14px;
   line-height: 18px;

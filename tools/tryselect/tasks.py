@@ -22,7 +22,7 @@ import taskgraph
 from taskgraph.generator import TaskGraphGenerator
 from taskgraph.parameters import (
     ParameterMismatch,
-    load_parameters_file,
+    parameters_loader,
 )
 from taskgraph.taskgraph import TaskGraph
 
@@ -31,8 +31,8 @@ build = MozbuildObject.from_environment(cwd=here)
 
 
 PARAMETER_MISMATCH = """
-ERROR - The parameters being used to generate tasks differ from those defined
-in your working copy:
+ERROR - The parameters being used to generate tasks differ from those expected
+by your working copy:
 
     {}
 
@@ -56,12 +56,12 @@ def invalidate(cache, root):
 
 def generate_tasks(params, full, root):
     # Try to delete the old taskgraph cache directory.
-    old_cache_dir = os.path.join(get_state_dir()[0], 'cache', 'taskgraph')
+    old_cache_dir = os.path.join(get_state_dir(), 'cache', 'taskgraph')
     if os.path.isdir(old_cache_dir):
         shutil.rmtree(old_cache_dir)
 
     root_hash = hashlib.sha256(os.path.abspath(root)).hexdigest()
-    cache_dir = os.path.join(get_state_dir()[0], 'cache', root_hash, 'taskgraph')
+    cache_dir = os.path.join(get_state_dir(), 'cache', root_hash, 'taskgraph')
 
     # Cleanup old cache files
     for path in glob.glob(os.path.join(cache_dir, '*_set')):
@@ -79,19 +79,18 @@ def generate_tasks(params, full, root):
         os.makedirs(cache_dir)
 
     print("Task configuration changed, generating {}".format(attr.replace('_', ' ')))
-    try:
-        params = load_parameters_file(params, strict=False, overrides={'try_mode': 'try_select'})
-        params.check()
-    except ParameterMismatch as e:
-        print(PARAMETER_MISMATCH.format(e.args[0]))
-        sys.exit(1)
 
     taskgraph.fast = True
     cwd = os.getcwd()
     os.chdir(build.topsrcdir)
 
     root = os.path.join(root, 'taskcluster', 'ci')
-    tg = getattr(TaskGraphGenerator(root_dir=root, parameters=params), attr)
+    params = parameters_loader(params, strict=False, overrides={'try_mode': 'try_select'})
+    try:
+        tg = getattr(TaskGraphGenerator(root_dir=root, parameters=params), attr)
+    except ParameterMismatch as e:
+        print(PARAMETER_MISMATCH.format(e.args[0]))
+        sys.exit(1)
 
     os.chdir(cwd)
 

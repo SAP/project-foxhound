@@ -65,6 +65,7 @@ contract @mozilla.org/helperapplauncherdialog;1 {e9d277a0-268a-4ec2-bb8c-10fdf3e
 component {be623d20-d305-11de-8a39-0800200c9a66} BrowserCLH.js application={aa3c5121-dab2-40e2-81ca-7ea25febc110}
 contract @mozilla.org/browser/browser-clh;1 {be623d20-d305-11de-8a39-0800200c9a66}
 category app-startup BrowserCLH service,@mozilla.org/browser/browser-clh;1
+category profile-after-change BrowserCLH @mozilla.org/browser/browser-clh;1
 
 # ContentDispatchChooser.js
 component {5a072a22-1e66-4100-afc1-07aed8b62fc5} ContentDispatchChooser.js
@@ -98,9 +99,9 @@ contract @mozilla.org/fxa-push;1 {d1bbb0fd-1d47-4134-9c12-d7b1be20b721}
 category android-push-service FxAccountsPush @mozilla.org/fxa-push;1
 
 #ifndef RELEASE_OR_BETA
-# TabSource.js
-component {5850c76e-b916-4218-b99a-31f004e0a7e7} TabSource.js
-contract @mozilla.org/tab-source-service;1 {5850c76e-b916-4218-b99a-31f004e0a7e7}
+# TabSource.js -- disabled, Bug 1440601
+# component {5850c76e-b916-4218-b99a-31f004e0a7e7} TabSource.js
+# contract @mozilla.org/tab-source-service;1 {5850c76e-b916-4218-b99a-31f004e0a7e7}
 #endif
 
 # ColorPicker.js

@@ -7,7 +7,6 @@ package org.mozilla.geckoview;
 
 import org.mozilla.gecko.InputMethods;
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.GeckoEditableChild;
 import org.mozilla.gecko.IGeckoEditableParent;
 import org.mozilla.gecko.NativeQueue;
 import org.mozilla.gecko.util.ActivityUtils;
@@ -113,6 +112,7 @@ public final class SessionTextInput {
                               String actionHint, int flag);
         void onSelectionChange();
         void onTextChange();
+        void onDiscardComposition();
         void onDefaultKeyEvent(KeyEvent event);
         void updateCompositionRects(final RectF[] aRects);
     }
@@ -205,6 +205,10 @@ public final class SessionTextInput {
             final View view = session.getTextInput().getView();
             final InputMethodManager imm = getInputMethodManager(view);
             if (imm != null) {
+                // When composition start and end is -1,
+                // InputMethodManager.updateSelection will remove composition
+                // on most IMEs. If not working, we have to add a workaround
+                // to EditableListener.onDiscardComposition.
                 imm.updateSelection(view, selStart, selEnd, compositionStart, compositionEnd);
             }
         }

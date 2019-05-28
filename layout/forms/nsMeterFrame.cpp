@@ -27,13 +27,13 @@ using mozilla::dom::Element;
 using mozilla::dom::HTMLMeterElement;
 
 nsIFrame* NS_NewMeterFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsMeterFrame(aStyle);
+  return new (aPresShell) nsMeterFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMeterFrame)
 
-nsMeterFrame::nsMeterFrame(ComputedStyle* aStyle)
-    : nsContainerFrame(aStyle, kClassID), mBarDiv(nullptr) {}
+nsMeterFrame::nsMeterFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsContainerFrame(aStyle, aPresContext, kClassID), mBarDiv(nullptr) {}
 
 nsMeterFrame::~nsMeterFrame() {}
 
@@ -56,7 +56,7 @@ nsresult nsMeterFrame::CreateAnonymousContent(
   mBarDiv = doc->CreateHTMLElement(nsGkAtoms::div);
 
   // Associate ::-moz-meter-bar pseudo-element to the anonymous child.
-  mBarDiv->SetPseudoElementType(CSSPseudoElementType::mozMeterBar);
+  mBarDiv->SetPseudoElementType(PseudoStyleType::mozMeterBar);
 
   aElements.AppendElement(mBarDiv);
 

@@ -30,13 +30,11 @@ UniquePtr<webgl::FormatUsageAuthority> WebGL2Context::CreateFormatUsage(
   return webgl::FormatUsageAuthority::CreateForWebGL2(gl);
 }
 
-/*static*/ bool WebGL2Context::IsSupported() {
-  return gfxPrefs::WebGL2Enabled();
-}
+/*static*/
+bool WebGL2Context::IsSupported() { return gfxPrefs::WebGL2Enabled(); }
 
-/*static*/ WebGL2Context* WebGL2Context::Create() {
-  return new WebGL2Context();
-}
+/*static*/
+WebGL2Context* WebGL2Context::Create() { return new WebGL2Context(); }
 
 JSObject* WebGL2Context::WrapObject(JSContext* cx,
                                     JS::Handle<JSObject*> givenProto) {
@@ -144,6 +142,11 @@ bool WebGLContext::InitWebGL2(FailureReason* const out_failReason) {
                    &mGLMaxTransformFeedbackSeparateAttribs);
   gl->GetUIntegerv(LOCAL_GL_MAX_UNIFORM_BUFFER_BINDINGS,
                    &mGLMaxUniformBufferBindings);
+
+  mGLMinProgramTexelOffset =
+      gl->GetIntAs<uint32_t>(LOCAL_GL_MIN_PROGRAM_TEXEL_OFFSET);
+  mGLMaxProgramTexelOffset =
+      gl->GetIntAs<uint32_t>(LOCAL_GL_MAX_PROGRAM_TEXEL_OFFSET);
 
   mIndexedUniformBufferBindings.resize(mGLMaxUniformBufferBindings);
 

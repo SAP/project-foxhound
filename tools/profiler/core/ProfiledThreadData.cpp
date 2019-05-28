@@ -5,8 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ProfiledThreadData.h"
-#include "js/TraceLoggerAPI.h"
 
+#include "ProfileBuffer.h"
+#include "ProfileJSONWriter.h"
+
+#include "js/TraceLoggerAPI.h"
 #include "mozilla/dom/ContentChild.h"
 
 #if defined(GP_OS_darwin)
@@ -37,7 +40,8 @@ ProfiledThreadData::~ProfiledThreadData() {
 void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
                                     JSContext* aCx,
                                     SpliceableJSONWriter& aWriter,
-                                    const TimeStamp& aProcessStartTime,
+                                    const nsACString& aProcessName,
+                                    const mozilla::TimeStamp& aProcessStartTime,
                                     double aSinceTime, bool JSTracerEnabled) {
   if (mJITFrameInfoForPreviousJSContexts &&
       mJITFrameInfoForPreviousJSContexts->HasExpired(aBuffer.mRangeStart)) {
@@ -61,7 +65,7 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
   aWriter.Start();
   {
     StreamSamplesAndMarkers(mThreadInfo->Name(), mThreadInfo->ThreadId(),
-                            aBuffer, aWriter, aProcessStartTime,
+                            aBuffer, aWriter, aProcessName, aProcessStartTime,
                             mThreadInfo->RegisterTime(), mUnregisterTime,
                             aSinceTime, uniqueStacks);
 
@@ -112,7 +116,7 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
 
 void ProfiledThreadData::StreamTraceLoggerJSON(
     JSContext* aCx, SpliceableJSONWriter& aWriter,
-    const TimeStamp& aProcessStartTime) {
+    const mozilla::TimeStamp& aProcessStartTime) {
   aWriter.StartObjectProperty("jsTracerEvents");
   {
     JS::AutoTraceLoggerLockGuard lockGuard;
@@ -137,7 +141,7 @@ void ProfiledThreadData::StreamTraceLoggerJSON(
     {
       JS::TraceLoggerTimeStampBuffer collectionBuffer(lockGuard, aCx);
       while (collectionBuffer.NextChunk()) {
-        for (TimeStamp val : collectionBuffer) {
+        for (mozilla::TimeStamp val : collectionBuffer) {
           aWriter.DoubleElement((val - aProcessStartTime).ToMicroseconds());
         }
       }
@@ -201,24 +205,21 @@ void ProfiledThreadData::StreamTraceLoggerJSON(
 void StreamSamplesAndMarkers(const char* aName, int aThreadId,
                              const ProfileBuffer& aBuffer,
                              SpliceableJSONWriter& aWriter,
-                             const TimeStamp& aProcessStartTime,
-                             const TimeStamp& aRegisterTime,
-                             const TimeStamp& aUnregisterTime,
+                             const nsACString& aProcessName,
+                             const mozilla::TimeStamp& aProcessStartTime,
+                             const mozilla::TimeStamp& aRegisterTime,
+                             const mozilla::TimeStamp& aUnregisterTime,
                              double aSinceTime, UniqueStacks& aUniqueStacks) {
   aWriter.StringProperty("processType",
                          XRE_ChildProcessTypeToString(XRE_GetProcessType()));
 
   aWriter.StringProperty("name", aName);
 
+  // Use given process name (if any), unless we're the parent process.
   if (XRE_IsParentProcess()) {
     aWriter.StringProperty("processName", "Parent Process");
-  } else if (dom::ContentChild* cc = dom::ContentChild::GetSingleton()) {
-    // Try to get the process name from ContentChild.
-    nsAutoCString processName;
-    cc->GetProcessName(processName);
-    if (!processName.IsEmpty()) {
-      aWriter.StringProperty("processName", processName.Data());
-    }
+  } else if (!aProcessName.IsEmpty()) {
+    aWriter.StringProperty("processName", aProcessName.Data());
   }
 
   aWriter.IntProperty("tid", static_cast<int64_t>(aThreadId));
@@ -280,7 +281,7 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
 }
 
 void ProfiledThreadData::NotifyAboutToLoseJSContext(
-    JSContext* aContext, const TimeStamp& aProcessStartTime,
+    JSContext* aContext, const mozilla::TimeStamp& aProcessStartTime,
     ProfileBuffer& aBuffer) {
   if (!mBufferPositionWhenReceivedJSContext) {
     return;
@@ -293,14 +294,14 @@ void ProfiledThreadData::NotifyAboutToLoseJSContext(
     mJITFrameInfoForPreviousJSContexts = nullptr;
   }
 
-  UniquePtr<JITFrameInfo> jitFrameInfo =
+  mozilla::UniquePtr<JITFrameInfo> jitFrameInfo =
       mJITFrameInfoForPreviousJSContexts
           ? std::move(mJITFrameInfoForPreviousJSContexts)
-          : MakeUnique<JITFrameInfo>();
+          : mozilla::MakeUnique<JITFrameInfo>();
 
   aBuffer.AddJITInfoForRange(*mBufferPositionWhenReceivedJSContext,
                              mThreadInfo->ThreadId(), aContext, *jitFrameInfo);
 
   mJITFrameInfoForPreviousJSContexts = std::move(jitFrameInfo);
-  mBufferPositionWhenReceivedJSContext = Nothing();
+  mBufferPositionWhenReceivedJSContext = mozilla::Nothing();
 }

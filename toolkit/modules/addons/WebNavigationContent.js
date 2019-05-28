@@ -2,7 +2,7 @@
 
 /* eslint-env mozilla/frame-script */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "WebNavigationFrames",
                                "resource://gre/modules/WebNavigationFrames.jsm");
@@ -82,25 +82,18 @@ var CreatedNavigationTargetListener = {
 };
 
 var FormSubmitListener = {
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
-                                          Ci.nsIFormSubmitObserver,
-                                          Ci.nsISupportsWeakReference]),
   init() {
     this.formSubmitWindows = new WeakSet();
-    Services.obs.addObserver(FormSubmitListener, "earlyformsubmit");
+    addEventListener("DOMFormBeforeSubmit", this);
   },
 
   uninit() {
-    Services.obs.removeObserver(FormSubmitListener, "earlyformsubmit");
+    removeEventListener("DOMFormBeforeSubmit", this);
     this.formSubmitWindows = new WeakSet();
   },
 
-  notify: function(form, window, actionURI) {
-    try {
-      this.formSubmitWindows.add(window);
-    } catch (e) {
-      Cu.reportError("Error in FormSubmitListener.notify");
-    }
+  handleEvent({target: form}) {
+    this.formSubmitWindows.add(form.ownerGlobal);
   },
 
   hasAndForget: function(window) {

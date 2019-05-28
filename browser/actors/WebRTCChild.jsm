@@ -6,10 +6,10 @@
 
 var EXPORTED_SYMBOLS = ["WebRTCChild"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "MediaManagerService",
                                    "@mozilla.org/mediaManagerService;1",
                                    "nsIMediaManagerService");
@@ -220,6 +220,15 @@ function prompt(aContentWindow, aWindowID, aCallID, aConstraints, aDevices, aSec
   let isThirdPartyOrigin =
     aContentWindow.document.location.origin != aContentWindow.top.document.location.origin;
 
+  // WebRTC prompts have a bunch of special requirements, such as being able to
+  // grant two permissions (microphone and camera), selecting devices and showing
+  // a screen sharing preview. All this could have probably been baked into
+  // nsIContentPermissionRequest prompts, but the team that implemented this back
+  // then chose to just build their own prompting mechanism instead.
+  //
+  // So, what you are looking at here is not a real nsIContentPermissionRequest, but
+  // something that looks really similar and will be transmitted to webrtcUI.jsm
+  // for showing the prompt.
   let request = {
     callID: aCallID,
     windowID: aWindowID,

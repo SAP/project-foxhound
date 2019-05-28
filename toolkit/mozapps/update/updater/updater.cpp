@@ -123,15 +123,15 @@ BOOL PathGetSiblingFilePath(LPWSTR destinationBuffer, LPCWSTR siblingFilePath,
 // Closes the handle if valid and if the updater is elevated returns with the
 // return code specified. This prevents multiple launches of the callback
 // application by preventing the elevated process from launching the callback.
-#  define EXIT_WHEN_ELEVATED(path, handle, retCode)             \
-    {                                                           \
-      if (handle != INVALID_HANDLE_VALUE) {                     \
-        CloseHandle(handle);                                    \
-      }                                                         \
-      if (_waccess(path, F_OK) == 0 && NS_tremove(path) != 0) { \
-        ImpersonatedLogFinish();                                \
-        return retCode;                                         \
-      }                                                         \
+#  define EXIT_WHEN_ELEVATED(path, handle, retCode) \
+    {                                               \
+      if (handle != INVALID_HANDLE_VALUE) {         \
+        CloseHandle(handle);                        \
+      }                                             \
+      if (NS_tremove(path) && errno != ENOENT) {    \
+        ImpersonatedLogFinish();                    \
+        return retCode;                             \
+      }                                             \
     }
 #endif
 
@@ -481,6 +481,14 @@ static NS_tchar *get_valid_path(NS_tchar **line, bool isdir = false) {
   return path;
 }
 
+/*
+ * Gets a quoted path. The return value is malloc'd and it is the responsibility
+ * of the caller to free it.
+ *
+ * @param  path
+ *         The path to quote.
+ * @return On success the quoted path and nullptr otherwise.
+ */
 static NS_tchar *get_quoted_path(const NS_tchar *path) {
   size_t lenQuote = NS_tstrlen(kQuote);
   size_t lenPath = NS_tstrlen(path);
@@ -900,7 +908,11 @@ static int remove_recursive_on_reboot(const NS_tchar *path,
   if (!S_ISDIR(sInfo.st_mode)) {
     NS_tchar tmpDeleteFile[MAXPATHLEN];
     GetUUIDTempFilePath(deleteDir, L"rep", tmpDeleteFile);
-    NS_tremove(tmpDeleteFile);
+    if (NS_tremove(tmpDeleteFile) && errno != ENOENT) {
+      LOG(("remove_recursive_on_reboot: failed to remove temporary file: " LOG_S
+           ", err: %d",
+           tmpDeleteFile, errno));
+    }
     rv = rename_file(path, tmpDeleteFile, false);
     if (MoveFileEx(rv ? path : tmpDeleteFile, nullptr,
                    MOVEFILE_DELAY_UNTIL_REBOOT)) {
@@ -1402,7 +1414,11 @@ void AddFile::Finish(int status) {
     // When there is an update failure and a file has been added it is removed
     // here since there might not be a backup to replace it.
     if (status && mAdded) {
-      NS_tremove(mFile.get());
+      if (NS_tremove(mFile.get()) && errno != ENOENT) {
+        LOG(("non-fatal error after update failure removing added file: " LOG_S
+             ", err: %d",
+             mFile.get(), errno));
+      }
     }
     backup_finish(mFile.get(), mRelPath.get(), status);
   }
@@ -1446,11 +1462,8 @@ PatchFile::~PatchFile() {
     UnlockFile((HANDLE)_get_osfhandle(fileno(mPatchStream)), 0, 0, -1, -1);
   }
 #endif
-
-  // delete the temporary patch file
-  if (spath[0]) {
-    NS_tremove(spath);
-  }
+  // Patch files are written to the <working_dir>/updating directory which is
+  // removed after the update has finished so don't delete patch files here.
 
   if (buf) {
     free(buf);
@@ -1550,7 +1563,13 @@ int PatchFile::Prepare() {
   NS_tsnprintf(spath, sizeof(spath) / sizeof(spath[0]),
                NS_T("%s/updating/%d.patch"), gWorkingDirPath, mPatchIndex);
 
-  NS_tremove(spath);
+  // The removal of pre-existing patch files here is in case a previous update
+  // crashed and left these files behind.
+  if (NS_tremove(spath) && errno != ENOENT) {
+    LOG(("failure removing pre-existing patch file: " LOG_S ", err: %d", spath,
+         errno));
+    return WRITE_ERROR;
+  }
 
   mPatchStream = NS_tfopen(spath, NS_T("wb+"));
   if (!mPatchStream) {
@@ -1702,7 +1721,8 @@ int PatchFile::Execute() {
   // Set mPatchStream to nullptr to make AutoFile close the file,
   // so it can be deleted on Windows.
   mPatchStream = nullptr;
-  NS_tremove(spath);
+  // Patch files are written to the <working_dir>/updating directory which is
+  // removed after the update has finished so don't delete patch files here.
   spath[0] = NS_T('\0');
   free(buf);
   buf = nullptr;
@@ -2335,7 +2355,10 @@ static int ProcessReplaceRequest() {
     NS_tchar destLog[MAXPATHLEN];
     NS_tsnprintf(destLog, sizeof(destLog) / sizeof(destLog[0]),
                  NS_T("%s/updates/last-update.log"), destDir);
-    NS_tremove(destLog);
+    if (NS_tremove(destLog) && errno != ENOENT) {
+      LOG(("non-fatal error removing log file: " LOG_S ", err: %d", destLog,
+           errno));
+    }
     NS_trename(tmpLog, destLog);
   }
 #endif
@@ -2437,17 +2460,14 @@ static void UpdateThreadFunc(void *param) {
 #  else
                      NS_T("%s/update-settings.ini"),
 #  endif
-                     gWorkingDirPath);
+                     gInstallDirPath);
         MARChannelStringTable MARStrings;
         if (ReadMARChannelIDs(updateSettingsPath, &MARStrings) != OK) {
-          // If we can't read from update-settings.ini then we shouldn't impose
-          // a MAR restriction.  Some installations won't even include this
-          // file.
-          MARStrings.MARChannelID[0] = '\0';
+          rv = UPDATE_SETTINGS_FILE_CHANNEL;
+        } else {
+          rv = gArchiveReader.VerifyProductInformation(MARStrings.MARChannelID,
+                                                       MOZ_APP_VERSION);
         }
-
-        rv = gArchiveReader.VerifyProductInformation(MARStrings.MARChannelID,
-                                                     MOZ_APP_VERSION);
       }
     }
 #endif
@@ -2465,23 +2485,22 @@ static void UpdateThreadFunc(void *param) {
         NS_tchar continueFilePath[MAXPATHLEN] = {NS_T('\0')};
         NS_tsnprintf(continueFilePath,
                      sizeof(continueFilePath) / sizeof(continueFilePath[0]),
-                     NS_T("%s/continueStaging"), gPatchDirPath);
-        // Use 100 retries for staging requests to lessen the likelihood of
-        // tests intermittently failing on debug builds due to launching the
-        // updater. The total time to wait with the default interval of 100 ms
-        // is approximately 10 seconds. The tests use the same values.
-        const int max_retries = 100;
-        int retries = 1;
+                     NS_T("%s/continueStaging"), gInstallDirPath);
+        // Use 50 retries for staging requests to lessen the likelihood of tests
+        // intermittently failing on verify tasks due to launching the updater.
+        // The total time to wait with the default interval of 100 ms is
+        // approximately 5 seconds. The total time for tests is longer to
+        // account for the extra time it takes for the updater to launch.
+        const int max_retries = 50;
+        int retries = 0;
         while (retries++ < max_retries) {
 #  ifdef XP_WIN
           Sleep(100);
 #  else
           usleep(100000);
 #  endif
-          // Continue after the continue file exists and it is successfully
-          // removed.
-          if (!NS_taccess(continueFilePath, F_OK) &&
-              !NS_tremove(continueFilePath)) {
+          // Continue after the continue file exists and is removed.
+          if (!NS_tremove(continueFilePath)) {
             break;
           }
         }
@@ -2518,6 +2537,7 @@ static void UpdateThreadFunc(void *param) {
     } else {
       WriteStatusFile(rv);
     }
+    LOG(("failed: %d", rv));
 #ifdef TEST_UPDATER
     // Some tests need to use --test-process-updates again.
     putenv(const_cast<char *>("MOZ_TEST_PROCESS_UPDATES="));
@@ -2677,7 +2697,7 @@ int NS_main(int argc, NS_tchar **argv) {
   // need to initialize NSS at all there.
   // Otherwise, minimize the amount of NSS we depend on by avoiding all the NSS
   // databases.
-  if (NSS_NoDB_Init(NULL) != SECSuccess) {
+  if (NSS_NoDB_Init(nullptr) != SECSuccess) {
     PRErrorCode error = PR_GetError();
     fprintf(stderr, "Could not initialize NSS: %s (%d)", PR_ErrorToName(error),
             (int)error);
@@ -3054,8 +3074,7 @@ int NS_main(int argc, NS_tchar **argv) {
     // The update_in_progress.lock file should only exist during an update. In
     // case it exists attempt to remove it and exit if that fails to prevent
     // simultaneous updates occurring.
-    if (!_waccess(updateLockFilePath, F_OK) &&
-        NS_tremove(updateLockFilePath) != 0) {
+    if (NS_tremove(updateLockFilePath) && errno != ENOENT) {
       // Try to fall back to the old way of doing updates if a staged
       // update fails.
       if (sStagedUpdate || sReplaceRequest) {
@@ -3108,8 +3127,7 @@ int NS_main(int argc, NS_tchar **argv) {
         }
 #  endif
 
-        if (!_waccess(elevatedLockFilePath, F_OK) &&
-            NS_tremove(elevatedLockFilePath) != 0) {
+        if (NS_tremove(elevatedLockFilePath) && errno != ENOENT) {
           fprintf(stderr, "Unable to create elevated lock file! Exiting\n");
           return 1;
         }
@@ -3481,8 +3499,7 @@ int NS_main(int argc, NS_tchar **argv) {
       }
 
       // Make a copy of the callback executable so it can be read when patching.
-      NS_tremove(gCallbackBackupPath);
-      if (!CopyFileW(argv[callbackIndex], gCallbackBackupPath, true)) {
+      if (!CopyFileW(argv[callbackIndex], gCallbackBackupPath, false)) {
         DWORD copyFileError = GetLastError();
         LOG(("NS_main: failed to copy callback file " LOG_S
              " into place at " LOG_S,
@@ -3543,7 +3560,12 @@ int NS_main(int argc, NS_tchar **argv) {
             WriteStatusFile(WRITE_ERROR_CALLBACK_APP);
           }
 
-          NS_tremove(gCallbackBackupPath);
+          if (NS_tremove(gCallbackBackupPath) && errno != ENOENT) {
+            LOG(
+                ("NS_main: unable to remove backup of callback app file, "
+                 "path: " LOG_S,
+                 gCallbackBackupPath));
+          }
           EXIT_WHEN_ELEVATED(elevatedLockFilePath, updateLockFileHandle, 1);
           LaunchCallbackApp(argv[5], argc - callbackIndex, argv + callbackIndex,
                             sUsingService);
@@ -3600,7 +3622,12 @@ int NS_main(int argc, NS_tchar **argv) {
       CloseHandle(callbackFile);
     }
     // Remove the copy of the callback executable.
-    NS_tremove(gCallbackBackupPath);
+    if (NS_tremove(gCallbackBackupPath) && errno != ENOENT) {
+      LOG(
+          ("NS_main: non-fatal error removing backup of callback app file, "
+           "path: " LOG_S,
+           gCallbackBackupPath));
+    }
   }
 
   if (!sStagedUpdate && !sReplaceRequest && _wrmdir(gDeleteDirPath)) {
@@ -3807,6 +3834,7 @@ int add_dir_entries(const NS_tchar *dirpath, ActionList *list) {
         if (rv) {
           LOG(("add_dir_entries Parse error on recurse: " LOG_S ", err: %d",
                quotedpath, rv));
+          free(quotedpath);
           return rv;
         }
         free(quotedpath);
@@ -3892,9 +3920,11 @@ int add_dir_entries(const NS_tchar *dirpath, ActionList *list) {
         if (rv) {
           LOG(("add_dir_entries Parse error on recurse: " LOG_S ", err: %d",
                quotedpath, rv));
+          free(quotedpath);
           closedir(dir);
           return rv;
         }
+        free(quotedpath);
 
         list->Append(action);
       }
@@ -3915,6 +3945,7 @@ int add_dir_entries(const NS_tchar *dirpath, ActionList *list) {
     } else {
       list->Append(action);
     }
+    free(quotedpath);
 
     return rv;
   }
@@ -4035,6 +4066,14 @@ int add_dir_entries(const NS_tchar *dirpath, ActionList *list) {
 }
 #endif
 
+/*
+ * Gets the contents of an update manifest file. The return value is malloc'd
+ * and it is the responsibility of the caller to free it.
+ *
+ * @param  manifest
+ *         The full path to the manifest file.
+ * @return On success the contents of the manifest and nullptr otherwise.
+ */
 static NS_tchar *GetManifestContents(const NS_tchar *manifest) {
   AutoFile mfile(NS_tfopen(manifest, NS_T("rb")));
   if (mfile == nullptr) {
@@ -4069,11 +4108,10 @@ static NS_tchar *GetManifestContents(const NS_tchar *manifest) {
     r -= c;
     rb += c;
   }
-  mbuf[ms.st_size] = '\0';
-  rb = mbuf;
+  *rb = '\0';
 
 #ifndef XP_WIN
-  return rb;
+  return mbuf;
 #else
     NS_tchar *wrb = (NS_tchar *)malloc((ms.st_size + 1) * sizeof(NS_tchar));
     if (!wrb) {
@@ -4081,7 +4119,7 @@ static NS_tchar *GetManifestContents(const NS_tchar *manifest) {
       return nullptr;
     }
 
-    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, rb, -1, wrb,
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mbuf, -1, wrb,
                              ms.st_size + 1)) {
       LOG(("GetManifestContents: error converting utf8 to utf16le: %d",
            GetLastError()));
@@ -4104,8 +4142,8 @@ int AddPreCompleteActions(ActionList *list) {
         get_full_path(NS_T("precomplete")));
 #endif
 
-  NS_tchar *rb = GetManifestContents(manifestPath.get());
-  if (rb == nullptr) {
+  NS_tchar *buf = GetManifestContents(manifestPath.get());
+  if (!buf) {
     LOG(
         ("AddPreCompleteActions: error getting contents of precomplete "
          "manifest"));
@@ -4113,6 +4151,7 @@ int AddPreCompleteActions(ActionList *list) {
     // generation scripts enforce the presence of a precomplete manifest.
     return OK;
   }
+  NS_tchar *rb = buf;
 
   int rv;
   NS_tchar *line;
@@ -4125,6 +4164,7 @@ int AddPreCompleteActions(ActionList *list) {
     NS_tchar *token = mstrtok(kWhitespace, &line);
     if (!token) {
       LOG(("AddPreCompleteActions: token not found in manifest"));
+      free(buf);
       return PARSE_ERROR;
     }
 
@@ -4138,21 +4178,26 @@ int AddPreCompleteActions(ActionList *list) {
       action = new RemoveDir();
     } else {
       LOG(("AddPreCompleteActions: unknown token: " LOG_S, token));
+      free(buf);
       return PARSE_ERROR;
     }
 
     if (!action) {
+      free(buf);
       return BAD_ACTION_ERROR;
     }
 
     rv = action->Parse(line);
     if (rv) {
+      delete action;
+      free(buf);
       return rv;
     }
 
     list->Append(action);
   }
 
+  free(buf);
   return OK;
 }
 
@@ -4169,17 +4214,18 @@ int DoUpdate() {
     return rv;
   }
 
-  NS_tchar *rb = GetManifestContents(manifest);
-  NS_tremove(manifest);
-  if (rb == nullptr) {
+  NS_tchar *buf = GetManifestContents(manifest);
+  // The manifest is located in the <working_dir>/updating directory which is
+  // removed after the update has finished so don't delete it here.
+  if (!buf) {
     LOG(("DoUpdate: error opening manifest file: " LOG_S, manifest));
     return READ_ERROR;
   }
+  NS_tchar *rb = buf;
 
   ActionList list;
   NS_tchar *line;
   bool isFirstAction = true;
-
   while ((line = mstrtok(kNL, &rb)) != 0) {
     // skip comments
     if (*line == NS_T('#')) {
@@ -4189,6 +4235,7 @@ int DoUpdate() {
     NS_tchar *token = mstrtok(kWhitespace, &line);
     if (!token) {
       LOG(("DoUpdate: token not found in manifest"));
+      free(buf);
       return PARSE_ERROR;
     }
 
@@ -4202,6 +4249,7 @@ int DoUpdate() {
         if (NS_tstrcmp(type, NS_T("complete")) == 0) {
           rv = AddPreCompleteActions(&list);
           if (rv) {
+            free(buf);
             return rv;
           }
         }
@@ -4217,15 +4265,18 @@ int DoUpdate() {
     } else if (NS_tstrcmp(token, NS_T("rmrfdir")) == 0) {  // rmdir recursive
       const NS_tchar *reldirpath = mstrtok(kQuote, &line);
       if (!reldirpath) {
+        free(buf);
         return PARSE_ERROR;
       }
 
       if (reldirpath[NS_tstrlen(reldirpath) - 1] != NS_T('/')) {
+        free(buf);
         return PARSE_ERROR;
       }
 
       rv = add_dir_entries(reldirpath, &list);
       if (rv) {
+        free(buf);
         return rv;
       }
 
@@ -4243,15 +4294,18 @@ int DoUpdate() {
       action = new PatchIfFile();
     } else {
       LOG(("DoUpdate: unknown token: " LOG_S, token));
+      free(buf);
       return PARSE_ERROR;
     }
 
     if (!action) {
+      free(buf);
       return BAD_ACTION_ERROR;
     }
 
     rv = action->Parse(line);
     if (rv) {
+      free(buf);
       return rv;
     }
 
@@ -4260,11 +4314,13 @@ int DoUpdate() {
 
   rv = list.Prepare();
   if (rv) {
+    free(buf);
     return rv;
   }
 
   rv = list.Execute();
 
   list.Finish(rv);
+  free(buf);
   return rv;
 }

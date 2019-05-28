@@ -49,13 +49,13 @@ void nsPartChannel::InitializeByteRange(int64_t aStart, int64_t aEnd) {
 }
 
 nsresult nsPartChannel::SendOnStartRequest(nsISupports *aContext) {
-  return mListener->OnStartRequest(this, aContext);
+  return mListener->OnStartRequest(this);
 }
 
 nsresult nsPartChannel::SendOnDataAvailable(nsISupports *aContext,
                                             nsIInputStream *aStream,
                                             uint64_t aOffset, uint32_t aLen) {
-  return mListener->OnDataAvailable(this, aContext, aStream, aOffset, aLen);
+  return mListener->OnDataAvailable(this, aStream, aOffset, aLen);
 }
 
 nsresult nsPartChannel::SendOnStopRequest(nsISupports *aContext,
@@ -63,7 +63,7 @@ nsresult nsPartChannel::SendOnStopRequest(nsISupports *aContext,
   // Drop the listener
   nsCOMPtr<nsIStreamListener> listener;
   listener.swap(mListener);
-  return listener->OnStopRequest(this, aContext, aStatus);
+  return listener->OnStopRequest(this, aStatus);
 }
 
 void nsPartChannel::SetContentDisposition(
@@ -165,33 +165,25 @@ NS_IMETHODIMP
 nsPartChannel::GetURI(nsIURI **aURI) { return mMultipartChannel->GetURI(aURI); }
 
 NS_IMETHODIMP
-nsPartChannel::Open(nsIInputStream **result) {
-  // This channel cannot be opened!
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsPartChannel::Open2(nsIInputStream **aStream) {
+nsPartChannel::Open(nsIInputStream **aStream) {
   nsCOMPtr<nsIStreamListener> listener;
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return Open(aStream);
-}
 
-NS_IMETHODIMP
-nsPartChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext) {
   // This channel cannot be opened!
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsPartChannel::AsyncOpen2(nsIStreamListener *aListener) {
+nsPartChannel::AsyncOpen(nsIStreamListener *aListener) {
   nsCOMPtr<nsIStreamListener> listener = aListener;
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return AsyncOpen(listener, nullptr);
+
+  // This channel cannot be opened!
+  return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
@@ -243,6 +235,7 @@ nsPartChannel::GetLoadInfo(nsILoadInfo **aLoadInfo) {
 
 NS_IMETHODIMP
 nsPartChannel::SetLoadInfo(nsILoadInfo *aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   return mMultipartChannel->SetLoadInfo(aLoadInfo);
 }
 
@@ -416,13 +409,12 @@ nsMultiMixedConv::AsyncConvertData(const char *aFromType, const char *aToType,
 
 // nsIRequestObserver implementation
 NS_IMETHODIMP
-nsMultiMixedConv::OnStartRequest(nsIRequest *request, nsISupports *ctxt) {
+nsMultiMixedConv::OnStartRequest(nsIRequest *request) {
   // we're assuming the content-type is available at this stage
   NS_ASSERTION(mBoundary.IsEmpty(), "a second on start???");
 
   nsresult rv;
 
-  mContext = ctxt;
   mTotalSent = 0;
   mChannel = do_QueryInterface(request, &rv);
   if (NS_FAILED(rv)) return rv;
@@ -503,9 +495,8 @@ nsMultiMixedConv::OnStartRequest(nsIRequest *request, nsISupports *ctxt) {
 
 // nsIStreamListener implementation
 NS_IMETHODIMP
-nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
-                                  nsIInputStream *inStr, uint64_t sourceOffset,
-                                  uint32_t count) {
+nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsIInputStream *inStr,
+                                  uint64_t sourceOffset, uint32_t count) {
   // Failing these assertions may indicate that some of the target listeners of
   // this converter is looping the thead queue, which is harmful to how we
   // collect the raw (content) data.
@@ -532,8 +523,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
 }
 
 NS_IMETHODIMP
-nsMultiMixedConv::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
-                                nsresult aStatus) {
+nsMultiMixedConv::OnStopRequest(nsIRequest *request, nsresult aStatus) {
   nsresult rv;
 
   if (mBoundary.IsEmpty()) {  // no token, no love.
@@ -561,8 +551,8 @@ nsMultiMixedConv::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
     // the middle of sending data. if we were, mPartChannel,
     // above, would have been non-null.
 
-    (void)mFinalListener->OnStartRequest(request, ctxt);
-    (void)mFinalListener->OnStopRequest(request, ctxt, aStatus);
+    (void)mFinalListener->OnStartRequest(request);
+    (void)mFinalListener->OnStopRequest(request, aStatus);
   }
 
   return NS_OK;

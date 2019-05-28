@@ -57,6 +57,9 @@ function convertTestData(testData) {
   return result;
 }
 
+// Returns the last bucket that has at least one scrollframe. This
+// is useful for skipping over buckets that are from empty transactions,
+// because those don't contain any useful data.
 function getLastNonemptyBucket(buckets) {
   for (var i = buckets.length - 1; i >= 0; --i) {
     if (buckets[i].scrollFrames.length > 0) {
@@ -126,8 +129,9 @@ function findRcdNode(apzcTree) {
 // element, and not in the content descriptions of other elements.
 function isLayerized(elementId) {
   var contentTestData = SpecialPowers.getDOMWindowUtils(window).getContentAPZTestData();
-  ok(contentTestData.paints.length > 0, "expected at least one paint");
-  var seqno = contentTestData.paints[contentTestData.paints.length - 1].sequenceNumber;
+  var nonEmptyBucket = getLastNonemptyBucket(contentTestData.paints);
+  ok(nonEmptyBucket != null, "expected at least one nonempty paint");
+  var seqno = nonEmptyBucket.sequenceNumber;
   contentTestData = convertTestData(contentTestData);
   var paint = contentTestData.paints[seqno];
   for (var scrollId in paint) {
@@ -278,6 +282,7 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
         w.subtestDone = advanceSubtestExecution;
         w.isApzSubtest = true;
         w.SimpleTest = SimpleTest;
+        w.dump = function(msg) { return dump(aFile + " | " + msg); };
         w.is = function(a, b, msg) { return is(a, b, aFile + " | " + msg); };
         w.ok = function(cond, msg) {
           arguments[1] = aFile + " | " + msg;
@@ -341,7 +346,7 @@ async function waitUntilApzStable() {
     /* eslint-env mozilla/frame-script */
     function parentProcessFlush() {
       addMessageListener("apz-flush", function() {
-        ChromeUtils.import("resource://gre/modules/Services.jsm");
+        const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
         var topWin = Services.wm.getMostRecentWindow("navigator:browser");
         if (!topWin) {
           topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
@@ -486,7 +491,7 @@ function runContinuation(testFunction) {
 function getSnapshot(rect) {
   function parentProcessSnapshot() {
     addMessageListener("snapshot", function(parentRect) {
-      ChromeUtils.import("resource://gre/modules/Services.jsm");
+      const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
       if (!topWin) {
         topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
@@ -751,6 +756,14 @@ function getPrefs(ident) {
         // position is synced back to the main thread. So we disable displayport
         // expiry for these tests.
         ["apz.displayport_expiry_ms", 0],
+        // All of test cases should define viewport meta tag.
+        ["dom.meta-viewport.enabled", true],
+      ];
+    case "TOUCH_ACTION":
+      return [
+        ...getPrefs("TOUCH_EVENTS:PAN"),
+        ["layout.css.touch_action.enabled", true],
+        ["apz.test.fails_with_native_injection", getPlatform() == "windows"],
       ];
     default:
       return [];

@@ -176,17 +176,16 @@ nsXBLStreamListener::~nsXBLStreamListener() {
 }
 
 NS_IMETHODIMP
-nsXBLStreamListener::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
+nsXBLStreamListener::OnDataAvailable(nsIRequest* request,
                                      nsIInputStream* aInStr,
                                      uint64_t aSourceOffset, uint32_t aCount) {
   if (mInner)
-    return mInner->OnDataAvailable(request, aCtxt, aInStr, aSourceOffset,
-                                   aCount);
+    return mInner->OnDataAvailable(request, aInStr, aSourceOffset, aCount);
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsXBLStreamListener::OnStartRequest(nsIRequest* request, nsISupports* aCtxt) {
+nsXBLStreamListener::OnStartRequest(nsIRequest* request) {
   // Make sure we don't hold on to the sink and binding document past this point
   nsCOMPtr<nsIXMLContentSink> sink;
   mSink.swap(sink);
@@ -208,15 +207,14 @@ nsXBLStreamListener::OnStartRequest(nsIRequest* request, nsISupports* aCtxt) {
   // since that resets the event listners on the document.
   doc->AddEventListener(NS_LITERAL_STRING("load"), this, false);
 
-  return mInner->OnStartRequest(request, aCtxt);
+  return mInner->OnStartRequest(request);
 }
 
 NS_IMETHODIMP
-nsXBLStreamListener::OnStopRequest(nsIRequest* request, nsISupports* aCtxt,
-                                   nsresult aStatus) {
+nsXBLStreamListener::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   nsresult rv = NS_OK;
   if (mInner) {
-    rv = mInner->OnStopRequest(request, aCtxt, aStatus);
+    rv = mInner->OnStopRequest(request, aStatus);
   }
 
   // Don't hold onto the inner listener; holding onto it can create a cycle
@@ -462,17 +460,14 @@ nsresult nsXBLService::LoadBindings(Element* aElement, nsIURI* aURL,
   }
 
 #ifdef DEBUG
-  // Ensures that only the whitelisted bindings are used in the following
-  // conditions:
+  // Ensures that XBL bindings are not used in the following conditions:
   //
   // 1) In the content process
   // 2) In a document that disallows XUL/XBL which only loads bindings
   //    referenced in a chrome stylesheet.
   //
-  // If the conditions are met, assert that:
-  //
-  // a) The binding is XMLPrettyPrint (since it may be bound to any XML)
-  // b) The binding is bound to one of the whitelisted element.
+  // If the conditions are met, trigger an assertion since there shouldn't
+  // be this kind of binding usage.
   //
   // The assertion might not catch all violations because (2) is needed
   // for the current test setup. Someone may unknownly using a binding
@@ -480,21 +475,8 @@ nsresult nsXBLService::LoadBindings(Element* aElement, nsIURI* aURL,
   // knowing.
   if (XRE_IsContentProcess() &&
       IsSystemOrChromeURLPrincipal(aOriginPrincipal) && aElement->OwnerDoc() &&
-      !aElement->OwnerDoc()->AllowXULXBL() &&
-      !aURL->GetSpecOrDefault().EqualsLiteral(
-          "chrome://global/content/xml/XMLPrettyPrint.xml#prettyprint")) {
-    nsAtom* tag = aElement->NodeInfo()->NameAtom();
-    MOZ_ASSERT(
-        // datetimebox
-        tag == nsGkAtoms::datetimebox ||
-            // videocontrols
-            tag == nsGkAtoms::videocontrols ||
-            // pluginProblem
-            tag == nsGkAtoms::embed || tag == nsGkAtoms::applet ||
-            tag == nsGkAtoms::object ||
-            // xbl-marquee
-            tag == nsGkAtoms::marquee,
-        "Unexpected XBL binding used in the content process");
+      !aElement->OwnerDoc()->AllowXULXBL()) {
+    MOZ_ASSERT(false, "Unexpected XBL binding used in the content process");
   }
 #endif
 
@@ -1063,6 +1045,7 @@ nsresult nsXBLService::FetchBindingDocument(
                        nsContentUtils::GetSystemPrincipal(),
                        nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS,
                        nsIContentPolicy::TYPE_XBL,
+                       nullptr,  // nsICookieSettings
                        nullptr,  // PerformanceStorage
                        loadGroup);
   }
@@ -1089,7 +1072,7 @@ nsresult nsXBLService::FetchBindingDocument(
     xblListener->AddRequest(req);
 
     // Now kick off the async read.
-    rv = channel->AsyncOpen2(xblListener);
+    rv = channel->AsyncOpen(xblListener);
     if (NS_FAILED(rv)) {
       // Well, we won't be getting a load.  Make sure to clean up our stuff!
       if (bindingManager) {
@@ -1106,7 +1089,7 @@ nsresult nsXBLService::FetchBindingDocument(
 
   // Now do a blocking synchronous parse of the file.
   nsCOMPtr<nsIInputStream> in;
-  rv = channel->Open2(getter_AddRefs(in));
+  rv = channel->Open(getter_AddRefs(in));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = nsSyncLoadService::PushSyncStreamToListener(in.forget(), listener,

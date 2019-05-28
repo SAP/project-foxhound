@@ -6,6 +6,7 @@
 #include "ProtocolParser.h"
 #include "LookupCache.h"
 #include "nsNetCID.h"
+#include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 #include "prnetdb.h"
 #include "prprf.h"
@@ -771,9 +772,12 @@ nsresult ProtocolParserProtobuf::ProcessOneResponse(
     return NS_ERROR_UC_PARSER_MISSING_PARAM;
   }
 
+  nsUrlClassifierUtils* urlUtil = nsUrlClassifierUtils::GetInstance();
+  if (NS_WARN_IF(!urlUtil)) {
+    return NS_ERROR_FAILURE;
+  }
+
   // Convert threat type to list name.
-  nsCOMPtr<nsIUrlClassifierUtils> urlUtil =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID);
   nsCString possibleListNames;
   nsresult rv = urlUtil->ConvertThreatTypeToListNames(aResponse.threat_type(),
                                                       possibleListNames);
@@ -825,7 +829,7 @@ nsresult ProtocolParserProtobuf::ProcessOneResponse(
   tuV4->SetNewClientState(state);
 
   if (aResponse.has_checksum()) {
-    tuV4->NewChecksum(aResponse.checksum().sha256());
+    tuV4->SetSHA256(aResponse.checksum().sha256());
   }
 
   PARSER_LOG(

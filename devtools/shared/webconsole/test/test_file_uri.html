@@ -14,8 +14,8 @@
 <script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 let gState;
 let gTmpFile;
@@ -59,15 +59,13 @@ function startTest()
 function onAttach(aState, aResponse)
 {
   gState = aState;
-  gState.dbgClient.addListener("fileActivity", onFileActivity);
+  gState.client.on("fileActivity", onFileActivity);
   doFileActivity();
 }
 
-function onFileActivity(aType, aPacket)
+function onFileActivity(aPacket)
 {
-  is(aPacket.from, gState.actor, "fileActivity actor");
-
-  gState.dbgClient.removeListener("fileActivity", onFileActivity);
+  gState.client.off("fileActivity", onFileActivity);
 
   info("aPacket.uri: " + aPacket.uri);
   ok(/\bbug798764\b.*\.html$/.test(aPacket.uri), "file URI match");

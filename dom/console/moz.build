@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 XPIDL_SOURCES += [
     'nsIConsoleAPIStorage.idl',
@@ -34,9 +34,12 @@ UNIFIED_SOURCES += [
     'ConsoleUtils.cpp',
 ]
 
-EXTRA_COMPONENTS += [
-    'ConsoleAPI.manifest',
-    'ConsoleAPIStorage.js',
+EXTRA_JS_MODULES += [
+    'ConsoleAPIStorage.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 LOCAL_INCLUDES += [

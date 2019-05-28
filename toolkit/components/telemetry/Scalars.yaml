@@ -363,10 +363,11 @@ services.sync:
   sync_login_state_transitions:
     bug_numbers:
       - 1375635
+      - 1523644
     description: >
       Records transitions between login states of "success", "unverified"
       and "rejected.
-    expires: "68"
+    expires: "72"
     kind: boolean
     keyed: true
     notification_emails:
@@ -423,6 +424,30 @@ security:
     release_channel_collection: opt-out
     record_in_processes:
       - main
+  intermediate_preloading_num_preloaded:
+    bug_numbers:
+      - 1519273
+    description: >
+      Number of intermediate certificates pre-loaded.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - jjones@mozilla.com
+    record_in_processes:
+      - main
+  intermediate_preloading_num_pending:
+    bug_numbers:
+      - 1519273
+    description: >
+      Number of intermediate certificates pending pre-load.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - jjones@mozilla.com
+    record_in_processes:
+      - main
   client_cert:
     bug_numbers:
       - 1255120
@@ -451,6 +476,45 @@ contentblocking:
     notification_emails:
       - jhofmann@mozilla.com
       - pdol@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+  cryptomining_blocking_enabled:
+    bug_numbers:
+      - 1522919
+    description: >
+      True if cryptominer blocking is enabled globally at startup.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - aedelstein@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+  fingerprinting_blocking_enabled:
+    bug_numbers:
+      - 1522919
+    description: >
+      True if fingerprinter blocking is enabled globally at startup.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - aedelstein@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+  category:
+    bug_numbers:
+      - 1529425
+    description: >
+      This scalar reports the value of the content blocking category pref (0 = "standard", 1 = "strict", 2 = "custom", 3 = some other value, this is not supported).
+    expires: never
+    kind: uint
+    notification_emails:
+      - aedelstein@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
@@ -768,6 +832,7 @@ webrtc.sdp:
   parser_diff:
     bug_numbers:
       - 1432955
+      - 1529787
     description: >
       The number of differences between the C based sipcc SDP parser and
       the new rust based rsdparsa SDP parser keyed by predefined
@@ -776,7 +841,7 @@ webrtc.sdp:
       between the rsdparsa parsing result and the original sdp.
       This should help to improve the new rsdparsa to replace
       the sipcc parser.
-    expires: "64"
+    expires: "73"
     kind: uint
     keyed: true
     notification_emails:
@@ -979,6 +1044,49 @@ dom.contentprocess:
     kind: uint
     notification_emails:
       - spohl@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+  os_priority_lowered:
+    bug_numbers:
+      - 1538987
+    description: >
+      The number of times a content process has had its OS priority lowered
+      due to only containing background tabs without audible media playing.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+  os_priority_raised:
+    bug_numbers:
+      - 1538987
+    description: >
+      The number of times a content process has had its OS priority raised
+      due to containing at least one foregrounded tab, or a tab with audible
+      media has started playing in it.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+  os_priority_change_considered:
+    bug_numbers:
+      - 1538987
+    description: >
+      The number of times we've had the opportunity to change content process
+      priority due to a tab switch or a tab being opened.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -1193,6 +1301,20 @@ devtools.inspector:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - gl@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  element_picker_used:
+    bug_numbers:
+      - 1529883
+    description: >
+      Number of times the element picker is used to select an element from the page.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -1580,6 +1702,124 @@ devtools.changesview:
     record_in_processes:
       - 'main'
 
+  copy:
+    bug_numbers:
+      - 1522843
+    description: >
+      Number of times any text content from the Changes panel is copied to the clipboard.
+    expires: "69"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  copy_all_changes:
+    bug_numbers:
+      - 1532583
+    description: >
+      Number of times the Copy All Changes button is used in the Changes panel.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  copy_rule:
+    bug_numbers:
+      - 1532583
+    description: >
+      Number of times the Copy Rule button is used in the Changes panel.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  contextmenu:
+    bug_numbers:
+      - 1522843
+    description: >
+      Number of times the Changes panel context menu is shown.
+    expires: "69"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  contextmenu_copy:
+    bug_numbers:
+      - 1522843
+    description: >
+      Number of times the Copy option is picked from the Changes panel context menu.
+    expires: "69"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  contextmenu_copy_declaration:
+    bug_numbers:
+      - 1532583
+    description: >
+      Number of times the Copy Declaration option is picked from the Changes panel
+      context menu.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  contextmenu_copy_rule:
+    bug_numbers:
+      - 1532583
+    description: >
+      Number of times the Copy Rule option is picked from the Changes panel
+      context menu.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+dom.event:
+  confluence_load_count:
+    bug_numbers:
+      - 1514940
+    description: >
+      Number of times Confluence instances are loaded, and whether they are
+      compatible with conflated keypress event model or not, using "new"/"old".
+      I.e., collecting percentage of too old Confluence instance use count in
+      all Confluence instance use count.
+    expires: "71"
+    keyed: true
+    kind: uint
+    notification_emails:
+      - mnakano@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'content'
+
 navigator.storage:
   estimate_count:
     bug_numbers:
@@ -1764,6 +2004,20 @@ telemetry:
     record_in_processes:
       - 'main'
 
+  process_creation_timestamp_inconsistent:
+    bug_numbers:
+      - 1514392
+    description: >
+      The number of times ProcessCreation saw an inconsistent value.
+    expires: "72"
+    kind: uint
+    notification_emails:
+      - jrediger@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
+
 telemetry.discarded:
   accumulations:
     bug_numbers:
@@ -1825,6 +2079,21 @@ telemetry.discarded:
     release_channel_collection: opt-out
     record_in_processes:
       - 'all_childs'
+
+normandy:
+  recipe_freshness:
+    bug_numbers:
+      - 1530508
+    description: >
+      For each recipe ID seen by the Normandy client, its last_modified.
+    expires: "never"
+    keyed: true
+    kind: uint
+    notification_emails:
+      - product-delivery@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
 
 # The following section contains graphics-related scalars.
 gfx.advanced.layers:
@@ -2094,6 +2363,20 @@ timestamps:
     record_in_processes:
       - main
 
+  about_home_topsites_first_paint:
+    bug_numbers:
+      - 1518521
+    description: >
+      Record the timestamp of when the first about:home's Topsites are painted. Only records if
+      about:home is set as the default homepage, and if sessions are not being restored by default.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
 browser.timings:
   last_shutdown:
     bug_numbers:
@@ -2313,6 +2596,69 @@ encoding:
     record_in_processes:
       - main
       - content
+
+startup:
+  profile_selection_reason:
+    bug_numbers:
+      - 1522934
+    description: >
+      How the profile was selected during startup. One of the following reasons:
+        unknown:
+          Generally should not happen, set as a default in case no other reason
+          occured.
+        profile-manager:
+          The profile was selected by the profile manager.
+        profile-reset:
+          The profile was selected for reset, normally this would mean a restart.
+        restart:
+          The user restarted the application, the same profile as previous will
+          be used.
+        argument-profile:
+          The profile was selected by the --profile command line argument.
+        argument-p:
+          The profile was selected by the -p command line argument.
+        firstrun-claimed-default:
+          A first run of a dedicated profiles build chose the old default
+          profile to be the default for this install.
+        firstrun-skipped-default:
+          A first run of a dedicated profiles build skipped over the old default
+          profile and created a new profile.
+        restart-claimed-default:
+          A first run of a dedicated profiles build after a restart chose the
+          old default profile to be the default for this install.
+        restart-skipped-default:
+          A first run of a dedicated profiles build after a restart skipped over
+          the old default profile and created a new profile.
+        firstrun-created-default:
+          A first run of the application created a new profile to use.
+        default:
+          The default profile was selected as normal.
+    expires: "72"
+    keyed: false
+    kind: string
+    notification_emails:
+      - dtownsend@mozilla.com
+      - rtestard@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+script.preloader:
+  mainthread_recompile:
+    bug_numbers:
+      - 1364235
+    description:
+      How many times we ended up recompiling a script from the script preloader
+      on the main thread.
+    expires: "73"
+    keyed: false
+    kind: uint
+    notification_emails:
+      - dothayer@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
 
 # The following section is for probes testing the Telemetry system. They will not be
 # submitted in pings and are only used for testing.

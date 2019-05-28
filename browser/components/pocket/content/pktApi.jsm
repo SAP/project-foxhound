@@ -44,14 +44,13 @@
 
 var EXPORTED_SYMBOLS = ["pktApi"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 XPCOMUtils.defineLazyPreferenceGetter(this, "gCookieFirstPartyIsolate", "privacy.firstparty.isolate", false);
 
 var pktApi = (function() {
-
     /**
      * Configuration
      */
@@ -139,9 +138,9 @@ var pktApi = (function() {
         // TODO : Move this to sqlite or a local file so it's not editable (and is safer)
         // https://developer.mozilla.org/en-US/Add-ons/Overlay_Extensions/XUL_School/Local_Storage
 
-        if (!value)
+        if (!value) {
             prefBranch.clearUserPref(key);
-        else {
+        } else {
             // We use complexValue as tags can have utf-8 characters in them
             prefBranch.setStringPref(key, value);
         }
@@ -326,7 +325,6 @@ var pktApi = (function() {
      * @return {Boolean} Returns Boolean whether the api call started sucessfully
      */
     function addLink(url, options) {
-
         var since = getSetting("latestSince");
         var accessToken = getAccessToken();
 
@@ -543,7 +541,6 @@ var pktApi = (function() {
 
         // Switch the success callback
         options.success = function(data) {
-
             // Update used tags
             var usedTagsJSON = getSetting("usedTags");
             var usedTags = usedTagsJSON ? JSON.parse(usedTagsJSON) : {};
@@ -575,7 +572,6 @@ var pktApi = (function() {
      *                           Function with tags and used tags as parameter.
      */
     function getTags(callback) {
-
         var tagsFromSettings = function() {
             var tagsJSON = getSetting("tags");
             if (typeof tagsJSON !== "undefined") {
@@ -651,7 +647,6 @@ var pktApi = (function() {
      * @return {Boolean} Returns Boolean whether the api call started sucessfully
      */
     function getSuggestedTags(data, options) {
-
         data = data || {};
         options = options || {};
 
@@ -707,7 +702,6 @@ var pktApi = (function() {
         }
 
         return assignedValue;
-
     }
 
     /**

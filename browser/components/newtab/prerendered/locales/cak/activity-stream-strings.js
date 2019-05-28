@@ -41,8 +41,8 @@ window.gActivityStreamStrings = {
   "prefs_home_header": "Etamab'äl pa ri Rutikirib'al Firefox",
   "prefs_home_description": "Tacha' achike etamab'äl nawajo' pa ri Rutikirib'al Firefox ruwäch.",
   "prefs_content_discovery_header": "Rutikirib'al Firefox",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_description": "Content Discovery pa Rutikirib'al Firefox nuya' q'ij chawe richin ye'awïl nima'q taq cholna'oj ri nïm kejqalem pa ronojel ajk'amaya'l.",
+  "prefs_content_discovery_button": "Tichup Content Discovery",
   "prefs_section_rows_option": "{num} cholaj;{num} taq cholaj",
   "prefs_search_header": "Ajk'amaya'l Kanoxïk",
   "prefs_topsites_description": "Taq ruxaq yalan ye'atz'ët",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Ke'ayaka' ri taq b'anob'äl ye'awajo' pa Pocket, chuqa' taya' ruchuq'a' ajolom kik'in jeb'ël taq sik'inïk.",
   "highlights_empty_state": "Katok pa k'amaya'l richin niqak'üt chawäch jeb'ël taq cholna'oj, taq silowachib'äl, chuqa' ch'aqa' chik taq ruxaq k'a b'a' ke'atz'ët o aya'on kan ketal wawe'.",
   "topstories_empty_state": "Xaq'i'. Katzolin chik pe richin ye'ak'ül ri utziläj taq rub'anob'al {provider}. ¿La man noyob'en ta? Tacha' jun ütz na'oj richin nawïl ch'aqa' chik taq b'anob'äl e k'o chi rij ri ajk'amaya'l.",
-  "manual_migration_explanation2": "Tatojtob'ej Firefox kik'in ri taq ruyaketal, runatab'äl chuqa' taq ewan rutzij jun chik okik'amaya'l.",
-  "manual_migration_cancel_button": "Mani matyox",
-  "manual_migration_import_button": "Tijik' pe",
   "error_fallback_default_info": "Uy, k'o jun itzel xel toq nisamajib'ëx re rupam re'.",
   "error_fallback_default_refresh_suggestion": "Titzolïx ruxaq richin nitojtob'ëx chik.",
   "section_menu_action_remove_section": "Tiyuj Tanaj",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Ichinan Na'oj",
   "firstrun_continue_to_login": "Titikïr chik el",
   "firstrun_skip_login": "Tixakalüx re jun ruxak re'",
-  "context_menu_title": "Tijaq k'utüy samaj"
+  "context_menu_title": "Tijaq k'utüy samaj",
+  "manual_migration_explanation2": "Tatojtob'ej Firefox kik'in ri taq ruyaketal, runatab'äl chuqa' taq ewan rutzij jun chik okik'amaya'l.",
+  "manual_migration_cancel_button": "Mani matyox",
+  "manual_migration_import_button": "Tijik' pe"
 };

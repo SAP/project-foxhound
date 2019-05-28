@@ -57,7 +57,8 @@ nsresult nsBox::EndXULLayout(nsBoxLayoutState& aState) {
 bool nsBox::gGotTheme = false;
 StaticRefPtr<nsITheme> nsBox::gTheme;
 
-nsBox::nsBox(ClassID aID) : nsIFrame(aID) {
+nsBox::nsBox(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID)
+    : nsIFrame(aStyle, aPresContext, aID) {
   MOZ_COUNT_CTOR(nsBox);
   if (!gGotTheme) {
     gTheme = do_GetNativeTheme();
@@ -73,7 +74,8 @@ nsBox::~nsBox() {
   MOZ_COUNT_DTOR(nsBox);
 }
 
-/* static */ void nsBox::Shutdown() {
+/* static */
+void nsBox::Shutdown() {
   gGotTheme = false;
   gTheme = nullptr;
 }
@@ -387,30 +389,16 @@ bool nsIFrame::AddXULPrefSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   // (Handling the eStyleUnit_Enumerated types requires
   // GetXULPrefSize/GetXULMinSize methods that don't consider
   // (min-/max-/)(width/height) properties.)
-  const nsStyleCoord& width = position->mWidth;
-  if (width.GetUnit() == eStyleUnit_Coord) {
-    aSize.width = width.GetCoordValue();
+  const auto& width = position->mWidth;
+  if (width.ConvertsToLength()) {
+    aSize.width = std::max(0, width.ToLength());
     aWidthSet = true;
-  } else if (width.IsCalcUnit()) {
-    if (!width.CalcHasPercent()) {
-      // pass 0 for percentage basis since we know there are no %s
-      aSize.width = width.ComputeComputedCalc(0);
-      if (aSize.width < 0) aSize.width = 0;
-      aWidthSet = true;
-    }
   }
 
-  const nsStyleCoord& height = position->mHeight;
-  if (height.GetUnit() == eStyleUnit_Coord) {
-    aSize.height = height.GetCoordValue();
+  const auto& height = position->mHeight;
+  if (height.ConvertsToLength()) {
+    aSize.height = std::max(0, height.ToLength());
     aHeightSet = true;
-  } else if (height.IsCalcUnit()) {
-    if (!height.CalcHasPercent()) {
-      // pass 0 for percentage basis since we know there are no %s
-      aSize.height = height.ComputeComputedCalc(0);
-      if (aSize.height < 0) aSize.height = 0;
-      aHeightSet = true;
-    }
   }
 
   nsIContent* content = aBox->GetContent();
@@ -500,42 +488,34 @@ bool nsIFrame::AddXULMinSize(nsBoxLayoutState& aState, nsIFrame* aBox,
 
   // add in the css min, max, pref
   const nsStylePosition* position = aBox->StylePosition();
-
-  // same for min size. Unfortunately min size is always set to 0. So for now
-  // we will assume 0 (as a coord) means not set.
-  const nsStyleCoord& minWidth = position->mMinWidth;
-  if ((minWidth.GetUnit() == eStyleUnit_Coord &&
-       minWidth.GetCoordValue() != 0) ||
-      (minWidth.IsCalcUnit() && !minWidth.CalcHasPercent())) {
-    nscoord min = minWidth.ComputeCoordPercentCalc(0);
+  const auto& minWidth = position->mMinWidth;
+  if (minWidth.ConvertsToLength()) {
+    nscoord min = minWidth.ToLength();
     if (!aWidthSet || (min > aSize.width && canOverride)) {
       aSize.width = min;
       aWidthSet = true;
     }
-  } else if (minWidth.GetUnit() == eStyleUnit_Percent) {
-    NS_ASSERTION(minWidth.GetPercentValue() == 0.0f,
+  } else if (minWidth.ConvertsToPercentage()) {
+    NS_ASSERTION(minWidth.ToPercentage() == 0.0f,
                  "Non-zero percentage values not currently supported");
     aSize.width = 0;
     aWidthSet = true;  // FIXME: should we really do this for
                        // nonzero values?
   }
-  // XXX Handle eStyleUnit_Enumerated?
-  // (Handling the eStyleUnit_Enumerated types requires
-  // GetXULPrefSize/GetXULMinSize methods that don't consider
-  // (min-/max-/)(width/height) properties.
+  // XXX Handle ExtremumLength?
+  // (Handling them  requires GetXULPrefSize/GetXULMinSize methods that don't
+  // consider (min-/max-/)(width/height) properties.
   // calc() with percentage is treated like '0' (unset)
 
-  const nsStyleCoord& minHeight = position->mMinHeight;
-  if ((minHeight.GetUnit() == eStyleUnit_Coord &&
-       minHeight.GetCoordValue() != 0) ||
-      (minHeight.IsCalcUnit() && !minHeight.CalcHasPercent())) {
-    nscoord min = minHeight.ComputeCoordPercentCalc(0);
+  const auto& minHeight = position->mMinHeight;
+  if (minHeight.ConvertsToLength()) {
+    nscoord min = minHeight.ToLength();
     if (!aHeightSet || (min > aSize.height && canOverride)) {
       aSize.height = min;
       aHeightSet = true;
     }
-  } else if (minHeight.GetUnit() == eStyleUnit_Percent) {
-    NS_ASSERTION(position->mMinHeight.GetPercentValue() == 0.0f,
+  } else if (minHeight.ConvertsToPercentage()) {
+    NS_ASSERTION(position->mMinHeight.ToPercentage() == 0.0f,
                  "Non-zero percentage values not currently supported");
     aSize.height = 0;
     aHeightSet = true;  // FIXME: should we really do this for
@@ -587,16 +567,16 @@ bool nsIFrame::AddXULMaxSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   // (Handling the eStyleUnit_Enumerated types requires
   // GetXULPrefSize/GetXULMinSize methods that don't consider
   // (min-/max-/)(width/height) properties.)
-  const nsStyleCoord maxWidth = position->mMaxWidth;
+  const auto& maxWidth = position->mMaxWidth;
   if (maxWidth.ConvertsToLength()) {
-    aSize.width = maxWidth.ComputeCoordPercentCalc(0);
+    aSize.width = maxWidth.ToLength();
     aWidthSet = true;
   }
   // percentages and calc() with percentages are treated like 'none'
 
-  const nsStyleCoord& maxHeight = position->mMaxHeight;
+  const auto& maxHeight = position->mMaxHeight;
   if (maxHeight.ConvertsToLength()) {
-    aSize.height = maxHeight.ComputeCoordPercentCalc(0);
+    aSize.height = maxHeight.ToLength();
     aHeightSet = true;
   }
   // percentages and calc() with percentages are treated like 'none'
@@ -702,20 +682,23 @@ nsSize nsBox::BoundsCheck(const nsSize& aMinSize, const nsSize& aPrefSize,
       BoundsCheck(aMinSize.height, aPrefSize.height, aMaxSize.height));
 }
 
-/*static*/ nsIFrame* nsBox::GetChildXULBox(const nsIFrame* aFrame) {
+/*static*/
+nsIFrame* nsBox::GetChildXULBox(const nsIFrame* aFrame) {
   // box layout ends at box-wrapped frames, so don't allow these frames
   // to report child boxes.
   return aFrame->IsXULBoxFrame() ? aFrame->PrincipalChildList().FirstChild()
                                  : nullptr;
 }
 
-/*static*/ nsIFrame* nsBox::GetNextXULBox(const nsIFrame* aFrame) {
+/*static*/
+nsIFrame* nsBox::GetNextXULBox(const nsIFrame* aFrame) {
   return aFrame->GetParent() && aFrame->GetParent()->IsXULBoxFrame()
              ? aFrame->GetNextSibling()
              : nullptr;
 }
 
-/*static*/ nsIFrame* nsBox::GetParentXULBox(const nsIFrame* aFrame) {
+/*static*/
+nsIFrame* nsBox::GetParentXULBox(const nsIFrame* aFrame) {
   return aFrame->GetParent() && aFrame->GetParent()->IsXULBoxFrame()
              ? aFrame->GetParent()
              : nullptr;

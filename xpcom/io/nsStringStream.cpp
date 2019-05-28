@@ -24,6 +24,7 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "nsIIPCSerializableInputStream.h"
+#include "XPCOMModule.h"
 
 using namespace mozilla::ipc;
 using mozilla::Maybe;
@@ -55,6 +56,10 @@ class nsStringInputStream final : public nsIStringInputStream,
 
  private:
   ~nsStringInputStream() {}
+
+  template <typename M>
+  void SerializeInternal(InputStreamParams& aParams, bool aDelayedStart,
+                         uint32_t aMaxSize, uint32_t* aSizeUsed, M* aManager);
 
   uint32_t Length() const { return mData.Length(); }
 
@@ -341,8 +346,54 @@ nsStringInputStream::Tell(int64_t* aOutWhere) {
 /////////
 
 void nsStringInputStream::Serialize(InputStreamParams& aParams,
-                                    FileDescriptorArray& /* aFDs */) {
+                                    FileDescriptorArray& /* aFDs */,
+                                    bool aDelayedStart, uint32_t aMaxSize,
+                                    uint32_t* aSizeUsed,
+                                    mozilla::dom::ContentChild* aManager) {
+  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
+}
+
+void nsStringInputStream::Serialize(InputStreamParams& aParams,
+                                    FileDescriptorArray& /* aFDs */,
+                                    bool aDelayedStart, uint32_t aMaxSize,
+                                    uint32_t* aSizeUsed,
+                                    PBackgroundChild* aManager) {
+  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
+}
+
+void nsStringInputStream::Serialize(InputStreamParams& aParams,
+                                    FileDescriptorArray& /* aFDs */,
+                                    bool aDelayedStart, uint32_t aMaxSize,
+                                    uint32_t* aSizeUsed,
+                                    mozilla::dom::ContentParent* aManager) {
+  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
+}
+
+void nsStringInputStream::Serialize(InputStreamParams& aParams,
+                                    FileDescriptorArray& /* aFDs */,
+                                    bool aDelayedStart, uint32_t aMaxSize,
+                                    uint32_t* aSizeUsed,
+                                    PBackgroundParent* aManager) {
+  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
+}
+
+template <typename M>
+void nsStringInputStream::SerializeInternal(InputStreamParams& aParams,
+                                            bool aDelayedStart,
+                                            uint32_t aMaxSize,
+                                            uint32_t* aSizeUsed, M* aManager) {
   ReentrantMonitorAutoEnter lock(mMon);
+
+  MOZ_ASSERT(aSizeUsed);
+  *aSizeUsed = 0;
+
+  if (Length() >= aMaxSize) {
+    InputStreamHelper::SerializeInputStreamAsPipe(this, aParams, aDelayedStart,
+                                                  aManager);
+    return;
+  }
+
+  *aSizeUsed = Length();
 
   StringInputStreamParams params;
   params.data() = PromiseFlatCString(mData);
@@ -364,12 +415,6 @@ bool nsStringInputStream::Deserialize(const InputStreamParams& aParams,
   }
 
   return true;
-}
-
-Maybe<uint64_t> nsStringInputStream::ExpectedSerializedLength() {
-  ReentrantMonitorAutoEnter lock(mMon);
-
-  return Some(static_cast<uint64_t>(Length()));
 }
 
 /////////

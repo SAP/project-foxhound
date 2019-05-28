@@ -1,15 +1,15 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserv;
 
 function TestListener() {
 }
 
-TestListener.prototype.onStartRequest = function(request, context) {
+TestListener.prototype.onStartRequest = function(request) {
 }
 
-TestListener.prototype.onStopRequest = function(request, context, status) {
+TestListener.prototype.onStopRequest = function(request, status) {
   httpserv.stop(do_test_finished);
 }
 
@@ -28,7 +28,7 @@ function run_test() {
 
   channel.QueryInterface(Ci.nsIHttpChannel);
   channel.requestMethod = "POST";
-  channel.asyncOpen2(new TestListener(), null);
+  channel.asyncOpen(new TestListener(), null);
 
   do_test_pending();
 }

@@ -10,7 +10,7 @@
  * pippki UI js files.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
@@ -91,7 +91,7 @@ function certToFilename(cert) {
 
   // Remove unneeded and/or unsafe characters.
   filename = filename.replace(/\s/g, "")
-                     .replace(/\./g, "")
+                     .replace(/\./g, "_")
                      .replace(/\\/g, "")
                      .replace(/\//g, "");
 

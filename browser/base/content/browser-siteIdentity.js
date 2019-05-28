@@ -273,7 +273,9 @@ var gIdentityHandler = {
   recordClick(object) {
     let extra = {};
     for (let blocker of ContentBlocking.blockers) {
-      extra[blocker.telemetryIdentifier] = blocker.activated ? "true" : "false";
+      if (blocker.telemetryIdentifier) {
+        extra[blocker.telemetryIdentifier] = blocker.activated ? "true" : "false";
+      }
     }
     Services.telemetry.recordEvent("security.ui.identitypopup", "click", object, null, extra);
   },
@@ -592,12 +594,10 @@ var gIdentityHandler = {
     let permissions = SitePermissions.getAllForBrowser(gBrowser.selectedBrowser);
     for (let permission of permissions) {
       if (permission.state == SitePermissions.BLOCK) {
-
         let icon = permissionAnchors[permission.id];
         if (icon) {
           icon.setAttribute("showing", "true");
         }
-
       } else if (permission.state != SitePermissions.UNKNOWN) {
         hasGrantedPermissions = true;
       }
@@ -743,6 +743,11 @@ var gIdentityHandler = {
       // Some URIs might have no hosts.
     }
 
+    let readerStrippedURI = ReaderMode.getOriginalUrlObjectForDisplay(this._uri.displaySpec);
+    if (readerStrippedURI) {
+      host = readerStrippedURI.host;
+    }
+
     if (this._pageExtensionPolicy) {
       host = this._pageExtensionPolicy.name;
     }
@@ -760,7 +765,7 @@ var gIdentityHandler = {
     // Fill in organization information if we have a valid EV certificate.
     if (this._isEV) {
       let iData = this.getIdentityData();
-      host = owner = iData.subjectOrg;
+      owner = iData.subjectOrg;
       verifier = this._identityIconLabels.tooltipText;
 
       // Build an appropriate supplemental block out of whatever location data we have
@@ -871,7 +876,9 @@ var gIdentityHandler = {
 
     let extra = {};
     for (let blocker of ContentBlocking.blockers) {
-      extra[blocker.telemetryIdentifier] = blocker.activated ? "true" : "false";
+      if (blocker.telemetryIdentifier) {
+        extra[blocker.telemetryIdentifier] = blocker.activated ? "true" : "false";
+      }
     }
 
     let shieldStatus = ContentBlocking.iconBox.hasAttribute("active") ? "shield-showing" : "shield-hidden";
@@ -1187,9 +1194,9 @@ var gIdentityHandler = {
     let icon = document.createXULElement("image");
     icon.setAttribute("class", "popup-subitem identity-popup-permission-icon");
 
-    let text = document.createXULElement("label");
+    let text = document.createXULElement("label", {is: "text-link"});
     text.setAttribute("flex", "1");
-    text.setAttribute("class", "identity-popup-permission-label text-link");
+    text.setAttribute("class", "identity-popup-permission-label");
 
     let popupCount = gBrowser.selectedBrowser.blockedPopups.length;
     let messageBase = gNavigatorBundle.getString("popupShowBlockedPopupsIndicatorText");

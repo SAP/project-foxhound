@@ -4,14 +4,12 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/BrowserUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryTimestamps.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryArchive.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {BrowserUtils} = ChromeUtils.import("resource://gre/modules/BrowserUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {TelemetryTimestamps} = ChromeUtils.import("resource://gre/modules/TelemetryTimestamps.jsm");
+const {TelemetryController} = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
+const {TelemetryArchive} = ChromeUtils.import("resource://gre/modules/TelemetryArchive.jsm");
+const {TelemetrySend} = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AppConstants",
                                "resource://gre/modules/AppConstants.jsm");
@@ -181,7 +179,7 @@ var Settings = {
     for (let el of elements) {
       el.addEventListener("click", function() {
         if (AppConstants.platform == "android") {
-          ChromeUtils.import("resource://gre/modules/Messaging.jsm");
+          var {EventDispatcher} = ChromeUtils.import("resource://gre/modules/Messaging.jsm");
           EventDispatcher.instance.sendRequest({
             type: "Settings:Show",
             resource: "preferences_privacy",
@@ -1680,6 +1678,11 @@ var Scalars = {
       return;
     }
 
+    const headings = [
+      "namesHeader",
+      "valuesHeader",
+    ].map(h => bundle.GetStringFromName(h));
+
     let payload = aPayload.stores;
     if (payload) { // Check for stores in the current ping data first
       let hasData = false;
@@ -1695,11 +1698,6 @@ var Scalars = {
           return sclrs && Object.keys(sclrs).length > 0;
         });
         if (Object.keys(scalars).length > 0) {
-          const headings = [
-            "namesHeader",
-            "valuesHeader",
-          ].map(h => bundle.GetStringFromName(h));
-
           let s = GenericSubsection.renderSubsectionHeader(store, true, "scalars-section");
           let table = GenericTable.render(explodeObject(scalars), headings);
           let caption = document.createElement("caption");
@@ -1725,16 +1723,27 @@ var Scalars = {
 
       setHasData("scalars-section", hasData);
       if (Object.keys(scalars).length > 0) {
-        const headings = [
-          "namesHeader",
-          "valuesHeader",
-        ].map(h => bundle.GetStringFromName(h));
         const table = GenericTable.render(explodeObject(scalars), headings);
         scalarsSection.appendChild(table);
       }
     }
   },
 };
+
+function createScalarContainer(scalarId, scalarData, headings) {
+  // Add the name of the scalar.
+  let container = document.createElement("div");
+  container.classList.add("keyed-scalar");
+  container.id = scalarId;
+  let scalarNameSection = document.createElement("p");
+  scalarNameSection.classList.add("keyed-title");
+  scalarNameSection.appendChild(document.createTextNode(scalarId));
+  container.appendChild(scalarNameSection);
+  // Populate the section with the key-value pairs from the scalar.
+  const table = GenericTable.render(explodeObject(scalarData), headings);
+  container.appendChild(table);
+  return container;
+}
 
 var KeyedScalars = {
   /**
@@ -1751,6 +1760,11 @@ var KeyedScalars = {
     if (!selectedProcess) {
       return;
     }
+
+    const headings = [
+      "namesHeader",
+      "valuesHeader",
+    ].map(h => bundle.GetStringFromName(h));
 
     let payload = aPayload.stores;
     if (payload) { // Check for stores in the current ping data first
@@ -1775,22 +1789,9 @@ var KeyedScalars = {
         heading.textContent = store;
         s.appendChild(heading);
 
-        const headings = [
-          "namesHeader",
-          "valuesHeader",
-        ].map(h => bundle.GetStringFromName(h));
         for (let scalar in keyedScalars) {
           // Add the name of the scalar.
-          let container = document.createElement("div");
-          container.classList.add("keyed-scalar");
-          container.id = scalar;
-          let scalarNameSection = document.createElement("p");
-          scalarNameSection.classList.add("keyed-title");
-          scalarNameSection.appendChild(document.createTextNode(scalar));
-          container.appendChild(scalarNameSection);
-          // Populate the section with the key-value pairs from the scalar.
-          const table = GenericTable.render(explodeObject(keyedScalars[scalar]), headings);
-          container.appendChild(table);
+          const container = createScalarContainer(scalar, keyedScalars[scalar], headings);
           s.appendChild(container);
         }
 
@@ -1815,22 +1816,8 @@ var KeyedScalars = {
         return;
       }
 
-      const headings = [
-        "namesHeader",
-        "valuesHeader",
-      ].map(h => bundle.GetStringFromName(h));
       for (let scalar in keyedScalars) {
-        // Add the name of the scalar.
-        let container = document.createElement("div");
-        container.classList.add("keyed-scalar");
-        container.id = scalar;
-        let scalarNameSection = document.createElement("p");
-        scalarNameSection.classList.add("keyed-title");
-        scalarNameSection.appendChild(document.createTextNode(scalar));
-        container.appendChild(scalarNameSection);
-        // Populate the section with the key-value pairs from the scalar.
-        const table = GenericTable.render(explodeObject(keyedScalars[scalar]), headings);
-        container.appendChild(table);
+        const container = createScalarContainer(scalar, keyedScalars[scalar], headings);
         scalarsSection.appendChild(container);
       }
     }
@@ -1861,7 +1848,13 @@ var Events = {
       let evts = aPayload.processes[value].events;
       return evts && Object.keys(evts).length > 0;
     });
-    setHasData("events-section", hasData);
+
+    // Don't specifically hide the events section if there's no data.
+    // It might be a "main" ping that needs to always show the section.
+    if (hasData) {
+      setHasData("events-section", true);
+    }
+
     if (Object.keys(events).length > 0) {
       const headings = [
         "timestampHeader",
@@ -2525,7 +2518,8 @@ function displayRichPingData(ping, updatePayloadList) {
 
   if (isEventPing) {
     // Copy the payload, so we don't modify the raw representation
-    let payload = { processes: {} };
+    // Ensure we always have at least the parent process.
+    let payload = { processes: { parent: {} } };
     for (let process of Object.keys(ping.payload.events)) {
       payload.processes[process] = {
         events: ping.payload.events[process],
@@ -2577,7 +2571,6 @@ function displayRichPingData(ping, updatePayloadList) {
 
   // Show simple measurements
   SimpleMeasurements.render(payload);
-
 }
 
 window.addEventListener("load", onLoad);

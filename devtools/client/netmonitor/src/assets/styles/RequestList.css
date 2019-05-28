@@ -7,7 +7,7 @@
 .request-list-empty-notice {
   margin: 0;
   flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
 }
 
 .empty-notice-element {
@@ -51,36 +51,29 @@
   color: var(--table-text-color);
 }
 
-.requests-list-wrapper {
-  width: 100%;
-  height: 100%;
+.requests-list-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .requests-list-table {
-  display: table;
-  position: relative;
+  /* Reset default browser style of <table> */
+  border-spacing: 0;
   width: 100%;
-  height: 100%;
-}
-
-.requests-list-contents {
-  display: table-row-group;
-  position: absolute;
-  overflow-x: hidden;
-  overflow-y: auto;
-  --timings-scale: 1;
-  --timings-rev-scale: 1;
+  /* The layout must be fixed for resizing of columns to work.
+  The layout is based on the first row.
+  Set the width of those cells, and the rest of the table follows. */
+  table-layout: fixed;
 }
 
 .requests-list-column {
-  display: table-cell;
-  cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
-  max-width: 50px;
-  min-width: 50px;
+
+  /* Reset default browser style of <td> */
+  padding: 0;
 }
 
 .requests-list-column > * {
@@ -89,19 +82,20 @@
 
 /* Requests list headers */
 
-.requests-list-headers-wrapper {
+.requests-list-headers-group {
+  /* Avoid .devtools-toolbar to override <thead> display type */
+  display: table-header-group;
+
   position: sticky;
   top: 0;
-  z-index: 1;
+  left: 0;
   width: 100%;
-  padding: 0;
+  z-index: 1;
 }
 
 .requests-list-headers {
-  display: table-header-group;
   height: 24px;
   padding: 0;
-  width: 100%;
 }
 
 .requests-list-headers .requests-list-column:first-child .requests-list-header-button {
@@ -116,11 +110,11 @@
                                 transparent 85%) 1 1;
   border-width: 0;
   border-inline-start-width: 1px;
-  padding-inline-start: 16px;
   width: 100%;
   min-height: 23px;
-  text-align: center;
+  text-align: left;
   color: inherit;
+  padding: 1px 4px;
 }
 
 .requests-list-header-button::-moz-focus-inner {
@@ -134,21 +128,31 @@
 
 .requests-list-header-button > .button-text {
   display: inline-block;
-  text-align: center;
+  text-align: left;
   vertical-align: middle;
-  /* Align button text to center */
-  width: calc(100% - 8px);
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .requests-list-header-button > .button-icon {
-  display: inline-block;
+  /* display icon only when column sorted otherwise display:none */
+  display: none;
   width: 7px;
   height: 4px;
   margin-inline-start: 3px;
   margin-inline-end: 6px;
   vertical-align: middle;
+}
+
+.requests-list-header-button[data-sorted] > .button-icon {
+  /* display icon only when column sorted */
+  display: inline-block;
+}
+
+.requests-list-header-button[data-sorted] > .button-text {
+  /* when sorted - adjust width to fit the icon inside the button */
+  width: calc(100% - 11px);
 }
 
 .requests-list-header-button[data-sorted=ascending] > .button-icon {
@@ -170,13 +174,32 @@
   border-image: linear-gradient(var(--theme-splitter-color), var(--theme-splitter-color)) 1 1;
 }
 
+/* Requests list headers column-resizer */
+
+.requests-list-headers .column-resizer {
+  z-index: 1000;
+  cursor: ew-resize;
+  margin-left: -3px;
+  width: 7px;
+  min-height: 23px;
+  position: absolute;
+  background-color: transparent;
+}
+
+/**
+ * Make sure headers are not processing any mouse
+ * events. This is good for performance during dragging.
+ */
+.requests-list-headers.dragging {
+  pointer-events: none;
+}
+
 /* Requests list column */
 
 /* Status column */
 
 .requests-list-status {
-  min-width: 70px;
-   /* Don't ellipsize status codes */
+  /* Don't ellipsize status codes */
   text-overflow: initial;
 }
 
@@ -234,109 +257,8 @@
   transform: rotate(45deg);
 }
 
-/* Method column */
-
-.requests-list-method {
-  min-width: 85px;
-}
-
-/* File column */
-
-.requests-list-file {
-  width: 40%;
-}
-
 .requests-list-file.requests-list-column {
   text-align: start;
-}
-
-.requests-file-type-icon {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  margin: 0 4px;
-  vertical-align: text-bottom;
-  -moz-context-properties: fill;
-  fill: currentColor;
-}
-
-.request-list-item.selected .requests-file-type-icon {
-  filter: brightness(1.3);
-}
-
-.file-type-general {
-  background-image: url(chrome://devtools/skin/images/file-type-general.svg);
-}
-
-.file-type-image {
-  background-image: url(chrome://devtools/skin/images/file-type-image.svg);
-}
-
-/* Protocol column */
-
-.requests-list-protocol {
-  width: 8%;
-}
-
-/* Cookies column */
-
-.requests-list-cookies {
-  width: 6%;
-}
-
-/* Set Cookies column */
-
-.requests-list-set-cookies {
-  width: 8%;
-}
-
-/* Scheme column */
-
-.requests-list-scheme {
-  width: 8%;
-}
-
-/* Start Time column */
-
-.requests-list-start-time {
-  width: 8%;
-}
-
-/* End Time column */
-
-.requests-list-end-time {
-  width: 8%;
-}
-
-/* Response Time column */
-
-.requests-list-response-time {
-  width: 10%;
-}
-
-/* Duration column */
-
-.requests-list-duration-time {
-  width: 8%;
-}
-
-/* Latency column */
-
-.requests-list-latency-time {
-  width: 8%;
-}
-
-/* Response header columns */
-
-.requests-list-response-header {
-  width: 10%;
-}
-
-/* Domain column */
-
-.requests-list-domain {
-  min-width: 100px;
-  width: 30%;
 }
 
 .requests-list-domain.requests-list-column {
@@ -347,8 +269,11 @@
   display: inline-block;
   width: 16px;
   height: 16px;
-  margin: 0 4px;
   vertical-align: text-bottom;
+  background-position: center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .request-list-item.selected .requests-security-state-icon {
@@ -372,7 +297,7 @@
 }
 
 .security-state-local {
-  background-image: url(chrome://devtools/skin/images/globe.svg);
+  background-image: url(chrome://devtools/skin/images/globe-small.svg);
 }
 
 .tracking-resource {
@@ -380,7 +305,7 @@
   width: 16px;
   height: 16px;
   margin: 0 3px 0 -3px;
-  vertical-align: text-bottom;
+  vertical-align: middle;
   background-image: url(chrome://devtools/content/netmonitor/src/assets/icons/shield.svg);
   background-repeat: no-repeat;
 }
@@ -389,20 +314,16 @@
   filter: brightness(500%);
 }
 
-/* RemoteIP column */
-
-.requests-list-remoteip {
-  width: 9%;
+.request-list-item .requests-list-column {
+  padding-inline-start: 4px;
 }
 
-/* Cause column */
-
-.requests-list-cause {
-  min-width: 75px;
+.request-list-item .requests-list-waterfall {
+  padding-inline-start: 0px;
 }
 
-.request-list-item .requests-list-cause.requests-list-column {
-  padding-left: 5px;
+.request-list-item .status-code {
+  margin-inline-start: 0px;
 }
 
 .requests-list-cause-stack {
@@ -418,30 +339,9 @@
   margin-inline-end: 3px;
 }
 
-/* Type column */
-
-.requests-list-type {
-  min-width: 65px;
-}
-
-/* Transferred column */
-
-.requests-list-transferred {
-  min-width: 110px;
-}
-
-/* Size column */
-
-.requests-list-size {
-  min-width: 80px;
-}
-
 /* Waterfall column */
 
 .requests-list-waterfall {
-  width: 25vw;
-  max-width: 25vw;
-  min-width: 25vw;
   background-repeat: repeat-y;
   background-position: left center;
   /* Background created on a <canvas> in js. */
@@ -570,13 +470,6 @@
 /* Request list item */
 
 .request-list-item {
-  position: relative;
-/*
-  display: table-row;
-  Bug 1431132: Disabling this rule is surprising as we no longer have "rows".
-  But this helps preventing reflowing the whole requests list anytime we append
-  a new request/row.
-*/
   height: 24px;
   line-height: 24px;
 }
@@ -591,7 +484,7 @@
 }
 
 .request-list-item:not(.selected):hover {
-  background-color: var(--theme-selection-background-hover);
+  background-color: var(--table-selection-background-hover);
 }
 
 .request-list-item:not(.selected).fromCache > .requests-list-column:not(.requests-list-waterfall) {
@@ -601,10 +494,6 @@
 /* Responsive web design support */
 
 @media (max-width: 700px) {
-  .requests-list-header-button {
-    padding-inline-start: 8px;
-  }
-
   .requests-list-status-code {
     width: auto;
   }

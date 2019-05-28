@@ -483,6 +483,11 @@ void AutoJSAPI::ReportException() {
       errorGlobal = xpc::PrivilegedJunkScope();
     } else {
       errorGlobal = GetCurrentThreadWorkerGlobal();
+      if (!errorGlobal) {
+        // We might be reporting an error in debugger code that ran before the
+        // worker's global was created. Use the debugger global instead.
+        errorGlobal = GetCurrentThreadWorkerDebuggerGlobal();
+      }
     }
   }
   MOZ_ASSERT(JS_IsGlobalObject(errorGlobal));
@@ -567,7 +572,7 @@ AutoEntryScript::AutoEntryScript(nsIGlobalObject* aGlobalObject,
 #ifdef MOZ_GECKO_PROFILER
       ,
       mAutoProfilerLabel(
-          "", aReason, js::ProfilingStackFrame::Category::JS,
+          "", aReason, JS::ProfilingCategoryPair::JS,
           uint32_t(js::ProfilingStackFrame::Flags::RELEVANT_FOR_JS))
 #endif
 {

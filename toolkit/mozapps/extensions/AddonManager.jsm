@@ -17,7 +17,7 @@ if ("@mozilla.org/xre/app-info;1" in Cc) {
   }
 }
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const MOZ_COMPATIBILITY_NIGHTLY = !["aurora", "beta", "release", "esr"].includes(AppConstants.MOZ_UPDATE_CHANNEL);
 
@@ -52,16 +52,17 @@ var PREF_EM_CHECK_COMPATIBILITY = MOZ_COMPATIBILITY_NIGHTLY ?
 
 const VALID_TYPES_REGEXP = /^[\w\-]+$/;
 
-const WEBAPI_INSTALL_HOSTS = ["addons.mozilla.org", "testpilot.firefox.com"];
+const WEBAPI_INSTALL_HOSTS = ["addons.mozilla.org"];
 const WEBAPI_TEST_INSTALL_HOSTS = [
   "addons.allizom.org", "addons-dev.allizom.org",
-  "testpilot.stage.mozaws.net", "testpilot.dev.mozaws.net",
   "example.com",
 ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+// This global is overridden by xpcshell tests, and therefore cannot be
+// a const.
+var {AsyncShutdown} = ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser", "Element"]);
 
@@ -94,7 +95,7 @@ const DEFAULT_PROVIDERS = [
   "resource://gre/modules/LightweightThemeManager.jsm",
 ];
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
 // Configure a logger at the parent 'addons' level to format
 // messages for all the modules under addons.*
 const PARENT_LOGGER_ID = "addons";
@@ -532,6 +533,8 @@ var gShutdownInProgress = false;
 var gPluginPageListener = null;
 var gBrowserUpdated = null;
 
+var AMTelemetry;
+
 /**
  * This is the real manager, kept here rather than in AddonManager to keep its
  * contents hidden from API users.
@@ -700,6 +703,9 @@ var AddonManagerInternal = {
 
       this.recordTimestamp("AMI_startup_begin");
 
+      // Enable the addonsManager telemetry event category.
+      AMTelemetry.init();
+
       // clear this for xpcshell test restarts
       for (let provider in this.telemetryDetails)
         delete this.telemetryDetails[provider];
@@ -814,7 +820,7 @@ var AddonManagerInternal = {
       // Support for remote about:plugins. Note that this module isn't loaded
       // at the top because Services.appinfo is defined late in tests.
       let { RemotePages } =
-        ChromeUtils.import("resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm", {});
+        ChromeUtils.import("resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm");
 
       gPluginPageListener = new RemotePages("about:plugins");
       gPluginPageListener.addMessageListener("RequestPlugins", this.requestPlugins);
@@ -1285,6 +1291,11 @@ var AddonManagerInternal = {
         for (let addon of allAddons) {
           // Check all add-ons for updates so that any compatibility updates will
           // be applied
+
+          if (!(addon.permissions & AddonManager.PERM_CAN_UPGRADE)) {
+            continue;
+          }
+
           updates.push(new Promise((resolve, reject) => {
             addon.findUpdates({
               onUpdateAvailable(aAddon, aInstall) {
@@ -1569,26 +1580,26 @@ var AddonManagerInternal = {
    * Asynchronously gets an AddonInstall for a URL.
    *
    * @param  aUrl
-   *         The string represenation of the URL the add-on is located at
-   * @param  aMimetype
-   *         The mimetype of the add-on
-   * @param  aHash
+   *         The string represenation of the URL where the add-on is located
+   * @param  {Object} [aOptions = {}]
+   *         Additional options for this install
+   * @param  {string} [aOptions.hash]
    *         An optional hash of the add-on
-   * @param  aName
+   * @param  {string} [aOptions.name]
    *         An optional placeholder name while the add-on is being downloaded
-   * @param  aIcons
+   * @param  {string|Object} [aOptions.icons]
    *         Optional placeholder icons while the add-on is being downloaded
-   * @param  aVersion
+   * @param  {string} [aOptions.version]
    *         An optional placeholder version while the add-on is being downloaded
-   * @param  aBrowser
+   * @param  {XULElement} [aOptions.browser]
    *         An optional <browser> element for download permissions prompts.
-   * @param  aTelemetryInfo
+   * @param  {Object} [aOptions.telemetryInfo]
    *         An optional object which provides details about the installation source
    *         included in the addon manager telemetry events.
-   * @throws if the aUrl, aCallback or aMimetype arguments are not specified
+   * @throws if aUrl is not specified or if an optional argument of
+   *         an improper type is passed.
    */
-  getInstallForURL(aUrl, aMimetype, aHash, aName,
-                   aIcons, aVersion, aBrowser, aTelemetryInfo) {
+  async getInstallForURL(aUrl, aOptions = {}) {
     if (!gStarted)
       throw Components.Exception("AddonManager is not initialized",
                                  Cr.NS_ERROR_NOT_INITIALIZED);
@@ -1597,45 +1608,41 @@ var AddonManagerInternal = {
       throw Components.Exception("aURL must be a non-empty string",
                                  Cr.NS_ERROR_INVALID_ARG);
 
-    if (!aMimetype || typeof aMimetype != "string")
-      throw Components.Exception("aMimetype must be a non-empty string",
+    if (aOptions.hash && typeof aOptions.hash != "string")
+      throw Components.Exception("hash must be a string or null",
                                  Cr.NS_ERROR_INVALID_ARG);
 
-    if (aHash && typeof aHash != "string")
-      throw Components.Exception("aHash must be a string or null",
+    if (aOptions.name && typeof aOptions.name != "string")
+      throw Components.Exception("name must be a string or null",
                                  Cr.NS_ERROR_INVALID_ARG);
 
-    if (aName && typeof aName != "string")
-      throw Components.Exception("aName must be a string or null",
-                                 Cr.NS_ERROR_INVALID_ARG);
-
-    if (aIcons) {
-      if (typeof aIcons == "string")
-        aIcons = { "32": aIcons };
-      else if (typeof aIcons != "object")
-        throw Components.Exception("aIcons must be a string, an object or null",
+    if (aOptions.icons) {
+      if (typeof aOptions.icons == "string")
+        aOptions.icons = { "32": aOptions.icons };
+      else if (typeof aOptions.icons != "object")
+        throw Components.Exception("icons must be a string, an object or null",
                                    Cr.NS_ERROR_INVALID_ARG);
     } else {
-      aIcons = {};
+      aOptions.icons = {};
     }
 
-    if (aVersion && typeof aVersion != "string")
-      throw Components.Exception("aVersion must be a string or null",
+    if (aOptions.version && typeof aOptions.version != "string")
+      throw Components.Exception("version must be a string or null",
                                  Cr.NS_ERROR_INVALID_ARG);
 
-    if (aBrowser && !Element.isInstance(aBrowser))
-      throw Components.Exception("aBrowser must be an Element or null",
+    if (aOptions.browser && !Element.isInstance(aOptions.browser))
+      throw Components.Exception("aOptions.browser must be an Element or null",
                                  Cr.NS_ERROR_INVALID_ARG);
 
     for (let provider of this.providers) {
-      if (callProvider(provider, "supportsMimetype", false, aMimetype)) {
-        return promiseCallProvider(
-          provider, "getInstallForURL", aUrl, aHash, aName, aIcons,
-          aVersion, aBrowser, aTelemetryInfo);
+      let install = await promiseCallProvider(provider, "getInstallForURL",
+                                              aUrl, aOptions);
+      if (install) {
+        return install;
       }
     }
 
-    return Promise.resolve(null);
+    return null;
   },
 
   /**
@@ -1812,7 +1819,7 @@ var AddonManagerInternal = {
 
       onDownloadEnded() {
         if (install.addon.appDisabled) {
-          // App disabled items are not compatible and so fail to install
+          // App disabled items are not compatible and so fail to install.
           install.removeListener(listener);
           install.cancel();
           self.installNotifyObservers("addon-install-failed", browser, url, install);
@@ -1904,7 +1911,7 @@ var AddonManagerInternal = {
         this.installNotifyObservers("addon-install-disabled", topBrowser,
                                     aInstallingPrincipal.URI, aInstall);
         return;
-      } else if (!aBrowser.contentPrincipal || !aInstallingPrincipal.subsumes(aBrowser.contentPrincipal)) {
+      } else if (aInstallingPrincipal.isNullPrincipal || !aBrowser.contentPrincipal || !aInstallingPrincipal.subsumes(aBrowser.contentPrincipal)) {
         aInstall.cancel();
 
         this.installNotifyObservers("addon-install-origin-blocked", topBrowser,
@@ -2057,6 +2064,23 @@ var AddonManagerInternal = {
 
     return AddonManagerInternal._getProviderByName("XPIProvider")
                                .installTemporaryAddon(aFile);
+  },
+
+  /**
+   * Installs an add-on from a built-in location
+   *  (ie a resource: url referencing assets shipped with the application)
+   *
+   * @param  aBase
+   *         A string containing the base URL.  Must be a resource: URL.
+   * @returns a Promise that resolves when the addon is installed.
+   */
+  installBuiltinAddon(aBase) {
+    if (!gStarted)
+      throw Components.Exception("AddonManager is not initialized",
+                                 Cr.NS_ERROR_NOT_INITIALIZED);
+
+    return AddonManagerInternal._getProviderByName("XPIProvider")
+                               .installBuiltinAddon(aBase);
   },
 
    syncGetAddonIDByInstanceID(aInstanceID) {
@@ -2601,45 +2625,6 @@ var AddonManagerInternal = {
       obj.maxProgress = install.maxProgress;
     },
 
-    makeListener(id, mm) {
-      const events = [
-        "onDownloadStarted",
-        "onDownloadProgress",
-        "onDownloadEnded",
-        "onDownloadCancelled",
-        "onDownloadFailed",
-        "onInstallStarted",
-        "onInstallEnded",
-        "onInstallCancelled",
-        "onInstallFailed",
-      ];
-
-      let listener = {};
-      let installPromise = new Promise((resolve, reject) => {
-        events.forEach(event => {
-          listener[event] = (install, addon) => {
-            let data = {event, id};
-            AddonManager.webAPI.copyProps(install, data);
-            this.sendEvent(mm, data);
-            if (event == "onInstallEnded") {
-              resolve(addon);
-            } else if (event == "onDownloadFailed" || event == "onInstallFailed") {
-              reject({message: "install failed"});
-            } else if (event == "onDownloadCancelled" || event == "onInstallCancelled") {
-              reject({message: "install cancelled"});
-            }
-          };
-        });
-      });
-
-      // We create the promise here since this is where we're setting
-      // up the InstallListener, but if the install is never started,
-      // no handlers will be attached so make sure we terminate errors.
-      installPromise.catch(() => {});
-
-      return {listener, installPromise};
-    },
-
     forgetInstall(id) {
       let info = this.installs.get(id);
       if (!info) {
@@ -2665,24 +2650,68 @@ var AddonManagerInternal = {
         throw new Error(`Install from ${host} not permitted`);
       }
 
+      const makeListener = (id, mm) => {
+        const events = [
+          "onDownloadStarted",
+          "onDownloadProgress",
+          "onDownloadEnded",
+          "onDownloadCancelled",
+          "onDownloadFailed",
+          "onInstallStarted",
+          "onInstallEnded",
+          "onInstallCancelled",
+          "onInstallFailed",
+         ];
+
+        let listener = {};
+        let installPromise = new Promise((resolve, reject) => {
+          events.forEach(event => {
+            listener[event] = (install, addon) => {
+              let data = {event, id};
+              AddonManager.webAPI.copyProps(install, data);
+              this.sendEvent(mm, data);
+              if (event == "onInstallEnded") {
+                resolve(addon);
+              } else if (event == "onDownloadFailed" || event == "onInstallFailed") {
+                reject({message: "install failed"});
+              } else if (event == "onDownloadCancelled" || event == "onInstallCancelled") {
+                reject({message: "install cancelled"});
+              } else if (event == "onDownloadEnded") {
+                if (install.addon.appDisabled) {
+                  // App disabled items are not compatible and so fail to install
+                  install.cancel();
+                  AddonManagerInternal.installNotifyObservers("addon-install-failed", target, Services.io.newURI(options.url), install);
+                }
+              }
+            };
+          });
+        });
+
+        // We create the promise here since this is where we're setting
+        // up the InstallListener, but if the install is never started,
+        // no handlers will be attached so make sure we terminate errors.
+        installPromise.catch(() => {});
+
+        return {listener, installPromise};
+     };
+
       try {
         checkInstallUrl(options.url);
       } catch (err) {
         return Promise.reject({message: err.message});
       }
 
-      let installTelemetryInfo = {
-        source: AddonManager.getInstallSourceFromHost(options.sourceHost),
-        method: "amWebAPI",
-      };
-
-      return AddonManagerInternal.getInstallForURL(options.url, "application/x-xpinstall", options.hash,
-                                                   null, null, null, null, installTelemetryInfo)
-                                 .then(install => {
+      return AddonManagerInternal.getInstallForURL(options.url, {
+        hash: options.hash,
+        telemetryInfo: {
+          source: AddonManager.getInstallSourceFromHost(options.sourceHost),
+          method: "amWebAPI",
+        },
+      }).then(install => {
         AddonManagerInternal.setupPromptHandler(target, null, install, false, "AMO");
 
         let id = this.nextInstall++;
-        let {listener, installPromise} = this.makeListener(id, target.messageManager);
+        let {listener, installPromise} = makeListener(id, target.messageManager);
         install.addListener(listener);
 
         this.installs.set(id, {install, target, listener, installPromise});
@@ -3114,6 +3143,9 @@ var AddonManager = {
   // Indicates that the Addon can be set to be optionally enabled
   // on a case-by-case basis.
   PERM_CAN_ASK_TO_ACTIVATE: 16,
+  // Indicates that the Addon can be set to be allowed/disallowed
+  // in private browsing windows.
+  PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS: 32,
 
   // General descriptions of where items are installed.
   // Installed in this profile.
@@ -3258,10 +3290,8 @@ var AddonManager = {
     return "unknown";
   },
 
-  getInstallForURL(aUrl, aMimetype, aHash, aName, aIcons,
-                   aVersion, aBrowser, aTelemetryInfo) {
-    return AddonManagerInternal.getInstallForURL(
-      aUrl, aMimetype, aHash, aName, aIcons, aVersion, aBrowser, aTelemetryInfo);
+  getInstallForURL(aUrl, aOptions) {
+    return AddonManagerInternal.getInstallForURL(aUrl, aOptions);
   },
 
   getInstallForFile(aFile, aMimetype, aTelemetryInfo) {
@@ -3333,6 +3363,10 @@ var AddonManager = {
 
   installTemporaryAddon(aDirectory) {
     return AddonManagerInternal.installTemporaryAddon(aDirectory);
+  },
+
+  installBuiltinAddon(aBase) {
+    return AddonManagerInternal.installBuiltinAddon(aBase);
   },
 
   addManagerListener(aListener) {
@@ -3472,8 +3506,16 @@ var AddonManager = {
 /**
  * Listens to the AddonManager install and addon events and send telemetry events.
  */
-var AMTelemetry = {
+AMTelemetry = {
   telemetrySetupDone: false,
+
+  init() {
+    // Enable the addonsManager telemetry event category before the AddonManager
+    // has completed its startup, otherwise telemetry events recorded during the
+    // AddonManager/XPIProvider startup will not be recorded (e.g. the telemetry
+    // events for the extension migrated to the private browsing permission).
+    Services.telemetry.setEventRecordingEnabled("addonsManager", true);
+  },
 
   // This method is called by the AddonManager, once it has been started, so that we can
   // init the telemetry event category and start listening for the events related to the
@@ -3485,14 +3527,9 @@ var AMTelemetry = {
 
     this.telemetrySetupDone = true;
 
-    Services.telemetry.setEventRecordingEnabled("addonsManager", true);
-
     Services.obs.addObserver(this, "addon-install-origin-blocked");
     Services.obs.addObserver(this, "addon-install-disabled");
     Services.obs.addObserver(this, "addon-install-blocked");
-
-    Services.obs.addObserver(this, "webextension-permission-prompt");
-    Services.obs.addObserver(this, "webextension-update-permissions");
 
     AddonManager.addInstallListener(this);
     AddonManager.addAddonListener(this);
@@ -3515,35 +3552,6 @@ var AMTelemetry = {
       case "addon-install-disabled": {
         const {installs} = subject.wrappedJSObject;
         this.recordInstallEvent(installs[0], {step: "install_disabled_warning"});
-        break;
-      }
-      case "webextension-permission-prompt": {
-        const {info} = subject.wrappedJSObject;
-        const {permissions, origins} = info.permissions || {permissions: [], origins: []};
-        if (info.type === "sideload") {
-          // When extension.js notifies a webextension-permission-prompt for a sideload,
-          // there is no AddonInstall instance available.
-          this.recordManageEvent(info.addon, "sideload_prompt", {
-            num_perms: permissions.length,
-            num_origins: origins.length,
-          });
-        } else {
-          this.recordInstallEvent(info.install, {
-            step: "permissions_prompt",
-            num_perms: permissions.length,
-            num_origins: origins.length,
-          });
-        }
-        break;
-      }
-      case "webextension-update-permissions": {
-        const update = subject.wrappedJSObject;
-        const {permissions, origins} = update.permissions || {permissions: [], origins: []};
-        this.recordInstallEvent(update.install, {
-          step: "permissions_prompt",
-          num_perms: permissions.length,
-          num_origins: origins.length,
-        });
         break;
       }
     }
@@ -3728,18 +3736,46 @@ var AMTelemetry = {
     }
   },
 
+  convertToString(value) {
+    if (value == null) {
+      // Convert null and undefined to empty strings.
+      return "";
+    }
+    switch (typeof(value)) {
+      case "string":
+        return value;
+      case "boolean":
+        return value ? "1" : "0";
+    }
+    return String(value);
+  },
+
   /**
    * Convert all the telemetry event's extra_vars into strings, if needed.
    *
    * @param {object} extraVars
+   * @returns {object} The formatted extra vars.
    */
-  formatExtraVars(extraVars) {
+  formatExtraVars({addon, ...extraVars}) {
+    if (addon) {
+      extraVars.addonId = addon.id;
+      extraVars.type = addon.type;
+    }
+
     // All the extra_vars in a telemetry event have to be strings.
-    for (var key of Object.keys(extraVars)) {
-      if (typeof(extraVars[key]) !== "string") {
-        extraVars[key] = String(extraVars[key]);
+    for (var [key, value] of Object.entries(extraVars)) {
+      if (value == undefined) {
+        delete extraVars[key];
+      } else {
+        extraVars[key] = this.convertToString(value);
       }
     }
+
+    if (extraVars.addonId) {
+      extraVars.addonId = this.getTrimmedString(extraVars.addonId);
+    }
+
+    return extraVars;
   },
 
   /**
@@ -3753,10 +3789,9 @@ var AMTelemetry = {
    *        The current step in the install or update flow.
    * @param {string} extraVars.download_time
    *        The number of ms needed to download the extension.
-   * @param {string} extraVars.num_perms
-   *        The number of permissions for the extensions.
-   * @param {string} extraVars.num_origins
-   *        The number of origins for the extensions.
+   * @param {string} extraVars.num_strings
+   *        The number of permission description string for the extension
+   *        permission doorhanger.
    */
   recordInstallEvent(install, extraVars) {
     // Early exit if AMTelemetry's telemetry setup has not been done yet.
@@ -3804,8 +3839,7 @@ var AMTelemetry = {
     }
 
     // All the extra vars in a telemetry event have to be strings.
-    extra = {...extraVars, ...extra};
-    this.formatExtraVars(extra);
+    extra = this.formatExtraVars({...extraVars, ...extra});
 
     this.recordEvent({method: eventMethod, object, value: installId, extra});
   },
@@ -3815,12 +3849,11 @@ var AMTelemetry = {
    *
    * @param {AddonWrapper} addon
    *        The AddonWrapper instance.
-   * @param {object} extra
+   * @param {object} extraVars
    *        The additional extra_vars to include in the recorded event.
-   * @param {string} extraVars.num_perms
-   *        The number of permissions for the extensions.
-   * @param {string} extraVars.num_origins
-   *        The number of origins for the extensions.
+   * @param {string} extraVars.num_strings
+   *        The number of permission description string for the extension
+   *        permission doorhanger.
    */
   recordManageEvent(addon, method, extraVars) {
     // Early exit if AMTelemetry's telemetry setup has not been done yet.
@@ -3854,13 +3887,95 @@ var AMTelemetry = {
     extra = {...extraVars, ...extra};
 
     let hasExtraVars = Object.keys(extra).length > 0;
-    this.formatExtraVars(extra);
+    extra = this.formatExtraVars(extra);
 
     this.recordEvent({method, object, value, extra: hasExtraVars ? extra : null});
   },
 
+  /**
+   * Record an event for when a link is clicked.
+   *
+   * @param {object} opts
+   * @param {string} opts.object
+   *        The object of the event, should be an identifier for where the link
+   *        is located. The accepted values are listed in the
+   *        addonsManager.link object of the Events.yaml file.
+   * @param {string} opts.value The identifier for the link destination.
+   * @param {object} opts.extra
+   *        The extra data to be sent, all keys must be registered in the
+   *        extra_keys section of addonsManager.link in Events.yaml.
+   */
+  recordLinkEvent({object, value, extra = null}) {
+    this.recordEvent({method: "link", object, value, extra});
+  },
+
+  /**
+   * Record an event for an action that took place.
+   *
+   * @param {object} opts
+   * @param {string} opts.object
+   *        The object of the event, should an identifier for where the action
+   *        took place. The accepted values are listed in the
+   *        addonsManager.action object of the Events.yaml file.
+   * @param {string} opts.action The identifier for the action.
+   * @param {string} opts.value An optional value for the action.
+   * @param {AddonWrapper} opts.addon
+   *        An optional add-on object related to the event. Passing this will
+   *        set extra.addonId and extra.type based on the add-on.
+   * @param {string} opts.view The current view, when object is aboutAddons.
+   * @param {object} opts.extra
+   *        The extra data to be sent, all keys must be registered in the
+   *        extra_keys section of addonsManager.action in Events.yaml. If
+   *        opts.addon is passed then it will overwrite the addonId and type
+   *        properties in this object, if they are set.
+   */
+  recordActionEvent({object, action, value, addon, view, extra}) {
+    extra = {...extra, action, addon, view};
+    this.recordEvent({
+      method: "action",
+      object,
+      // Treat null and undefined as null.
+      value: value == null ? null : this.convertToString(value),
+      extra: this.formatExtraVars(extra),
+    });
+  },
+
+  /**
+   * Record an event for a view load in about:addons.
+   *
+   * @param {object} opts
+   * @param {string} opts.view
+   *        The identifier for the view. The accepted values are listed in the
+   *        object property of addonsManager.view object of the Events.yaml
+   *        file.
+   * @param {AddonWrapper} opts.addon
+   *        An optional add-on object related to the event.
+   * @param {string} opts.type
+   *        An optional type for the view. If opts.addon is set it will
+   *        overwrite this value with the type of the add-on.
+   */
+  recordViewEvent({view, addon, type}) {
+    this.recordEvent({
+      method: "view",
+      object: "aboutAddons",
+      value: view,
+      extra: this.formatExtraVars({type, addon}),
+    });
+  },
+
   recordEvent({method, object, value, extra}) {
-    Services.telemetry.recordEvent("addonsManager", method, object, value, extra);
+    if (typeof value != "string") {
+      // The value must be a string or null, make sure it's valid so sending
+      // the event doesn't fail.
+      value = null;
+    }
+    try {
+      Services.telemetry.recordEvent("addonsManager", method, object, value, extra);
+    } catch (err) {
+      // If the telemetry throws just log the error so it doesn't break any
+      // functionality.
+      Cu.reportError(err);
+    }
   },
 };
 

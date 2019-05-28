@@ -29,12 +29,12 @@
 #endif
 
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceDefs.h"
 #include "nsNetCID.h"
 #include "nsXULAppAPI.h"
 #include "nsThreadUtils.h"
 
 #include "nsIRunnable.h"
-#include "nsINIParser.h"
 #include "nsXREDirProvider.h"
 #include "nsAppRunner.h"
 #include "nsString.h"
@@ -42,25 +42,124 @@
 #include "nsNativeCharsetUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Sprintf.h"
+#include "nsPrintfCString.h"
+#include "mozilla/UniquePtr.h"
+#include "nsIToolkitShellService.h"
+#include "mozilla/Telemetry.h"
+#include "nsProxyRelease.h"
 
 using namespace mozilla;
 
 #define DEV_EDITION_NAME "dev-edition-default"
 #define DEFAULT_NAME "default"
+#define COMPAT_FILE NS_LITERAL_STRING("compatibility.ini")
+#define PROFILE_DB_VERSION "2"
+#define INSTALL_PREFIX "Install"
+#define INSTALL_PREFIX_LENGTH 7
+
+struct KeyValue {
+  KeyValue(const char* aKey, const char* aValue) : key(aKey), value(aValue) {}
+
+  nsCString key;
+  nsCString value;
+};
+
+static bool GetStrings(const char* aString, const char* aValue,
+                       void* aClosure) {
+  nsTArray<UniquePtr<KeyValue>>* array =
+      static_cast<nsTArray<UniquePtr<KeyValue>>*>(aClosure);
+  array->AppendElement(MakeUnique<KeyValue>(aString, aValue));
+
+  return true;
+}
+
+/**
+ * Returns an array of the strings inside a section of an ini file.
+ */
+nsTArray<UniquePtr<KeyValue>> GetSectionStrings(nsINIParser* aParser,
+                                                const char* aSection) {
+  nsTArray<UniquePtr<KeyValue>> result;
+  aParser->GetStrings(aSection, &GetStrings, &result);
+  return result;
+}
+
+void RemoveProfileFiles(nsIToolkitProfile* aProfile, bool aInBackground) {
+  nsCOMPtr<nsIFile> rootDir;
+  aProfile->GetRootDir(getter_AddRefs(rootDir));
+  nsCOMPtr<nsIFile> localDir;
+  aProfile->GetLocalDir(getter_AddRefs(localDir));
+
+  // Just lock the directories, don't mark the profile as locked or the lock
+  // will attempt to release its reference to the profile on the background
+  // thread which will assert.
+  nsCOMPtr<nsIProfileLock> lock;
+  nsresult rv =
+      NS_LockProfilePath(rootDir, localDir, nullptr, getter_AddRefs(lock));
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+      "nsToolkitProfile::RemoveProfileFiles",
+      [rootDir, localDir, lock]() mutable {
+        bool equals;
+        nsresult rv = rootDir->Equals(localDir, &equals);
+        // The root dir might contain the temp dir, so remove
+        // the temp dir first.
+        if (NS_SUCCEEDED(rv) && !equals) {
+          localDir->Remove(true);
+        }
+
+        // Ideally we'd unlock after deleting but since the lock is a file
+        // in the profile we must unlock before removing.
+        lock->Unlock();
+        // nsIProfileLock is not threadsafe so release our reference to it on
+        // the main thread.
+        NS_ReleaseOnMainThreadSystemGroup(
+            "nsToolkitProfile::RemoveProfileFiles::Unlock", lock.forget());
+
+        rv = rootDir->Remove(true);
+        NS_ENSURE_SUCCESS_VOID(rv);
+      });
+
+  if (aInBackground) {
+    nsCOMPtr<nsIEventTarget> target =
+        do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+    target->Dispatch(runnable, NS_DISPATCH_NORMAL);
+  } else {
+    runnable->Run();
+  }
+}
 
 nsToolkitProfile::nsToolkitProfile(const nsACString& aName, nsIFile* aRootDir,
-                                   nsIFile* aLocalDir, nsToolkitProfile* aPrev)
-    : mPrev(aPrev),
-      mName(aName),
+                                   nsIFile* aLocalDir, bool aFromDB)
+    : mName(aName),
       mRootDir(aRootDir),
       mLocalDir(aLocalDir),
-      mLock(nullptr) {
+      mLock(nullptr),
+      mIndex(0),
+      mSection("Profile") {
   NS_ASSERTION(aRootDir, "No file!");
 
-  if (aPrev) {
-    aPrev->mNext = this;
-  } else {
-    nsToolkitProfileService::gService->mFirst = this;
+  RefPtr<nsToolkitProfile> prev =
+      nsToolkitProfileService::gService->mProfiles.getLast();
+  if (prev) {
+    mIndex = prev->mIndex + 1;
+  }
+  mSection.AppendInt(mIndex);
+
+  nsToolkitProfileService::gService->mProfiles.insertBack(this);
+
+  // If this profile isn't in the database already add it.
+  if (!aFromDB) {
+    nsINIParser* db = &nsToolkitProfileService::gService->mProfileDB;
+    db->SetString(mSection.get(), "Name", mName.get());
+
+    bool isRelative = false;
+    nsCString descriptor;
+    nsToolkitProfileService::gService->GetProfileDescriptor(this, descriptor,
+                                                            &isRelative);
+
+    db->SetString(mSection.get(), "IsRelative", isRelative ? "1" : "0");
+    db->SetString(mSection.get(), "Path", descriptor.get());
   }
 }
 
@@ -88,7 +187,29 @@ NS_IMETHODIMP
 nsToolkitProfile::SetName(const nsACString& aName) {
   NS_ASSERTION(nsToolkitProfileService::gService, "Where did my service go?");
 
+  if (mName.Equals(aName)) {
+    return NS_OK;
+  }
+
+  // Changing the name from the dev-edition default profile name makes this
+  // profile no longer the dev-edition default.
+  if (mName.EqualsLiteral(DEV_EDITION_NAME) &&
+      nsToolkitProfileService::gService->mDevEditionDefault == this) {
+    nsToolkitProfileService::gService->mDevEditionDefault = nullptr;
+  }
+
   mName = aName;
+
+  nsresult rv = nsToolkitProfileService::gService->mProfileDB.SetString(
+      mSection.get(), "Name", mName.get());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Setting the name to the dev-edition default profile name will cause this
+  // profile to become the dev-edition default.
+  if (aName.EqualsLiteral(DEV_EDITION_NAME) &&
+      !nsToolkitProfileService::gService->mDevEditionDefault) {
+    nsToolkitProfileService::gService->mDevEditionDefault = this;
+  }
 
   return NS_OK;
 }
@@ -99,56 +220,47 @@ nsresult nsToolkitProfile::RemoveInternal(bool aRemoveFiles,
 
   if (mLock) return NS_ERROR_FILE_IS_LOCKED;
 
-  if (!mPrev && !mNext && nsToolkitProfileService::gService->mFirst != this)
+  if (!isInList()) {
     return NS_ERROR_NOT_INITIALIZED;
+  }
 
   if (aRemoveFiles) {
-    // Check if another instance is using this profile.
-    nsCOMPtr<nsIProfileLock> lock;
-    nsresult rv = Lock(nullptr, getter_AddRefs(lock));
-    NS_ENSURE_SUCCESS(rv, rv);
+    RemoveProfileFiles(this, aInBackground);
+  }
 
-    nsCOMPtr<nsIFile> rootDir(mRootDir);
-    nsCOMPtr<nsIFile> localDir(mLocalDir);
+  nsINIParser* db = &nsToolkitProfileService::gService->mProfileDB;
+  db->DeleteSection(mSection.get());
 
-    nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
-        "nsToolkitProfile::RemoveInternal", [rootDir, localDir, lock]() {
-          bool equals;
-          nsresult rv = rootDir->Equals(localDir, &equals);
-          // The root dir might contain the temp dir, so remove
-          // the temp dir first.
-          if (NS_SUCCEEDED(rv) && !equals) {
-            localDir->Remove(true);
-          }
+  // We make some assumptions that the profile's index in the database is based
+  // on its position in the linked list. Removing a profile means we have to fix
+  // the index of later profiles in the list. The easiest way to do that is just
+  // to move the last profile into the profile's position and just update its
+  // index.
+  RefPtr<nsToolkitProfile> last =
+      nsToolkitProfileService::gService->mProfiles.getLast();
+  if (last != this) {
+    // Update the section in the db.
+    last->mIndex = mIndex;
+    db->RenameSection(last->mSection.get(), mSection.get());
+    last->mSection = mSection;
 
-          // Ideally we'd unlock after deleting but since the lock is a file
-          // in the profile we must unlock before removing.
-          lock->Unlock();
-
-          rootDir->Remove(true);
-        });
-
-    if (aInBackground) {
-      nsCOMPtr<nsIEventTarget> target =
-          do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
-      target->Dispatch(runnable, NS_DISPATCH_NORMAL);
-    } else {
-      runnable->Run();
+    if (last != getNext()) {
+      last->remove();
+      setNext(last);
     }
   }
 
-  if (mPrev)
-    mPrev->mNext = mNext;
-  else
-    nsToolkitProfileService::gService->mFirst = mNext;
+  remove();
 
-  if (mNext) mNext->mPrev = mPrev;
-
-  mPrev = nullptr;
-  mNext = nullptr;
-
-  if (nsToolkitProfileService::gService->mChosen == this)
-    nsToolkitProfileService::gService->mChosen = nullptr;
+  if (nsToolkitProfileService::gService->mNormalDefault == this) {
+    nsToolkitProfileService::gService->mNormalDefault = nullptr;
+  }
+  if (nsToolkitProfileService::gService->mDevEditionDefault == this) {
+    nsToolkitProfileService::gService->mDevEditionDefault = nullptr;
+  }
+  if (nsToolkitProfileService::gService->mDedicatedProfile == this) {
+    nsToolkitProfileService::gService->SetDefaultProfile(nullptr);
+  }
 
   return NS_OK;
 }
@@ -265,11 +377,319 @@ nsToolkitProfileService* nsToolkitProfileService::gService = nullptr;
 NS_IMPL_ISUPPORTS(nsToolkitProfileService, nsIToolkitProfileService)
 
 nsToolkitProfileService::nsToolkitProfileService()
-    : mStartupProfileSelected(false), mStartWithLast(true), mIsFirstRun(true) {
+    : mStartupProfileSelected(false),
+      mStartWithLast(true),
+      mIsFirstRun(true),
+      mUseDevEditionProfile(false),
+#ifdef MOZ_DEDICATED_PROFILES
+      mUseDedicatedProfile(!IsSnapEnvironment()),
+#else
+      mUseDedicatedProfile(false),
+#endif
+      mCreatedAlternateProfile(false),
+      mStartupReason(NS_LITERAL_STRING("unknown")),
+      mMaybeLockProfile(false),
+      mProfileDBExists(false),
+      mProfileDBFileSize(0),
+      mProfileDBModifiedTime(0),
+      mInstallDBExists(false),
+      mInstallDBFileSize(0),
+      mInstallDBModifiedTime(0) {
+#ifdef MOZ_DEV_EDITION
+  mUseDevEditionProfile = true;
+#endif
   gService = this;
 }
 
-nsToolkitProfileService::~nsToolkitProfileService() { gService = nullptr; }
+nsToolkitProfileService::~nsToolkitProfileService() {
+  gService = nullptr;
+  mProfiles.clear();
+}
+
+void nsToolkitProfileService::CompleteStartup() {
+  if (!mStartupProfileSelected) {
+    return;
+  }
+
+  ScalarSet(mozilla::Telemetry::ScalarID::STARTUP_PROFILE_SELECTION_REASON,
+            mStartupReason);
+
+  if (mMaybeLockProfile) {
+    nsCOMPtr<nsIToolkitShellService> shell =
+        do_GetService(NS_TOOLKITSHELLSERVICE_CONTRACTID);
+    if (!shell) {
+      return;
+    }
+
+    bool isDefaultApp;
+    nsresult rv = shell->IsDefaultApplication(&isDefaultApp);
+    NS_ENSURE_SUCCESS_VOID(rv);
+
+    if (isDefaultApp) {
+      mProfileDB.SetString(mInstallSection.get(), "Locked", "1");
+
+      // There is a very small chance that this could fail if something else
+      // overwrote the profiles database since we started up, probably less than
+      // a second ago. There isn't really a sane response here, all the other
+      // profile changes are already flushed so whether we fail to flush here or
+      // force quit the app makes no difference.
+      NS_ENSURE_SUCCESS_VOID(Flush());
+    }
+  }
+}
+
+// Tests whether the passed profile was last used by this install.
+bool nsToolkitProfileService::IsProfileForCurrentInstall(
+    nsIToolkitProfile* aProfile) {
+  nsCOMPtr<nsIFile> profileDir;
+  nsresult rv = aProfile->GetRootDir(getter_AddRefs(profileDir));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  nsCOMPtr<nsIFile> compatFile;
+  rv = profileDir->Clone(getter_AddRefs(compatFile));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  rv = compatFile->Append(COMPAT_FILE);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  nsINIParser compatData;
+  rv = compatData.Init(compatFile);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  /**
+   * In xpcshell gDirServiceProvider doesn't have all the correct directories
+   * set so using NS_GetSpecialDirectory works better there. But in a normal
+   * app launch the component registry isn't initialized so
+   * NS_GetSpecialDirectory doesn't work. So we have to use two different
+   * paths to support testing.
+   */
+  nsCOMPtr<nsIFile> currentGreDir;
+  rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(currentGreDir));
+  if (rv == NS_ERROR_NOT_INITIALIZED) {
+    currentGreDir = gDirServiceProvider->GetGREDir();
+    MOZ_ASSERT(currentGreDir, "No GRE dir found.");
+  } else if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  nsCString greDirPath;
+  rv = compatData.GetString("Compatibility", "LastPlatformDir", greDirPath);
+  // If this string is missing then this profile is from an ancient version.
+  // We'll opt to use it in this case.
+  if (NS_FAILED(rv)) {
+    return true;
+  }
+
+  nsCOMPtr<nsIFile> greDir;
+  rv = NS_NewNativeLocalFile(EmptyCString(), false, getter_AddRefs(greDir));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  rv = greDir->SetPersistentDescriptor(greDirPath);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  bool equal;
+  rv = greDir->Equals(currentGreDir, &equal);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return equal;
+}
+
+/**
+ * Used the first time an install with dedicated profile support runs. Decides
+ * whether to mark the passed profile as the default for this install.
+ *
+ * The goal is to reduce disruption but ideally end up with the OS default
+ * install using the old default profile.
+ *
+ * If the decision is to use the profile then it will be unassigned as the
+ * dedicated default for other installs.
+ *
+ * We won't attempt to use the profile if it was last used by a different
+ * install.
+ *
+ * If the profile is currently in use by an install that was either the OS
+ * default install or the profile has been explicitely chosen by some other
+ * means then we won't use it.
+ *
+ * aResult will be set to true if we chose to make the profile the new dedicated
+ * default.
+ */
+nsresult nsToolkitProfileService::MaybeMakeDefaultDedicatedProfile(
+    nsIToolkitProfile* aProfile, bool* aResult) {
+  nsresult rv;
+  *aResult = false;
+
+  // If the profile was last used by a different install then we won't use it.
+  if (!IsProfileForCurrentInstall(aProfile)) {
+    return NS_OK;
+  }
+
+  nsCString descriptor;
+  rv = GetProfileDescriptor(aProfile, descriptor, nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Get a list of all the installs.
+  nsTArray<nsCString> installs = GetKnownInstalls();
+
+  // Cache the installs that use the profile.
+  nsTArray<nsCString> inUseInstalls;
+
+  // See if the profile is already in use by an install that hasn't locked it.
+  for (uint32_t i = 0; i < installs.Length(); i++) {
+    const nsCString& install = installs[i];
+
+    nsCString path;
+    rv = mProfileDB.GetString(install.get(), "Default", path);
+    if (NS_FAILED(rv)) {
+      continue;
+    }
+
+    // Is this install using the profile we care about?
+    if (!descriptor.Equals(path)) {
+      continue;
+    }
+
+    // Is this profile locked to this other install?
+    nsCString isLocked;
+    rv = mProfileDB.GetString(install.get(), "Locked", isLocked);
+    if (NS_SUCCEEDED(rv) && isLocked.Equals("1")) {
+      return NS_OK;
+    }
+
+    inUseInstalls.AppendElement(install);
+  }
+
+  // At this point we've decided to take the profile. Strip it from other
+  // installs.
+  for (uint32_t i = 0; i < inUseInstalls.Length(); i++) {
+    // Removing the default setting entirely will make the install go through
+    // the first run process again at startup and create itself a new profile.
+    mProfileDB.DeleteString(inUseInstalls[i].get(), "Default");
+  }
+
+  // Set this as the default profile for this install.
+  SetDefaultProfile(aProfile);
+
+  // SetDefaultProfile will have locked this profile to this install so no
+  // other installs will steal it, but this was auto-selected so we want to
+  // unlock it so that other installs can potentially take it.
+  mProfileDB.DeleteString(mInstallSection.get(), "Locked");
+
+  // Persist the changes.
+  rv = Flush();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Once XPCOM is available check if this is the default application and if so
+  // lock the profile again.
+  mMaybeLockProfile = true;
+  *aResult = true;
+
+  return NS_OK;
+}
+
+bool
+IsFileOutdated(nsIFile* aFile, bool aExists, PRTime aLastModified,
+               int64_t aLastSize) {
+  nsCOMPtr<nsIFile> file;
+  nsresult rv = aFile->Clone(getter_AddRefs(file));
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  bool exists;
+  rv = aFile->Exists(&exists);
+  if (NS_FAILED(rv) || exists != aExists) {
+    return true;
+  }
+
+  if (!exists) {
+    return false;
+  }
+
+  int64_t size;
+  rv = aFile->GetFileSize(&size);
+  if (NS_FAILED(rv) || size != aLastSize) {
+    return true;
+  }
+
+  PRTime time;
+  rv = aFile->GetLastModifiedTime(&time);
+  if (NS_FAILED(rv) || time != aLastModified) {
+    return true;
+  }
+
+  return false;
+}
+
+nsresult
+UpdateFileStats(nsIFile* aFile, bool* aExists, PRTime* aLastModified,
+                int64_t* aLastSize) {
+  nsCOMPtr<nsIFile> file;
+  nsresult rv = aFile->Clone(getter_AddRefs(file));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = file->Exists(aExists);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!(*aExists)) {
+    *aLastModified = 0;
+    *aLastSize = 0;
+    return NS_OK;
+  }
+
+  rv = file->GetFileSize(aLastSize);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = file->GetLastModifiedTime(aLastModified);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsToolkitProfileService::GetIsListOutdated(bool *aResult) {
+  if (IsFileOutdated(mProfileDBFile, mProfileDBExists, mProfileDBModifiedTime,
+                     mProfileDBFileSize)) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  if (IsFileOutdated(mInstallDBFile, mInstallDBExists, mInstallDBModifiedTime,
+                     mInstallDBFileSize)) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  *aResult = false;
+  return NS_OK;
+}
+
+struct ImportInstallsClosure {
+  nsINIParser* backupData;
+  nsINIParser* profileDB;
+};
+
+static bool ImportInstalls(const char* aSection, void* aClosure) {
+  ImportInstallsClosure* closure =
+      static_cast<ImportInstallsClosure*>(aClosure);
+
+  nsTArray<UniquePtr<KeyValue>> strings =
+      GetSectionStrings(closure->backupData, aSection);
+  if (strings.IsEmpty()) {
+    return true;
+  }
+
+  nsCString newSection(INSTALL_PREFIX);
+  newSection.Append(aSection);
+  nsCString buffer;
+
+  for (uint32_t i = 0; i < strings.Length(); i++) {
+    closure->profileDB->SetString(newSection.get(), strings[i]->key.get(),
+                                  strings[i]->value.get());
+  }
+
+  return true;
+}
 
 nsresult nsToolkitProfileService::Init() {
   NS_ASSERTION(gDirServiceProvider, "No dirserviceprovider!");
@@ -281,48 +701,102 @@ nsresult nsToolkitProfileService::Init() {
   rv = nsXREDirProvider::GetUserLocalDataDirectory(getter_AddRefs(mTempData));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = mAppData->Clone(getter_AddRefs(mListFile));
+  rv = mAppData->Clone(getter_AddRefs(mProfileDBFile));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = mListFile->AppendNative(NS_LITERAL_CSTRING("profiles.ini"));
+  rv = mProfileDBFile->AppendNative(NS_LITERAL_CSTRING("profiles.ini"));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  bool exists;
-  rv = mListFile->IsFile(&exists);
-  if (NS_FAILED(rv) || !exists) {
-    return NS_OK;
-  }
+  rv = mAppData->Clone(getter_AddRefs(mInstallDBFile));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  int64_t size;
-  rv = mListFile->GetFileSize(&size);
-  if (NS_FAILED(rv) || !size) {
-    return NS_OK;
-  }
+  rv = mInstallDBFile->AppendNative(NS_LITERAL_CSTRING("installs.ini"));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  nsINIParser parser;
-  rv = parser.Init(mListFile);
-  // Init does not fail on parsing errors, only on OOM/really unexpected
-  // conditions.
-  if (NS_FAILED(rv)) return rv;
+  rv = UpdateFileStats(mInstallDBFile, &mInstallDBExists,
+                       &mInstallDBModifiedTime, &mInstallDBFileSize);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString buffer;
-  rv = parser.GetString("General", "StartWithLastProfile", buffer);
-  if (NS_SUCCEEDED(rv) && buffer.EqualsLiteral("0")) mStartWithLast = false;
+
+  rv = UpdateFileStats(mProfileDBFile, &mProfileDBExists,
+                       &mProfileDBModifiedTime, &mProfileDBFileSize);
+  if (NS_SUCCEEDED(rv) && mProfileDBExists) {
+    mProfileDBFile->GetFileSize(&mProfileDBFileSize);
+    mProfileDBFile->GetLastModifiedTime(&mProfileDBModifiedTime);
+
+    rv = mProfileDB.Init(mProfileDBFile);
+    // Init does not fail on parsing errors, only on OOM/really unexpected
+    // conditions.
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    rv = mProfileDB.GetString("General", "StartWithLastProfile", buffer);
+    if (NS_SUCCEEDED(rv)) {
+      mStartWithLast = !buffer.EqualsLiteral("0");
+    }
+
+    rv = mProfileDB.GetString("General", "Version", buffer);
+    if (NS_FAILED(rv)) {
+      // This is a profiles.ini written by an older version. We must restore
+      // any install data from the backup.
+      nsINIParser installDB;
+
+      if (mInstallDBExists && NS_SUCCEEDED(installDB.Init(mInstallDBFile))) {
+        // There is install data to import.
+        ImportInstallsClosure closure = {&installDB, &mProfileDB};
+        installDB.GetSections(&ImportInstalls, &closure);
+      }
+
+      rv = mProfileDB.SetString("General", "Version", PROFILE_DB_VERSION);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  } else {
+    rv = mProfileDB.SetString("General", "StartWithLastProfile",
+                              mStartWithLast ? "1" : "0");
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mProfileDB.SetString("General", "Version", PROFILE_DB_VERSION);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  nsCString installProfilePath;
+
+  if (mUseDedicatedProfile) {
+    nsString installHash;
+    rv = gDirServiceProvider->GetInstallHash(installHash);
+    NS_ENSURE_SUCCESS(rv, rv);
+    CopyUTF16toUTF8(installHash, mInstallSection);
+    mInstallSection.Insert(INSTALL_PREFIX, 0);
+
+    // Try to find the descriptor for the default profile for this install.
+    rv = mProfileDB.GetString(mInstallSection.get(), "Default",
+                              installProfilePath);
+    // Not having a value means this install doesn't appear in installs.ini so
+    // this is the first run for this install.
+    mIsFirstRun = NS_FAILED(rv);
+  }
 
   nsToolkitProfile* currentProfile = nullptr;
 
 #ifdef MOZ_DEV_EDITION
-  nsCOMPtr<nsIFile> ignoreSeparateProfile;
-  rv = mAppData->Clone(getter_AddRefs(ignoreSeparateProfile));
-  if (NS_FAILED(rv)) return rv;
+  nsCOMPtr<nsIFile> ignoreDevEditionProfile;
+  rv = mAppData->Clone(getter_AddRefs(ignoreDevEditionProfile));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
-  rv = ignoreSeparateProfile->AppendNative(
+  rv = ignoreDevEditionProfile->AppendNative(
       NS_LITERAL_CSTRING("ignore-dev-edition-profile"));
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   bool shouldIgnoreSeparateProfile;
-  rv = ignoreSeparateProfile->Exists(&shouldIgnoreSeparateProfile);
+  rv = ignoreDevEditionProfile->Exists(&shouldIgnoreSeparateProfile);
   if (NS_FAILED(rv)) return rv;
+
+  mUseDevEditionProfile = !shouldIgnoreSeparateProfile;
 #endif
 
   nsCOMPtr<nsIToolkitProfile> autoSelectProfile;
@@ -333,14 +807,14 @@ nsresult nsToolkitProfileService::Init() {
     nsAutoCString profileID("Profile");
     profileID.AppendInt(c);
 
-    rv = parser.GetString(profileID.get(), "IsRelative", buffer);
+    rv = mProfileDB.GetString(profileID.get(), "IsRelative", buffer);
     if (NS_FAILED(rv)) break;
 
     bool isRelative = buffer.EqualsLiteral("1");
 
     nsAutoCString filePath;
 
-    rv = parser.GetString(profileID.get(), "Path", filePath);
+    rv = mProfileDB.GetString(profileID.get(), "Path", filePath);
     if (NS_FAILED(rv)) {
       NS_ERROR("Malformed profiles.ini: Path= not found");
       continue;
@@ -348,7 +822,7 @@ nsresult nsToolkitProfileService::Init() {
 
     nsAutoCString name;
 
-    rv = parser.GetString(profileID.get(), "Name", name);
+    rv = mProfileDB.GetString(profileID.get(), "Name", name);
     if (NS_FAILED(rv)) {
       NS_ERROR("Malformed profiles.ini: Name= not found");
       continue;
@@ -376,23 +850,23 @@ nsresult nsToolkitProfileService::Init() {
       localDir = rootDir;
     }
 
-    currentProfile =
-        new nsToolkitProfile(name, rootDir, localDir, currentProfile);
+    currentProfile = new nsToolkitProfile(name, rootDir, localDir, true);
     NS_ENSURE_TRUE(currentProfile, NS_ERROR_OUT_OF_MEMORY);
 
-    rv = parser.GetString(profileID.get(), "Default", buffer);
+    rv = mProfileDB.GetString(profileID.get(), "Default", buffer);
     if (NS_SUCCEEDED(rv) && buffer.EqualsLiteral("1")) {
-      mDefault = currentProfile;
+      mNormalDefault = currentProfile;
+    }
+
+    // Is this the default profile for this install?
+    if (mUseDedicatedProfile && !mDedicatedProfile &&
+        installProfilePath.Equals(filePath)) {
+      // Found a profile for this install.
+      mDedicatedProfile = currentProfile;
     }
 
     if (name.EqualsLiteral(DEV_EDITION_NAME)) {
-#ifdef MOZ_DEV_EDITION
-      // Use the dev-edition-default profile if this is an Aurora build and
-      // ignore-dev-edition-profile is not present.
-      if (!shouldIgnoreSeparateProfile) {
-        mChosen = currentProfile;
-      }
-#endif
+      mDevEditionDefault = currentProfile;
     } else {
       nonDevEditionProfiles++;
       autoSelectProfile = currentProfile;
@@ -400,24 +874,20 @@ nsresult nsToolkitProfileService::Init() {
   }
 
   // If there is only one non-dev-edition profile then mark it as the default.
-  if (!mDefault && nonDevEditionProfiles == 1) {
-    mDefault = autoSelectProfile;
+  if (!mNormalDefault && nonDevEditionProfiles == 1) {
+    SetNormalDefault(autoSelectProfile);
   }
 
-  // Normally having no non-dev-edition builds suggests this is the first run.
-  mIsFirstRun = nonDevEditionProfiles == 0;
-
-#ifdef MOZ_DEV_EDITION
-  if (!shouldIgnoreSeparateProfile) {
-    // Except when using the separate dev-edition profile, in which case not
-    // finding it means this is a first run.
-    mIsFirstRun = !mChosen;
-  } else {
-    mChosen = mDefault;
+  if (!mUseDedicatedProfile) {
+    if (mUseDevEditionProfile) {
+      // When using the separate dev-edition profile not finding it means this
+      // is a first run.
+      mIsFirstRun = !mDevEditionDefault;
+    } else {
+      // If there are no normal profiles then this is a first run.
+      mIsFirstRun = nonDevEditionProfiles == 0;
+    }
   }
-#else
-  mChosen = mDefault;
-#endif
 
   return NS_OK;
 }
@@ -425,6 +895,9 @@ nsresult nsToolkitProfileService::Init() {
 NS_IMETHODIMP
 nsToolkitProfileService::SetStartWithLastProfile(bool aValue) {
   if (mStartWithLast != aValue) {
+    nsresult rv = mProfileDB.SetString("General", "StartWithLastProfile",
+                                       aValue ? "1" : "0");
+    NS_ENSURE_SUCCESS(rv, rv);
     mStartWithLast = aValue;
   }
   return NS_OK;
@@ -438,7 +911,7 @@ nsToolkitProfileService::GetStartWithLastProfile(bool* aResult) {
 
 NS_IMETHODIMP
 nsToolkitProfileService::GetProfiles(nsISimpleEnumerator** aResult) {
-  *aResult = new ProfileEnumerator(this->mFirst);
+  *aResult = new ProfileEnumerator(mProfiles.getFirst());
   if (!*aResult) return NS_ERROR_OUT_OF_MEMORY;
 
   NS_ADDREF(*aResult);
@@ -457,42 +930,147 @@ nsToolkitProfileService::ProfileEnumerator::GetNext(nsISupports** aResult) {
 
   NS_ADDREF(*aResult = mCurrent);
 
-  mCurrent = mCurrent->mNext;
+  mCurrent = mCurrent->getNext();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsToolkitProfileService::GetSelectedProfile(nsIToolkitProfile** aResult) {
-  if (!mChosen && mFirst && !mFirst->mNext)  // only one profile
-    mChosen = mFirst;
-
-  if (!mChosen) return NS_ERROR_FAILURE;
-
-  NS_ADDREF(*aResult = mChosen);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsToolkitProfileService::SetSelectedProfile(nsIToolkitProfile* aProfile) {
-  if (mChosen != aProfile) {
-    mChosen = aProfile;
-  }
+nsToolkitProfileService::GetCurrentProfile(nsIToolkitProfile** aResult) {
+  NS_IF_ADDREF(*aResult = mCurrent);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsToolkitProfileService::GetDefaultProfile(nsIToolkitProfile** aResult) {
-  if (!mDefault) return NS_ERROR_FAILURE;
+  if (mUseDedicatedProfile) {
+    NS_IF_ADDREF(*aResult = mDedicatedProfile);
+    return NS_OK;
+  }
 
-  NS_ADDREF(*aResult = mDefault);
+  if (mUseDevEditionProfile) {
+    NS_IF_ADDREF(*aResult = mDevEditionDefault);
+    return NS_OK;
+  }
+
+  NS_IF_ADDREF(*aResult = mNormalDefault);
   return NS_OK;
+}
+
+void nsToolkitProfileService::SetNormalDefault(nsIToolkitProfile* aProfile) {
+  if (mNormalDefault == aProfile) {
+    return;
+  }
+
+  if (mNormalDefault) {
+    nsToolkitProfile* profile =
+        static_cast<nsToolkitProfile*>(mNormalDefault.get());
+    mProfileDB.DeleteString(profile->mSection.get(), "Default");
+  }
+
+  mNormalDefault = aProfile;
+
+  if (mNormalDefault) {
+    nsToolkitProfile* profile =
+        static_cast<nsToolkitProfile*>(mNormalDefault.get());
+    mProfileDB.SetString(profile->mSection.get(), "Default", "1");
+  }
 }
 
 NS_IMETHODIMP
 nsToolkitProfileService::SetDefaultProfile(nsIToolkitProfile* aProfile) {
-  if (mDefault != aProfile) {
-    mDefault = aProfile;
+  if (mUseDedicatedProfile) {
+    if (mDedicatedProfile != aProfile) {
+      if (!aProfile) {
+        // Setting this to the empty string means no profile will be found on
+        // startup but we'll recognise that this install has been used
+        // previously.
+        mProfileDB.SetString(mInstallSection.get(), "Default", "");
+      } else {
+        nsCString profilePath;
+        nsresult rv = GetProfileDescriptor(aProfile, profilePath, nullptr);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        mProfileDB.SetString(mInstallSection.get(), "Default",
+                             profilePath.get());
+      }
+      mDedicatedProfile = aProfile;
+
+      // Some kind of choice has happened here, lock this profile to this
+      // install.
+      mProfileDB.SetString(mInstallSection.get(), "Locked", "1");
+    }
+    return NS_OK;
   }
+
+  if (mUseDevEditionProfile && aProfile != mDevEditionDefault) {
+    // The separate profile is hardcoded.
+    return NS_ERROR_FAILURE;
+  }
+
+  SetNormalDefault(aProfile);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsToolkitProfileService::GetCreatedAlternateProfile(bool* aResult) {
+  *aResult = mCreatedAlternateProfile;
+  return NS_OK;
+}
+
+// Gets the profile root directory descriptor for storing in profiles.ini or
+// installs.ini.
+nsresult nsToolkitProfileService::GetProfileDescriptor(
+    nsIToolkitProfile* aProfile, nsACString& aDescriptor, bool* aIsRelative) {
+  nsCOMPtr<nsIFile> profileDir;
+  nsresult rv = aProfile->GetRootDir(getter_AddRefs(profileDir));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // if the profile dir is relative to appdir...
+  bool isRelative;
+  rv = mAppData->Contains(profileDir, &isRelative);
+
+  nsCString profilePath;
+  if (NS_SUCCEEDED(rv) && isRelative) {
+    // we use a relative descriptor
+    rv = profileDir->GetRelativeDescriptor(mAppData, profilePath);
+  } else {
+    // otherwise, a persistent descriptor
+    rv = profileDir->GetPersistentDescriptor(profilePath);
+  }
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  aDescriptor.Assign(profilePath);
+  if (aIsRelative) {
+    *aIsRelative = isRelative;
+  }
+
+  return NS_OK;
+}
+
+nsresult nsToolkitProfileService::CreateDefaultProfile(
+    nsIToolkitProfile** aResult) {
+  // Create a new default profile
+  nsAutoCString name;
+  if (mUseDevEditionProfile) {
+    name.AssignLiteral(DEV_EDITION_NAME);
+  } else if (mUseDedicatedProfile) {
+    name.AssignLiteral("default-" NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
+  } else {
+    name.AssignLiteral(DEFAULT_NAME);
+  }
+
+  nsresult rv = CreateUniqueProfile(nullptr, name, aResult);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (mUseDedicatedProfile) {
+    SetDefaultProfile(mCurrent);
+  } else if (mUseDevEditionProfile) {
+    mDevEditionDefault = mCurrent;
+  } else {
+    SetNormalDefault(mCurrent);
+  }
+
   return NS_OK;
 }
 
@@ -518,8 +1096,16 @@ nsToolkitProfileService::SelectStartupProfile(
   }
   argv[argc] = nullptr;
 
-  nsresult rv = SelectStartupProfile(&argc, argv.get(), aIsResetting, aRootDir,
-                                     aLocalDir, aProfile, aDidCreate);
+  bool wasDefault;
+  nsresult rv =
+      SelectStartupProfile(&argc, argv.get(), aIsResetting, aRootDir, aLocalDir,
+                           aProfile, aDidCreate, &wasDefault);
+
+  // Since we were called outside of the normal startup path complete any
+  // startup tasks.
+  if (NS_SUCCEEDED(rv)) {
+    CompleteStartup();
+  }
 
   return rv;
 }
@@ -545,17 +1131,18 @@ nsToolkitProfileService::SelectStartupProfile(
  */
 nsresult nsToolkitProfileService::SelectStartupProfile(
     int* aArgc, char* aArgv[], bool aIsResetting, nsIFile** aRootDir,
-    nsIFile** aLocalDir, nsIToolkitProfile** aProfile, bool* aDidCreate) {
+    nsIFile** aLocalDir, nsIToolkitProfile** aProfile, bool* aDidCreate,
+    bool* aWasDefaultSelection) {
   if (mStartupProfileSelected) {
     return NS_ERROR_ALREADY_INITIALIZED;
   }
 
   mStartupProfileSelected = true;
   *aDidCreate = false;
+  *aWasDefaultSelection = false;
 
   nsresult rv;
   const char* arg;
-  nsCOMPtr<nsIToolkitProfile> profile;
 
   // Use the profile specified in the environment variables (generally from an
   // app initiated restart).
@@ -572,9 +1159,66 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
     CheckArg(*aArgc, aArgv, "profile", &dummy);
     CheckArg(*aArgc, aArgv, "profilemanager");
 
-    GetProfileByDir(lf, localDir, aProfile);
+    nsCOMPtr<nsIToolkitProfile> profile;
+    GetProfileByDir(lf, localDir, getter_AddRefs(profile));
+
+    if (profile && mIsFirstRun && mUseDedicatedProfile) {
+      if (profile ==
+          (mUseDevEditionProfile ? mDevEditionDefault : mNormalDefault)) {
+        // This is the first run of a dedicated profile build where the selected
+        // profile is the previous default so we should either make it the
+        // default profile for this install or push the user to a new profile.
+
+        bool result;
+        rv = MaybeMakeDefaultDedicatedProfile(profile, &result);
+        NS_ENSURE_SUCCESS(rv, rv);
+        if (result) {
+          mStartupReason = NS_LITERAL_STRING("restart-claimed-default");
+
+          mCurrent = profile;
+        } else {
+          if (aIsResetting) {
+            // We don't want to create a fresh profile when we're attempting a
+            // profile reset so just bail out here, the calling code will handle
+            // it.
+            *aProfile = nullptr;
+            return NS_OK;
+          }
+
+          rv = CreateDefaultProfile(getter_AddRefs(mCurrent));
+          if (NS_FAILED(rv)) {
+            *aProfile = nullptr;
+            return rv;
+          }
+
+          rv = Flush();
+          NS_ENSURE_SUCCESS(rv, rv);
+
+          mStartupReason = NS_LITERAL_STRING("restart-skipped-default");
+          *aDidCreate = true;
+          mCreatedAlternateProfile = true;
+        }
+
+        NS_IF_ADDREF(*aProfile = mCurrent);
+        mCurrent->GetRootDir(aRootDir);
+        mCurrent->GetLocalDir(aLocalDir);
+
+        return NS_OK;
+      }
+    }
+
+    if (EnvHasValue("XRE_RESTARTED_BY_PROFILE_MANAGER")) {
+      mStartupReason = NS_LITERAL_STRING("profile-manager");
+    } else if (aIsResetting) {
+      mStartupReason = NS_LITERAL_STRING("profile-reset");
+    } else {
+      mStartupReason = NS_LITERAL_STRING("restart");
+    }
+
+    mCurrent = profile;
     lf.forget(aRootDir);
     localDir.forget(aLocalDir);
+    NS_IF_ADDREF(*aProfile = profile);
     return NS_OK;
   }
 
@@ -610,11 +1254,14 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
       }
     }
 
+    mStartupReason = NS_LITERAL_STRING("argument-profile");
+
     // If a profile path is specified directly on the command line, then
     // assume that the temp directory is the same as the given directory.
-    GetProfileByDir(lf, lf, aProfile);
+    GetProfileByDir(lf, lf, getter_AddRefs(mCurrent));
     NS_ADDREF(*aRootDir = lf);
     lf.forget(aLocalDir);
+    NS_IF_ADDREF(*aProfile = mCurrent);
     return NS_OK;
   }
 
@@ -630,6 +1277,7 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
   }
   if (ar) {
     const char* delim = strchr(arg, ' ');
+    nsCOMPtr<nsIToolkitProfile> profile;
     if (delim) {
       nsCOMPtr<nsIFile> lf;
       rv = NS_NewNativeLocalFile(nsDependentCString(delim + 1), true,
@@ -648,14 +1296,10 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
                          getter_AddRefs(profile));
     }
     // Some pathological arguments can make it this far
-    if (NS_FAILED(rv)) {
+    if (NS_FAILED(rv) || NS_FAILED(Flush())) {
       PR_fprintf(PR_STDERR, "Error creating profile.\n");
-      return rv;
     }
-    rv = NS_ERROR_ABORT;
-    Flush();
-
-    return rv;
+    return NS_ERROR_ABORT;
   }
 
   // Check the -p command line argument. It either accepts a profile name and
@@ -681,11 +1325,14 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
       return NS_ERROR_FAILURE;
     }
 
-    rv = GetProfileByName(nsDependentCString(arg), getter_AddRefs(profile));
+    rv = GetProfileByName(nsDependentCString(arg), getter_AddRefs(mCurrent));
     if (NS_SUCCEEDED(rv)) {
-      profile->GetRootDir(aRootDir);
-      profile->GetLocalDir(aLocalDir);
-      profile.forget(aProfile);
+      mStartupReason = NS_LITERAL_STRING("argument-p");
+
+      mCurrent->GetRootDir(aRootDir);
+      mCurrent->GetLocalDir(aLocalDir);
+
+      NS_ADDREF(*aProfile = mCurrent);
       return NS_OK;
     }
 
@@ -713,55 +1360,195 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
       return NS_OK;
     }
 
-    // create a default profile
-    nsresult rv = CreateProfile(nullptr,  // choose a default dir for us
-#ifdef MOZ_DEV_EDITION
-                                NS_LITERAL_CSTRING(DEV_EDITION_NAME),
-#else
-                                NS_LITERAL_CSTRING(DEFAULT_NAME),
-#endif
-                                getter_AddRefs(mChosen));
-    if (NS_SUCCEEDED(rv)) {
-#ifdef MOZ_DEV_EDITION
-      // If the only profile is the new dev-edition-profile then older versions
-      // may try to auto-select it. Create a default profile for them to use
-      // instead.
-      if (mFirst && !mFirst->mNext) {
-        CreateProfile(nullptr, NS_LITERAL_CSTRING(DEFAULT_NAME),
-                      getter_AddRefs(mDefault));
-      }
-#else
-      SetDefaultProfile(mChosen);
-#endif
-      Flush();
+    // If we're configured to always show the profile manager then don't create
+    // a new profile to use.
+    if (!mStartWithLast) {
+      return NS_ERROR_SHOW_PROFILE_MANAGER;
+    }
 
-      mChosen->GetRootDir(aRootDir);
-      mChosen->GetLocalDir(aLocalDir);
-      NS_ADDREF(*aProfile = mChosen);
+    if (mUseDedicatedProfile) {
+      // This is the first run of a dedicated profile install. We have to decide
+      // whether to use the default profile used by non-dedicated-profile
+      // installs or to create a new profile.
+
+      // Find what would have been the default profile for old installs.
+      nsCOMPtr<nsIToolkitProfile> profile = mNormalDefault;
+      if (mUseDevEditionProfile) {
+        profile = mDevEditionDefault;
+      }
+
+      if (profile) {
+        nsCOMPtr<nsIFile> rootDir;
+        profile->GetRootDir(getter_AddRefs(rootDir));
+
+        nsCOMPtr<nsIFile> compat;
+        rootDir->Clone(getter_AddRefs(compat));
+        compat->Append(COMPAT_FILE);
+
+        bool exists;
+        rv = compat->Exists(&exists);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        // If the file is missing then either this is an empty profile (likely
+        // generated by bug 1518591) or it is from an ancient version. We'll opt
+        // to leave it for older versions in this case.
+        if (exists) {
+          bool result;
+          rv = MaybeMakeDefaultDedicatedProfile(profile, &result);
+          NS_ENSURE_SUCCESS(rv, rv);
+          if (result) {
+            mStartupReason = NS_LITERAL_STRING("firstrun-claimed-default");
+
+            mCurrent = profile;
+            rootDir.forget(aRootDir);
+            profile->GetLocalDir(aLocalDir);
+            profile.forget(aProfile);
+            return NS_OK;
+          }
+
+          // We're going to create a new profile for this install. If there was
+          // a potential previous default to use then the user may be confused
+          // over why we're not using that anymore so set a flag for the front
+          // end to use to notify the user about what has happened.
+          mCreatedAlternateProfile = true;
+        }
+      }
+    }
+
+    rv = CreateDefaultProfile(getter_AddRefs(mCurrent));
+    if (NS_SUCCEEDED(rv)) {
+      // If there is only one profile and it isn't meant to be the profile that
+      // older versions of Firefox use then we must create a default profile
+      // for older versions of Firefox to avoid the existing profile being
+      // auto-selected.
+      if ((mUseDedicatedProfile || mUseDevEditionProfile) &&
+          mProfiles.getFirst() == mProfiles.getLast()) {
+        nsCOMPtr<nsIToolkitProfile> newProfile;
+        CreateProfile(nullptr, NS_LITERAL_CSTRING(DEFAULT_NAME),
+                      getter_AddRefs(newProfile));
+        SetNormalDefault(newProfile);
+      }
+
+      rv = Flush();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (mCreatedAlternateProfile) {
+        mStartupReason = NS_LITERAL_STRING("firstrun-skipped-default");
+      } else {
+        mStartupReason = NS_LITERAL_STRING("firstrun-created-default");
+      }
+
+      // Use the new profile.
+      mCurrent->GetRootDir(aRootDir);
+      mCurrent->GetLocalDir(aLocalDir);
+      NS_ADDREF(*aProfile = mCurrent);
 
       *aDidCreate = true;
       return NS_OK;
     }
   }
 
-  // There are multiple profiles available.
-  if (!mStartWithLast) {
-    return NS_ERROR_SHOW_PROFILE_MANAGER;
-  }
-
-  // GetSelectedProfile will auto-select the only profile if there's just one
-  GetSelectedProfile(getter_AddRefs(profile));
+  GetDefaultProfile(getter_AddRefs(mCurrent));
 
   // None of the profiles was marked as default (generally only happens if the
   // user modifies profiles.ini manually). Let the user choose.
-  if (!profile) {
+  if (!mCurrent) {
     return NS_ERROR_SHOW_PROFILE_MANAGER;
   }
 
+  // Let the caller know that the profile was selected by default.
+  *aWasDefaultSelection = true;
+  mStartupReason = NS_LITERAL_STRING("default");
+
   // Use the selected profile.
-  profile->GetRootDir(aRootDir);
-  profile->GetLocalDir(aLocalDir);
-  profile.forget(aProfile);
+  mCurrent->GetRootDir(aRootDir);
+  mCurrent->GetLocalDir(aLocalDir);
+  NS_ADDREF(*aProfile = mCurrent);
+
+  return NS_OK;
+}
+
+/**
+ * Creates a new profile for reset and mark it as the current profile.
+ */
+nsresult nsToolkitProfileService::CreateResetProfile(
+    nsIToolkitProfile** aNewProfile) {
+  nsAutoCString oldProfileName;
+  mCurrent->GetName(oldProfileName);
+
+  nsCOMPtr<nsIToolkitProfile> newProfile;
+  // Make the new profile name the old profile (or "default-") + the time in
+  // seconds since epoch for uniqueness.
+  nsAutoCString newProfileName;
+  if (!oldProfileName.IsEmpty()) {
+    newProfileName.Assign(oldProfileName);
+    newProfileName.Append("-");
+  } else {
+    newProfileName.AssignLiteral("default-");
+  }
+  newProfileName.AppendPrintf("%" PRId64, PR_Now() / 1000);
+  nsresult rv = CreateProfile(nullptr,  // choose a default dir for us
+                              newProfileName, getter_AddRefs(newProfile));
+  if (NS_FAILED(rv)) return rv;
+
+  mCurrent = newProfile;
+  newProfile.forget(aNewProfile);
+
+  // Don't flush the changes yet. That will happen once the migration
+  // successfully completes.
+  return NS_OK;
+}
+
+/**
+ * This is responsible for deleting the old profile, copying its name to the
+ * current profile and if the old profile was default making the new profile
+ * default as well.
+ */
+nsresult nsToolkitProfileService::ApplyResetProfile(
+    nsIToolkitProfile* aOldProfile) {
+  // If the old profile would have been the default for old installs then mark
+  // the new profile as such.
+  if (mNormalDefault == aOldProfile) {
+    SetNormalDefault(mCurrent);
+  }
+
+  if (mUseDedicatedProfile && mDedicatedProfile == aOldProfile) {
+    bool wasLocked = false;
+    nsCString val;
+    if (NS_SUCCEEDED(
+            mProfileDB.GetString(mInstallSection.get(), "Locked", val))) {
+      wasLocked = val.Equals("1");
+    }
+
+    SetDefaultProfile(mCurrent);
+
+    // Make the locked state match if necessary.
+    if (!wasLocked) {
+      mProfileDB.DeleteString(mInstallSection.get(), "Locked");
+    }
+  }
+
+  nsCString name;
+  nsresult rv = aOldProfile->GetName(name);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Don't remove the old profile's files until after we've successfully flushed
+  // the profile changes to disk.
+  rv = aOldProfile->Remove(false);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Switching the name will make this the default for dev-edition if
+  // appropriate.
+  rv = mCurrent->SetName(name);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = Flush();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Now that the profile changes are flushed, try to remove the old profile's
+  // files. If we fail the worst that will happen is that an orphan directory is
+  // left. Let this run in the background while we start up.
+  RemoveProfileFiles(aOldProfile, true);
 
   return NS_OK;
 }
@@ -769,13 +1556,11 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
 NS_IMETHODIMP
 nsToolkitProfileService::GetProfileByName(const nsACString& aName,
                                           nsIToolkitProfile** aResult) {
-  nsToolkitProfile* curP = mFirst;
-  while (curP) {
-    if (curP->mName.Equals(aName)) {
-      NS_ADDREF(*aResult = curP);
+  for (RefPtr<nsToolkitProfile> profile : mProfiles) {
+    if (profile->mName.Equals(aName)) {
+      NS_ADDREF(*aResult = profile);
       return NS_OK;
     }
-    curP = curP->mNext;
   }
 
   return NS_ERROR_FAILURE;
@@ -788,18 +1573,16 @@ nsToolkitProfileService::GetProfileByName(const nsACString& aName,
 void nsToolkitProfileService::GetProfileByDir(nsIFile* aRootDir,
                                               nsIFile* aLocalDir,
                                               nsIToolkitProfile** aResult) {
-  nsToolkitProfile* curP = mFirst;
-  while (curP) {
+  for (RefPtr<nsToolkitProfile> profile : mProfiles) {
     bool equal;
-    nsresult rv = curP->mRootDir->Equals(aRootDir, &equal);
+    nsresult rv = profile->mRootDir->Equals(aRootDir, &equal);
     if (NS_SUCCEEDED(rv) && equal) {
-      rv = curP->mLocalDir->Equals(aLocalDir, &equal);
+      rv = profile->mLocalDir->Equals(aLocalDir, &equal);
       if (NS_SUCCEEDED(rv) && equal) {
-        NS_ADDREF(*aResult = curP);
+        NS_ADDREF(*aResult = profile);
         return;
       }
     }
-    curP = curP->mNext;
   }
 }
 
@@ -822,6 +1605,28 @@ static void SaltProfileName(nsACString& aName) {
   salt[8] = '.';
 
   aName.Insert(salt, 0, 9);
+}
+
+NS_IMETHODIMP
+nsToolkitProfileService::CreateUniqueProfile(nsIFile* aRootDir,
+                                             const nsACString& aNamePrefix,
+                                             nsIToolkitProfile** aResult) {
+  nsCOMPtr<nsIToolkitProfile> profile;
+  nsresult rv = GetProfileByName(aNamePrefix, getter_AddRefs(profile));
+  if (NS_FAILED(rv)) {
+    return CreateProfile(aRootDir, aNamePrefix, aResult);
+  }
+
+  uint32_t suffix = 1;
+  while (true) {
+    nsPrintfCString name("%s-%d", PromiseFlatCString(aNamePrefix).get(),
+                         suffix);
+    rv = GetProfileByName(name, getter_AddRefs(profile));
+    if (NS_FAILED(rv)) {
+      return CreateProfile(aRootDir, name, aResult);
+    }
+    suffix++;
+  }
 }
 
 NS_IMETHODIMP
@@ -910,17 +1715,64 @@ nsToolkitProfileService::CreateProfile(nsIFile* aRootDir,
   rv = CreateTimesInternal(rootDir);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsToolkitProfile* last = mFirst.get();
-  if (last) {
-    while (last->mNext) last = last->mNext;
-  }
-
   nsCOMPtr<nsIToolkitProfile> profile =
-      new nsToolkitProfile(aName, rootDir, localDir, last);
+      new nsToolkitProfile(aName, rootDir, localDir, false);
   if (!profile) return NS_ERROR_OUT_OF_MEMORY;
+
+  if (aName.Equals(DEV_EDITION_NAME)) {
+    mDevEditionDefault = profile;
+  }
 
   profile.forget(aResult);
   return NS_OK;
+}
+
+/**
+ * Snaps (https://snapcraft.io/) use a different installation directory for
+ * every version of an application. Since dedicated profiles uses the
+ * installation directory to determine which profile to use this would lead
+ * snap users getting a new profile on every application update.
+ *
+ * However the only way to have multiple installation of a snap is to install
+ * a new snap instance. Different snap instances have different user data
+ * directories and so already will not share profiles, in fact one instance
+ * will not even be able to see the other instance's profiles since
+ * profiles.ini will be stored in different places.
+ *
+ * So we can just disable dedicated profile support in this case and revert
+ * back to the old method of just having a single default profile and still
+ * get essentially the same benefits as dedicated profiles provides.
+ */
+bool nsToolkitProfileService::IsSnapEnvironment() {
+  return !!PR_GetEnv("SNAP_NAME");
+}
+
+struct FindInstallsClosure {
+  nsINIParser* installData;
+  nsTArray<nsCString>* installs;
+};
+
+static bool FindInstalls(const char* aSection, void* aClosure) {
+  FindInstallsClosure* closure = static_cast<FindInstallsClosure*>(aClosure);
+
+  // Check if the section starts with "Install"
+  if (strncmp(aSection, INSTALL_PREFIX, INSTALL_PREFIX_LENGTH) != 0) {
+    return true;
+  }
+
+  nsCString install(aSection);
+  closure->installs->AppendElement(install);
+
+  return true;
+}
+
+nsTArray<nsCString> nsToolkitProfileService::GetKnownInstalls() {
+  nsTArray<nsCString> result;
+  FindInstallsClosure closure = {&mProfileDB, &result};
+
+  mProfileDB.GetSections(&FindInstalls, &closure);
+
+  return result;
 }
 
 nsresult nsToolkitProfileService::CreateTimesInternal(nsIFile* aProfileDir) {
@@ -957,10 +1809,9 @@ nsresult nsToolkitProfileService::CreateTimesInternal(nsIFile* aProfileDir) {
 NS_IMETHODIMP
 nsToolkitProfileService::GetProfileCount(uint32_t* aResult) {
   *aResult = 0;
-  nsToolkitProfile* profile = mFirst;
-  while (profile) {
+  for (nsToolkitProfile* profile : mProfiles) {
+    Unused << profile;
     (*aResult)++;
-    profile = profile->mNext;
   }
 
   return NS_OK;
@@ -968,77 +1819,74 @@ nsToolkitProfileService::GetProfileCount(uint32_t* aResult) {
 
 NS_IMETHODIMP
 nsToolkitProfileService::Flush() {
-  // Errors during writing might cause unhappy semi-written files.
-  // To avoid this, write the entire thing to a buffer, then write
-  // that buffer to disk.
+  if (GetIsListOutdated()) {
+    return NS_ERROR_DATABASE_CHANGED;
+  }
 
   nsresult rv;
-  uint32_t pCount = 0;
-  nsToolkitProfile* cur;
 
-  for (cur = mFirst; cur != nullptr; cur = cur->mNext) ++pCount;
+  // If we aren't using dedicated profiles then nothing about the list of
+  // installs can have changed, so no need to update the backup.
+  if (mUseDedicatedProfile) {
+    // Export the installs to the backup.
+    nsTArray<nsCString> installs = GetKnownInstalls();
 
-  uint32_t length;
-  const int bufsize = 100 + MAXPATHLEN * pCount;
-  auto buffer = MakeUnique<char[]>(bufsize);
+    if (!installs.IsEmpty()) {
+      nsCString data;
+      nsCString buffer;
 
-  char* pos = buffer.get();
-  char* end = pos + bufsize;
+      for (uint32_t i = 0; i < installs.Length(); i++) {
+        nsTArray<UniquePtr<KeyValue>> strings =
+            GetSectionStrings(&mProfileDB, installs[i].get());
+        if (strings.IsEmpty()) {
+          continue;
+        }
 
-  pos += snprintf(pos, end - pos,
-                  "[General]\n"
-                  "StartWithLastProfile=%s\n\n",
-                  mStartWithLast ? "1" : "0");
+        // Strip "Install" from the start.
+        const nsDependentCSubstring& install =
+            Substring(installs[i], INSTALL_PREFIX_LENGTH);
+        data.AppendPrintf("[%s]\n", PromiseFlatCString(install).get());
 
-  nsAutoCString path;
-  cur = mFirst;
-  pCount = 0;
+        for (uint32_t j = 0; j < strings.Length(); j++) {
+          data.AppendPrintf("%s=%s\n", strings[j]->key.get(),
+                            strings[j]->value.get());
+        }
 
-  while (cur) {
-    // if the profile dir is relative to appdir...
-    bool isRelative;
-    rv = mAppData->Contains(cur->mRootDir, &isRelative);
-    if (NS_SUCCEEDED(rv) && isRelative) {
-      // we use a relative descriptor
-      rv = cur->mRootDir->GetRelativeDescriptor(mAppData, path);
-    } else {
-      // otherwise, a persistent descriptor
-      rv = cur->mRootDir->GetPersistentDescriptor(path);
+        data.Append("\n");
+      }
+
+      FILE* writeFile;
+      rv = mInstallDBFile->OpenANSIFileDesc("w", &writeFile);
       NS_ENSURE_SUCCESS(rv, rv);
+
+      uint32_t length = data.Length();
+      if (fwrite(data.get(), sizeof(char), length, writeFile) != length) {
+        fclose(writeFile);
+        return NS_ERROR_UNEXPECTED;
+      }
+
+      fclose(writeFile);
+
+      rv = UpdateFileStats(mInstallDBFile, &mInstallDBExists,
+                          &mInstallDBModifiedTime, &mInstallDBFileSize);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+      rv = mInstallDBFile->Remove(false);
+      if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
+          rv != NS_ERROR_FILE_NOT_FOUND) {
+        return rv;
+      }
+      mInstallDBExists = false;
     }
-
-    pos +=
-        snprintf(pos, end - pos,
-                 "[Profile%u]\n"
-                 "Name=%s\n"
-                 "IsRelative=%s\n"
-                 "Path=%s\n",
-                 pCount, cur->mName.get(), isRelative ? "1" : "0", path.get());
-
-    nsCOMPtr<nsIToolkitProfile> profile;
-    rv = this->GetDefaultProfile(getter_AddRefs(profile));
-    if (NS_SUCCEEDED(rv) && profile == cur) {
-      pos += snprintf(pos, end - pos, "Default=1\n");
-    }
-
-    pos += snprintf(pos, end - pos, "\n");
-
-    cur = cur->mNext;
-    ++pCount;
   }
 
-  FILE* writeFile;
-  rv = mListFile->OpenANSIFileDesc("w", &writeFile);
+  rv = mProfileDB.WriteToFile(mProfileDBFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  length = pos - buffer.get();
+  rv = UpdateFileStats(mProfileDBFile, &mProfileDBExists,
+                       &mProfileDBModifiedTime, &mProfileDBFileSize);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  if (fwrite(buffer.get(), sizeof(char), length, writeFile) != length) {
-    fclose(writeFile);
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  fclose(writeFile);
   return NS_OK;
 }
 
@@ -1049,7 +1897,7 @@ nsToolkitProfileFactory::CreateInstance(nsISupports* aOuter, const nsID& aIID,
                                         void** aResult) {
   if (aOuter) return NS_ERROR_NO_AGGREGATION;
 
-  nsCOMPtr<nsIToolkitProfileService> profileService =
+  RefPtr<nsToolkitProfileService> profileService =
       nsToolkitProfileService::gService;
   if (!profileService) {
     nsresult rv = NS_NewToolkitProfileService(getter_AddRefs(profileService));
@@ -1069,7 +1917,7 @@ nsresult NS_NewToolkitProfileFactory(nsIFactory** aResult) {
   return NS_OK;
 }
 
-nsresult NS_NewToolkitProfileService(nsIToolkitProfileService** aResult) {
+nsresult NS_NewToolkitProfileService(nsToolkitProfileService** aResult) {
   nsToolkitProfileService* profileService = new nsToolkitProfileService();
   if (!profileService) return NS_ERROR_OUT_OF_MEMORY;
   nsresult rv = profileService->Init();

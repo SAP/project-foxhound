@@ -25,12 +25,8 @@ nsresult nsIncrementalStreamLoader::Create(nsISupports *aOuter, REFNSIID aIID,
                                            void **aResult) {
   if (aOuter) return NS_ERROR_NO_AGGREGATION;
 
-  nsIncrementalStreamLoader *it = new nsIncrementalStreamLoader();
-  if (it == nullptr) return NS_ERROR_OUT_OF_MEMORY;
-  NS_ADDREF(it);
-  nsresult rv = it->QueryInterface(aIID, aResult);
-  NS_RELEASE(it);
-  return rv;
+  RefPtr<nsIncrementalStreamLoader> it = new nsIncrementalStreamLoader();
+  return it->QueryInterface(aIID, aResult);
 }
 
 NS_IMPL_ISUPPORTS(nsIncrementalStreamLoader, nsIIncrementalStreamLoader,
@@ -51,8 +47,7 @@ nsIncrementalStreamLoader::GetRequest(nsIRequest **aRequest) {
 }
 
 NS_IMETHODIMP
-nsIncrementalStreamLoader::OnStartRequest(nsIRequest *request,
-                                          nsISupports *ctxt) {
+nsIncrementalStreamLoader::OnStartRequest(nsIRequest *request) {
   nsCOMPtr<nsIChannel> chan(do_QueryInterface(request));
   if (chan) {
     int64_t contentLength = -1;
@@ -73,12 +68,11 @@ nsIncrementalStreamLoader::OnStartRequest(nsIRequest *request,
       }
     }
   }
-  mContext = ctxt;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsIncrementalStreamLoader::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
+nsIncrementalStreamLoader::OnStopRequest(nsIRequest *request,
                                          nsresult aStatus) {
   AUTO_PROFILER_LABEL("nsIncrementalStreamLoader::OnStopRequest", NETWORK);
 
@@ -99,7 +93,6 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
     ReleaseData();
     mRequest = nullptr;
     mObserver = nullptr;
-    mContext = nullptr;
   }
   return NS_OK;
 }
@@ -176,7 +169,6 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
 
 NS_IMETHODIMP
 nsIncrementalStreamLoader::OnDataAvailable(nsIRequest *request,
-                                           nsISupports *ctxt,
                                            nsIInputStream *inStr,
                                            uint64_t sourceOffset,
                                            uint32_t count) {

@@ -19,6 +19,9 @@ createEnum([
   // Toggles on or off the given pseudo class value for the current selected element.
   "TOGGLE_PSEUDO_CLASS",
 
+  // Updates whether or not the add new rule button should be enabled.
+  "UPDATE_ADD_RULE_ENABLED",
+
   // Updates the entire class list state with the new list of classes.
   "UPDATE_CLASSES",
 
@@ -30,5 +33,11 @@ createEnum([
 
   // Updates the rules state with the new list of CSS rules for the selected element.
   "UPDATE_RULES",
+
+  // Updates whether or not the source links are enabled.
+  "UPDATE_SOURCE_LINK_ENABLED",
+
+  // Updates the source link information for a given rule.
+  "UPDATE_SOURCE_LINK",
 
 ], module.exports);

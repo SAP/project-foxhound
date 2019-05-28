@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -43,28 +43,28 @@ var progressCallback = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     Assert.equal(this._last_callback_handled, TYPE_ONSTATUS);
     this._got_onstartrequest = true;
     this._last_callback_handled = TYPE_ONSTARTREQUEST;
 
     this._listener = new ChannelListener(checkRequest, request);
-    this._listener.onStartRequest(request, context);
+    this._listener.onStartRequest(request);
   },
 
-  onDataAvailable: function(request, context, data, offset, count) {
+  onDataAvailable: function(request, data, offset, count) {
     Assert.equal(this._last_callback_handled, TYPE_ONPROGRESS);
     this._last_callback_handled = TYPE_ONDATAAVAILABLE;
 
-    this._listener.onDataAvailable(request, context, data, offset, count);
+    this._listener.onDataAvailable(request, data, offset, count);
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(this._last_callback_handled, TYPE_ONDATAAVAILABLE);
     Assert.ok(this._got_onstatus_after_onstartrequest);
     this._last_callback_handled = TYPE_ONSTOPREQUEST;
 
-    this._listener.onStopRequest(request, context, status);
+    this._listener.onStopRequest(request, status);
     delete this._listener;
   },
 
@@ -100,7 +100,7 @@ function run_test() {
   httpserver.registerPathHandler(testpath, serverHandler);
   httpserver.start(-1);
   var channel = setupChannel(testpath);
-  channel.asyncOpen2(progressCallback);
+  channel.asyncOpen(progressCallback);
   do_test_pending();
 }
 

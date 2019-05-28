@@ -4,7 +4,7 @@
 
 function assertNoLeaksInTabTracker() {
   // Check that no tabs have been leaked by the internal tabTracker helper class.
-  const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm", {});
+  const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
   const {tabTracker} = ExtensionParent.apiManager.global;
 
   for (const [tabId, nativeTab] of tabTracker._tabIds) {
@@ -139,6 +139,7 @@ add_task(async function testWindowCreate() {
   }
 
   let extension = ExtensionTestUtils.loadExtension({
+    incognitoOverride: "spanning",
     manifest: {
       "permissions": ["tabs"],
     },

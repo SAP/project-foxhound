@@ -44,6 +44,10 @@ UNIFIED_SOURCES += [
     'XPCWrapper.cpp',
 ]
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -62,7 +66,3 @@ LOCAL_INCLUDES += [
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow', '-Werror=format']
-
-if CONFIG['NIGHTLY_BUILD']:
-    DEFINES['ENABLE_WASM_REFTYPES'] = True
-    DEFINES['ENABLE_WASM_GC'] = True

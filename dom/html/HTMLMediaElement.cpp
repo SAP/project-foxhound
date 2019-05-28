@@ -79,6 +79,7 @@
 #include "mozilla/dom/VideoTrackList.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsAttrValueInlines.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -602,8 +603,7 @@ HTMLMediaElement::MediaLoadListener::Observe(nsISupports* aSubject,
 }
 
 NS_IMETHODIMP
-HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest,
-                                                    nsISupports* aContext) {
+HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest) {
   nsContentUtils::UnregisterShutdownObserver(this);
 
   if (!mElement) {
@@ -639,13 +639,15 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest,
   NS_ENSURE_SUCCESS(rv, rv);
   if (NS_FAILED(status)) {
     if (element) {
-      // Handle media not loading error because source was a tracking URL.
+      // Handle media not loading error because source was a tracking URL (or
+      // fingerprinting, cryptomining, etc).
       // We make a note of this media node by including it in a dedicated
       // array of blocked tracking nodes under its parent document.
-      if (status == NS_ERROR_TRACKING_URI) {
+      if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
+              status)) {
         Document* ownerDoc = element->OwnerDoc();
         if (ownerDoc) {
-          ownerDoc->AddBlockedTrackingNode(element);
+          ownerDoc->AddBlockedNodeByClassifier(element);
         }
       }
       element->NotifyLoadError(
@@ -678,7 +680,7 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest,
       NS_SUCCEEDED(rv = element->InitializeDecoderForChannel(
                        channel, getter_AddRefs(mNextListener))) &&
       mNextListener) {
-    rv = mNextListener->OnStartRequest(aRequest, aContext);
+    rv = mNextListener->OnStartRequest(aRequest);
   } else {
     // If InitializeDecoderForChannel() returned an error, fire a network error.
     if (NS_FAILED(rv) && !mNextListener) {
@@ -697,17 +699,15 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest,
 
 NS_IMETHODIMP
 HTMLMediaElement::MediaLoadListener::OnStopRequest(nsIRequest* aRequest,
-                                                   nsISupports* aContext,
                                                    nsresult aStatus) {
   if (mNextListener) {
-    return mNextListener->OnStopRequest(aRequest, aContext, aStatus);
+    return mNextListener->OnStopRequest(aRequest, aStatus);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 HTMLMediaElement::MediaLoadListener::OnDataAvailable(nsIRequest* aRequest,
-                                                     nsISupports* aContext,
                                                      nsIInputStream* aStream,
                                                      uint64_t aOffset,
                                                      uint32_t aCount) {
@@ -717,8 +717,7 @@ HTMLMediaElement::MediaLoadListener::OnDataAvailable(nsIRequest* aRequest,
         "canceled this request");
     return NS_BINDING_ABORTED;
   }
-  return mNextListener->OnDataAvailable(aRequest, aContext, aStream, aOffset,
-                                        aCount);
+  return mNextListener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
@@ -1241,7 +1240,7 @@ class HTMLMediaElement::ChannelLoader final {
       return;
     }
 
-    // determine what security checks need to be performed in AsyncOpen2().
+    // determine what security checks need to be performed in AsyncOpen().
     nsSecurityFlags securityFlags =
         aElement->ShouldCheckAllowOrigin()
             ? nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS
@@ -1290,12 +1289,10 @@ class HTMLMediaElement::ChannelLoader final {
     }
 
     if (setAttrs) {
-      nsCOMPtr<nsILoadInfo> loadInfo = channel->GetLoadInfo();
-      if (loadInfo) {
-        // The function simply returns NS_OK, so we ignore the return value.
-        Unused << loadInfo->SetOriginAttributes(
-            triggeringPrincipal->OriginAttributesRef());
-      }
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      // The function simply returns NS_OK, so we ignore the return value.
+      Unused << loadInfo->SetOriginAttributes(
+          triggeringPrincipal->OriginAttributesRef());
     }
 
     nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(channel));
@@ -1334,7 +1331,7 @@ class HTMLMediaElement::ChannelLoader final {
       aElement->SetRequestHeaders(hc);
     }
 
-    rv = channel->AsyncOpen2(loadListener);
+    rv = channel->AsyncOpen(loadListener);
     if (NS_FAILED(rv)) {
       // Notify load error so the element will try next resource candidate.
       aElement->NotifyLoadError(NS_LITERAL_CSTRING("Failed to open channel"));
@@ -1592,7 +1589,8 @@ already_AddRefed<Promise> HTMLMediaElement::MozRequestDebugInfo(
   return promise.forget();
 }
 
-/* static */ void HTMLMediaElement::MozEnableDebugLog(const GlobalObject&) {
+/* static */
+void HTMLMediaElement::MozEnableDebugLog(const GlobalObject&) {
   DecoderDoctorLogger::EnableLogging();
 }
 
@@ -1716,6 +1714,53 @@ void HTMLMediaElement::ShutdownDecoder() {
   ReportAudioTrackSilenceProportionTelemetry();
 }
 
+void HTMLMediaElement::ReportPlayedTimeAfterBlockedTelemetry() {
+  if (!mHasPlayEverBeenBlocked) {
+    return;
+  }
+  mHasPlayEverBeenBlocked = false;
+
+  const double playTimeThreshold = 7.0;
+  const double playTimeAfterBlocked = mCurrentLoadPlayTime.Total();
+  if (playTimeAfterBlocked <= 0.0) {
+    return;
+  }
+
+  const bool isDurationLessThanTimeThresholdAndMediaPlayedToTheEnd =
+      Duration() < playTimeThreshold && Ended();
+  LOG(LogLevel::Debug, ("%p PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED=%f, isVideo=%d",
+                        this, playTimeAfterBlocked, IsVideo()));
+  if (IsVideo() && playTimeAfterBlocked >= playTimeThreshold) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+            VPlayedMoreThan7s);
+  } else if (IsVideo() && playTimeAfterBlocked < playTimeThreshold) {
+    if (isDurationLessThanTimeThresholdAndMediaPlayedToTheEnd) {
+      AccumulateCategorical(
+          mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+              VPlayedToTheEnd);
+    } else {
+      AccumulateCategorical(
+          mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+              VPlayedLessThan7s);
+    }
+  } else if (!IsVideo() && playTimeAfterBlocked >= playTimeThreshold) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+            APlayedMoreThan7s);
+  } else if (!IsVideo() && playTimeAfterBlocked < playTimeThreshold) {
+    if (isDurationLessThanTimeThresholdAndMediaPlayedToTheEnd) {
+      AccumulateCategorical(
+          mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+              APlayedToTheEnd);
+    } else {
+      AccumulateCategorical(
+          mozilla::Telemetry::LABELS_MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED::
+              APlayedLessThan7s);
+    }
+  }
+}
+
 void HTMLMediaElement::AbortExistingLoads() {
   // Abort any already-running instance of the resource selection algorithm.
   mLoadWaitStatus = NOT_WAITING;
@@ -1803,7 +1848,6 @@ void HTMLMediaElement::AbortExistingLoads() {
     // indirectly which depends on mPaused. So we need to update mPaused first.
     if (!mPaused) {
       mPaused = true;
-      DispatchAsyncEvent(NS_LITERAL_STRING("pause"));
       RejectPromises(TakePendingPlayPromises(), NS_ERROR_DOM_MEDIA_ABORT_ERR);
     }
     ChangeNetworkState(NETWORK_EMPTY);
@@ -1837,6 +1881,7 @@ void HTMLMediaElement::AbortExistingLoads() {
 
   mEventDeliveryPaused = false;
   mPendingEvents.Clear();
+  mCurrentLoadPlayTime.Reset();
 
   AssertReadyStateIsNothing();
 }
@@ -2009,6 +2054,7 @@ void HTMLMediaElement::ResetState() {
 
 void HTMLMediaElement::SelectResourceWrapper() {
   SelectResource();
+  MaybeBeginCloningVisually();
   mIsRunningSelectResource = false;
   mHaveQueuedSelectResource = false;
   mIsDoingExplicitLoad = false;
@@ -2136,6 +2182,7 @@ void HTMLMediaElement::NotifyMediaTrackEnabled(MediaTrack* aTrack) {
       VideoFrameContainer* container = GetVideoFrameContainer();
       if (mSrcStreamIsPlaying && container) {
         mSelectedVideoStreamTrack->AddVideoOutput(container);
+        MaybeBeginCloningVisually();
       }
       HTMLVideoElement* self = static_cast<HTMLVideoElement*>(this);
       if (self->VideoWidth() <= 1 && self->VideoHeight() <= 1) {
@@ -2660,6 +2707,10 @@ already_AddRefed<Promise> HTMLMediaElement::Seek(double aTime,
 
   // aTime should be non-NaN.
   MOZ_ASSERT(!mozilla::IsNaN(aTime));
+
+  // Seeking step1, Set the media element's show poster flag to false.
+  // https://html.spec.whatwg.org/multipage/media.html#dom-media-seek
+  mShowPoster = false;
 
   RefPtr<Promise> promise = CreateDOMPromise(aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -3452,13 +3503,28 @@ HTMLMediaElement::HTMLMediaElement(
       mShutdownObserver(new ShutdownObserver),
       mPlayed(new TimeRanges(ToSupports(OwnerDoc()))),
       mPaused(true, "HTMLMediaElement::mPaused"),
-      mAudioTrackList(new AudioTrackList(OwnerDoc()->GetParentObject(), this)),
-      mVideoTrackList(new VideoTrackList(OwnerDoc()->GetParentObject(), this)),
       mErrorSink(new ErrorSink(this)),
       mAudioChannelWrapper(new AudioChannelAgentCallback(this)),
-      mSink(MakePair(nsString(), RefPtr<AudioDeviceInfo>())) {
+      mSink(MakePair(nsString(), RefPtr<AudioDeviceInfo>())),
+      mShowPoster(IsVideo()) {
   MOZ_ASSERT(mMainThreadEventTarget);
   MOZ_ASSERT(mAbstractMainThread);
+  // Please don't add anything to this constructor or the initialization
+  // list that can cause AddRef to be called. This prevents subclasses
+  // from overriding AddRef in a way that works with our refcount
+  // logging mechanisms. Put these things inside of the ::Init method
+  // instead.
+}
+
+void HTMLMediaElement::Init() {
+  MOZ_ASSERT(mRefCnt == 0 && !mRefCnt.IsPurple(),
+             "HTMLMediaElement::Init called when AddRef has been called "
+             "at least once already, probably in the constructor. Please "
+             "see the documentation in the HTMLMediaElement constructor.");
+  MOZ_ASSERT(!mRefCnt.IsPurple());
+
+  mAudioTrackList = new AudioTrackList(OwnerDoc()->GetParentObject(), this);
+  mVideoTrackList = new VideoTrackList(OwnerDoc()->GetParentObject(), this);
 
   DecoderDoctorLogger::LogConstruction(this);
 
@@ -3479,9 +3545,12 @@ HTMLMediaElement::HTMLMediaElement(
   MediaShutdownManager::InitStatics();
 
   mShutdownObserver->Subscribe(this);
+  mInitialized = true;
 }
 
 HTMLMediaElement::~HTMLMediaElement() {
+  MOZ_ASSERT(mInitialized,
+             "HTMLMediaElement must be initialized before it is destroyed.");
   NS_ASSERTION(
       !mHasSelfReference,
       "How can we be destroyed if we're still holding a self reference?");
@@ -3528,6 +3597,7 @@ HTMLMediaElement::~HTMLMediaElement() {
   }
 
   WakeLockRelease();
+  ReportPlayedTimeAfterBlockedTelemetry();
 
   DecoderDoctorLogger::LogDestruction(this);
 }
@@ -3637,7 +3707,6 @@ already_AddRefed<Promise> HTMLMediaElement::Play(ErrorResult& aRv) {
   if (AudioChannelAgentBlockedPlay()) {
     LOG(LogLevel::Debug, ("%p play blocked by AudioChannelAgent.", this));
     promise->MaybeReject(NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR);
-    DispatchEventsWhenPlayWasNotAllowed();
     return promise.forget();
   }
 
@@ -3670,6 +3739,7 @@ void HTMLMediaElement::DispatchEventsWhenPlayWasNotAllowed() {
 #endif
   OwnerDoc()->MaybeNotifyAutoplayBlocked();
   ReportToConsole(nsIScriptError::warningFlag, "BlockAutoplayError");
+  mHasPlayEverBeenBlocked = true;
   mHasEverBeenBlockedForAutoplay = true;
 }
 
@@ -3741,6 +3811,12 @@ void HTMLMediaElement::PlayInternal(bool aHandlingUserInput) {
 
     // 6.2. If the show poster flag is true, set the element's show poster flag
     //      to false and run the time marches on steps.
+    if (mShowPoster) {
+      mShowPoster = false;
+      if (mTextTrackManager) {
+        mTextTrackManager->TimeMarchesOn();
+      }
+    }
 
     // 6.3. Queue a task to fire a simple event named play at the element.
     DispatchAsyncEvent(NS_LITERAL_STRING("play"));
@@ -3980,8 +4056,7 @@ nsresult HTMLMediaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       if (mDecoder) {
         mDecoder->SetLooping(!!aValue);
       }
-    } else if (nsContentUtils::IsUAWidgetEnabled() &&
-               aName == nsGkAtoms::controls && IsInComposedDoc()) {
+    } else if (aName == nsGkAtoms::controls && IsInComposedDoc()) {
       NotifyUAWidgetSetupOrChange();
     }
   }
@@ -4019,7 +4094,7 @@ nsresult HTMLMediaElement::BindToTree(Document* aDocument, nsIContent* aParent,
   nsresult rv =
       nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
 
-  if (nsContentUtils::IsUAWidgetEnabled() && IsInComposedDoc()) {
+  if (IsInComposedDoc()) {
     // Construct Shadow Root so web content can be hidden in the DOM.
     AttachAndSetUAShadowRoot();
 #ifdef ANDROID
@@ -4253,7 +4328,7 @@ void HTMLMediaElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   mUnboundFromTree = true;
   mVisibilityState = Visibility::UNTRACKED;
 
-  if (nsContentUtils::IsUAWidgetEnabled() && IsInComposedDoc()) {
+  if (IsInComposedDoc()) {
     NotifyUAWidgetTeardown();
   }
 
@@ -4430,7 +4505,11 @@ nsresult HTMLMediaElement::InitializeDecoderForChannel(
 
 #ifdef MOZ_ANDROID_HLS_SUPPORT
   if (HLSDecoder::IsSupportedType(*containerType)) {
-    RefPtr<HLSDecoder> decoder = new HLSDecoder(decoderInit);
+    RefPtr<HLSDecoder> decoder = HLSDecoder::Create(decoderInit);
+    if (!decoder) {
+      reportCanPlay(false);
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
     reportCanPlay(true);
     return SetupDecoder(decoder.get(), aChannel);
   }
@@ -4524,6 +4603,8 @@ nsresult HTMLMediaElement::FinishDecoderSetup(MediaDecoder* aDecoder) {
     }
   }
 
+  MaybeBeginCloningVisually();
+
   return NS_OK;
 }
 
@@ -4614,6 +4695,7 @@ void HTMLMediaElement::UpdateSrcMediaStreamPlaying(uint32_t aFlags) {
     VideoFrameContainer* container = GetVideoFrameContainer();
     if (mSelectedVideoStreamTrack && container) {
       mSelectedVideoStreamTrack->AddVideoOutput(container);
+      MaybeBeginCloningVisually();
     }
 
     SetCapturedOutputStreamsEnabled(true);  // Unmute
@@ -5510,6 +5592,13 @@ void HTMLMediaElement::ChangeNetworkState(nsMediaNetworkState aState) {
     DispatchAsyncEvent(NS_LITERAL_STRING("suspend"));
   }
 
+  // According to the resource selection (step2, step9-18), dedicated media
+  // source failure step (step4) and aborting existing load (step4), set show
+  // poster flag to true. https://html.spec.whatwg.org/multipage/media.html
+  if (mNetworkState == NETWORK_NO_SOURCE || mNetworkState == NETWORK_EMPTY) {
+    mShowPoster = true;
+  }
+
   // Changing mNetworkState affects AddRemoveSelfReference().
   AddRemoveSelfReference();
 }
@@ -5593,6 +5682,14 @@ void HTMLMediaElement::CheckAutoplayDataReady() {
     mDecoder->Play();
   } else if (mSrcStream) {
     SetPlayedOrSeeked(true);
+  }
+
+  // https://html.spec.whatwg.org/multipage/media.html#ready-states:show-poster-flag
+  if (mShowPoster) {
+    mShowPoster = false;
+    if (mTextTrackManager) {
+      mTextTrackManager->TimeMarchesOn();
+    }
   }
 
   // For blocked media, the event would be pending until it is resumed.
@@ -5729,15 +5826,24 @@ void HTMLMediaElement::DispatchAsyncEvent(const nsAString& aName) {
 
   if ((aName.EqualsLiteral("play") || aName.EqualsLiteral("playing"))) {
     mPlayTime.Start();
+    mCurrentLoadPlayTime.Start();
     if (IsHidden()) {
       HiddenVideoStart();
     }
   } else if (aName.EqualsLiteral("waiting")) {
     mPlayTime.Pause();
+    mCurrentLoadPlayTime.Pause();
     HiddenVideoStop();
   } else if (aName.EqualsLiteral("pause")) {
     mPlayTime.Pause();
+    mCurrentLoadPlayTime.Pause();
     HiddenVideoStop();
+  }
+
+  // It would happen when (1) media aborts current load (2) media pauses (3)
+  // media end (4) media unbind from tree (because we would pause it)
+  if (aName.EqualsLiteral("pause")) {
+    ReportPlayedTimeAfterBlockedTelemetry();
   }
 }
 
@@ -5873,6 +5979,7 @@ void HTMLMediaElement::SuspendOrResumeElement(bool aPauseElement,
     UpdateSrcMediaStreamPlaying();
     UpdateAudioChannelPlayingState();
     if (aPauseElement) {
+      mCurrentLoadPlayTime.Pause();
       ReportTelemetry();
 
       // For EME content, we may force destruction of the CDM client (and CDM
@@ -5890,6 +5997,9 @@ void HTMLMediaElement::SuspendOrResumeElement(bool aPauseElement,
       }
       mEventDeliveryPaused = aSuspendEvents;
     } else {
+      if (!mPaused) {
+        mCurrentLoadPlayTime.Start();
+      }
       if (mDecoder) {
         mDecoder->Resume();
         if (!mPaused && !mDecoder->IsEnded()) {
@@ -5941,7 +6051,8 @@ void HTMLMediaElement::NotifyOwnerDocumentActivityChanged() {
 
   // If the owning document has become inactive we should shutdown the CDM.
   if (!OwnerDoc()->IsCurrentActiveDocument() && mMediaKeys) {
-    mMediaKeys->Shutdown();
+    // We don't shutdown MediaKeys here because it also listens for document
+    // activity and will take care of shutting down itself.
     DDUNLINKCHILD(mMediaKeys.get());
     mMediaKeys = nullptr;
     if (mDecoder) {
@@ -7286,6 +7397,26 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
 
   aRv = NS_OK;
   return promise.forget();
+}
+
+void HTMLMediaElement::NotifyTextTrackModeChanged() {
+  if (mPendingTextTrackChanged) {
+    return;
+  }
+  mPendingTextTrackChanged = true;
+  mAbstractMainThread->Dispatch(
+      NS_NewRunnableFunction("HTMLMediaElement::NotifyTextTrackModeChanged",
+                             [this, self = RefPtr<HTMLMediaElement>(this)]() {
+                               mPendingTextTrackChanged = false;
+                               if (!mTextTrackManager) {
+                                 return;
+                               }
+                               GetTextTracks()->CreateAndDispatchChangeEvent();
+                               // https://html.spec.whatwg.org/multipage/media.html#text-track-model:show-poster-flag
+                               if (!mShowPoster) {
+                                 mTextTrackManager->TimeMarchesOn();
+                               }
+                             }));
 }
 
 }  // namespace dom

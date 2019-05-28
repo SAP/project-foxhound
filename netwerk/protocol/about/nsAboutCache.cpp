@@ -126,8 +126,7 @@ nsresult nsAboutCache::Channel::Init(nsIURI *aURI, nsILoadInfo *aLoadInfo) {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsAboutCache::Channel::AsyncOpen(nsIStreamListener *aListener,
-                                               nsISupports *aContext) {
+NS_IMETHODIMP nsAboutCache::Channel::AsyncOpen(nsIStreamListener *aListener) {
   nsresult rv;
 
   if (!mChannel) {
@@ -138,22 +137,13 @@ NS_IMETHODIMP nsAboutCache::Channel::AsyncOpen(nsIStreamListener *aListener,
   rv = VisitNextStorage();
   if (NS_FAILED(rv)) return rv;
 
-  MOZ_ASSERT(!aContext, "asyncOpen2() does not take a context argument");
-  rv = NS_MaybeOpenChannelUsingAsyncOpen2(mChannel, aListener);
+  rv = NS_MaybeOpenChannelUsingAsyncOpen(mChannel, aListener);
   if (NS_FAILED(rv)) return rv;
 
   return NS_OK;
 }
 
-NS_IMETHODIMP nsAboutCache::Channel::AsyncOpen2(nsIStreamListener *aListener) {
-  return AsyncOpen(aListener, nullptr);
-}
-
 NS_IMETHODIMP nsAboutCache::Channel::Open(nsIInputStream **_retval) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP nsAboutCache::Channel::Open2(nsIInputStream **_retval) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -562,12 +552,8 @@ nsAboutCache::GetURIFlags(nsIURI *aURI, uint32_t *result) {
 // static
 nsresult nsAboutCache::Create(nsISupports *aOuter, REFNSIID aIID,
                               void **aResult) {
-  nsAboutCache *about = new nsAboutCache();
-  if (about == nullptr) return NS_ERROR_OUT_OF_MEMORY;
-  NS_ADDREF(about);
-  nsresult rv = about->QueryInterface(aIID, aResult);
-  NS_RELEASE(about);
-  return rv;
+  RefPtr<nsAboutCache> about = new nsAboutCache();
+  return about->QueryInterface(aIID, aResult);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -22,16 +22,11 @@ extensions/spellcheck/**
 extensions/universalchardet/**
 image/**
 layout/**
-modules/**
 netwerk/cookie/test/browser/**
 netwerk/test/browser/**
 netwerk/test/mochitests/**
 netwerk/test/unit*/**
 tools/update-packaging/**
-uriloader/exthandler/**
-uriloader/exthandler/tests/mochitest/**
-widget/headless/tests/**
-widget/tests/**
 xpfe/**
 
 # We currently have no js files in these directories, so we ignore them by
@@ -65,6 +60,8 @@ browser/components/sessionstore/test/unit/data/sessionstore_invalid.js
 # for documentation purposes (policies.json) but to be accessed by the
 # code as a .jsm (schema.jsm)
 browser/components/enterprisepolicies/schemas/schema.jsm
+# Ignore generated code from wasm-bindgen
+browser/components/extensions/profiler_get_symbols.js
 # generated & special files in cld2
 browser/components/translation/cld2/**
 # Screenshots is imported as a system add-on and has
@@ -141,11 +138,11 @@ devtools/client/jsonview/lib/require.js
 devtools/client/shared/demangle.js
 devtools/client/shared/source-map/*
 devtools/client/shared/vendor/*
-devtools/client/sourceeditor/codemirror/*.js
-devtools/client/sourceeditor/codemirror/**/*.js
-devtools/client/sourceeditor/tern/*
-devtools/client/sourceeditor/test/cm_mode_ruby.js
-devtools/client/sourceeditor/test/codemirror/*
+devtools/client/shared/sourceeditor/codemirror/*.js
+devtools/client/shared/sourceeditor/codemirror/**/*.js
+devtools/client/shared/sourceeditor/tern/*
+devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
+devtools/client/shared/sourceeditor/test/codemirror/*
 devtools/server/actors/utils/automation-timeline.js
 
 # Ignore devtools files testing sourcemaps / code style
@@ -171,8 +168,6 @@ dom/base/test/unit_ipc/**
 dom/base/test/jsmodules/**
 dom/bindings/**
 dom/browser-element/**
-dom/cache/test/mochitest/**
-dom/cache/test/xpcshell/**
 dom/canvas/**
 dom/encoding/**
 dom/events/**
@@ -189,14 +184,9 @@ dom/media/webspeech/**
 dom/messagechannel/**
 dom/midi/**
 dom/network/**
-dom/notification/Notification*.*
-dom/notification/test/browser/**
-dom/notification/test/mochitest/**
 dom/payments/**
 dom/performance/**
 dom/permission/**
-dom/plugins/test/mochitest/**
-dom/plugins/test/unit/**
 dom/promise/**
 dom/push/**
 dom/quota/**
@@ -212,7 +202,6 @@ dom/svg/**
 dom/tests/html/**
 dom/tests/mochitest/**
 dom/u2f/**
-dom/url/**
 dom/vr/**
 dom/webauthn/**
 dom/webgpu/**
@@ -289,6 +278,16 @@ modules/libpref/test/unit/*data/**
 # Only contains non-standard test files.
 python/**
 
+# Remote agent
+remote/pref/remote.js
+remote/Protocol.jsm
+remote/server/HTTPD.jsm
+remote/server/Packet.jsm
+remote/server/Socket.jsm
+remote/server/Stream.jsm
+remote/test/browser/chrome-remote-interface.js
+remote/test/demo.js
+
 # security/ exclusions (pref files).
 security/manager/ssl/security-prefs.js
 
@@ -296,6 +295,9 @@ security/manager/ssl/security-prefs.js
 security/nss/**
 
 # services/ exclusions
+
+# Webpack-bundled library
+services/fxaccounts/FxAccountsPairingChannel.js
 
 # Uses `#filter substitution`
 services/sync/modules/constants.js
@@ -318,7 +320,7 @@ testing/mochitest/MochiKit/**
 testing/mochitest/tests/MochiKit-1.4.2/**
 testing/mochitest/tests/SimpleTest/**
 testing/modules/ajv-4.1.1.js
-testing/modules/sinon-2.3.2.js
+testing/modules/sinon-7.2.7.js
 # octothorpe used for pref file comment causes parsing error
 testing/mozbase/mozprofile/tests/files/prefs_with_comments.js
 testing/talos/talos/scripts/jszip.min.js
@@ -330,6 +332,8 @@ testing/talos/talos/tests/v8_7/**
 testing/talos/talos/tests/kraken/**
 # Runing Talos may extract data here, see bug 1435677.
 testing/talos/talos/tests/tp5n/**
+# Raptor third party
+testing/raptor/raptor/playback/scripts/catapult/**
 
 testing/web-platform/**
 testing/xpcshell/moz-http2/**

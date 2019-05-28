@@ -38,7 +38,7 @@ class InspectorUtils {
                                 nsTArray<RefPtr<StyleSheet>>& aResult);
   static void GetCSSStyleRules(GlobalObject& aGlobal, Element& aElement,
                                const nsAString& aPseudo,
-                               nsTArray<RefPtr<css::Rule>>& aResult);
+                               nsTArray<RefPtr<BindingStyleRule>>& aResult);
 
   /**
    * Get the line number of a rule.
@@ -237,12 +237,6 @@ class InspectorUtils {
    */
   static void ParseStyleSheet(GlobalObject& aGlobal, StyleSheet& aSheet,
                               const nsAString& aInput, ErrorResult& aRv);
-
-  /**
-   * Scroll an element completely into view, if possible.
-   * This is similar to ensureElementIsVisible but for all ancestors.
-   */
-  static void ScrollElementIntoView(GlobalObject& aGlobal, Element& aElement);
 
   /**
    * Check if the provided name can be custom element name.

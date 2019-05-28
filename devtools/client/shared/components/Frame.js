@@ -96,12 +96,13 @@ class Frame extends Component {
    * @returns {{url: *, line: *, column: *, functionDisplayName: *}}
    */
   getSourceForClick(frame) {
-    const { source, line, column } = frame;
+    const { source, line, column, sourceId } = frame;
     return {
       url: source,
       line,
       column,
       functionDisplayName: this.props.frame.functionDisplayName,
+      sourceId,
     };
   }
 
@@ -124,6 +125,7 @@ class Frame extends Component {
     }
 
     const source = frame.source || "";
+    const sourceId = frame.sourceId;
     const line = frame.line != void 0 ? Number(frame.line) : null;
     const column = frame.column != void 0 ? Number(frame.column) : null;
 
@@ -138,8 +140,9 @@ class Frame extends Component {
     // to Scratchpad URIs.
     // Source mapped sources might not necessary linkable, but they
     // are still valid in the debugger.
+    // If we have a source ID then we can show the source in the debugger.
     const isLinkable = !!(isScratchpadScheme(source) || parseURL(source))
-      || isSourceMapped;
+      || isSourceMapped || sourceId;
     const elements = [];
     const sourceElements = [];
     let sourceEl;
@@ -223,7 +226,7 @@ class Frame extends Component {
         onClick: e => {
           e.preventDefault();
           e.stopPropagation();
-          onClick(this.getSourceForClick({...frame, source}));
+          onClick(this.getSourceForClick({...frame, source, sourceId}));
         },
         href: source,
         className: "frame-link-source",

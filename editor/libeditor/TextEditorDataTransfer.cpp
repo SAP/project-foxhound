@@ -114,6 +114,9 @@ nsresult TextEditor::InsertTextAt(const nsAString& aStringToInsert,
 
 nsresult TextEditor::InsertTextFromTransferable(
     nsITransferable* aTransferable) {
+  MOZ_ASSERT(IsEditActionDataAvailable());
+  MOZ_ASSERT(!AsHTMLEditor());
+
   nsAutoCString bestFlavor;
   nsCOMPtr<nsISupports> genericDataObj;
   if (NS_SUCCEEDED(aTransferable->GetAnyTransferData(
@@ -126,6 +129,11 @@ nsresult TextEditor::InsertTextFromTransferable(
     if (nsCOMPtr<nsISupportsString> text = do_QueryInterface(genericDataObj)) {
       text->GetData(stuffToPaste);
     }
+    MOZ_ASSERT(GetEditAction() == EditAction::ePaste);
+    // Use native line breaks for compatibility with Chrome.
+    // XXX Although, somebody has already converted native line breaks to
+    //     XP line breaks.
+    UpdateEditActionData(stuffToPaste);
 
     if (!stuffToPaste.IsEmpty()) {
       // Sanitize possible carriage returns in the string to be inserted
@@ -143,32 +151,6 @@ nsresult TextEditor::InsertTextFromTransferable(
   ScrollSelectionIntoView(false);
 
   return NS_OK;
-}
-
-nsresult TextEditor::InsertFromDataTransfer(DataTransfer* aDataTransfer,
-                                            int32_t aIndex,
-                                            Document* aSourceDoc,
-                                            const EditorDOMPoint& aDroppedAt,
-                                            bool aDoDeleteSelection) {
-  MOZ_ASSERT(GetEditAction() == EditAction::eDrop);
-  MOZ_ASSERT(
-      mPlaceholderBatch,
-      "TextEditor::InsertFromDataTransfer() should be called only by OnDrop() "
-      "and there should've already been placeholder transaction");
-  MOZ_ASSERT(aDroppedAt.IsSet());
-
-  nsCOMPtr<nsIVariant> data;
-  aDataTransfer->GetDataAtNoSecurityCheck(NS_LITERAL_STRING("text/plain"),
-                                          aIndex, getter_AddRefs(data));
-  if (!data) {
-    return NS_OK;
-  }
-
-  nsAutoString insertText;
-  data->GetAsAString(insertText);
-  nsContentUtils::PlatformToDOMLineBreaks(insertText);
-
-  return InsertTextAt(insertText, aDroppedAt, aDoDeleteSelection);
 }
 
 nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
@@ -290,7 +272,7 @@ nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
   if (deleteSelection && !SelectionRefPtr()->IsCollapsed()) {
     nsresult rv = PrepareToInsertContent(droppedAt, true);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return EditorBase::ToGenericNSResult(rv);
     }
     // Now, Selection should be collapsed at dropped point.  If somebody
     // changed Selection, we should think what should do it in such case
@@ -306,9 +288,9 @@ nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
 
     // Let's fire "input" event for the deletion now.
     if (mDispatchInputEvent) {
-      FireInputEvent(EditAction::eDeleteByDrag);
+      FireInputEvent(EditAction::eDeleteByDrag, VoidString(), nullptr);
       if (NS_WARN_IF(Destroyed())) {
-        return NS_ERROR_EDITOR_DESTROYED;
+        return NS_OK;
       }
     }
 
@@ -316,10 +298,58 @@ nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
     //     should we update |droppedAt|?
   }
 
-  for (uint32_t i = 0; i < numItems; ++i) {
-    InsertFromDataTransfer(dataTransfer, i, srcdoc, droppedAt, false);
+  if (!AsHTMLEditor()) {
+    // For "beforeinput", we need to create data first.
+    AutoTArray<nsString, 5> textArray;
+    textArray.SetCapacity(numItems);
+    uint32_t textLength = 0;
+    for (uint32_t i = 0; i < numItems; ++i) {
+      nsCOMPtr<nsIVariant> data;
+      dataTransfer->GetDataAtNoSecurityCheck(NS_LITERAL_STRING("text/plain"), i,
+                                             getter_AddRefs(data));
+      if (!data) {
+        continue;
+      }
+      // Use nsString to avoid copying its storage to textArray.
+      nsString insertText;
+      data->GetAsAString(insertText);
+      if (insertText.IsEmpty()) {
+        continue;
+      }
+      textArray.AppendElement(insertText);
+      textLength += insertText.Length();
+    }
+    // Use nsString to avoid copying its storage to editActionData.
+    nsString data;
+    data.SetCapacity(textLength);
+    // Join the text array from end to start because we insert each items
+    // in the dataTransfer at same point from start to end.  Although I
+    // don't know whether this is intentional behavior.
+    for (nsString& text : Reversed(textArray)) {
+      data.Append(text);
+    }
+    // Use native line breaks for compatibility with Chrome.
+    // XXX Although, somebody has already converted native line breaks to
+    //     XP line breaks.
+    editActionData.SetData(data);
+
+    // Then, insert the text.  Note that we shouldn't need to walk the array
+    // anymore because nobody should listen to mutation events of anonymous
+    // text node in <input>/<textarea>.
+    nsContentUtils::PlatformToDOMLineBreaks(data);
+    InsertTextAt(data, droppedAt, false);
     if (NS_WARN_IF(Destroyed())) {
-      return NS_ERROR_EDITOR_DESTROYED;
+      return NS_OK;
+    }
+  } else {
+    editActionData.InitializeDataTransfer(dataTransfer);
+    RefPtr<HTMLEditor> htmlEditor(AsHTMLEditor());
+    for (uint32_t i = 0; i < numItems; ++i) {
+      htmlEditor->InsertFromDataTransfer(dataTransfer, i, srcdoc, droppedAt,
+                                         false);
+      if (NS_WARN_IF(Destroyed())) {
+        return NS_OK;
+      }
     }
   }
 
@@ -336,10 +366,13 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   }
 
   if (AsHTMLEditor()) {
-    nsresult rv =
-        AsHTMLEditor()->PasteInternal(aClipboardType, aDispatchPasteEvent);
+    editActionData.InitializeDataTransferWithClipboard(
+        SettingDataTransfer::eWithFormat, aClipboardType);
+    // MOZ_KnownLive because we know "this" must be alive.
+    nsresult rv = MOZ_KnownLive(AsHTMLEditor())
+                      ->PasteInternal(aClipboardType, aDispatchPasteEvent);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return EditorBase::ToGenericNSResult(rv);
     }
     return NS_OK;
   }
@@ -360,7 +393,7 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   nsCOMPtr<nsITransferable> transferable;
   rv = PrepareTransferable(getter_AddRefs(transferable));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return EditorBase::ToGenericNSResult(rv);
   }
   if (NS_WARN_IF(!transferable)) {
     return NS_OK;  // XXX Why?
@@ -376,7 +409,7 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   }
   rv = InsertTextFromTransferable(transferable);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return EditorBase::ToGenericNSResult(rv);
   }
   return NS_OK;
 }
@@ -399,7 +432,11 @@ TextEditor::PasteTransferable(nsITransferable* aTransferable) {
     return NS_OK;
   }
 
-  return InsertTextFromTransferable(aTransferable);
+  nsresult rv = InsertTextFromTransferable(aTransferable);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return EditorBase::ToGenericNSResult(rv);
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP

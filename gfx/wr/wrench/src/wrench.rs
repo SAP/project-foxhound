@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-use app_units::Au;
 use blob;
 use crossbeam::sync::chase_lev;
 #[cfg(windows)]
@@ -20,7 +19,8 @@ use std::sync::mpsc::Receiver;
 use time;
 use webrender;
 use webrender::api::*;
-use webrender::{DebugFlags, RendererStats, ShaderPrecacheFlags};
+use webrender::api::units::*;
+use webrender::{DebugFlags, RenderResults, ShaderPrecacheFlags};
 use yaml_frame_writer::YamlFrameWriterReceiver;
 use {WindowWrapper, NotifierEvent};
 
@@ -93,9 +93,9 @@ impl Notifier {
             }
         }
 
-        if let Some(ref elp) = data.events_loop_proxy {
+        if let Some(ref _elp) = data.events_loop_proxy {
             #[cfg(not(target_os = "android"))]
-            let _ = elp.wakeup();
+            let _ = _elp.wakeup();
         }
     }
 }
@@ -121,9 +121,6 @@ pub trait WrenchThing {
     fn next_frame(&mut self);
     fn prev_frame(&mut self);
     fn do_frame(&mut self, &mut Wrench) -> u32;
-    fn queue_frames(&self) -> u32 {
-        0
-    }
 }
 
 impl WrenchThing for CapturedDocument {
@@ -146,7 +143,7 @@ impl WrenchThing for CapturedDocument {
 }
 
 pub struct Wrench {
-    window_size: DeviceIntSize,
+    window_size: FramebufferIntSize,
     pub device_pixel_ratio: f32,
     page_zoom_factor: ZoomFactor,
 
@@ -174,7 +171,7 @@ impl Wrench {
         shader_override_path: Option<PathBuf>,
         dp_ratio: f32,
         save_type: Option<SaveType>,
-        size: DeviceIntSize,
+        size: FramebufferIntSize,
         do_rebuild: bool,
         no_subpixel_aa: bool,
         verbose: bool,
@@ -223,13 +220,16 @@ impl Wrench {
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
             disable_dual_source_blending,
             chase_primitive,
+            enable_picture_caching: true,
+            testing: true,
+            max_texture_size: Some(8196), // Needed for rawtest::test_resize_image.
             ..Default::default()
         };
 
         // put an Awakened event into the queue to kick off the first frame
-        if let Some(ref elp) = proxy {
+        if let Some(ref _elp) = proxy {
             #[cfg(not(target_os = "android"))]
-            let _ = elp.wakeup();
+            let _ = _elp.wakeup();
         }
 
         let (timing_sender, timing_receiver) = chase_lev::deque();
@@ -450,7 +450,7 @@ impl Wrench {
     #[cfg(target_os = "android")]
     pub fn font_key_from_properties(
         &mut self,
-        family: &str,
+        _family: &str,
         _weight: u32,
         _style: u32,
         _stretch: u32,
@@ -468,7 +468,7 @@ impl Wrench {
     }
 
     #[cfg(target_os = "android")]
-    pub fn font_key_from_name(&mut self, font_name: &str) -> FontKey {
+    pub fn font_key_from_name(&mut self, _font_name: &str) -> FontKey {
         unimplemented!()
     }
 
@@ -511,7 +511,7 @@ impl Wrench {
         self.api.update_resources(txn.resource_updates);
     }
 
-    pub fn update(&mut self, dim: DeviceIntSize) {
+    pub fn update(&mut self, dim: FramebufferIntSize) {
         if dim != self.window_size {
             self.window_size = dim;
         }
@@ -554,7 +554,7 @@ impl Wrench {
         self.renderer.get_frame_profiles()
     }
 
-    pub fn render(&mut self) -> RendererStats {
+    pub fn render(&mut self) -> RenderResults {
         self.renderer.update();
         let _ = self.renderer.flush_pipeline_info();
         self.renderer

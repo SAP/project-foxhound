@@ -13,7 +13,7 @@ import { generatedToOriginalId } from "devtools-source-map";
 import { flatten } from "lodash";
 
 import { toggleBlackBox } from "./blackbox";
-import { syncBreakpoint } from "../breakpoints";
+import { syncBreakpoint, addBreakpoint } from "../breakpoints";
 import { loadSourceText } from "./loadSourceText";
 import { togglePrettyPrint } from "./prettyPrint";
 import { selectLocation } from "../sources";
@@ -40,12 +40,13 @@ function createOriginalSource(
     url: originalUrl,
     relativeUrl: originalUrl,
     id: generatedToOriginalId(generatedSource.id, originalUrl),
-    thread: generatedSource.thread,
     isPrettyPrinted: false,
     isWasm: false,
     isBlackBoxed: false,
     loadedState: "unloaded",
-    introductionUrl: null
+    introductionUrl: null,
+    isExtension: false,
+    actors: []
   };
 }
 
@@ -67,6 +68,14 @@ function loadSourceMaps(sources: Source[]) {
     );
 
     await sourceQueue.flush();
+
+    // We would like to sync breakpoints after we are done
+    // loading source maps as sometimes generated and original
+    // files share the same paths.
+    for (const source of sources) {
+      dispatch(checkPendingBreakpoints(source.id));
+    }
+
     return flatten(sourceList);
   };
 }
@@ -177,8 +186,19 @@ function checkPendingBreakpoints(sourceId: string) {
     // load the source text if there is a pending breakpoint for it
     await dispatch(loadSourceText(source));
 
+    // Matching pending breakpoints could have either the same generated or the
+    // same original source. We expect the generated source to appear first and
+    // will add a breakpoint at that location initially. If the original source
+    // appears later then we use syncBreakpoint to see if the generated location
+    // changed and we need to remove the breakpoint we added earlier.
     await Promise.all(
-      pendingBreakpoints.map(bp => dispatch(syncBreakpoint(sourceId, bp)))
+      pendingBreakpoints.map(bp => {
+        if (source.url == bp.location.sourceUrl) {
+          return dispatch(syncBreakpoint(sourceId, bp));
+        }
+        const { line, column } = bp.generatedLocation;
+        return dispatch(addBreakpoint({ sourceId, line, column }, bp.options));
+      })
     );
   };
 }
@@ -210,29 +230,17 @@ export function newSource(source: Source) {
 
 export function newSources(sources: Source[]) {
   return async ({ dispatch, getState }: ThunkArgs) => {
-    sources = sources.filter(source => !getSource(getState(), source.id));
+    const _newSources = sources.filter(
+      source => !getSource(getState(), source.id)
+    );
 
-    if (sources.length == 0) {
-      return;
-    }
+    dispatch({ type: "ADD_SOURCES", sources });
 
-    dispatch(({ type: "ADD_SOURCES", sources: sources }: Action));
-
-    for (const source of sources) {
+    for (const source of _newSources) {
       dispatch(checkSelectedSource(source.id));
     }
 
-    // We would like to restore the blackboxed state
-    // after loading all states to make sure the correctness.
-    dispatch(restoreBlackBoxedSources(sources));
-
-    dispatch(loadSourceMaps(sources)).then(() => {
-      // We would like to sync breakpoints after we are done
-      // loading source maps as sometimes generated and original
-      // files share the same paths.
-      for (const source of sources) {
-        dispatch(checkPendingBreakpoints(source.id));
-      }
-    });
+    dispatch(restoreBlackBoxedSources(_newSources));
+    dispatch(loadSourceMaps(_newSources));
   };
 }

@@ -2,23 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, DevicePixelScale, GlyphInstance, LayoutPrimitiveInfo};
-use api::{LayoutToWorldTransform, RasterSpace};
-use api::{LayoutVector2D, Shadow};
-use display_list_flattener::{AsInstanceKind, CreateShadow, IsVisible};
+use api::{ColorF, GlyphInstance, LayoutPrimitiveInfo, RasterSpace, Shadow};
+use api::units::{DevicePixelScale, LayoutToWorldTransform, LayoutVector2D};
+use display_list_flattener::{CreateShadow, IsVisible};
 use frame_builder::{FrameBuildingState, PictureContext};
 use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, FONT_SIZE_LIMIT};
 use gpu_cache::GpuCache;
-use gpu_types::RasterizationSpace;
 use intern;
-use intern_types;
 use prim_store::{PrimitiveOpacity, PrimitiveSceneData,  PrimitiveScratchBuffer};
 use prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
 use render_task::{RenderTaskTree};
 use renderer::{MAX_VERTEX_TEXTURE_WIDTH};
 use resource_cache::{ResourceCache};
 use util::{MatrixHelpers};
-use prim_store::PrimitiveInstanceKind;
+use prim_store::{InternablePrimitive, PrimitiveInstanceKind};
 use std::ops;
 use std::sync::Arc;
 use storage;
@@ -52,27 +49,6 @@ impl TextRunKey {
 }
 
 impl intern::InternDebug for TextRunKey {}
-
-impl AsInstanceKind<TextRunDataHandle> for TextRunKey {
-    /// Construct a primitive instance that matches the type
-    /// of primitive key.
-    fn as_instance_kind(
-        &self,
-        data_handle: TextRunDataHandle,
-        prim_store: &mut PrimitiveStore,
-        reference_frame_relative_offset: LayoutVector2D,
-    ) -> PrimitiveInstanceKind {
-        let run_index = prim_store.text_runs.push(TextRunPrimitive {
-            used_font: self.font.clone(),
-            glyph_keys_range: storage::Range::empty(),
-            reference_frame_relative_offset,
-            shadow: self.shadow,
-            raster_space: RasterizationSpace::Screen,
-        });
-
-        PrimitiveInstanceKind::TextRun{ data_handle, run_index }
-    }
-}
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -156,22 +132,26 @@ impl TextRunTemplate {
     }
 }
 
-pub use intern_types::text_run::Handle as TextRunDataHandle;
+pub type TextRunDataHandle = intern::Handle<TextRun>;
 
+#[derive(Debug, MallocSizeOf)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct TextRun {
     pub font: FontInstance,
+    #[ignore_malloc_size_of = "Measured via PrimaryArc"]
     pub glyphs: Arc<Vec<GlyphInstance>>,
     pub shadow: bool,
 }
 
 impl intern::Internable for TextRun {
-    type Marker = intern_types::text_run::Marker;
-    type Source = TextRunKey;
+    type Key = TextRunKey;
     type StoreData = TextRunTemplate;
     type InternData = PrimitiveSceneData;
+}
 
-    /// Build a new key from self with `info`.
-    fn build_key(
+impl InternablePrimitive for TextRun {
+    fn into_key(
         self,
         info: &LayoutPrimitiveInfo,
     ) -> TextRunKey {
@@ -179,6 +159,23 @@ impl intern::Internable for TextRun {
             info,
             self,
         )
+    }
+
+    fn make_instance_kind(
+        key: TextRunKey,
+        data_handle: TextRunDataHandle,
+        prim_store: &mut PrimitiveStore,
+        reference_frame_relative_offset: LayoutVector2D,
+    ) -> PrimitiveInstanceKind {
+        let run_index = prim_store.text_runs.push(TextRunPrimitive {
+            used_font: key.font.clone(),
+            glyph_keys_range: storage::Range::empty(),
+            reference_frame_relative_offset,
+            shadow: key.shadow,
+            raster_space: RasterSpace::Screen,
+        });
+
+        PrimitiveInstanceKind::TextRun{ data_handle, run_index }
     }
 }
 
@@ -207,12 +204,13 @@ impl IsVisible for TextRun {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct TextRunPrimitive {
     pub used_font: FontInstance,
     pub glyph_keys_range: storage::Range<GlyphKey>,
     pub reference_frame_relative_offset: LayoutVector2D,
     pub shadow: bool,
-    pub raster_space: RasterizationSpace,
+    pub raster_space: RasterSpace,
 }
 
 impl TextRunPrimitive {
@@ -224,8 +222,16 @@ impl TextRunPrimitive {
         allow_subpixel_aa: bool,
         raster_space: RasterSpace,
     ) -> bool {
+        // If local raster space is specified, include that in the scale
+        // of the glyphs that get rasterized.
+        // TODO(gw): Once we support proper local space raster modes, this
+        //           will implicitly be part of the device pixel ratio for
+        //           the (cached) local space surface, and so this code
+        //           will no longer be required.
+        let raster_scale = raster_space.local_scale().unwrap_or(1.0).max(0.001);
+
         // Get the current font size in device pixels
-        let device_font_size = specified_font.size.scale_by(device_pixel_scale.0);
+        let device_font_size = specified_font.size.scale_by(device_pixel_scale.0 * raster_scale);
 
         // Determine if rasterizing glyphs in local or screen space.
         // Only support transforms that can be coerced to simple 2D transforms.
@@ -242,18 +248,13 @@ impl TextRunPrimitive {
 
         // Get the font transform matrix (skew / scale) from the complete transform.
         let font_transform = if transform_glyphs {
-            // Quantize the transform to minimize thrashing of the glyph cache.
-            FontTransform::from(transform).quantize()
+            FontTransform::from(transform)
         } else {
             FontTransform::identity()
         };
 
         // Record the raster space the text needs to be snapped in.
-        self.raster_space = if raster_space == RasterSpace::Screen {
-            RasterizationSpace::Screen
-        } else {
-            RasterizationSpace::Local
-        };
+        self.raster_space = raster_space;
 
         // If the transform or device size is different, then the caller of
         // this method needs to know to rebuild the glyphs.
@@ -333,8 +334,8 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<TextRun>(), 88, "TextRun size changed");
-    assert_eq!(mem::size_of::<TextRunTemplate>(), 104, "TextRunTemplate size changed");
-    assert_eq!(mem::size_of::<TextRunKey>(), 96, "TextRunKey size changed");
-    assert_eq!(mem::size_of::<TextRunPrimitive>(), 96, "TextRunPrimitive size changed");
+    assert_eq!(mem::size_of::<TextRun>(), 56, "TextRun size changed");
+    assert_eq!(mem::size_of::<TextRunTemplate>(), 72, "TextRunTemplate size changed");
+    assert_eq!(mem::size_of::<TextRunKey>(), 64, "TextRunKey size changed");
+    assert_eq!(mem::size_of::<TextRunPrimitive>(), 72, "TextRunPrimitive size changed");
 }

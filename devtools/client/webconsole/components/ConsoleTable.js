@@ -5,12 +5,13 @@
 
 const { Component, createFactory } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const ObjectClient = require("devtools/shared/client/object-client");
 const actions = require("devtools/client/webconsole/actions/messages");
 const { l10n } = require("devtools/client/webconsole/utils/messages");
 const { MODE } = require("devtools/client/shared/components/reps/reps");
 const GripMessageBody = createFactory(require("devtools/client/webconsole/components/GripMessageBody"));
+
+loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
 
 const TABLE_ROW_MAX_ITEMS = 1000;
 const TABLE_COLUMN_MAX_ITEMS = 10;
@@ -21,7 +22,7 @@ class ConsoleTable extends Component {
       dispatch: PropTypes.func.isRequired,
       parameters: PropTypes.array.isRequired,
       serviceContainer: PropTypes.shape({
-        hudProxy: PropTypes.object.isRequired,
+        proxy: PropTypes.object.isRequired,
       }),
       id: PropTypes.string.isRequired,
       tableData: PropTypes.object,
@@ -41,7 +42,7 @@ class ConsoleTable extends Component {
       return;
     }
 
-    const client = new ObjectClient(serviceContainer.hudProxy.client, parameters[0]);
+    const client = new ObjectClient(serviceContainer.proxy.client, parameters[0]);
     const dataType = getParametersDataType(parameters);
 
     // Get all the object properties.

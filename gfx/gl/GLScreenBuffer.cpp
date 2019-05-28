@@ -59,7 +59,8 @@ UniquePtr<GLScreenBuffer> GLScreenBuffer::Create(GLContext* gl,
   return ret;
 }
 
-/* static */ UniquePtr<SurfaceFactory> GLScreenBuffer::CreateFactory(
+/* static */
+UniquePtr<SurfaceFactory> GLScreenBuffer::CreateFactory(
     GLContext* gl, const SurfaceCaps& caps,
     KnowsCompositor* compositorConnection, const layers::TextureFlags& flags) {
   LayersIPCChannel* ipcChannel = compositorConnection->GetTextureForwarder();
@@ -87,7 +88,9 @@ UniquePtr<GLScreenBuffer> GLScreenBuffer::Create(GLContext* gl,
     factory = MakeUnique<SurfaceFactory_GLTexture>(mGLContext, caps, ipcChannel,
                                                    mFlags);
 #elif defined(MOZ_WIDGET_ANDROID)
-    if (XRE_IsParentProcess() && !gfxPrefs::WebGLSurfaceTextureEnabled()) {
+    // XXX WebRender does not support SurfaceFactory_EGLImage usage.
+    if (XRE_IsParentProcess() && !gfxPrefs::WebGLSurfaceTextureEnabled() &&
+        backend != layers::LayersBackend::LAYERS_WR) {
       factory = SurfaceFactory_EGLImage::Create(gl, caps, ipcChannel, flags);
     } else {
       factory =

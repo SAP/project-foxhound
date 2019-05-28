@@ -3,10 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {actionCreators: ac, actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
-const {Prefs} = ChromeUtils.import("resource://activity-stream/lib/ActivityStreamPrefs.jsm", {});
-const {PrerenderData} = ChromeUtils.import("resource://activity-stream/common/PrerenderData.jsm", {});
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {actionCreators: ac, actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
+const {Prefs} = ChromeUtils.import("resource://activity-stream/lib/ActivityStreamPrefs.jsm");
+const {PrerenderData} = ChromeUtils.import("resource://activity-stream/common/PrerenderData.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
@@ -46,8 +46,9 @@ this.PrefsFeed = class PrefsFeed {
   }
 
   onPrefChanged(name, value) {
-    if (this._prefMap.has(name)) {
-      this.store.dispatch(ac.BroadcastToContent({type: at.PREF_CHANGED, data: {name, value}}));
+    const prefItem = this._prefMap.get(name);
+    if (prefItem) {
+      this.store.dispatch(ac[prefItem.skipBroadcast ? "OnlyToMain" : "BroadcastToContent"]({type: at.PREF_CHANGED, data: {name, value}}));
     }
 
     this._checkPrerender(name);
@@ -91,14 +92,14 @@ this.PrefsFeed = class PrefsFeed {
     let searchTopSiteExperimentPrefValue = Services.prefs.getBoolPref(
       "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts");
     values["improvesearch.topSiteSearchShortcuts"] = searchTopSiteExperimentPrefValue;
-    this._prefMap.set("improvesearch.topSiteSearchShortcuts", searchTopSiteExperimentPrefValue);
+    this._prefMap.set("improvesearch.topSiteSearchShortcuts", {value: searchTopSiteExperimentPrefValue});
 
     // Read the pref for search hand-off from firefox.js and store it
     // in our interal list of prefs to watch
     let handoffToAwesomebarPrefValue = Services.prefs.getBoolPref(
       "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar");
     values["improvesearch.handoffToAwesomebar"] = handoffToAwesomebarPrefValue;
-    this._prefMap.set("improvesearch.handoffToAwesomebar", handoffToAwesomebarPrefValue);
+    this._prefMap.set("improvesearch.handoffToAwesomebar", {value: handoffToAwesomebarPrefValue});
 
     // Set the initial state of all prefs in redux
     this.store.dispatch(ac.BroadcastToContent({type: at.PREFS_INITIAL_VALUES, data: values}));

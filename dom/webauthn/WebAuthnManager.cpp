@@ -184,7 +184,7 @@ WebAuthnManager::~WebAuthnManager() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mTransaction.isSome()) {
-    RejectTransaction(NS_ERROR_ABORT);
+    ClearTransaction();
   }
 
   if (mChild) {
@@ -540,7 +540,7 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
     nsString appId(aOptions.mExtensions.mAppid.Value());
 
     // Check that the appId value is allowed.
-    if (!EvaluateAppID(mParent, origin, U2FOperation::Sign, appId)) {
+    if (!EvaluateAppID(mParent, origin, appId)) {
       promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
       return promise.forget();
     }
@@ -702,6 +702,11 @@ void WebAuthnManager::FinishGetAssertion(
     return;
   }
 
+  CryptoBuffer userHandleBuf;
+  // U2FTokenManager don't return user handle.
+  // Best effort.
+  userHandleBuf.Assign(aResult.UserHandle());
+
   // If any authenticator returns success:
 
   // Create a new PublicKeyCredential object named value and populate its fields
@@ -712,6 +717,9 @@ void WebAuthnManager::FinishGetAssertion(
   assertion->SetClientDataJSON(clientDataBuf);
   assertion->SetAuthenticatorData(authenticatorDataBuf);
   assertion->SetSignature(signatureBuf);
+  if (!userHandleBuf.IsEmpty()) {
+    assertion->SetUserHandle(userHandleBuf);
+  }
 
   RefPtr<PublicKeyCredential> credential = new PublicKeyCredential(mParent);
   credential->SetId(credentialBase64Url);

@@ -57,8 +57,7 @@ def make_task_description(config, jobs):
         treeherder.setdefault('kind', 'build')
         treeherder.setdefault('tier', 1)
 
-        dependent_kind = str(dep_job.kind)
-        dependencies = {dependent_kind: dep_job.label}
+        dependencies = {dep_job.kind: dep_job.label}
 
         attributes = copy_attributes_from_dependent_job(dep_job)
         locale = dep_job.attributes.get('locale')
@@ -84,7 +83,7 @@ def make_task_description(config, jobs):
         if locale:
             locale_suffix = '{}/'.format(locale)
         artifact_path = "<{}/{}/{}target.complete.mar>".format(
-            dependent_kind, get_artifact_prefix(dep_job), locale_suffix,
+            dep_job.kind, get_artifact_prefix(dep_job), locale_suffix,
         )
         for build in sorted(builds):
             partial_info = {
@@ -123,7 +122,7 @@ def make_task_description(config, jobs):
             'implementation': 'docker-worker',
             'docker-image': {'in-tree': 'funsize-update-generator'},
             'os': 'linux',
-            'max-run-time': 3600,
+            'max-run-time': 3600 if 'asan' in dep_job.label else 600,
             'chain-of-trust': True,
             'taskcluster-proxy': True,
             'env': {
@@ -156,7 +155,8 @@ def make_task_description(config, jobs):
         }
 
         # We only want caching on linux/windows due to bug 1436977
-        if level == 3 and any([platform in dep_th_platform for platform in ['linux', 'windows']]):
+        if int(level) == 3 \
+                and any([platform in dep_th_platform for platform in ['linux', 'windows']]):
             task['scopes'].append(
                 'auth:aws-s3:read-write:tc-gp-private-1d-us-east-1/releng/mbsdiff-cache/')
 

@@ -217,8 +217,6 @@ class Image {
 
   virtual bool IsValid() const { return true; }
 
-  virtual uint8_t* GetBuffer() const { return nullptr; }
-
   /**
    * For use with the TextureForwarder only (so that the later can
    * synchronize the TextureClient with the TextureHost).
@@ -387,8 +385,8 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
    */
   explicit ImageContainer(const CompositableHandle& aHandle);
 
-  typedef uint32_t FrameID;
-  typedef uint32_t ProducerID;
+  typedef ContainerFrameID FrameID;
+  typedef ContainerProducerID ProducerID;
 
   RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage();
 

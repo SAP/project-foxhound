@@ -156,17 +156,13 @@ nsIconChannel::GetURI(nsIURI** aURI) {
 }
 
 NS_IMETHODIMP
-nsIconChannel::Open(nsIInputStream** _retval) {
-  return MakeInputStream(_retval, false);
-}
-
-NS_IMETHODIMP
-nsIconChannel::Open2(nsIInputStream** aStream) {
+nsIconChannel::Open(nsIInputStream** aStream) {
   nsCOMPtr<nsIStreamListener> listener;
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return Open(aStream);
+
+  return MakeInputStream(aStream, false);
 }
 
 nsresult nsIconChannel::ExtractIconInfoFromUrl(nsIFile** aLocalFile,
@@ -196,17 +192,25 @@ nsresult nsIconChannel::ExtractIconInfoFromUrl(nsIFile** aLocalFile,
 }
 
 NS_IMETHODIMP
-nsIconChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* ctxt) {
+nsIconChannel::AsyncOpen(nsIStreamListener* aListener) {
+  nsCOMPtr<nsIStreamListener> listener = aListener;
+  nsresult rv =
+      nsContentSecurityManager::doContentSecurityCheck(this, listener);
+  if (NS_FAILED(rv)) {
+    mCallbacks = nullptr;
+    return rv;
+  }
+
   MOZ_ASSERT(
       !mLoadInfo || mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
            nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
-      "security flags in loadInfo but asyncOpen2() not called");
+      "security flags in loadInfo but doContentSecurityCheck() not called");
 
   nsCOMPtr<nsIInputStream> inStream;
-  nsresult rv = MakeInputStream(getter_AddRefs(inStream), true);
+  rv = MakeInputStream(getter_AddRefs(inStream), true);
   if (NS_FAILED(rv)) {
     mCallbacks = nullptr;
     return rv;
@@ -221,7 +225,7 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* ctxt) {
     return rv;
   }
 
-  rv = mPump->AsyncRead(this, ctxt);
+  rv = mPump->AsyncRead(this, nullptr);
   if (NS_SUCCEEDED(rv)) {
     // Store our real listener
     mListener = aListener;
@@ -234,18 +238,6 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* ctxt) {
   }
 
   return rv;
-}
-
-NS_IMETHODIMP
-nsIconChannel::AsyncOpen2(nsIStreamListener* aListener) {
-  nsCOMPtr<nsIStreamListener> listener = aListener;
-  nsresult rv =
-      nsContentSecurityManager::doContentSecurityCheck(this, listener);
-  if (NS_FAILED(rv)) {
-    mCallbacks = nullptr;
-    return rv;
-  }
-  return AsyncOpen(listener, nullptr);
 }
 
 static DWORD GetSpecialFolderIcon(nsIFile* aFile, int aFolder,
@@ -688,6 +680,7 @@ nsIconChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
 
 NS_IMETHODIMP
 nsIconChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   mLoadInfo = aLoadInfo;
   return NS_OK;
 }
@@ -714,19 +707,17 @@ nsIconChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
 }
 
 // nsIRequestObserver methods
-NS_IMETHODIMP nsIconChannel::OnStartRequest(nsIRequest* aRequest,
-                                            nsISupports* aContext) {
+NS_IMETHODIMP nsIconChannel::OnStartRequest(nsIRequest* aRequest) {
   if (mListener) {
-    return mListener->OnStartRequest(this, aContext);
+    return mListener->OnStartRequest(this);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                             nsresult aStatus) {
+nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   if (mListener) {
-    mListener->OnStopRequest(this, aContext, aStatus);
+    mListener->OnStopRequest(this, aStatus);
     mListener = nullptr;
   }
 
@@ -743,11 +734,10 @@ nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
 
 // nsIStreamListener methods
 NS_IMETHODIMP
-nsIconChannel::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
-                               nsIInputStream* aStream, uint64_t aOffset,
-                               uint32_t aCount) {
+nsIconChannel::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
+                               uint64_t aOffset, uint32_t aCount) {
   if (mListener) {
-    return mListener->OnDataAvailable(this, aContext, aStream, aOffset, aCount);
+    return mListener->OnDataAvailable(this, aStream, aOffset, aCount);
   }
   return NS_OK;
 }

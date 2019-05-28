@@ -367,7 +367,7 @@ BackgroundParentImpl::AllocPBackgroundLSSimpleRequestParent(
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
 
-  return mozilla::dom::AllocPBackgroundLSSimpleRequestParent(aParams);
+  return mozilla::dom::AllocPBackgroundLSSimpleRequestParent(this, aParams);
 }
 
 mozilla::ipc::IPCResult
@@ -392,6 +392,20 @@ bool BackgroundParentImpl::DeallocPBackgroundLSSimpleRequestParent(
   MOZ_ASSERT(aActor);
 
   return mozilla::dom::DeallocPBackgroundLSSimpleRequestParent(aActor);
+}
+
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvLSClearPrivateBrowsing() {
+  AssertIsInMainOrSocketProcess();
+  AssertIsOnBackgroundThread();
+
+  if (BackgroundParent::IsOtherProcessActor(this)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  if (!mozilla::dom::RecvLSClearPrivateBrowsing()) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
 BackgroundParentImpl::PBackgroundLocalStorageCacheParent*
@@ -665,7 +679,7 @@ bool BackgroundParentImpl::DeallocPCamerasParent(
 }
 
 auto BackgroundParentImpl::AllocPUDPSocketParent(
-    const OptionalPrincipalInfo& /* unused */, const nsCString & /* unused */)
+    const Maybe<PrincipalInfo>& /* unused */, const nsCString & /* unused */)
     -> PUDPSocketParent* {
   RefPtr<UDPSocketParent> p = new UDPSocketParent(this);
 
@@ -673,12 +687,12 @@ auto BackgroundParentImpl::AllocPUDPSocketParent(
 }
 
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvPUDPSocketConstructor(
-    PUDPSocketParent* aActor, const OptionalPrincipalInfo& aOptionalPrincipal,
+    PUDPSocketParent* aActor, const Maybe<PrincipalInfo>& aOptionalPrincipal,
     const nsCString& aFilter) {
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
 
-  if (aOptionalPrincipal.type() == OptionalPrincipalInfo::TPrincipalInfo) {
+  if (aOptionalPrincipal.isSome()) {
     // Support for checking principals (for non-mtransport use) will be handled
     // in bug 1167039
     return IPC_FAIL_NO_REASON(this);
@@ -968,6 +982,20 @@ bool BackgroundParentImpl::DeallocPQuotaParent(PQuotaParent* aActor) {
   MOZ_ASSERT(aActor);
 
   return mozilla::dom::quota::DeallocPQuotaParent(aActor);
+}
+
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvShutdownQuotaManager() {
+  AssertIsInMainOrSocketProcess();
+  AssertIsOnBackgroundThread();
+
+  if (BackgroundParent::IsOtherProcessActor(this)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  if (!mozilla::dom::quota::RecvShutdownQuotaManager()) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
 dom::PFileSystemRequestParent*

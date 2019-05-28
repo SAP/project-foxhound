@@ -326,6 +326,11 @@ class EventListenerManager final : public EventListenerManagerBase {
    */
   void RemoveEventHandler(nsAtom* aName);
 
+  // We only get called from the event dispatch code, which knows to be careful
+  // with what it's doing.  We could annotate ourselves as MOZ_CAN_RUN_SCRIPT,
+  // but then the event dispatch code would need a ton of MOZ_KnownLive for
+  // things that come from slightly complicated stack-lifetime data structures.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void HandleEvent(nsPresContext* aPresContext, WidgetEvent* aEvent,
                    dom::Event** aDOMEvent, dom::EventTarget* aCurrentTarget,
                    nsEventStatus* aEventStatus, bool aItemInShadowTree) {
@@ -455,12 +460,20 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool IsApzAwareListener(Listener* aListener);
   bool IsApzAwareEvent(nsAtom* aEvent);
 
+  /**
+   * Remove all event listeners from the event target this EventListenerManager
+   * is for.
+   */
+  void RemoveAllListeners();
+
  protected:
+  MOZ_CAN_RUN_SCRIPT
   void HandleEventInternal(nsPresContext* aPresContext, WidgetEvent* aEvent,
                            dom::Event** aDOMEvent,
                            dom::EventTarget* aCurrentTarget,
                            nsEventStatus* aEventStatus, bool aItemInShadowTree);
 
+  MOZ_CAN_RUN_SCRIPT
   nsresult HandleEventSubType(Listener* aListener, dom::Event* aDOMEvent,
                               dom::EventTarget* aCurrentTarget);
 
@@ -580,7 +593,7 @@ class EventListenerManager final : public EventListenerManagerBase {
                                    nsAtom* aUserType,
                                    const EventListenerFlags& aFlags,
                                    bool aAllEvents = false);
-  void RemoveAllListeners();
+  void RemoveAllListenersSilently();
   void NotifyEventListenerRemoved(nsAtom* aUserType);
   const EventTypeData* GetTypeDataForIID(const nsIID& aIID);
   const EventTypeData* GetTypeDataForEventName(nsAtom* aName);

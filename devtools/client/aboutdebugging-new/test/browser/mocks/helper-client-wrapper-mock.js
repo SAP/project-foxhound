@@ -13,6 +13,8 @@ const { RUNTIME_PREFERENCE } =
 // situations
 const DEFAULT_PREFERENCES = {
   [RUNTIME_PREFERENCE.CONNECTION_PROMPT]: true,
+  [RUNTIME_PREFERENCE.PERMANENT_PRIVATE_BROWSING]: false,
+  [RUNTIME_PREFERENCE.SERVICE_WORKERS_ENABLED]: true,
 };
 
 // Creates a simple mock ClientWrapper.
@@ -83,6 +85,14 @@ function createClientMock() {
     // stores the preference locally (doesn't update about:config)
     setPreference: function(prefName, value) {
       this._preferences[prefName] = value;
+    },
+    getPerformancePanelUrl: () => "data:text/html;charset=UTF-8,fake_profiler_page",
+    loadPerformanceProfiler: () => {},
+    // Valid compatibility report
+    checkVersionCompatibility: () => {
+      const { COMPATIBILITY_STATUS } =
+        require("devtools/client/shared/remote-debugging/version-checker");
+      return { status: COMPATIBILITY_STATUS.COMPATIBLE };
     },
   };
 }

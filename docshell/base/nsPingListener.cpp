@@ -220,7 +220,7 @@ static void SendPing(void* aClosure, nsIContent* aContent, nsIURI* aURI,
   chan->SetLoadGroup(loadGroup);
 
   RefPtr<nsPingListener> pingListener = new nsPingListener();
-  chan->AsyncOpen2(pingListener);
+  chan->AsyncOpen(pingListener);
 
   // Even if AsyncOpen failed, we still count this as a successful ping.  It's
   // possible that AsyncOpen may have failed after triggering some background
@@ -288,11 +288,10 @@ static void ForEachPing(nsIContent* aContent, ForEachPingCallback aCallback,
 }
 
 // Spec: http://whatwg.org/specs/web-apps/current-work/#ping
-/*static*/ void nsPingListener::DispatchPings(nsIDocShell* aDocShell,
-                                              nsIContent* aContent,
-                                              nsIURI* aTarget,
-                                              nsIURI* aReferrer,
-                                              uint32_t aReferrerPolicy) {
+/*static*/
+void nsPingListener::DispatchPings(nsIDocShell* aDocShell, nsIContent* aContent,
+                                   nsIURI* aTarget, nsIURI* aReferrer,
+                                   uint32_t aReferrerPolicy) {
   SendPingInfo info;
 
   if (!PingsEnabled(&info.maxPings, &info.requireSameHost)) {
@@ -328,21 +327,17 @@ nsresult nsPingListener::StartTimeout(DocGroup* aDocGroup) {
 }
 
 NS_IMETHODIMP
-nsPingListener::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
-  return NS_OK;
-}
+nsPingListener::OnStartRequest(nsIRequest* aRequest) { return NS_OK; }
 
 NS_IMETHODIMP
-nsPingListener::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
-                                nsIInputStream* aStream, uint64_t aOffset,
-                                uint32_t aCount) {
+nsPingListener::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
+                                uint64_t aOffset, uint32_t aCount) {
   uint32_t result;
   return aStream->ReadSegments(NS_DiscardSegment, nullptr, aCount, &result);
 }
 
 NS_IMETHODIMP
-nsPingListener::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                              nsresult aStatus) {
+nsPingListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   mLoadGroup = nullptr;
 
   if (mTimer) {

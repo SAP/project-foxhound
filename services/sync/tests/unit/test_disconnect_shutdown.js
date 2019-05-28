@@ -1,11 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* global sinon */
 
 "use strict";
 
-const {SyncDisconnect, SyncDisconnectInternal} = ChromeUtils.import("resource://services-sync/SyncDisconnect.jsm", {});
-const {AsyncShutdown} = ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm", {});
+const {SyncDisconnect, SyncDisconnectInternal} = ChromeUtils.import("resource://services-sync/SyncDisconnect.jsm", null);
+const {AsyncShutdown} = ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm");
 
 add_task(async function test_shutdown_blocker() {
   let spySignout = sinon.stub(SyncDisconnectInternal, "doSyncAndAccountDisconnect");

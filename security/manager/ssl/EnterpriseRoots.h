@@ -7,42 +7,29 @@
 #ifndef EnterpriseRoots_h
 #define EnterpriseRoots_h
 
-#include "ErrorList.h"
-#include "ScopedNSSTypes.h"
+#include "mozilla/Vector.h"
+#include "mozpkix/Input.h"
+#include "mozpkix/Result.h"
+#include "nsTArray.h"
 
-#ifdef XP_WIN
-#  include "windows.h"  // this needs to be before the following includes
-#  include "wincrypt.h"
-#endif  // XP_WIN
-
-nsresult GatherEnterpriseRoots(mozilla::UniqueCERTCertList& result);
-
-#ifdef XP_WIN
-
-mozilla::UniqueCERTCertificate PCCERT_CONTEXTToCERTCertificate(
-    PCCERT_CONTEXT pccert);
-
-extern const wchar_t* kWindowsDefaultRootStoreName;
-extern const nsLiteralCString kMicrosoftFamilySafetyCN;
-
-// Because HCERTSTORE is just a typedef void*, we can't use any of the nice
-// scoped or unique pointer templates. To elaborate, any attempt would
-// instantiate those templates with T = void. When T gets used in the context
-// of T&, this results in void&, which isn't legal.
-class ScopedCertStore final {
+class EnterpriseCert {
  public:
-  explicit ScopedCertStore(HCERTSTORE certstore) : certstore(certstore) {}
+  EnterpriseCert() : mIsRoot(false) {}
 
-  ~ScopedCertStore() { CertCloseStore(certstore, 0); }
+  nsresult Init(const uint8_t* data, size_t len, bool isRoot);
+  // Like a copy constructor but able to return a result.
+  nsresult Init(const EnterpriseCert& orig);
 
-  HCERTSTORE get() { return certstore; }
+  nsresult CopyBytes(nsTArray<uint8_t>& dest) const;
+  mozilla::pkix::Result GetInput(mozilla::pkix::Input& input) const;
+  bool GetIsRoot() const;
 
  private:
-  ScopedCertStore(const ScopedCertStore&) = delete;
-  ScopedCertStore& operator=(const ScopedCertStore&) = delete;
-  HCERTSTORE certstore;
+  mozilla::Vector<uint8_t> mDER;
+  bool mIsRoot;
 };
 
-#endif  // XP_WIN
+// This may block and must not be called from the main thread.
+nsresult GatherEnterpriseCerts(mozilla::Vector<EnterpriseCert>& certs);
 
 #endif  // EnterpriseRoots_h

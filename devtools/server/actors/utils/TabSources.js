@@ -30,8 +30,15 @@ function TabSources(threadActor, allowSourceFn = () => true) {
 
   // Debugger.Source -> SourceActor
   this._sourceActors = new Map();
-  // url -> SourceActor
-  this._htmlDocumentSourceActors = Object.create(null);
+
+  // Debugger.Source.id -> Debugger.Source
+  //
+  // The IDs associated with ScriptSources and available via DebuggerSource.id
+  // are internal to this process and should not be exposed to the client. This
+  // map associates these IDs with the corresponding source, provided the source
+  // has not been GC'ed and the actor has been created. This is lazily populated
+  // the first time it is needed.
+  this._sourcesByInternalSourceId = null;
 }
 
 /**
@@ -63,7 +70,7 @@ TabSources.prototype = {
    */
   reset: function() {
     this._sourceActors = new Map();
-    this._htmlDocumentSourceActors = Object.create(null);
+    this._sourcesByInternalSourceId = null;
   },
 
   /**
@@ -88,43 +95,18 @@ TabSources.prototype = {
       return null;
     }
 
-    // It's a hack, but inline HTML scripts each have real sources,
-    // but we want to represent all of them as one source as the
-    // HTML page. The actor representing this fake HTML source is
-    // stored in this array, which always has a URL, so check it
-    // first.
-    if (isInlineSource && source.url in this._htmlDocumentSourceActors) {
-      return this._htmlDocumentSourceActors[source.url];
-    }
-
-    let originalUrl = null;
-    if (isInlineSource) {
-      // If it's an inline source, the fake HTML source hasn't been
-      // created yet (would have returned above), so flip this source
-      // into a sourcemapped state by giving it an `originalUrl` which
-      // is the HTML url.
-      originalUrl = source.url;
-      source = null;
-    } else if (this._sourceActors.has(source)) {
+    if (this._sourceActors.has(source)) {
       return this._sourceActors.get(source);
     }
 
     const actor = new SourceActor({
       thread: this._thread,
-      source: source,
-      originalUrl: originalUrl,
-      isInlineSource: isInlineSource,
-      contentType: contentType,
+      source,
+      isInlineSource,
+      contentType,
     });
 
-    const sourceActorStore = this._thread.sourceActorStore;
-    const id = sourceActorStore.getReusableActorId(source, originalUrl);
-    if (id) {
-      actor.actorID = id;
-    }
-
     this._thread.threadLifetimePool.addActor(actor);
-    sourceActorStore.setReusableActorId(source, originalUrl, actor.actorID);
 
     if (this._autoBlackBox &&
         !this.neverAutoBlackBoxSources.has(actor.url) &&
@@ -133,10 +115,9 @@ TabSources.prototype = {
       this.neverAutoBlackBoxSources.add(actor.url);
     }
 
-    if (source) {
-      this._sourceActors.set(source, actor);
-    } else {
-      this._htmlDocumentSourceActors[originalUrl] = actor;
+    this._sourceActors.set(source, actor);
+    if (this._sourcesByInternalSourceId && source.id) {
+      this._sourcesByInternalSourceId.set(source.id, source);
     }
 
     this.emit("newSource", actor);
@@ -144,10 +125,6 @@ TabSources.prototype = {
   },
 
   _getSourceActor: function(source) {
-    if (source.url in this._htmlDocumentSourceActors) {
-      return this._htmlDocumentSourceActors[source.url];
-    }
-
     if (this._sourceActors.has(source)) {
       return this._sourceActors.get(source);
     }
@@ -170,20 +147,61 @@ TabSources.prototype = {
     return sourceActor;
   },
 
-  getSourceActorByURL: function(url) {
-    if (url) {
-      for (const [source, actor] of this._sourceActors) {
-        if (source.url === url) {
-          return actor;
-        }
+  getOrCreateSourceActor(source) {
+    // Tolerate the source coming from a different Debugger than the one
+    // associated with the thread.
+    try {
+      source = this._thread.dbg.adoptSource(source);
+    } catch (e) {
+      // We can't create actors for sources in the same compartment as the
+      // thread's Debugger.
+      if (/is in the same compartment as this debugger/.test(e)) {
+        return null;
       }
-
-      if (url in this._htmlDocumentSourceActors) {
-        return this._htmlDocumentSourceActors[url];
-      }
+      throw e;
     }
 
-    throw new Error("getSourceActorByURL: could not find source for " + url);
+    if (this.hasSourceActor(source)) {
+      return this.getSourceActor(source);
+    }
+    return this.createSourceActor(source);
+  },
+
+  getSourceActorByInternalSourceId: function(id) {
+    if (!this._sourcesByInternalSourceId) {
+      this._sourcesByInternalSourceId = new Map();
+      for (const source of this._thread.dbg.findSources()) {
+        if (source.id) {
+          this._sourcesByInternalSourceId.set(source.id, source);
+        }
+      }
+    }
+    const source = this._sourcesByInternalSourceId.get(id);
+    if (source) {
+      return this.getOrCreateSourceActor(source);
+    }
+    return null;
+  },
+
+  getSourceActorsByURL: function(url) {
+    const rv = [];
+    if (url) {
+      for (const [, actor] of this._sourceActors) {
+        if (actor.url === url) {
+          rv.push(actor);
+        }
+      }
+    }
+    return rv;
+  },
+
+  getSourceActorById(actorId) {
+    for (const [, actor] of this._sourceActors) {
+      if (actor.actorID == actorId) {
+        return actor;
+      }
+    }
+    return null;
   },
 
   /**
@@ -304,7 +322,7 @@ TabSources.prototype = {
    *          Returns an object of the form { source, line, column }
    */
   getScriptOffsetLocation: function(script, offset) {
-    const {lineNumber, columnNumber} = script.getOffsetLocation(offset);
+    const {lineNumber, columnNumber} = script.getOffsetMetadata(offset);
     return new GeneratedLocation(
       this.createSourceActor(script.source),
       lineNumber,
@@ -400,13 +418,7 @@ TabSources.prototype = {
   },
 
   iter: function() {
-    const actors = Object.keys(this._htmlDocumentSourceActors).map(k => {
-      return this._htmlDocumentSourceActors[k];
-    });
-    for (const actor of this._sourceActors.values()) {
-      actors.push(actor);
-    }
-    return actors;
+    return [...this._sourceActors.values()];
   },
 };
 

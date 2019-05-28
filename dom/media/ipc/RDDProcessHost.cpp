@@ -128,7 +128,16 @@ void RDDProcessHost::InitAfterConnect(bool aSucceeded) {
         mRDDChild->Open(GetChannel(), base::GetProcId(GetChildProcessHandle()));
     MOZ_ASSERT(rv);
 
-    mRDDChild->Init();
+    if (!mRDDChild->Init()) {
+      // Can't just kill here because it will create a timing race that
+      // will crash the tab. We don't really want to crash the tab just
+      // because RDD linux sandbox failed to initialize.  In this case,
+      // we'll close the child channel which will cause the RDD process
+      // to shutdown nicely avoiding the tab crash (which manifests as
+      // Bug 1535335).
+      mRDDChild->Close();
+      return;
+    }
   }
 
   if (mListener) {
@@ -195,11 +204,6 @@ void RDDProcessHost::KillHard(const char* aReason) {
 
 uint64_t RDDProcessHost::GetProcessToken() const { return mProcessToken; }
 
-static void RDDDelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess) {
-  XRE_GetIOMessageLoop()->PostTask(
-      mozilla::MakeAndAddRef<DeleteTask<GeckoChildProcessHost>>(aSubprocess));
-}
-
 void RDDProcessHost::KillProcess() { KillHard("DiagnosticKill"); }
 
 void RDDProcessHost::DestroyProcess() {
@@ -210,8 +214,8 @@ void RDDProcessHost::DestroyProcess() {
     mTaskFactory.RevokeAll();
   }
 
-  MessageLoop::current()->PostTask(NewRunnableFunction(
-      "DestroyProcessRunnable", RDDDelayedDeleteSubprocess, this));
+  MessageLoop::current()->PostTask(
+      NS_NewRunnableFunction("DestroyProcessRunnable", [this] { Destroy(); }));
 }
 
 }  // namespace mozilla

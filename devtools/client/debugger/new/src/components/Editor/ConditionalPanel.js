@@ -21,7 +21,7 @@ import type { SourceLocation } from "../../types";
 
 type Props = {
   breakpoint: ?Object,
-  setBreakpointCondition: Function,
+  setBreakpointOptions: Function,
   location: SourceLocation,
   log: boolean,
   editor: Object,
@@ -62,12 +62,14 @@ export class ConditionalPanel extends PureComponent<Props> {
     }
   };
 
-  setBreakpoint(condition: string) {
-    const { location, log } = this.props;
-    if (log) {
-      condition = `console.log(${condition})`;
-    }
-    return this.props.setBreakpointCondition(location, { condition, log });
+  setBreakpoint(value: string) {
+    const { location, log, breakpoint } = this.props;
+    const options = breakpoint ? breakpoint.options : {};
+    const type = log ? "logValue" : "condition";
+    return this.props.setBreakpointOptions(location, {
+      ...options,
+      [type]: value
+    });
   }
 
   clearConditionalPanel() {
@@ -119,7 +121,7 @@ export class ConditionalPanel extends PureComponent<Props> {
       this.renderConditionalPanel(props),
       {
         coverGutter: true,
-        noHScroll: false
+        noHScroll: true
       }
     );
     if (this.input) {
@@ -143,14 +145,9 @@ export class ConditionalPanel extends PureComponent<Props> {
   }
 
   renderConditionalPanel(props: Props) {
-    const { breakpoint, log } = props;
-    let condition = breakpoint ? breakpoint.condition : "";
-
-    if (log) {
-      if (condition && condition.match(/^console.log\(.*\)$/)) {
-        condition = condition.match(/^console.log\((.*)\)/)[1];
-      }
-    }
+    const { breakpoint, log, editor } = props;
+    const options = (breakpoint && breakpoint.options) || {};
+    const condition = log ? options.logValue : options.condition;
 
     const panel = document.createElement("div");
     ReactDOM.render(
@@ -165,15 +162,26 @@ export class ConditionalPanel extends PureComponent<Props> {
         <div className="prompt">»</div>
         <input
           defaultValue={condition}
-          placeholder={L10N.getStr(
-            log
-              ? "editor.conditionalPanel.logPoint.placeholder"
-              : "editor.conditionalPanel.placeholder"
-          )}
-          onKeyDown={this.onKey}
           ref={input => {
+            const codeMirror = editor.CodeMirror.fromTextArea(input, {
+              mode: "javascript",
+              theme: "mozilla",
+              placeholder: L10N.getStr(
+                log
+                  ? "editor.conditionalPanel.logPoint.placeholder"
+                  : "editor.conditionalPanel.placeholder"
+              )
+            });
+            const codeMirrorWrapper = codeMirror.getWrapperElement();
+
+            codeMirrorWrapper.addEventListener("keydown", e => {
+              codeMirror.save();
+              this.onKey(e);
+            });
+
             this.input = input;
-            this.keepFocusOnInput();
+            codeMirror.focus();
+            codeMirror.setCursor(codeMirror.lineCount(), 0);
           }}
         />
       </div>,
@@ -198,13 +206,13 @@ const mapStateToProps = state => {
 };
 
 const {
-  setBreakpointCondition,
+  setBreakpointOptions,
   openConditionalPanel,
   closeConditionalPanel
 } = actions;
 
 const mapDispatchToProps = {
-  setBreakpointCondition,
+  setBreakpointOptions,
   openConditionalPanel,
   closeConditionalPanel
 };

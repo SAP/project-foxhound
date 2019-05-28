@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function run_test() {
   allow_all_plugins();
   do_get_profile_startup();
@@ -15,7 +13,7 @@ function run_test() {
   // Initialises a profile folder
   do_get_profile();
 
-  var plugin = get_test_plugintag();
+  plugin = get_test_plugintag();
   Assert.equal(false, plugin == null);
 
   // Clean up

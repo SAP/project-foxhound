@@ -46,15 +46,16 @@ nsJSPrincipals::Release() {
   return count;
 }
 
-/* static */ bool nsJSPrincipals::Subsume(JSPrincipals* jsprin,
-                                          JSPrincipals* other) {
+/* static */
+bool nsJSPrincipals::Subsume(JSPrincipals* jsprin, JSPrincipals* other) {
   bool result;
   nsresult rv = nsJSPrincipals::get(jsprin)->Subsumes(
       nsJSPrincipals::get(other), &result);
   return NS_SUCCEEDED(rv) && result;
 }
 
-/* static */ void nsJSPrincipals::Destroy(JSPrincipals* jsprin) {
+/* static */
+void nsJSPrincipals::Destroy(JSPrincipals* jsprin) {
   // The JS runtime can call this method during the last GC when
   // nsScriptSecurityManager is destroyed. So we must not assume here that
   // the security manager still exists.
@@ -101,9 +102,10 @@ JS_PUBLIC_API void JSPrincipals::dump() {
 
 #endif
 
-/* static */ bool nsJSPrincipals::ReadPrincipals(
-    JSContext* aCx, JSStructuredCloneReader* aReader,
-    JSPrincipals** aOutPrincipals) {
+/* static */
+bool nsJSPrincipals::ReadPrincipals(JSContext* aCx,
+                                    JSStructuredCloneReader* aReader,
+                                    JSPrincipals** aOutPrincipals) {
   uint32_t tag;
   uint32_t unused;
   if (!JS_ReadUint32Pair(aReader, &tag, &unused)) {
@@ -122,7 +124,7 @@ JS_PUBLIC_API void JSPrincipals::dump() {
 
 static bool ReadPrincipalInfo(
     JSStructuredCloneReader* aReader, OriginAttributes& aAttrs,
-    nsACString& aSpec, nsACString& aOriginNoSuffix,
+    nsACString& aSpec, nsACString& aOriginNoSuffix, nsACString& aBaseDomain,
     nsTArray<ContentSecurityPolicy>* aPolicies = nullptr) {
   uint32_t suffixLength, specLength;
   if (!JS_ReadUint32Pair(aReader, &suffixLength, &specLength)) {
@@ -191,6 +193,28 @@ static bool ReadPrincipalInfo(
     }
   }
 
+  uint32_t baseDomainIsVoid, baseDomainLength;
+  if (!JS_ReadUint32Pair(aReader, &baseDomainIsVoid, &baseDomainLength)) {
+    return false;
+  }
+
+  MOZ_ASSERT(baseDomainIsVoid == 0 || baseDomainIsVoid == 1);
+
+  if (baseDomainIsVoid) {
+    MOZ_ASSERT(baseDomainLength == 0);
+
+    aBaseDomain.SetIsVoid(true);
+    return true;
+  }
+
+  if (!aBaseDomain.SetLength(baseDomainLength, fallible)) {
+    return false;
+  }
+
+  if (!JS_ReadBytes(aReader, aBaseDomain.BeginWriting(), baseDomainLength)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -202,7 +226,8 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
     OriginAttributes attrs;
     nsAutoCString spec;
     nsAutoCString originNoSuffix;
-    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix)) {
+    nsAutoCString baseDomain;
+    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix, baseDomain)) {
       return false;
     }
     aInfo = NullPrincipalInfo(attrs, spec);
@@ -232,8 +257,10 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
     OriginAttributes attrs;
     nsAutoCString spec;
     nsAutoCString originNoSuffix;
+    nsAutoCString baseDomain;
     nsTArray<ContentSecurityPolicy> policies;
-    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix, &policies)) {
+    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix, baseDomain,
+                           &policies)) {
       return false;
     }
 
@@ -245,8 +272,9 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
 
     MOZ_DIAGNOSTIC_ASSERT(!originNoSuffix.IsEmpty());
 
-    aInfo =
-        ContentPrincipalInfo(attrs, originNoSuffix, spec, std::move(policies));
+    // XXX: Do we care about mDomain for structured clone?
+    aInfo = ContentPrincipalInfo(attrs, originNoSuffix, spec, Nothing(),
+                                 std::move(policies), baseDomain);
   } else {
 #ifdef FUZZING
     return false;
@@ -258,9 +286,11 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
   return true;
 }
 
-/* static */ bool nsJSPrincipals::ReadKnownPrincipalType(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
-    JSPrincipals** aOutPrincipals) {
+/* static */
+bool nsJSPrincipals::ReadKnownPrincipalType(JSContext* aCx,
+                                            JSStructuredCloneReader* aReader,
+                                            uint32_t aTag,
+                                            JSPrincipals** aOutPrincipals) {
   MOZ_ASSERT(aTag == SCTAG_DOM_NULL_PRINCIPAL ||
              aTag == SCTAG_DOM_SYSTEM_PRINCIPAL ||
              aTag == SCTAG_DOM_CONTENT_PRINCIPAL ||
@@ -290,6 +320,7 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
 static bool WritePrincipalInfo(
     JSStructuredCloneWriter* aWriter, const OriginAttributes& aAttrs,
     const nsCString& aSpec, const nsCString& aOriginNoSuffix,
+    const nsCString& aBaseDomain,
     const nsTArray<ContentSecurityPolicy>* aPolicies = nullptr) {
   nsAutoCString suffix;
   aAttrs.CreateSuffix(suffix);
@@ -317,7 +348,12 @@ static bool WritePrincipalInfo(
     }
   }
 
-  return true;
+  if (aBaseDomain.IsVoid()) {
+    return JS_WriteUint32Pair(aWriter, 1, 0);
+  }
+
+  return JS_WriteUint32Pair(aWriter, 0, aBaseDomain.Length()) &&
+         JS_WriteBytes(aWriter, aBaseDomain.get(), aBaseDomain.Length());
 }
 
 static bool WritePrincipalInfo(JSStructuredCloneWriter* aWriter,
@@ -326,7 +362,7 @@ static bool WritePrincipalInfo(JSStructuredCloneWriter* aWriter,
     const NullPrincipalInfo& nullInfo = aInfo;
     return JS_WriteUint32Pair(aWriter, SCTAG_DOM_NULL_PRINCIPAL, 0) &&
            WritePrincipalInfo(aWriter, nullInfo.attrs(), nullInfo.spec(),
-                              EmptyCString());
+                              EmptyCString(), EmptyCString());
   }
   if (aInfo.type() == PrincipalInfo::TSystemPrincipalInfo) {
     return JS_WriteUint32Pair(aWriter, SCTAG_DOM_SYSTEM_PRINCIPAL, 0);
@@ -350,7 +386,7 @@ static bool WritePrincipalInfo(JSStructuredCloneWriter* aWriter,
   const ContentPrincipalInfo& cInfo = aInfo;
   return JS_WriteUint32Pair(aWriter, SCTAG_DOM_CONTENT_PRINCIPAL, 0) &&
          WritePrincipalInfo(aWriter, cInfo.attrs(), cInfo.spec(),
-                            cInfo.originNoSuffix(),
+                            cInfo.originNoSuffix(), cInfo.baseDomain(),
                             &(cInfo.securityPolicies()));
 }
 

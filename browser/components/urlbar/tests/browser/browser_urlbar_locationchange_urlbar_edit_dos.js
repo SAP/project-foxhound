@@ -1,8 +1,9 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
-const TEST_PATH = getRootDirectory(gTestPath)
-  .replace("chrome://mochitests/content", "http://www.example.com");
-const TEST_URL = `${TEST_PATH}file_urlbar_edit_dos.html`;
+const TEST_URL = `${TEST_BASE_URL}file_urlbar_edit_dos.html`;
 
 async function checkURLBarValueStays(browser) {
   gURLBar.select();
@@ -27,6 +28,11 @@ async function checkURLBarValueStays(browser) {
 }
 
 add_task(async function() {
+  // Disable autofill so that when checkURLBarValueStays types "a", it's not
+  // autofilled to addons.mozilla.org (or anything else).
+  await SpecialPowers.pushPrefEnv({ set: [
+    ["browser.urlbar.autoFill", false],
+  ]});
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: TEST_URL,

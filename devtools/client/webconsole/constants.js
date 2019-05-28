@@ -15,7 +15,6 @@ const actionTypes = {
   BATCH_ACTIONS: "BATCH_ACTIONS",
   CLEAR_HISTORY: "CLEAR_HISTORY",
   DEFAULT_FILTERS_RESET: "DEFAULT_FILTERS_RESET",
-  FILTER_BAR_TOGGLE: "FILTER_BAR_TOGGLE",
   FILTER_TEXT_SET: "FILTER_TEXT_SET",
   FILTER_TOGGLE: "FILTER_TOGGLE",
   FILTERS_CLEAR: "FILTERS_CLEAR",
@@ -26,6 +25,7 @@ const actionTypes = {
   MESSAGE_TABLE_RECEIVE: "MESSAGE_TABLE_RECEIVE",
   MESSAGES_ADD: "MESSAGES_ADD",
   MESSAGES_CLEAR: "MESSAGES_CLEAR",
+  MESSAGES_CLEAR_LOGPOINT: "MESSAGES_CLEAR_LOGPOINT",
   NETWORK_MESSAGE_UPDATE: "NETWORK_MESSAGE_UPDATE",
   NETWORK_UPDATE_REQUEST: "NETWORK_UPDATE_REQUEST",
   PERSIST_TOGGLE: "PERSIST_TOGGLE",
@@ -61,13 +61,12 @@ const prefs = {
       NETXHR: "filter.netxhr",
     },
     UI: {
-      // Filter bar UI preference only have the suffix since it can be used either for
-      // the webconsole or the browser console.
-      FILTER_BAR: "ui.filterbar",
       // Persist is only used by the webconsole.
       PERSIST: "devtools.webconsole.persistlog",
       // Max number of entries in history list.
       INPUT_HISTORY_COUNT: "devtools.webconsole.inputHistoryCount",
+      // Is editor mode enabled.
+      EDITOR: "devtools.webconsole.input.editor",
     },
     FEATURES: {
       // We use the same pref to enable the sidebar on webconsole and browser console.

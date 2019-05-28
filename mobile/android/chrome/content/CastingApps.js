@@ -13,7 +13,7 @@ var rokuDevice = {
   id: "roku:ecp",
   target: "roku:ecp",
   factory: function(aService) {
-    ChromeUtils.import("resource://gre/modules/RokuApp.jsm");
+    const {RokuApp} = ChromeUtils.import("resource://gre/modules/RokuApp.jsm");
     return new RokuApp(aService);
   },
   types: ["video/mp4"],
@@ -24,7 +24,7 @@ var mediaPlayerDevice = {
   id: "media:router",
   target: "media:router",
   factory: function(aService) {
-    ChromeUtils.import("resource://gre/modules/MediaPlayerApp.jsm");
+    const {MediaPlayerApp} = ChromeUtils.import("resource://gre/modules/MediaPlayerApp.jsm");
     return new MediaPlayerApp(aService);
   },
   types: ["video/mp4", "video/webm", "application/x-mpegurl"],
@@ -342,7 +342,7 @@ var CastingApps = {
     }
 
     let listener = {
-      onStartRequest: function(request, context) {
+      onStartRequest: function(request) {
         switch (channel.responseStatus) {
           case 301:
           case 302:
@@ -357,12 +357,12 @@ var CastingApps = {
             break;
         }
       },
-      onStopRequest: function(request, context, statusCode) {},
-      onDataAvailable: function(request, context, stream, offset, count) {},
+      onStopRequest: function(request, statusCode) {},
+      onDataAvailable: function(request, stream, offset, count) {},
     };
 
     if (channel) {
-      channel.asyncOpen2(listener);
+      channel.asyncOpen(listener);
     } else {
       aCallback(null);
     }

@@ -4,8 +4,8 @@
 
 // Note: sets Cc and Ci variables
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var testpath = "/simple";
@@ -26,7 +26,7 @@ function setup_test() {
   httpserver.start(-1);
   var channel = setupChannel(testpath);
   // ChannelListener defined in head_channels.js
-  channel.asyncOpen2(new ChannelListener(checkRequest, channel));
+  channel.asyncOpen(new ChannelListener(checkRequest, channel));
   if (dbg) { print("============== setup_test: out"); }
 }
 

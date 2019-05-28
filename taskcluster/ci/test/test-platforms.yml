@@ -80,7 +80,12 @@ linux64-pgo/opt:
     test-sets:
         - common-tests
         - web-platform-tests
+        - opt-only-tests
+        - desktop-screenshot-capture
         - talos
+        - awsy
+        - mochitest-headless
+        - linux-talos-flex
         - raptor-firefox
         - raptor-fetch-firefox
 
@@ -99,6 +104,15 @@ linux64-stylo-sequential/opt:
 # QR builds just run a subset right now.
 linux64-qr/opt:
     build-platform: linux64/opt
+    test-sets:
+        - linux-qr-tests
+        - talos
+        - awsy
+        - web-platform-tests
+        - raptor-firefox
+        - raptor-fetch-firefox
+linux64-pgo-qr/opt:
+    build-platform: linux64-pgo/opt
     test-sets:
         - linux-qr-tests
         - talos
@@ -205,6 +219,18 @@ windows10-64/opt:
         - mochitest-headless
         - raptor-firefox
 
+# windows10-aarch64/opt:
+#     build-platform: win64-aarch64/opt
+#     test-sets:
+#         - awsy
+#         - desktop-screenshot-capture
+#         - windows-talos
+#         - marionette-gpu-tests
+#         - windows-tests
+#         - web-platform-tests
+#         - mochitest-headless
+#         - raptor-firefox
+
 windows10-64-ux/opt:
     build-platform: win64-nightly/opt
     test-sets:
@@ -216,11 +242,11 @@ windows10-64-pgo/opt:
     test-sets:
         - awsy
         - desktop-screenshot-capture
-        - marionette-gpu-tests
         - windows-talos
         - marionette-gpu-tests
         - windows-tests
         - web-platform-tests
+        - mochitest-headless
         - raptor-firefox
 
 windows10-64-nightly/opt:
@@ -253,6 +279,7 @@ windows10-64-qr/debug:
     build-platform: win64/debug
     test-sets:
         - windows-qr-tests
+        - web-platform-tests
 
 windows10-64-qr/opt:
     build-platform: win64/opt
@@ -261,6 +288,16 @@ windows10-64-qr/opt:
         - windows-qr-tests
         - windows-talos
         - raptor-firefox
+        - web-platform-tests
+
+windows10-64-pgo-qr/opt:
+    build-platform: win64-pgo/opt
+    test-sets:
+        - awsy
+        - windows-qr-tests
+        - windows-talos
+        - raptor-firefox
+        - web-platform-tests
 
 ##
 # MacOS X platforms (matching /macosx.*/)
@@ -316,10 +353,12 @@ android-em-4.3-arm7-api-16/debug:
     test-sets:
         - android-common-tests
 
-android-em-4.3-arm7-api-16-ccov/debug:
-    build-platform: android-api-16-ccov/debug
-    test-sets:
-        - android-ccov-tests
+# Disable ccov testing on Android due to issues with
+# Java 8 features. Bug 1498721.
+# android-em-4.3-arm7-api-16-ccov/debug:
+#     build-platform: android-api-16-ccov/debug
+#     test-sets:
+#         - android-ccov-tests
 
 android-em-4.3-arm7-api-16/opt:
     build-platform: android-api-16/opt
@@ -330,7 +369,18 @@ android-em-4.3-arm7-api-16/opt:
 android-em-7.0-x86/opt:
     build-platform: android-x86/opt
     test-sets:
-        - android-x86-kvm-tests
+        - android-x86-tests
+
+android-em-7.0-x86_64/opt:
+    build-platform: android-x86_64/opt
+    test-sets:
+        - android-x86_64-tests
+        - android-x86_64-opt-tests
+
+android-em-7.0-x86_64/debug:
+    build-platform: android-x86_64/debug
+    test-sets:
+        - android-x86_64-tests
 
 # android-hw test platforms execute on real devices attached to Autophone hosts.
 

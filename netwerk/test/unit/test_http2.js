@@ -48,7 +48,7 @@ Http2CheckListener.prototype = {
   expected: -1,
   shouldSucceed: true,
 
-  onStartRequest: function testOnStartRequest(request, ctx) {
+  onStartRequest: function testOnStartRequest(request) {
     this.onStartRequestFired = true;
     if (this.shouldSucceed && !Components.isSuccessCode(request.status)) {
       do_throw("Channel should have a success code! (" + request.status + ")");
@@ -63,14 +63,14 @@ Http2CheckListener.prototype = {
     }
   },
 
-  onDataAvailable: function testOnDataAvailable(request, ctx, stream, off, cnt) {
+  onDataAvailable: function testOnDataAvailable(request, stream, off, cnt) {
     this.onDataAvailableFired = true;
     this.isHttp2Connection = checkIsHttp2(request);
     this.accum += cnt;
     read_stream(stream, cnt);
   },
 
-  onStopRequest: function testOnStopRequest(request, ctx, status) {
+  onStopRequest: function testOnStopRequest(request, status) {
     Assert.ok(this.onStartRequestFired);
     if (this.expected != -1) {
       Assert.equal(this.accum, this.expected);
@@ -111,7 +111,7 @@ Http2MultiplexListener.prototype = new Http2CheckListener();
 Http2MultiplexListener.prototype.streamID = 0;
 Http2MultiplexListener.prototype.buffer = "";
 
-Http2MultiplexListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2MultiplexListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   this.streamID = parseInt(request.getResponseHeader("X-Http2-StreamID"));
@@ -119,7 +119,7 @@ Http2MultiplexListener.prototype.onDataAvailable = function(request, ctx, stream
   this.buffer = this.buffer.concat(data);
 };
 
-Http2MultiplexListener.prototype.onStopRequest = function(request, ctx, status) {
+Http2MultiplexListener.prototype.onStopRequest = function(request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(this.onDataAvailableFired);
   Assert.ok(this.isHttp2Connection);
@@ -138,7 +138,7 @@ var Http2HeaderListener = function(name, callback) {
 Http2HeaderListener.prototype = new Http2CheckListener();
 Http2HeaderListener.prototype.value = "";
 
-Http2HeaderListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2HeaderListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   var hvalue = request.getResponseHeader(this.name);
@@ -153,7 +153,7 @@ var Http2PushListener = function(shouldBePushed) {
 
 Http2PushListener.prototype = new Http2CheckListener();
 
-Http2PushListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2PushListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   if (request.originalURI.spec == "https://localhost:" + serverPort + "/push.js"  ||
@@ -190,7 +190,7 @@ Http2ContinuedHeaderListener.prototype.getInterface = function(aIID) {
   return this.QueryInterface(aIID);
 };
 
-Http2ContinuedHeaderListener.prototype.onDataAvailable = function (request, ctx, stream, off, cnt) {
+Http2ContinuedHeaderListener.prototype.onDataAvailable = function (request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   if (request.originalURI.spec == "https://localhost:" + serverPort + "/continuedheaders") {
@@ -200,7 +200,7 @@ Http2ContinuedHeaderListener.prototype.onDataAvailable = function (request, ctx,
   read_stream(stream, cnt);
 };
 
-Http2ContinuedHeaderListener.prototype.onStopRequest = function (request, ctx, status) {
+Http2ContinuedHeaderListener.prototype.onStopRequest = function (request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(Components.isSuccessCode(status));
   Assert.ok(this.onDataAvailableFired);
@@ -218,7 +218,7 @@ Http2ContinuedHeaderListener.prototype.onPush = function(associatedChannel, push
   Assert.equal(pushChannel.getRequestHeader("x-pushed-request"), "true");
   checkContinuedHeaders(pushChannel.getRequestHeader, "X-Push-Test-Header-", pushHdrTxt);
 
-  pushChannel.asyncOpen2(this);
+  pushChannel.asyncOpen(this);
 };
 
 // Does the appropriate checks for a large GET response
@@ -227,7 +227,7 @@ var Http2BigListener = function() {};
 Http2BigListener.prototype = new Http2CheckListener();
 Http2BigListener.prototype.buffer = "";
 
-Http2BigListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2BigListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   this.buffer = this.buffer.concat(read_stream(stream, cnt));
@@ -236,7 +236,7 @@ Http2BigListener.prototype.onDataAvailable = function(request, ctx, stream, off,
   Assert.equal(bigListenerMD5, request.getResponseHeader("X-Expected-MD5"));
 };
 
-Http2BigListener.prototype.onStopRequest = function(request, ctx, status) {
+Http2BigListener.prototype.onStopRequest = function(request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(this.onDataAvailableFired);
   Assert.ok(this.isHttp2Connection);
@@ -253,14 +253,14 @@ var Http2HugeSuspendedListener = function() {};
 Http2HugeSuspendedListener.prototype = new Http2CheckListener();
 Http2HugeSuspendedListener.prototype.count = 0;
 
-Http2HugeSuspendedListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2HugeSuspendedListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   this.count += cnt;
   read_stream(stream, cnt);
 };
 
-Http2HugeSuspendedListener.prototype.onStopRequest = function(request, ctx, status) {
+Http2HugeSuspendedListener.prototype.onStopRequest = function(request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(this.onDataAvailableFired);
   Assert.ok(this.isHttp2Connection);
@@ -277,7 +277,7 @@ var Http2PostListener = function(expected_md5) {
 Http2PostListener.prototype = new Http2CheckListener();
 Http2PostListener.prototype.expected_md5 = "";
 
-Http2PostListener.prototype.onDataAvailable = function(request, ctx, stream, off, cnt) {
+Http2PostListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   read_stream(stream, cnt);
@@ -298,7 +298,7 @@ ResumeStalledChannelListener.prototype = {
   shouldBeHttp2 : true,
   resumable : null,
 
-  onStartRequest: function testOnStartRequest(request, ctx) {
+  onStartRequest: function testOnStartRequest(request) {
     this.onStartRequestFired = true;
     if (!Components.isSuccessCode(request.status))
       do_throw("Channel should have a success code! (" + request.status + ")");
@@ -308,13 +308,13 @@ ResumeStalledChannelListener.prototype = {
     Assert.equal(request.requestSucceeded, true);
   },
 
-  onDataAvailable: function testOnDataAvailable(request, ctx, stream, off, cnt) {
+  onDataAvailable: function testOnDataAvailable(request, stream, off, cnt) {
     this.onDataAvailableFired = true;
     this.isHttp2Connection = checkIsHttp2(request);
     read_stream(stream, cnt);
   },
 
-  onStopRequest: function testOnStopRequest(request, ctx, status) {
+  onStopRequest: function testOnStopRequest(request, status) {
     Assert.ok(this.onStartRequestFired);
     Assert.ok(Components.isSuccessCode(status));
     Assert.ok(this.onDataAvailableFired);
@@ -332,7 +332,7 @@ function test_http2_blocking_download() {
   internalChannel.initialRwin = 500000; // make the stream.suspend push back in h2
   var listener = new Http2CheckListener();
   listener.expected = 3 * 1024 * 1024;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   chan.suspend();
   // wait 5 seconds so that stream flow control kicks in and then see if we
   // can do a basic transaction (i.e. session not blocked). afterwards resume
@@ -341,7 +341,7 @@ function test_http2_blocking_download() {
       var simpleChannel = makeChan("https://localhost:" + serverPort + "/");
       var sl = new ResumeStalledChannelListener();
       sl.resumable = chan;
-      simpleChannel.asyncOpen2(sl);
+      simpleChannel.asyncOpen(sl);
   });
 }
 
@@ -349,7 +349,7 @@ function test_http2_blocking_download() {
 function test_http2_basic() {
   var chan = makeChan("https://localhost:" + serverPort + "/");
   var listener = new Http2CheckListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_basic_unblocked_dep() {
@@ -357,7 +357,7 @@ function test_http2_basic_unblocked_dep() {
   var cos = chan.QueryInterface(Ci.nsIClassOfService);
   cos.addClassFlags(Ci.nsIClassOfService.Unblocked);
   var listener = new Http2CheckListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // make sure we don't use h2 when disallowed
@@ -367,7 +367,7 @@ function test_http2_nospdy() {
   var internalChannel = chan.QueryInterface(Ci.nsIHttpChannelInternal);
   internalChannel.allowSpdy = false;
   listener.shouldBeHttp2 = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // Support for making sure XHR works over SPDY
@@ -400,7 +400,7 @@ Http2ConcurrentListener.prototype.target = 0;
 Http2ConcurrentListener.prototype.reset = 0;
 Http2ConcurrentListener.prototype.recvdHdr = 0;
 
-Http2ConcurrentListener.prototype.onStopRequest = function(request, ctx, status) {
+Http2ConcurrentListener.prototype.onStopRequest = function(request, status) {
   this.count++;
   Assert.ok(this.isHttp2Connection);
   if (this.recvdHdr > 0) {
@@ -425,7 +425,7 @@ function test_http2_concurrent() {
   for (var i = 0; i < concurrent_listener.target; i++) {
     concurrent_channels[i] = makeChan("https://localhost:" + serverPort + "/750ms");
     concurrent_channels[i].loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-    concurrent_channels[i].asyncOpen2(concurrent_listener);
+    concurrent_channels[i].asyncOpen(concurrent_listener);
   }
 }
 
@@ -445,7 +445,7 @@ function test_http2_concurrent_post() {
     var uchan = concurrent_channels[i].QueryInterface(Ci.nsIUploadChannel);
     uchan.setUploadStream(stream, "text/plain", stream.available());
     concurrent_channels[i].requestMethod = "POST";
-    concurrent_channels[i].asyncOpen2(concurrent_listener);
+    concurrent_channels[i].asyncOpen(concurrent_listener);
   }
 }
 
@@ -455,8 +455,8 @@ function test_http2_multiplex() {
   var chan2 = makeChan("https://localhost:" + serverPort + "/multiplex2");
   var listener1 = new Http2MultiplexListener();
   var listener2 = new Http2MultiplexListener();
-  chan1.asyncOpen2(listener1);
-  chan2.asyncOpen2(listener2);
+  chan1.asyncOpen(listener1);
+  chan2.asyncOpen(listener2);
 }
 
 // Test to make sure we gateway non-standard headers properly
@@ -467,7 +467,7 @@ function test_http2_header() {
   var listener = new Http2HeaderListener("X-Received-Test-Header", function(received_hvalue) {
     Assert.equal(received_hvalue, hvalue);
   });
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // Test to make sure cookies are split into separate fields before compression
@@ -486,49 +486,49 @@ function test_http2_cookie_crumbling() {
       Assert.equal(cookiesSent[index], cookieReceived)
     });
   });
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push1() {
   var chan = makeChan("https://localhost:" + serverPort + "/push");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push2() {
   var chan = makeChan("https://localhost:" + serverPort + "/push.js");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push3() {
   var chan = makeChan("https://localhost:" + serverPort + "/push2");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push4() {
   var chan = makeChan("https://localhost:" + serverPort + "/push2.js");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push5() {
   var chan = makeChan("https://localhost:" + serverPort + "/push5");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push6() {
   var chan = makeChan("https://localhost:" + serverPort + "/push5.js");
   chan.loadGroup = loadGroup;
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // this is a basic test where the server sends a simple document with 2 header
@@ -536,20 +536,20 @@ function test_http2_push6() {
 function test_http2_doubleheader() {
   var chan = makeChan("https://localhost:" + serverPort + "/doubleheader");
   var listener = new Http2CheckListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // Make sure we handle GETs that cover more than 2 frames properly
 function test_http2_big() {
   var chan = makeChan("https://localhost:" + serverPort + "/big");
   var listener = new Http2BigListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_huge_suspended() {
   var chan = makeChan("https://localhost:" + serverPort + "/huge");
   var listener = new Http2HugeSuspendedListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   chan.suspend();
   do_timeout(500, chan.resume);
 }
@@ -565,7 +565,7 @@ function do_post(content, chan, listener, method) {
 
   chan.requestMethod = method;
 
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // Make sure we can do a simple POST
@@ -589,8 +589,8 @@ function test_http2_post_big() {
   do_post(posts[1], chan, listener, "POST");
 }
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserv = null;
 var httpserv2 = null;
@@ -598,15 +598,15 @@ var ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService);
 
 var altsvcClientListener = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     Assert.equal(request.status, Cr.NS_OK);
   },
 
-  onDataAvailable: function test_ODA(request, cx, stream, offset, cnt) {
+  onDataAvailable: function test_ODA(request, stream, offset, cnt) {
    read_stream(stream, cnt);
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     var isHttp2Connection = checkIsHttp2(request.QueryInterface(Ci.nsIHttpChannel));
     if (!isHttp2Connection) {
       dump("/altsvc1 not over h2 yet - retry\n");
@@ -617,34 +617,34 @@ var altsvcClientListener = {
       chan.setRequestHeader("x-redirect-origin",
                  "http://foo.example.com:" + httpserv2.identity.primaryPort, false);
       chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen2(altsvcClientListener);
+      chan.asyncOpen(altsvcClientListener);
     } else {
       Assert.ok(isHttp2Connection);
       var chan = makeChan("http://foo.example.com:" + httpserv2.identity.primaryPort + "/altsvc2")
                 .QueryInterface(Ci.nsIHttpChannel);
       chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen2(altsvcClientListener2);
+      chan.asyncOpen(altsvcClientListener2);
     }
   }
 };
 
 var altsvcClientListener2 = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     Assert.equal(request.status, Cr.NS_OK);
   },
 
-  onDataAvailable: function test_ODA(request, cx, stream, offset, cnt) {
+  onDataAvailable: function test_ODA(request, stream, offset, cnt) {
    read_stream(stream, cnt);
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     var isHttp2Connection = checkIsHttp2(request.QueryInterface(Ci.nsIHttpChannel));
     if (!isHttp2Connection) {
       dump("/altsvc2 not over h2 yet - retry\n");
       var chan = makeChan("http://foo.example.com:" + httpserv2.identity.primaryPort + "/altsvc2")
                 .QueryInterface(Ci.nsIHttpChannel);
       chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen2(altsvcClientListener2);
+      chan.asyncOpen(altsvcClientListener2);
     } else {
       Assert.ok(isHttp2Connection);
       run_next_test();
@@ -699,7 +699,7 @@ function h1ServerWK2(metadata, response) {
 function test_http2_altsvc() {
   var chan = makeChan("http://foo.example.com:" + httpserv.identity.primaryPort + "/altsvc1")
            .QueryInterface(Ci.nsIHttpChannel);
-  chan.asyncOpen2(altsvcClientListener);
+  chan.asyncOpen(altsvcClientListener);
 }
 
 var Http2PushApiListener = function() {};
@@ -723,7 +723,7 @@ Http2PushApiListener.prototype = {
     Assert.equal(associatedChannel.originalURI.spec, "https://localhost:" + serverPort + "/pushapi1");
     Assert.equal (pushChannel.getRequestHeader("x-pushed-request"), "true");
 
-    pushChannel.asyncOpen2(this);
+    pushChannel.asyncOpen(this);
     if (pushChannel.originalURI.spec == "https://localhost:" + serverPort + "/pushapi1/2") {
       pushChannel.cancel(Cr.NS_ERROR_ABORT);
     } else if (pushChannel.originalURI.spec == "https://localhost:" + serverPort + "/pushapi1/3") {
@@ -732,10 +732,10 @@ Http2PushApiListener.prototype = {
   },
 
  // normal Channel listeners
-  onStartRequest: function pushAPIOnStart(request, ctx) {
+  onStartRequest: function pushAPIOnStart(request) {
   },
 
-  onDataAvailable: function pushAPIOnDataAvailable(request, ctx, stream, offset, cnt) {
+  onDataAvailable: function pushAPIOnDataAvailable(request, stream, offset, cnt) {
     Assert.notEqual(request.originalURI.spec, "https://localhost:" + serverPort + "/pushapi1/2");
 
     var data = read_stream(stream, cnt);
@@ -754,7 +754,7 @@ Http2PushApiListener.prototype = {
     }
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     if (request.originalURI.spec == "https://localhost:" + serverPort + "/pushapi1/2") {
       Assert.equal(request.status, Cr.NS_ERROR_ABORT);
     } else {
@@ -781,13 +781,13 @@ function test_http2_pushapi_1() {
   chan.loadGroup = loadGroup;
   var listener = new Http2PushApiListener();
   chan.notificationCallbacks = listener;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 var WrongSuiteListener = function() {};
 WrongSuiteListener.prototype = new Http2CheckListener();
 WrongSuiteListener.prototype.shouldBeHttp2 = false;
-WrongSuiteListener.prototype.onStopRequest = function(request, ctx, status) {
+WrongSuiteListener.prototype.onStopRequest = function(request, status) {
   prefs.setBoolPref("security.ssl3.ecdhe_rsa_aes_128_gcm_sha256", true);
   prefs.clearUserPref("security.tls.version.max");
   Http2CheckListener.prototype.onStopRequest.call(this);
@@ -801,7 +801,7 @@ function test_http2_wrongsuite_tls12() {
   var chan = makeChan("https://localhost:" + serverPort + "/wrongsuite");
   chan.loadFlags = Ci.nsIRequest.LOAD_FRESH_CONNECTION | Ci.nsIChannel.LOAD_INITIAL_DOCUMENT_URI;
   var listener = new WrongSuiteListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // test that we use h2 when offering tls1.3 or higher regardless of if the
@@ -812,20 +812,20 @@ function test_http2_wrongsuite_tls13() {
   chan.loadFlags = Ci.nsIRequest.LOAD_FRESH_CONNECTION | Ci.nsIChannel.LOAD_INITIAL_DOCUMENT_URI;
   var listener = new WrongSuiteListener();
   listener.shouldBeHttp2 = true;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_h11required_stream() {
   var chan = makeChan("https://localhost:" + serverPort + "/h11required_stream");
   var listener = new Http2CheckListener();
   listener.shouldBeHttp2 = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function H11RequiredSessionListener () { }
 H11RequiredSessionListener.prototype = new Http2CheckListener();
 
-H11RequiredSessionListener.prototype.onStopRequest = function (request, ctx, status) {
+H11RequiredSessionListener.prototype.onStopRequest = function (request, status) {
   var streamReused = request.getResponseHeader("X-H11Required-Stream-Ok");
   Assert.equal(streamReused, "yes");
 
@@ -841,13 +841,13 @@ function test_http2_h11required_session() {
   var chan = makeChan("https://localhost:" + serverPort + "/h11required_session");
   var listener = new H11RequiredSessionListener();
   listener.shouldBeHttp2 = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_retry_rst() {
   var chan = makeChan("https://localhost:" + serverPort + "/rstonce");
   var listener = new Http2CheckListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_continuations() {
@@ -855,14 +855,14 @@ function test_http2_continuations() {
   chan.loadGroup = loadGroup;
   var listener = new Http2ContinuedHeaderListener();
   chan.notificationCallbacks = listener;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function Http2IllegalHpackValidationListener() { }
 Http2IllegalHpackValidationListener.prototype = new Http2CheckListener();
 Http2IllegalHpackValidationListener.prototype.shouldGoAway = false;
 
-Http2IllegalHpackValidationListener.prototype.onStopRequest = function (request, ctx, status) {
+Http2IllegalHpackValidationListener.prototype.onStopRequest = function (request, status) {
   var wentAway = (request.getResponseHeader('X-Did-Goaway') === 'yes');
   Assert.equal(wentAway, this.shouldGoAway);
 
@@ -878,11 +878,11 @@ function Http2IllegalHpackListener() { }
 Http2IllegalHpackListener.prototype = new Http2CheckListener();
 Http2IllegalHpackListener.prototype.shouldGoAway = false;
 
-Http2IllegalHpackListener.prototype.onStopRequest = function (request, ctx, status) {
+Http2IllegalHpackListener.prototype.onStopRequest = function (request, status) {
   var chan = makeChan("https://localhost:" + serverPort + "/illegalhpack_validate");
   var listener = new Http2IllegalHpackValidationListener();
   listener.shouldGoAway = this.shouldGoAway;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 };
 
 function test_http2_illegalhpacksoft() {
@@ -890,7 +890,7 @@ function test_http2_illegalhpacksoft() {
   var listener = new Http2IllegalHpackListener();
   listener.shouldGoAway = false;
   listener.shouldSucceed = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_illegalhpackhard() {
@@ -898,7 +898,7 @@ function test_http2_illegalhpackhard() {
   var listener = new Http2IllegalHpackListener();
   listener.shouldGoAway = true;
   listener.shouldSucceed = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_folded_header() {
@@ -906,13 +906,13 @@ function test_http2_folded_header() {
   chan.loadGroup = loadGroup;
   var listener = new Http2CheckListener();
   listener.shouldSucceed = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_empty_data() {
   var chan = makeChan("https://localhost:" + serverPort + "/emptydata");
   var listener = new Http2CheckListener();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_firstparty1() {
@@ -920,7 +920,7 @@ function test_http2_push_firstparty1() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { firstPartyDomain: "foo.com" };
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_firstparty2() {
@@ -928,7 +928,7 @@ function test_http2_push_firstparty2() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { firstPartyDomain: "bar.com" };
   var listener = new Http2PushListener(false);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_firstparty3() {
@@ -936,7 +936,7 @@ function test_http2_push_firstparty3() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { firstPartyDomain: "foo.com" };
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_userContext1() {
@@ -944,7 +944,7 @@ function test_http2_push_userContext1() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { userContextId: 1 };
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_userContext2() {
@@ -952,7 +952,7 @@ function test_http2_push_userContext2() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { userContextId: 2 };
   var listener = new Http2PushListener(false);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_push_userContext3() {
@@ -960,29 +960,29 @@ function test_http2_push_userContext3() {
   chan.loadGroup = loadGroup;
   chan.loadInfo.originAttributes = { userContextId: 1 };
   var listener = new Http2PushListener(true);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_status_phrase() {
   var chan = makeChan("https://localhost:" + serverPort + "/statusphrase");
   var listener = new Http2CheckListener();
   listener.shouldSucceed = false;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 var PulledDiskCacheListener = function() {};
 PulledDiskCacheListener.prototype = new Http2CheckListener();
 PulledDiskCacheListener.prototype.EXPECTED_DATA = "this was pulled via h2";
 PulledDiskCacheListener.prototype.readData = "";
-PulledDiskCacheListener.prototype.onDataAvailable = function testOnDataAvailable(request, ctx, stream, off, cnt) {
+PulledDiskCacheListener.prototype.onDataAvailable = function testOnDataAvailable(request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.isHttp2Connection = checkIsHttp2(request);
   this.accum += cnt;
   this.readData += read_stream(stream, cnt);
 };
-PulledDiskCacheListener.prototype.onStopRequest = function testOnStopRequest(request, ctx, status) {
+PulledDiskCacheListener.prototype.onStopRequest = function testOnStopRequest(request, status) {
   Assert.equal(this.EXPECTED_DATA, this.readData);
-  Http2CheckListener.prorotype.onStopRequest.call(this, request, ctx, status);
+  Http2CheckListener.prorotype.onStopRequest.call(this, request, status);
 };
 
 const DISK_CACHE_DATA = "this is from disk cache";
@@ -993,7 +993,7 @@ FromDiskCacheListener.prototype = {
   onDataAvailableFired: false,
   readData: "",
 
-  onStartRequest: function testOnStartRequest(request, ctx) {
+  onStartRequest: function testOnStartRequest(request) {
     this.onStartRequestFired = true;
     if (!Components.isSuccessCode(request.status)) {
       do_throw("Channel should have a success code! (" + request.status + ")");
@@ -1004,12 +1004,12 @@ FromDiskCacheListener.prototype = {
     Assert.equal(request.responseStatus, 200);
   },
 
-  onDataAvailable: function testOnDataAvailable(request, ctx, stream, off, cnt) {
+  onDataAvailable: function testOnDataAvailable(request, stream, off, cnt) {
     this.onDataAvailableFired = true;
     this.readData += read_stream(stream, cnt);
   },
 
-  onStopRequest: function testOnStopRequest(request, ctx, status) {
+  onStopRequest: function testOnStopRequest(request, status) {
     Assert.ok(this.onStartRequestFired);
     Assert.ok(Components.isSuccessCode(status));
     Assert.ok(this.onDataAvailableFired);
@@ -1023,7 +1023,7 @@ FromDiskCacheListener.prototype = {
       var chan = makeChan("https://localhost:" + serverPort + "/diskcache");
       chan.listener = new PulledDiskCacheListener();
       chan.loadGroup = loadGroup;
-      chan.asyncOpen2(listener);
+      chan.asyncOpen(listener);
     });
   }
 };
@@ -1032,7 +1032,7 @@ var Http2DiskCachePushListener = function() {};
 
 Http2DiskCachePushListener.prototype = new Http2CheckListener();
 
-Http2DiskCachePushListener.onStopRequest = function(request, ctx, status) {
+Http2DiskCachePushListener.onStopRequest = function(request, status) {
     Assert.ok(this.onStartRequestFired);
     Assert.ok(Components.isSuccessCode(status));
     Assert.ok(this.onDataAvailableFired);
@@ -1043,7 +1043,7 @@ Http2DiskCachePushListener.onStopRequest = function(request, ctx, status) {
     var chan = makeChan("https://localhost:" + serverPort + "/diskcache");
     chan.listener = new FromDiskCacheListener();
     chan.loadGroup = loadGroup;
-    chan.asyncOpen2(listener);
+    chan.asyncOpen(listener);
 };
 
 function continue_test_http2_disk_cache_push(status, entry, appCache) {
@@ -1057,7 +1057,7 @@ function continue_test_http2_disk_cache_push(status, entry, appCache) {
   var chan = makeChan("https://localhost:" + serverPort + "/pushindisk");
   var listener = new Http2DiskCachePushListener();
   chan.loadGroup = loadGroup;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_http2_disk_cache_push() {
@@ -1079,7 +1079,7 @@ function test_complete() {
 
 var Http2DoublepushListener = function () {};
 Http2DoublepushListener.prototype = new Http2CheckListener();
-Http2DoublepushListener.prototype.onStopRequest = function (request, ctx, status) {
+Http2DoublepushListener.prototype.onStopRequest = function (request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(Components.isSuccessCode(status));
   Assert.ok(this.onDataAvailableFired);
@@ -1088,18 +1088,18 @@ Http2DoublepushListener.prototype.onStopRequest = function (request, ctx, status
   var chan = makeChan("https://localhost:" + serverPort + "/doublypushed");
   var listener = new Http2DoublypushedListener();
   chan.loadGroup = loadGroup;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 };
 
 var Http2DoublypushedListener = function () {};
 Http2DoublypushedListener.prototype = new Http2CheckListener();
 Http2DoublypushedListener.prototype.readData = "";
-Http2DoublypushedListener.prototype.onDataAvailable = function (request, ctx, stream, off, cnt) {
+Http2DoublypushedListener.prototype.onDataAvailable = function (request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   this.accum += cnt;
   this.readData += read_stream(stream, cnt);
 };
-Http2DoublypushedListener.prototype.onStopRequest = function (request, ctx, status) {
+Http2DoublypushedListener.prototype.onStopRequest = function (request, status) {
   Assert.ok(this.onStartRequestFired);
   Assert.ok(Components.isSuccessCode(status));
   Assert.ok(this.onDataAvailableFired);
@@ -1113,7 +1113,7 @@ function test_http2_doublepush() {
   var chan = makeChan("https://localhost:" + serverPort + "/doublepush");
   var listener = new Http2DoublepushListener();
   chan.loadGroup = loadGroup;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // hack - the header test resets the multiplex object on the server,
@@ -1182,59 +1182,6 @@ function run_next_test() {
   }
 }
 
-// Support for making sure we can talk to the invalid cert the server presents
-var CertOverrideListener = function(host, port, bits) {
-  this.host = host;
-  if (port) {
-    this.port = port;
-  }
-  this.bits = bits;
-};
-
-CertOverrideListener.prototype = {
-  host: null,
-  port: -1,
-  bits: null,
-
-  getInterface: function(aIID) {
-    return this.QueryInterface(aIID);
-  },
-
-  QueryInterface: function(aIID) {
-    if (aIID.equals(Ci.nsIBadCertListener2) ||
-        aIID.equals(Ci.nsIInterfaceRequestor) ||
-        aIID.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-
-  notifyCertProblem: function(socketInfo, secInfo, targetHost) {
-    var cert = secInfo.serverCert;
-    var cos = Cc["@mozilla.org/security/certoverride;1"].
-              getService(Ci.nsICertOverrideService);
-    cos.rememberValidityOverride(this.host, this.port, cert, this.bits, false);
-    dump("Certificate Override in place\n");
-    return true;
-  },
-};
-
-function addCertOverride(host, port, bits) {
-  var req = new XMLHttpRequest();
-  try {
-    var url;
-    if (port) {
-      url = "https://" + host + ":" + port + "/";
-    } else {
-      url = "https://" + host + "/";
-    }
-    req.open("GET", url, false);
-    req.channel.notificationCallbacks = new CertOverrideListener(host, port, bits);
-    req.send(null);
-  } catch (e) {
-    // This will fail since the server is not trusted yet
-  }
-}
-
 var prefs;
 var spdypref;
 var spdypush;
@@ -1267,18 +1214,13 @@ function run_test() {
   speculativeLimit = prefs.getIntPref("network.http.speculative-parallel-limit");
   prefs.setIntPref("network.http.speculative-parallel-limit", 0);
 
-  // The moz-http2 cert is for foo.example.com and is signed by CA.cert.der
+  // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
   // so add that cert to the trust list as a signing cert. Some older tests in
   // this suite use localhost with a TOFU exception, but new ones should use
   // foo.example.com
   let certdb = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
-  addCertFromFile(certdb, "CA.cert.der", "CTu,u,u");
-
-  addCertOverride("localhost", serverPort,
-                  Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-                  Ci.nsICertOverrideService.ERROR_MISMATCH |
-                  Ci.nsICertOverrideService.ERROR_TIME);
+  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
   // Enable all versions of spdy to see that we auto negotiate http/2
   spdypref = prefs.getBoolPref("network.http.spdy.enabled");
@@ -1310,19 +1252,4 @@ function run_test() {
 
   // And make go!
   run_next_test();
-}
-
-function readFile(file) {
-  let fstream = Cc["@mozilla.org/network/file-input-stream;1"]
-                  .createInstance(Ci.nsIFileInputStream);
-  fstream.init(file, -1, 0, 0);
-  let data = NetUtil.readInputStreamToString(fstream, fstream.available());
-  fstream.close();
-  return data;
-}
-
-function addCertFromFile(certdb, filename, trustString) {
-  let certFile = do_get_file(filename, false);
-  let der = readFile(certFile);
-  certdb.addCert(der, trustString);
 }

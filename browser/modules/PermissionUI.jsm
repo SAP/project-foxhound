@@ -60,7 +60,7 @@ var EXPORTED_SYMBOLS = [
  * imported, subclassed, and have prompt() called directly, without
  * the caller having called into createPermissionPrompt.
  */
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
@@ -70,6 +70,8 @@ ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "URICountListener",
   "resource:///modules/BrowserUsageTelemetry.jsm");
+ChromeUtils.defineModuleGetter(this, "PermissionUITelemetry",
+  "resource:///modules/PermissionUITelemetry.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "IDNService",
   "@mozilla.org/network/idn-service;1", "nsIIDNService");
@@ -78,6 +80,11 @@ XPCOMUtils.defineLazyGetter(this, "gBrowserBundle", function() {
   return Services.strings
                  .createBundle("chrome://browser/locale/browser.properties");
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(this, "animationsEnabled",
+                                      "toolkit.cosmeticAnimations.enabled");
+XPCOMUtils.defineLazyPreferenceGetter(this, "postPromptAnimationEnabled",
+                                      "permissions.postPrompt.animate");
 
 var PermissionUI = {};
 
@@ -144,6 +151,17 @@ var PermissionPromptPrototype = {
   },
 
   /**
+   * A string that needs to be set to include this prompt in
+   * experimental event telemetry collection.
+   *
+   * This needs to conform to event telemetry string rules,
+   * i.e. it needs to be an alphabetic string under 20 characters.
+   */
+  get permissionTelemetryKey() {
+    return undefined;
+  },
+
+  /**
    * If true, user permissions will be read from and written to.
    * When this is false, we still provide integration with
    * infrastructure such as temporary permissions. permissionKey should
@@ -164,6 +182,27 @@ var PermissionPromptPrototype = {
    */
   get popupOptions() {
     return {};
+  },
+
+  /**
+   * If true, automatically denied permission requests will
+   * spawn a "post-prompt" that allows the user to correct the
+   * automatic denial by giving permanent permission access to
+   * the site.
+   *
+   * Note that if this function returns true, the permissionKey
+   * and postPromptActions attributes must be implemented.
+   */
+  get postPromptEnabled() {
+    return false;
+  },
+
+  /**
+   * If true, the prompt will be cancelled automatically unless
+   * request.isHandlingUserInput is true.
+   */
+  get requiresUserInput() {
+    return false;
   },
 
   /**
@@ -242,6 +281,8 @@ var PermissionPromptPrototype = {
    *  action (SitePermissions state)
    *    The action that will be associated with this choice.
    *    This should be either SitePermissions.ALLOW or SitePermissions.BLOCK.
+   *  scope (SitePermissions scope)
+   *    The scope of the associated action (e.g. SitePermissions.SCOPE_PERSISTENT)
    *
    *  callback (function, optional)
    *    A callback function that will fire if the user makes this choice, with
@@ -251,6 +292,28 @@ var PermissionPromptPrototype = {
    */
   get promptActions() {
     return [];
+  },
+
+  /**
+   * The actions that will be displayed in the PopupNotification
+   * for post-prompt notifications via a dropdown menu.
+   * The first item in this array will be the default selection.
+   * Each action is an Object with the following properties:
+   *
+   *  label (string):
+   *    The label that will be displayed for this choice.
+   *  accessKey (string):
+   *    The access key character that will be used for this choice.
+   *  action (SitePermissions state)
+   *    The action that will be associated with this choice.
+   *    This should be either SitePermissions.ALLOW or SitePermissions.BLOCK.
+   *    Note that the scope of this action will always be persistent.
+   *
+   *  callback (function, optional)
+   *    A callback function that will fire if the user makes this choice.
+   */
+  get postPromptActions() {
+    return null;
   },
 
   /**
@@ -306,6 +369,13 @@ var PermissionPromptPrototype = {
                                         this.browser);
 
       if (state == SitePermissions.BLOCK) {
+        // If this block was done based on a global user setting, we want to show
+        // a post prompt to give the user some more granular control without
+        // annoying them too much.
+        if (this.postPromptEnabled &&
+            SitePermissions.getDefault(this.permissionKey) == SitePermissions.BLOCK) {
+          this.postPrompt();
+        }
         this.cancel();
         return;
       }
@@ -332,11 +402,21 @@ var PermissionPromptPrototype = {
       }
     }
 
+    if (this.requiresUserInput && !this.request.isHandlingUserInput) {
+      if (this.postPromptEnabled) {
+        this.postPrompt();
+      }
+      this.cancel();
+      return;
+    }
+
     let chromeWin = this.browser.ownerGlobal;
     if (!chromeWin.PopupNotifications) {
       this.cancel();
       return;
     }
+
+    this._buttonAction = null;
 
     // Transform the PermissionPrompt actions into PopupNotification actions.
     let popupNotificationActions = [];
@@ -375,9 +455,16 @@ var PermissionPromptPrototype = {
             }
 
             // Grant permission if action is ALLOW.
+            // Record buttonAction for telemetry.
             if (promptAction.action == SitePermissions.ALLOW) {
+              this._buttonAction = "accept";
               this.allow();
             } else {
+              if (promptAction.scope == SitePermissions.SCOPE_PERSISTENT) {
+                this._buttonAction = "never";
+              } else {
+                this._buttonAction = "deny";
+              }
               this.cancel();
             }
           } else if (this.permissionKey) {
@@ -402,19 +489,94 @@ var PermissionPromptPrototype = {
       popupNotificationActions.push(action);
     }
 
-    let mainAction = popupNotificationActions.length ?
-                     popupNotificationActions[0] : null;
-    let secondaryActions = popupNotificationActions.splice(1);
+    this._showNotification(popupNotificationActions);
+  },
+
+  postPrompt() {
+    let browser = this.browser;
+    let principal = this.principal;
+    let chromeWin = browser.ownerGlobal;
+    if (!chromeWin.PopupNotifications) {
+      return;
+    }
+
+    if (!this.permissionKey) {
+      throw new Error("permissionKey is required to show a post-prompt");
+    }
+
+    if (!this.postPromptActions) {
+      throw new Error("postPromptActions are required to show a post-prompt");
+    }
+
+    // Transform the PermissionPrompt actions into PopupNotification actions.
+    let popupNotificationActions = [];
+    for (let promptAction of this.postPromptActions) {
+      let action = {
+        label: promptAction.label,
+        accessKey: promptAction.accessKey,
+        callback: state => {
+          if (promptAction.callback) {
+            promptAction.callback();
+          }
+
+          // Post-prompt permissions are stored permanently by default.
+          // Since we can not reply to the original permission request anymore,
+          // the page will need to listen for permission changes which are triggered
+          // by permanent entries in the permission manager.
+          let scope = SitePermissions.SCOPE_PERSISTENT;
+          // Only remember permission for session if in PB mode.
+          if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
+            scope = SitePermissions.SCOPE_SESSION;
+          }
+          SitePermissions.set(principal.URI,
+                              this.permissionKey,
+                              promptAction.action,
+                              scope);
+        },
+      };
+      popupNotificationActions.push(action);
+    }
+
+    if (animationsEnabled && postPromptAnimationEnabled) {
+      let anchor = chromeWin.document.getElementById(this.anchorID);
+      // Only show the animation on the first request, not after e.g. tab switching.
+      anchor.addEventListener("animationend", () => anchor.removeAttribute("animate"), {once: true});
+      anchor.setAttribute("animate", "true");
+    }
+
+    this._showNotification(popupNotificationActions, true);
+  },
+
+  _showNotification(actions, postPrompt = false) {
+    let chromeWin = this.browser.ownerGlobal;
+    let mainAction = actions.length ? actions[0] : null;
+    let secondaryActions = actions.splice(1);
 
     let options = this.popupOptions;
+
+    let telemetryData = null;
+    if (this.request && this.permissionTelemetryKey) {
+      telemetryData = {
+        permissionTelemetryKey: this.permissionTelemetryKey,
+        permissionKey: this.permissionKey,
+        principal: this.principal,
+        documentDOMContentLoadedTimestamp: this.request.documentDOMContentLoadedTimestamp,
+        isHandlingUserInput: this.request.isHandlingUserInput,
+        userHadInteractedWithDocument: this.request.userHadInteractedWithDocument,
+      };
+    }
 
     if (!options.hasOwnProperty("displayURI") || options.displayURI) {
       options.displayURI = this.principal.URI;
     }
-    // Permission prompts are always persistent; the close button is controlled by a pref.
-    options.persistent = true;
-    options.hideClose = !Services.prefs.getBoolPref("privacy.permissionPrompts.showCloseButton");
-    options.eventCallback = (topic) => {
+
+    if (!postPrompt) {
+      // Permission prompts are always persistent; the close button is controlled by a pref.
+      options.persistent = true;
+      options.hideClose = true;
+    }
+
+    options.eventCallback = (topic, nextRemovalReason) => {
       // When the docshell of the browser is aboout to be swapped to another one,
       // the "swapping" event is called. Returning true causes the notification
       // to be moved to the new browser.
@@ -422,17 +584,36 @@ var PermissionPromptPrototype = {
         return true;
       }
       // The prompt has been shown, notify the PermissionUI.
-      if (topic == "shown") {
+      // onShown() is currently not called for post-prompts,
+      // because there is no prompt that would make use of this.
+      // You can remove this restriction if you need it, but be
+      // mindful of other consumers.
+      if (topic == "shown" && !postPrompt) {
         this.onShown();
       }
       // The prompt has been removed, notify the PermissionUI.
-      if (topic == "removed") {
+      // onAfterShow() is currently not called for post-prompts,
+      // because there is no prompt that would make use of this.
+      // You can remove this restriction if you need it, but be
+      // mindful of other consumers.
+      if (topic == "removed" && !postPrompt) {
+        if (telemetryData) {
+          PermissionUITelemetry.onRemoved(telemetryData, this._buttonAction,
+                                          nextRemovalReason);
+        }
         this.onAfterShow();
       }
       return false;
     };
 
-    if (this.onBeforeShow() !== false) {
+    // Post-prompts show up as dismissed.
+    options.dismissed = postPrompt;
+
+    // onBeforeShow() is currently not called for post-prompts,
+    // because there is no prompt that would make use of this.
+    // You can remove this restriction if you need it, but be
+    // mindful of other consumers.
+    if (postPrompt || this.onBeforeShow() !== false) {
       chromeWin.PopupNotifications.show(this.browser,
                                         this.notificationID,
                                         this.message,
@@ -440,6 +621,9 @@ var PermissionPromptPrototype = {
                                         mainAction,
                                         secondaryActions,
                                         options);
+      if (telemetryData) {
+        PermissionUITelemetry.onShow(telemetryData);
+      }
     }
   },
 };
@@ -501,6 +685,10 @@ GeolocationPermissionPrompt.prototype = {
     return "geo";
   },
 
+  get permissionTelemetryKey() {
+    return "geo";
+  },
+
   get popupOptions() {
     let pref = "browser.geolocation.warning.infoURL";
     let options = {
@@ -543,48 +731,19 @@ GeolocationPermissionPrompt.prototype = {
   },
 
   get promptActions() {
-    // We collect Telemetry data on Geolocation prompts and how users
-    // respond to them. The probe keys are a bit verbose, so let's alias them.
-    const SHARE_LOCATION =
-      Ci.nsISecurityUITelemetry.WARNING_GEOLOCATION_REQUEST_SHARE_LOCATION;
-    const ALWAYS_SHARE =
-      Ci.nsISecurityUITelemetry.WARNING_GEOLOCATION_REQUEST_ALWAYS_SHARE;
-    const NEVER_SHARE =
-      Ci.nsISecurityUITelemetry.WARNING_GEOLOCATION_REQUEST_NEVER_SHARE;
-
-    let secHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
-
     return [{
       label: gBrowserBundle.GetStringFromName("geolocation.allowLocation"),
       accessKey:
         gBrowserBundle.GetStringFromName("geolocation.allowLocation.accesskey"),
       action: SitePermissions.ALLOW,
-      callback(state) {
-        if (state && state.checkboxChecked) {
-          secHistogram.add(ALWAYS_SHARE);
-        } else {
-          secHistogram.add(SHARE_LOCATION);
-        }
-      },
     }, {
       label: gBrowserBundle.GetStringFromName("geolocation.dontAllowLocation"),
       accessKey:
         gBrowserBundle.GetStringFromName("geolocation.dontAllowLocation.accesskey"),
       action: SitePermissions.BLOCK,
-      callback(state) {
-        if (state && state.checkboxChecked) {
-          secHistogram.add(NEVER_SHARE);
-        }
-      },
     }];
   },
 
-  onBeforeShow() {
-    let secHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
-    const SHOW_REQUEST = Ci.nsISecurityUITelemetry.WARNING_GEOLOCATION_REQUEST;
-    secHistogram.add(SHOW_REQUEST);
-    return true;
-  },
 };
 
 PermissionUI.GeolocationPermissionPrompt = GeolocationPermissionPrompt;
@@ -599,6 +758,11 @@ PermissionUI.GeolocationPermissionPrompt = GeolocationPermissionPrompt;
  */
 function DesktopNotificationPermissionPrompt(request) {
   this.request = request;
+
+  XPCOMUtils.defineLazyPreferenceGetter(this, "requiresUserInput",
+                                        "dom.webnotifications.requireuserinteraction");
+  XPCOMUtils.defineLazyPreferenceGetter(this, "postPromptEnabled",
+                                        "permissions.desktop-notification.postPrompt.enabled");
 }
 
 DesktopNotificationPermissionPrompt.prototype = {
@@ -606,6 +770,10 @@ DesktopNotificationPermissionPrompt.prototype = {
 
   get permissionKey() {
     return "desktop-notification";
+  },
+
+  get permissionTelemetryKey() {
+    return "notifications";
   },
 
   get popupOptions() {
@@ -658,6 +826,23 @@ DesktopNotificationPermissionPrompt.prototype = {
       });
     }
     return actions;
+  },
+
+  get postPromptActions() {
+    return [
+      {
+        label: gBrowserBundle.GetStringFromName("webNotifications.allow"),
+        accessKey:
+          gBrowserBundle.GetStringFromName("webNotifications.allow.accesskey"),
+        action: SitePermissions.ALLOW,
+      },
+      {
+        label: gBrowserBundle.GetStringFromName("webNotifications.never"),
+        accessKey:
+          gBrowserBundle.GetStringFromName("webNotifications.never.accesskey"),
+        action: SitePermissions.BLOCK,
+      },
+    ];
   },
 };
 

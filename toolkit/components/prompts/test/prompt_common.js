@@ -61,7 +61,7 @@ function checkPromptState(promptState, expectedState) {
     is(promptState.checkMsg, expectedState.checkMsg, "Checking checkbox label");
     is(promptState.checked, expectedState.checked, "Checking checkbox checked");
     if (!isTabModal)
-      is(promptState.iconClass, "spaced " + expectedState.iconClass, "Checking expected icon CSS class");
+      is(promptState.iconClass, expectedState.iconClass, "Checking expected icon CSS class");
     is(promptState.textValue, expectedState.textValue, "Checking textbox value");
     is(promptState.passValue, expectedState.passValue, "Checking passbox value");
 
@@ -89,6 +89,19 @@ function checkPromptState(promptState, expectedState) {
         is(promptState.focused, "infoBody", "buttons don't focus on OS X, but infoBody does instead");
     } else {
         is(promptState.focused, expectedState.focused, "Checking focused element");
+    }
+
+    if (expectedState.hasOwnProperty("chrome")) {
+        is(promptState.chrome, expectedState.chrome, "Dialog should be opened as chrome");
+    }
+    if (expectedState.hasOwnProperty("dialog")) {
+        is(promptState.dialog, expectedState.dialog, "Dialog should be opened as a dialog");
+    }
+    if (expectedState.hasOwnProperty("chromeDependent")) {
+        is(promptState.chromeDependent, expectedState.chromeDependent, "Dialog should be opened as dependent");
+    }
+    if (expectedState.hasOwnProperty("isWindowModal")) {
+        is(promptState.isWindowModal, expectedState.isWindowModal, "Dialog should be modal");
     }
 }
 

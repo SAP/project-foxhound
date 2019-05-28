@@ -34,7 +34,7 @@ static void SetParamsOnBiquad(WebCore::Biquad& aBiquad, float aSampleRate,
   double normalizedFrequency = aFrequency / nyquist;
 
   if (aDetune) {
-    normalizedFrequency *= std::pow(2.0, aDetune / 1200);
+    normalizedFrequency *= std::exp2(aDetune / 1200);
   }
 
   switch (aType) {
@@ -224,14 +224,13 @@ class BiquadFilterNodeEngine final : public AudioNodeEngine {
 BiquadFilterNode::BiquadFilterNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Max,
                 ChannelInterpretation::Speakers),
-      mType(BiquadFilterType::Lowpass),
-      mFrequency(new AudioParam(
-          this, BiquadFilterNodeEngine::FREQUENCY, "frequency", 350.f,
-          -(aContext->SampleRate() / 2), aContext->SampleRate() / 2)),
-      mDetune(
-          new AudioParam(this, BiquadFilterNodeEngine::DETUNE, "detune", 0.f)),
-      mQ(new AudioParam(this, BiquadFilterNodeEngine::Q, "Q", 1.f)),
-      mGain(new AudioParam(this, BiquadFilterNodeEngine::GAIN, "gain", 0.f)) {
+      mType(BiquadFilterType::Lowpass) {
+  CreateAudioParam(mFrequency, BiquadFilterNodeEngine::FREQUENCY, "frequency",
+                   350.f, -(aContext->SampleRate() / 2),
+                   aContext->SampleRate() / 2);
+  CreateAudioParam(mDetune, BiquadFilterNodeEngine::DETUNE, "detune", 0.f);
+  CreateAudioParam(mQ, BiquadFilterNodeEngine::Q, "Q", 1.f);
+  CreateAudioParam(mGain, BiquadFilterNodeEngine::GAIN, "gain", 0.f);
   uint64_t windowID = aContext->GetParentObject()->WindowID();
   BiquadFilterNodeEngine* engine =
       new BiquadFilterNodeEngine(this, aContext->Destination(), windowID);
@@ -239,7 +238,8 @@ BiquadFilterNode::BiquadFilterNode(AudioContext* aContext)
       aContext, engine, AudioNodeStream::NO_STREAM_FLAGS, aContext->Graph());
 }
 
-/* static */ already_AddRefed<BiquadFilterNode> BiquadFilterNode::Create(
+/* static */
+already_AddRefed<BiquadFilterNode> BiquadFilterNode::Create(
     AudioContext& aAudioContext, const BiquadFilterOptions& aOptions,
     ErrorResult& aRv) {
   if (aAudioContext.CheckClosed(aRv)) {

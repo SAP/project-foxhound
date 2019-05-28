@@ -51,6 +51,7 @@
 #include "nsILoadInfo.h"
 #include "nsContentSecurityManager.h"
 
+#include "mozilla/Maybe.h"
 #include "mozilla/ipc/URIUtils.h"
 
 using mozilla::dom::AutoEntryScript;
@@ -144,9 +145,8 @@ nsresult nsJSThunk::EvaluateScript(
   aChannel->GetOwner(getter_AddRefs(owner));
   nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(owner);
   if (!principal) {
-    nsCOMPtr<nsILoadInfo> loadInfo;
-    aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
-    if (loadInfo && loadInfo->GetForceInheritPrincipal()) {
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    if (loadInfo->GetForceInheritPrincipal()) {
       principal = loadInfo->FindPrincipalToInherit(aChannel);
     } else {
       // No execution without a principal!
@@ -338,14 +338,14 @@ class nsJSChannel : public nsIChannel,
   nsCOMPtr<nsIStreamListener> mListener;              // Our final listener
   nsCOMPtr<nsPIDOMWindowInner> mOriginalInnerWindow;  // The inner window our
                                                       // load started against.
-  // If we blocked onload on a document in AsyncOpen2, this is the document we
+  // If we blocked onload on a document in AsyncOpen, this is the document we
   // did it on.
   RefPtr<mozilla::dom::Document> mDocumentOnloadBlockedOn;
 
   nsresult mStatus;  // Our status
 
   nsLoadFlags mLoadFlags;
-  nsLoadFlags mActualLoadFlags;  // See AsyncOpen2
+  nsLoadFlags mActualLoadFlags;  // See AsyncOpen
 
   RefPtr<nsJSThunk> mIOThunk;
   mozilla::dom::PopupBlocker::PopupControlState mPopupState;
@@ -486,36 +486,36 @@ NS_IMETHODIMP
 nsJSChannel::GetURI(nsIURI** aURI) { return mStreamChannel->GetURI(aURI); }
 
 NS_IMETHODIMP
-nsJSChannel::Open(nsIInputStream** aResult) {
-  nsresult rv = mIOThunk->EvaluateScript(
-      mStreamChannel, mPopupState, mExecutionPolicy, mOriginalInnerWindow);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return mStreamChannel->Open(aResult);
-}
-
-NS_IMETHODIMP
-nsJSChannel::Open2(nsIInputStream** aStream) {
+nsJSChannel::Open(nsIInputStream** aStream) {
   nsCOMPtr<nsIStreamListener> listener;
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return Open(aStream);
+
+  rv = mIOThunk->EvaluateScript(mStreamChannel, mPopupState, mExecutionPolicy,
+                                mOriginalInnerWindow);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return mStreamChannel->Open(aStream);
 }
 
 NS_IMETHODIMP
-nsJSChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext) {
+nsJSChannel::AsyncOpen(nsIStreamListener* aListener) {
+  NS_ENSURE_ARG(aListener);
+
+  nsCOMPtr<nsIStreamListener> listener = aListener;
+  nsresult rv =
+      nsContentSecurityManager::doContentSecurityCheck(this, listener);
+  NS_ENSURE_SUCCESS(rv, rv);
+
 #ifdef DEBUG
   {
-    nsCOMPtr<nsILoadInfo> loadInfo = nsIChannel::GetLoadInfo();
+    nsCOMPtr<nsILoadInfo> loadInfo = nsIChannel::LoadInfo();
     MOZ_ASSERT(!loadInfo || loadInfo->GetSecurityMode() == 0 ||
                    loadInfo->GetInitialSecurityCheckDone(),
-               "security flags in loadInfo but asyncOpen2() not called");
+               "security flags in loadInfo but asyncOpen() not called");
   }
 #endif
-  MOZ_RELEASE_ASSERT(!aContext, "please call AsyncOpen2()");
-
-  NS_ENSURE_ARG(aListener);
 
   // First make sure that we have a usable inner window; we'll want to make
   // sure that we execute against that inner and no other.
@@ -551,7 +551,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext) {
   nsCOMPtr<nsILoadGroup> loadGroup;
   mStreamChannel->GetLoadGroup(getter_AddRefs(loadGroup));
   if (loadGroup) {
-    nsresult rv = loadGroup->AddRequest(this, nullptr);
+    rv = loadGroup->AddRequest(this, nullptr);
     if (NS_FAILED(rv)) {
       mIsActive = false;
       CleanupStrongRefs();
@@ -605,7 +605,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext) {
       return mStatus;
     }
 
-    // We're returning success from asyncOpen2(), but we didn't open a
+    // We're returning success from asyncOpen(), but we didn't open a
     // stream channel.  We'll have to notify ourselves, but make sure to do
     // it asynchronously.
     method = &nsJSChannel::NotifyListener;
@@ -615,8 +615,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext) {
   nsCOMPtr<nsIRunnable> runnable =
       mozilla::NewRunnableMethod(name, this, method);
   nsGlobalWindowInner* window = nsGlobalWindowInner::Cast(mOriginalInnerWindow);
-  nsresult rv =
-      window->Dispatch(mozilla::TaskCategory::Other, runnable.forget());
+  rv = window->Dispatch(mozilla::TaskCategory::Other, runnable.forget());
 
   if (NS_FAILED(rv)) {
     loadGroup->RemoveRequest(this, nullptr, rv);
@@ -624,15 +623,6 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext) {
     CleanupStrongRefs();
   }
   return rv;
-}
-
-NS_IMETHODIMP
-nsJSChannel::AsyncOpen2(nsIStreamListener* aListener) {
-  nsCOMPtr<nsIStreamListener> listener = aListener;
-  nsresult rv =
-      nsContentSecurityManager::doContentSecurityCheck(this, listener);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return AsyncOpen(listener, nullptr);
 }
 
 void nsJSChannel::EvaluateScript() {
@@ -724,7 +714,7 @@ void nsJSChannel::EvaluateScript() {
     return;
   }
 
-  mStatus = mStreamChannel->AsyncOpen2(this);
+  mStatus = mStreamChannel->AsyncOpen(this);
   if (NS_SUCCEEDED(mStatus)) {
     // mStreamChannel will call OnStartRequest and OnStopRequest on
     // us, so we'll be sure to call them on our listener.
@@ -748,8 +738,8 @@ void nsJSChannel::EvaluateScript() {
 }
 
 void nsJSChannel::NotifyListener() {
-  mListener->OnStartRequest(this, nullptr);
-  mListener->OnStopRequest(this, nullptr, mStatus);
+  mListener->OnStartRequest(this);
+  mListener->OnStopRequest(this, mStatus);
 
   CleanupStrongRefs();
 }
@@ -869,6 +859,7 @@ nsJSChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
 
 NS_IMETHODIMP
 nsJSChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   return mStreamChannel->SetLoadInfo(aLoadInfo);
 }
 
@@ -948,25 +939,22 @@ nsJSChannel::SetContentLength(int64_t aContentLength) {
 }
 
 NS_IMETHODIMP
-nsJSChannel::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
+nsJSChannel::OnStartRequest(nsIRequest* aRequest) {
   NS_ENSURE_TRUE(aRequest == mStreamChannel, NS_ERROR_UNEXPECTED);
 
-  return mListener->OnStartRequest(this, aContext);
+  return mListener->OnStartRequest(this);
 }
 
 NS_IMETHODIMP
-nsJSChannel::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
-                             nsIInputStream* aInputStream, uint64_t aOffset,
-                             uint32_t aCount) {
+nsJSChannel::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
+                             uint64_t aOffset, uint32_t aCount) {
   NS_ENSURE_TRUE(aRequest == mStreamChannel, NS_ERROR_UNEXPECTED);
 
-  return mListener->OnDataAvailable(this, aContext, aInputStream, aOffset,
-                                    aCount);
+  return mListener->OnDataAvailable(this, aInputStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
-nsJSChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                           nsresult aStatus) {
+nsJSChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   NS_ENSURE_TRUE(aRequest == mStreamChannel, NS_ERROR_UNEXPECTED);
 
   nsCOMPtr<nsIStreamListener> listener = mListener;
@@ -978,7 +966,7 @@ nsJSChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
     aStatus = mStatus;
   }
 
-  nsresult rv = listener->OnStopRequest(this, aContext, aStatus);
+  nsresult rv = listener->OnStopRequest(this, aStatus);
 
   nsCOMPtr<nsILoadGroup> loadGroup;
   mStreamChannel->GetLoadGroup(getter_AddRefs(loadGroup));
@@ -1021,6 +1009,13 @@ NS_IMETHODIMP
 nsJSChannel::GetExecuteAsync(bool* aIsAsync) {
   *aIsAsync = mIsAsync;
   return NS_OK;
+}
+
+bool nsJSChannel::GetIsDocumentLoad() {
+  // Our LOAD_DOCUMENT_URI flag, if any, lives on our stream channel.
+  nsLoadFlags flags;
+  mStreamChannel->GetLoadFlags(&flags);
+  return flags & LOAD_DOCUMENT_URI;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1134,8 +1129,8 @@ nsJSProtocolHandler::NewURI(const nsACString& aSpec, const char* aCharset,
 }
 
 NS_IMETHODIMP
-nsJSProtocolHandler::NewChannel2(nsIURI* uri, nsILoadInfo* aLoadInfo,
-                                 nsIChannel** result) {
+nsJSProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
+                                nsIChannel** result) {
   nsresult rv;
 
   NS_ENSURE_ARG_POINTER(uri);
@@ -1151,11 +1146,6 @@ nsJSProtocolHandler::NewChannel2(nsIURI* uri, nsILoadInfo* aLoadInfo,
     channel.forget(result);
   }
   return rv;
-}
-
-NS_IMETHODIMP
-nsJSProtocolHandler::NewChannel(nsIURI* uri, nsIChannel** result) {
-  return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP
@@ -1240,7 +1230,7 @@ NS_IMETHODIMP_(void) nsJSURI::Serialize(mozilla::ipc::URIParams& aParams) {
   if (mBaseURI) {
     SerializeURI(mBaseURI, jsParams.baseURI());
   } else {
-    jsParams.baseURI() = mozilla::void_t();
+    jsParams.baseURI() = mozilla::Nothing();
   }
 
   aParams = jsParams;
@@ -1257,8 +1247,8 @@ bool nsJSURI::Deserialize(const mozilla::ipc::URIParams& aParams) {
   const JSURIParams& jsParams = aParams.get_JSURIParams();
   mozilla::net::nsSimpleURI::Deserialize(jsParams.simpleParams());
 
-  if (jsParams.baseURI().type() != OptionalURIParams::Tvoid_t) {
-    mBaseURI = DeserializeURI(jsParams.baseURI().get_URIParams());
+  if (jsParams.baseURI().isSome()) {
+    mBaseURI = DeserializeURI(jsParams.baseURI().ref());
   } else {
     mBaseURI = nullptr;
   }
@@ -1289,7 +1279,8 @@ nsJSURI::Mutate(nsIURIMutator** aMutator) {
   return NS_OK;
 }
 
-/* virtual */ nsresult nsJSURI::EqualsInternal(
+/* virtual */
+nsresult nsJSURI::EqualsInternal(
     nsIURI* aOther, mozilla::net::nsSimpleURI::RefHandlingEnum aRefHandlingMode,
     bool* aResult) {
   NS_ENSURE_ARG_POINTER(aOther);

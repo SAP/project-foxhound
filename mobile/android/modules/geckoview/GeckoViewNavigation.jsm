@@ -6,11 +6,11 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewNavigation"];
 
-ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewModule} = ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Utils: "resource://gre/modules/sessionstore/Utils.jsm",
+  E10SUtils: "resource://gre/modules/sessionstore/Utils.jsm",
   LoadURIDelegate: "resource://gre/modules/LoadURIDelegate.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
@@ -130,7 +130,7 @@ class GeckoViewNavigation extends GeckoViewModule {
         this.browser.loadURI(uri, {
           flags,
           referrerURI: referrer,
-          triggeringPrincipal: Utils.deserializePrincipal(triggeringPrincipal),
+          triggeringPrincipal: E10SUtils.deserializePrincipal(triggeringPrincipal),
         });
         break;
     }
@@ -340,3 +340,5 @@ class GeckoViewNavigation extends GeckoViewModule {
     this.eventDispatcher.sendRequest(message);
   }
 }
+
+const {debug, warn} = GeckoViewNavigation.initLogging("GeckoViewNavigation"); // eslint-disable-line no-unused-vars

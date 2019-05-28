@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const VALUE_HDR_NAME = "X-HTTP-VALUE-HEADER";
 const VARY_HDR_NAME = "X-HTTP-VARY-HEADER";
@@ -39,13 +39,13 @@ Test.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) { },
+  onStartRequest: function(request) { },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     this._buffer = this._buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(this._buffer, this._expectVal);
     do_timeout(0, run_next_test);
   },
@@ -58,7 +58,7 @@ Test.prototype = {
     if (this._cacheHdr)
         channel.setRequestHeader(CACHECTRL_HDR_NAME, this._cacheHdr, false);
 
-    channel.asyncOpen2(this);
+    channel.asyncOpen(this);
   }
 };
 

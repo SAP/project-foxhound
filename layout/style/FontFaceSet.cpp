@@ -172,9 +172,6 @@ FontFaceSet::~FontFaceSet() {
   MOZ_ASSERT(!ServoStyleSet::IsInServoTraversal());
 
   Disconnect();
-  for (auto it = mLoaders.Iter(); !it.Done(); it.Next()) {
-    it.Get()->GetKey()->Cancel();
-  }
 }
 
 JSObject* FontFaceSet::WrapObject(JSContext* aContext,
@@ -191,6 +188,12 @@ void FontFaceSet::Disconnect() {
     // been unlinked from the document.
     mDocument->CSSLoader()->RemoveObserver(this);
   }
+
+  for (auto it = mLoaders.Iter(); !it.Done(); it.Next()) {
+    it.Get()->GetKey()->Cancel();
+  }
+
+  mLoaders.Clear();
 }
 
 void FontFaceSet::RemoveDOMContentLoadedListener() {
@@ -225,10 +228,10 @@ void FontFaceSet::ParseFontShorthandForMatching(
       aStyle = FontSlantStyle::Italic();
       break;
     case StyleComputedFontStyleDescriptor::Tag::Oblique:
-      MOZ_ASSERT(style.oblique._0 == style.oblique._1,
+      MOZ_ASSERT(style.AsOblique()._0 == style.AsOblique()._1,
                  "We use ComputedFontStyleDescriptor just for convenience, "
                  "the two values should always match");
-      aStyle = FontSlantStyle::Oblique(style.oblique._0);
+      aStyle = FontSlantStyle::Oblique(style.AsOblique()._0);
       break;
   }
 
@@ -417,7 +420,7 @@ bool FontFaceSet::HasRuleFontFace(FontFace* aFontFace) {
 }
 #endif
 
-bool IsPdfJs(nsIPrincipal* aPrincipal) {
+static bool IsPdfJs(nsIPrincipal* aPrincipal) {
   if (!aPrincipal) {
     return false;
   }
@@ -601,6 +604,7 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
 
   RefPtr<nsFontFaceLoader> fontLoader = new nsFontFaceLoader(
       aUserFontEntry, aFontFaceSrc->mURI->get(), this, channel);
+  mLoaders.PutEntry(fontLoader);
 
   if (LOG_ENABLED()) {
     LOG(
@@ -652,13 +656,12 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
       aFontFaceSrc->mURI->get(), mDocument->GetDocumentURI(),
       nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
 
-  rv = channel->AsyncOpen2(streamLoader);
+  rv = channel->AsyncOpen(streamLoader);
   if (NS_FAILED(rv)) {
     fontLoader->DropChannel();  // explicitly need to break ref cycle
   }
 
   if (NS_SUCCEEDED(rv)) {
-    mLoaders.PutEntry(fontLoader);
     fontLoader->StartedLoading(streamLoader);
     // let the font entry remember the loader, in case we need to cancel it
     aUserFontEntry->SetLoader(fontLoader);
@@ -920,7 +923,8 @@ void FontFaceSet::InsertRuleFontFace(FontFace* aFontFace, SheetType aSheetType,
   mUserFontSet->AddUserFontEntry(family, entry);
 }
 
-/* static */ already_AddRefed<gfxUserFontEntry>
+/* static */
+already_AddRefed<gfxUserFontEntry>
 FontFaceSet::FindOrCreateUserFontEntryFromFontFace(FontFace* aFontFace) {
   nsAtom* fontFamily = aFontFace->GetFamilyName();
   if (!fontFamily) {
@@ -957,8 +961,8 @@ static SlantStyleRange GetStyleRangeForDescriptor(
     case StyleComputedFontStyleDescriptor::Tag::Italic:
       return SlantStyleRange(FontSlantStyle::Italic());
     case StyleComputedFontStyleDescriptor::Tag::Oblique:
-      return SlantStyleRange(FontSlantStyle::Oblique(val.oblique._0),
-                             FontSlantStyle::Oblique(val.oblique._1));
+      return SlantStyleRange(FontSlantStyle::Oblique(val.AsOblique()._0),
+                             FontSlantStyle::Oblique(val.AsOblique()._1));
   }
   MOZ_ASSERT_UNREACHABLE("How?");
   return SlantStyleRange(FontSlantStyle::Normal());
@@ -978,7 +982,8 @@ static StretchRange GetStretchRangeForDescriptor(
 // TODO(emilio): Should this take an nsAtom* aFamilyName instead?
 //
 // All callers have one handy.
-/* static */ already_AddRefed<gfxUserFontEntry>
+/* static */
+already_AddRefed<gfxUserFontEntry>
 FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
     const nsACString& aFamilyName, FontFace* aFontFace, SheetType aSheetType) {
   FontFaceSet* set = aFontFace->GetPrimaryFontFaceSet();
@@ -1041,7 +1046,7 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
       const auto& component = sourceListComponents[i];
       switch (component.tag) {
         case StyleFontFaceSourceListComponent::Tag::Local: {
-          nsAtom* atom = component.local._0;
+          nsAtom* atom = component.AsLocal();
           face->mLocalName.Append(nsAtomCString(atom));
           face->mSourceType = gfxFontFaceSrc::eSourceType_Local;
           face->mURI = nullptr;
@@ -1051,7 +1056,7 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
         }
         case StyleFontFaceSourceListComponent::Tag::Url: {
           face->mSourceType = gfxFontFaceSrc::eSourceType_URL;
-          const URLValue* url = component.url._0;
+          const URLValue* url = component.AsUrl();
           nsIURI* uri = url->GetURI();
           face->mURI = uri ? new gfxFontSrcURI(uri) : nullptr;
           URLExtraData* extraData = url->ExtraData();
@@ -1367,7 +1372,7 @@ nsresult FontFaceSet::SyncLoadFontData(gfxUserFontEntry* aFontToLoad,
 
   // blocking stream is OK for data URIs
   nsCOMPtr<nsIInputStream> stream;
-  rv = channel->Open2(getter_AddRefs(stream));
+  rv = channel->Open(getter_AddRefs(stream));
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint64_t bufferLength64;
@@ -1673,7 +1678,8 @@ FontFaceSet::HandleEvent(Event* aEvent) {
   return NS_OK;
 }
 
-/* static */ bool FontFaceSet::PrefEnabled() {
+/* static */
+bool FontFaceSet::PrefEnabled() {
   static bool initialized = false;
   static bool enabled;
   if (!initialized) {
@@ -1739,19 +1745,21 @@ void FontFaceSet::CopyNonRuleFacesTo(FontFaceSet* aFontFaceSet) const {
 
 // -- FontFaceSet::UserFontSet ------------------------------------------------
 
-/* virtual */ bool FontFaceSet::UserFontSet::IsFontLoadAllowed(
-    const gfxFontFaceSrc& aSrc) {
+/* virtual */
+bool FontFaceSet::UserFontSet::IsFontLoadAllowed(const gfxFontFaceSrc& aSrc) {
   return mFontFaceSet && mFontFaceSet->IsFontLoadAllowed(aSrc);
 }
 
-/* virtual */ void FontFaceSet::UserFontSet::DispatchFontLoadViolations(
+/* virtual */
+void FontFaceSet::UserFontSet::DispatchFontLoadViolations(
     nsTArray<nsCOMPtr<nsIRunnable>>& aViolations) {
   if (mFontFaceSet) {
     mFontFaceSet->DispatchFontLoadViolations(aViolations);
   }
 }
 
-/* virtual */ nsresult FontFaceSet::UserFontSet::StartLoad(
+/* virtual */
+nsresult FontFaceSet::UserFontSet::StartLoad(
     gfxUserFontEntry* aUserFontEntry, const gfxFontFaceSrc* aFontFaceSrc) {
   if (!mFontFaceSet) {
     return NS_ERROR_FAILURE;
@@ -1777,16 +1785,19 @@ void FontFaceSet::UserFontSet::RecordFontLoadDone(uint32_t aFontSize,
   }
 }
 
-/* virtual */ nsresult FontFaceSet::UserFontSet::LogMessage(
-    gfxUserFontEntry* aUserFontEntry, const char* aMessage, uint32_t aFlags,
-    nsresult aStatus) {
+/* virtual */
+nsresult FontFaceSet::UserFontSet::LogMessage(gfxUserFontEntry* aUserFontEntry,
+                                              const char* aMessage,
+                                              uint32_t aFlags,
+                                              nsresult aStatus) {
   if (!mFontFaceSet) {
     return NS_ERROR_FAILURE;
   }
   return mFontFaceSet->LogMessage(aUserFontEntry, aMessage, aFlags, aStatus);
 }
 
-/* virtual */ nsresult FontFaceSet::UserFontSet::SyncLoadFontData(
+/* virtual */
+nsresult FontFaceSet::UserFontSet::SyncLoadFontData(
     gfxUserFontEntry* aFontToLoad, const gfxFontFaceSrc* aFontFaceSrc,
     uint8_t*& aBuffer, uint32_t& aBufferLength) {
   if (!mFontFaceSet) {
@@ -1796,18 +1807,21 @@ void FontFaceSet::UserFontSet::RecordFontLoadDone(uint32_t aFontSize,
                                         aBufferLength);
 }
 
-/* virtual */ bool FontFaceSet::UserFontSet::GetPrivateBrowsing() {
+/* virtual */
+bool FontFaceSet::UserFontSet::GetPrivateBrowsing() {
   return mFontFaceSet && mFontFaceSet->mPrivateBrowsing;
 }
 
-/* virtual */ void FontFaceSet::UserFontSet::DoRebuildUserFontSet() {
+/* virtual */
+void FontFaceSet::UserFontSet::DoRebuildUserFontSet() {
   if (!mFontFaceSet) {
     return;
   }
   mFontFaceSet->MarkUserFontSetDirty();
 }
 
-/* virtual */ already_AddRefed<gfxUserFontEntry>
+/* virtual */
+already_AddRefed<gfxUserFontEntry>
 FontFaceSet::UserFontSet::CreateUserFontEntry(
     const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList, WeightRange aWeight,
     StretchRange aStretch, SlantStyleRange aStyle,

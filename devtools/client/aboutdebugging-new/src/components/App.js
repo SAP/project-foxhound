@@ -26,7 +26,7 @@ const Sidebar = createFactory(require("./sidebar/Sidebar"));
 class App extends PureComponent {
   static get propTypes() {
     return {
-      adbAddonStatus: PropTypes.string,
+      adbAddonStatus: Types.adbAddonStatus,
       // The "dispatch" helper is forwarded to the App component via connect.
       // From that point, components are responsible for forwarding the dispatch
       // property to all components who need to dispatch actions.
@@ -35,9 +35,9 @@ class App extends PureComponent {
       getString: PropTypes.func.isRequired,
       isScanningUsb: PropTypes.bool.isRequired,
       networkEnabled: PropTypes.bool.isRequired,
-      networkLocations: PropTypes.arrayOf(PropTypes.string).isRequired,
+      networkLocations: PropTypes.arrayOf(Types.location).isRequired,
       networkRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
-      selectedPage: PropTypes.string,
+      selectedPage: Types.page,
       selectedRuntimeId: PropTypes.string,
       usbRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
       wifiEnabled: PropTypes.bool.isRequired,
@@ -137,17 +137,12 @@ class App extends PureComponent {
         path: "/runtime/:runtimeId",
         render: routeProps => this.renderRuntime(routeProps),
       }),
+      // default route when there's no match which includes "/"
+      // TODO: the url does not match "/" means invalid URL,
+      // in this case maybe we'd like to do something else than a redirect.
+      // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1509897
       Route({
-        path: "/",
-        exact: true,
-        // will redirect to This Firefox
-        render: routeProps => this.renderRuntime(routeProps),
-      }),
-      // default route when there's no match
-      // TODO: maybe we'd like to do something else than a redirect. See:
-      // https://bugzilla.mozilla.org/show_bug.cgi?id=1509897
-      Route({
-        render: () => Redirect({ to: "/"}),
+        render: () => Redirect({ to: "/connect"}),
       })
     );
   }

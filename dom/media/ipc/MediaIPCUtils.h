@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_media_MediaIPCUtils_h
 #define mozilla_dom_media_MediaIPCUtils_h
 
-#include "ipc/IPCMessageUtils.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/GfxMessageUtils.h"
 #include "PlatformDecoderModule.h"
+#include "ipc/IPCMessageUtils.h"
+#include "mozilla/GfxMessageUtils.h"
+#include "mozilla/gfx/Rect.h"
 
 namespace IPC {
 template <>
@@ -44,6 +44,19 @@ struct ParamTraits<mozilla::VideoInfo> {
 };
 
 template <>
+struct ParamTraits<mozilla::TrackInfo::TrackType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::TrackInfo::TrackType,
+          mozilla::TrackInfo::TrackType::kUndefinedTrack,
+          mozilla::TrackInfo::TrackType::kTextTrack> {};
+
+template <>
+struct ParamTraits<mozilla::MediaByteBuffer>
+    : public ParamTraits<nsTArray<uint8_t>> {
+  typedef mozilla::MediaByteBuffer paramType;
+};
+
+template <>
 struct ParamTraits<mozilla::AudioInfo> {
   typedef mozilla::AudioInfo paramType;
 
@@ -58,6 +71,7 @@ struct ParamTraits<mozilla::AudioInfo> {
     WriteParam(aMsg, aParam.mBitDepth);
     WriteParam(aMsg, aParam.mProfile);
     WriteParam(aMsg, aParam.mExtendedProfile);
+    WriteParam(aMsg, *aParam.mCodecSpecificConfig);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
@@ -68,7 +82,8 @@ struct ParamTraits<mozilla::AudioInfo> {
         ReadParam(aMsg, aIter, &aResult->mChannelMap) &&
         ReadParam(aMsg, aIter, &aResult->mBitDepth) &&
         ReadParam(aMsg, aIter, &aResult->mProfile) &&
-        ReadParam(aMsg, aIter, &aResult->mExtendedProfile)) {
+        ReadParam(aMsg, aIter, &aResult->mExtendedProfile) &&
+        ReadParam(aMsg, aIter, aResult->mCodecSpecificConfig.get())) {
       return true;
     }
     return false;
@@ -82,6 +97,52 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
           mozilla::MediaDataDecoder::ConversionRequired(0),
           mozilla::MediaDataDecoder::ConversionRequired(
               mozilla::MediaDataDecoder::ConversionRequired::kNeedAnnexB)> {};
+
+template <>
+struct ParamTraits<mozilla::media::TimeUnit> {
+  typedef mozilla::media::TimeUnit paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.IsValid());
+    WriteParam(aMsg, aParam.IsValid() ? aParam.ToMicroseconds() : 0);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    bool valid;
+    int64_t value;
+    if (ReadParam(aMsg, aIter, &valid) && ReadParam(aMsg, aIter, &value)) {
+      if (!valid) {
+        *aResult = mozilla::media::TimeUnit::Invalid();
+      } else {
+        *aResult = mozilla::media::TimeUnit::FromMicroseconds(value);
+      }
+      return true;
+    }
+    return false;
+  };
+};
+
+template <>
+struct ParamTraits<mozilla::media::TimeInterval> {
+  typedef mozilla::media::TimeInterval paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mStart);
+    WriteParam(aMsg, aParam.mEnd);
+    WriteParam(aMsg, aParam.mFuzz);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    if (ReadParam(aMsg, aIter, &aResult->mStart) &&
+        ReadParam(aMsg, aIter, &aResult->mEnd) &&
+        ReadParam(aMsg, aIter, &aResult->mFuzz)) {
+      return true;
+    }
+    return false;
+  }
+};
 
 }  // namespace IPC
 

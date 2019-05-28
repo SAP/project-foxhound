@@ -127,6 +127,8 @@ struct MOZ_STACK_CLASS BidiParagraphData {
   nsBidiLevel mParaLevel;
   nsIContent* mPrevContent;
   nsIFrame* mPrevFrame;
+  // Cache the block frame which needs bidi resolution.
+  const nsIFrame* mBlock;
 #ifdef DEBUG
   // Only used for NOISY debug output.
   nsBlockFrame* mCurrentBlock;
@@ -138,12 +140,16 @@ struct MOZ_STACK_CLASS BidiParagraphData {
         mRequiresBidi(false),
         mParaLevel(nsBidiPresUtils::BidiLevelFromStyle(aBlockFrame->Style())),
         mPrevContent(nullptr),
-        mPrevFrame(nullptr)
+        mPrevFrame(nullptr),
+        mBlock(aBlockFrame)
 #ifdef DEBUG
         ,
         mCurrentBlock(aBlockFrame)
 #endif
   {
+    MOZ_ASSERT(mBlock->FirstContinuation() == mBlock,
+               "mBlock must be the first continuation!");
+
     if (mParaLevel > 0) {
       mRequiresBidi = true;
     }
@@ -324,7 +330,7 @@ struct MOZ_STACK_CLASS BidiParagraphData {
     // Advance aLine to the line containing aFrame
     nsIFrame* child = aFrame;
     nsIFrame* parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
-    while (parent && !nsLayoutUtils::GetAsBlock(parent)) {
+    while (parent && !parent->IsBlockFrameOrSubclass()) {
       child = parent;
       parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
     }
@@ -1295,9 +1301,12 @@ void nsBidiPresUtils::ResolveParagraphWithinBlock(BidiParagraphData* aBpd) {
   aBpd->ResetData();
 }
 
-/* static */ nscoord nsBidiPresUtils::ReorderFrames(
-    nsIFrame* aFirstFrameOnLine, int32_t aNumFramesOnLine, WritingMode aLineWM,
-    const nsSize& aContainerSize, nscoord aStart) {
+/* static */
+nscoord nsBidiPresUtils::ReorderFrames(nsIFrame* aFirstFrameOnLine,
+                                       int32_t aNumFramesOnLine,
+                                       WritingMode aLineWM,
+                                       const nsSize& aContainerSize,
+                                       nscoord aStart) {
   nsSize containerSize(aContainerSize);
 
   // If this line consists of a line frame, reorder the line frame's children.
@@ -1460,7 +1469,8 @@ void nsBidiPresUtils::IsFirstOrLast(
   }
 }
 
-/* static */ void nsBidiPresUtils::RepositionRubyContentFrame(
+/* static */
+void nsBidiPresUtils::RepositionRubyContentFrame(
     nsIFrame* aFrame, WritingMode aFrameWM,
     const LogicalMargin& aBorderPadding) {
   const nsFrameList& childList = aFrame->PrincipalChildList();
@@ -1494,7 +1504,8 @@ void nsBidiPresUtils::IsFirstOrLast(
   }
 }
 
-/* static */ nscoord nsBidiPresUtils::RepositionRubyFrame(
+/* static */
+nscoord nsBidiPresUtils::RepositionRubyFrame(
     nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
     const WritingMode aContainerWM, const LogicalMargin& aBorderPadding) {
   LayoutFrameType frameType = aFrame->Type();
@@ -1555,7 +1566,8 @@ void nsBidiPresUtils::IsFirstOrLast(
   return icoord;
 }
 
-/* static */ nscoord nsBidiPresUtils::RepositionFrame(
+/* static */
+nscoord nsBidiPresUtils::RepositionFrame(
     nsIFrame* aFrame, bool aIsEvenLevel, nscoord aStartOrEnd,
     const nsContinuationStates* aContinuationStates, WritingMode aContainerWM,
     bool aContainerReverseDir, const nsSize& aContainerSize) {
@@ -1667,9 +1679,11 @@ void nsBidiPresUtils::InitContinuationStates(
   }
 }
 
-/* static */ nscoord nsBidiPresUtils::RepositionInlineFrames(
-    BidiLineData* aBld, WritingMode aLineWM, const nsSize& aContainerSize,
-    nscoord aStart) {
+/* static */
+nscoord nsBidiPresUtils::RepositionInlineFrames(BidiLineData* aBld,
+                                                WritingMode aLineWM,
+                                                const nsSize& aContainerSize,
+                                                nscoord aStart) {
   nscoord start = aStart;
   nsIFrame* frame;
   int32_t count = aBld->mVisualFrames.Length();
@@ -1779,7 +1793,9 @@ void nsBidiPresUtils::RemoveBidiContinuation(BidiParagraphData* aBpd,
       // so they can be reused or deleted by normal reflow code
       frame->SetProperty(nsIFrame::BidiDataProperty(), bidiData);
       frame->AddStateBits(NS_FRAME_IS_BIDI);
-      while (frame) {
+
+      // Go no further than the block which needs resolution.
+      while (frame && aBpd->mBlock != frame->FirstContinuation()) {
         nsIFrame* prev = frame->GetPrevContinuation();
         if (prev) {
           MakeContinuationFluid(prev, frame);

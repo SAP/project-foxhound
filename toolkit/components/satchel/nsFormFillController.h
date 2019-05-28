@@ -73,6 +73,9 @@ class nsFormFillController final : public nsIFormFillController,
 
   void StartControllingInput(mozilla::dom::HTMLInputElement* aInput);
   void StopControllingInput();
+
+  nsresult HandleFocus(mozilla::dom::HTMLInputElement* aInput);
+
   /**
    * Checks that aElement is a type of element we want to fill, then calls
    * StartControllingInput on it.
@@ -135,6 +138,7 @@ class nsFormFillController final : public nsIFormFillController,
   bool mCompleteSelectedIndex;
   bool mForceComplete;
   bool mSuppressOnInput;
+  bool mPasswordPopupAutomaticallyOpened;
 };
 
 #endif  // __nsFormFillController__

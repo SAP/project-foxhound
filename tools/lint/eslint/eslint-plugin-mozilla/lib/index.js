@@ -34,6 +34,7 @@ module.exports = {
     "avoid-Date-timing": require("../lib/rules/avoid-Date-timing"),
     "avoid-removeChild": require("../lib/rules/avoid-removeChild"),
     "balanced-listeners": require("../lib/rules/balanced-listeners"),
+    "consistent-if-bracing": require("../lib/rules/consistent-if-bracing"),
     "import-browser-window-globals":
       require("../lib/rules/import-browser-window-globals"),
     "import-content-task-globals":
@@ -46,9 +47,6 @@ module.exports = {
     "no-arbitrary-setTimeout": require("../lib/rules/no-arbitrary-setTimeout"),
     "no-compare-against-boolean-literals": require("../lib/rules/no-compare-against-boolean-literals"),
     "no-define-cc-etc": require("../lib/rules/no-define-cc-etc"),
-    "no-single-arg-cu-import": require("../lib/rules/no-single-arg-cu-import"),
-    "no-import-into-var-and-global":
-      require("../lib/rules/no-import-into-var-and-global.js"),
     "no-task": require("../lib/rules/no-task"),
     "no-useless-parameters": require("../lib/rules/no-useless-parameters"),
     "no-useless-removeEventListener":

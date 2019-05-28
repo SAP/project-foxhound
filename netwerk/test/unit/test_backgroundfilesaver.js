@@ -10,14 +10,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 ChromeUtils.defineModuleGetter(this, "FileUtils",
                                "resource://gre/modules/FileUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "NetUtil",
                                "resource://gre/modules/NetUtil.jsm");
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "FileTestUtils",
                                "resource://testing-common/FileTestUtils.jsm");
 
@@ -175,7 +171,7 @@ function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
                 aCloseWhenDone);
     copier.asyncCopy({
       onStartRequest: function () { },
-      onStopRequest: function (aRequest, aContext, aStatusCode)
+      onStopRequest: function (aRequest, aStatusCode)
       {
         if (Components.isSuccessCode(aStatusCode)) {
           resolve();
@@ -210,24 +206,24 @@ function promisePumpToSaver(aSourceString, aSaverStreamListener,
                .createInstance(Ci.nsIInputStreamPump);
     pump.init(inputStream, 0, 0, true);
     pump.asyncRead({
-      onStartRequest: function PPTS_onStartRequest(aRequest, aContext)
+      onStartRequest: function PPTS_onStartRequest(aRequest)
       {
-        aSaverStreamListener.onStartRequest(aRequest, aContext);
+        aSaverStreamListener.onStartRequest(aRequest);
       },
-      onStopRequest: function PPTS_onStopRequest(aRequest, aContext, aStatusCode)
+      onStopRequest: function PPTS_onStopRequest(aRequest, aStatusCode)
       {
-        aSaverStreamListener.onStopRequest(aRequest, aContext, aStatusCode);
+        aSaverStreamListener.onStopRequest(aRequest, aStatusCode);
         if (Components.isSuccessCode(aStatusCode)) {
           resolve();
         } else {
           reject(new Components.Exception(aResult));
         }
       },
-      onDataAvailable: function PPTS_onDataAvailable(aRequest, aContext,
+      onDataAvailable: function PPTS_onDataAvailable(aRequest,
                                                      aInputStream, aOffset,
                                                      aCount)
       {
-        aSaverStreamListener.onDataAvailable(aRequest, aContext, aInputStream,
+        aSaverStreamListener.onDataAvailable(aRequest, aInputStream,
                                              aOffset, aCount);
       },
     }, null);

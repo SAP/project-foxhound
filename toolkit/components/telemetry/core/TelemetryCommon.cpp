@@ -14,6 +14,7 @@
 #include "nsThreadUtils.h"
 #include "nsVersionComparator.h"
 #include "TelemetryProcessData.h"
+#include "Telemetry.h"
 
 namespace mozilla {
 namespace Telemetry {
@@ -64,14 +65,12 @@ bool CanRecordDataset(uint32_t aDataset, bool aCanRecordBase,
 
 bool CanRecordInProcess(RecordedProcessType processes,
                         GeckoProcessType processType) {
-  bool recordAllChildren = !!(processes & RecordedProcessType::AllChildren);
   // We can use (1 << ProcessType) due to the way RecordedProcessType is
   // defined.
   bool canRecordProcess =
       !!(processes & static_cast<RecordedProcessType>(1 << processType));
 
-  return canRecordProcess ||
-         ((processType != GeckoProcessType_Default) && recordAllChildren);
+  return canRecordProcess;
 }
 
 bool CanRecordInProcess(RecordedProcessType processes, ProcessID processId) {
@@ -83,11 +82,15 @@ bool CanRecordProduct(SupportedProduct aProducts) {
 }
 
 nsresult MsSinceProcessStart(double* aResult) {
-  bool error;
-  *aResult = (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation(&error))
-                 .ToMilliseconds();
-  if (error) {
-    return NS_ERROR_NOT_AVAILABLE;
+  bool isInconsistent = false;
+  *aResult =
+      (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation(&isInconsistent))
+          .ToMilliseconds();
+
+  if (isInconsistent) {
+    Telemetry::ScalarAdd(
+        Telemetry::ScalarID::TELEMETRY_PROCESS_CREATION_TIMESTAMP_INCONSISTENT,
+        1);
   }
   return NS_OK;
 }

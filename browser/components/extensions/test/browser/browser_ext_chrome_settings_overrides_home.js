@@ -7,8 +7,6 @@ ChromeUtils.defineModuleGetter(this, "AddonManager",
                                "resource://gre/modules/AddonManager.jsm");
 ChromeUtils.defineModuleGetter(this, "ExtensionSettingsStore",
                                "resource://gre/modules/ExtensionSettingsStore.jsm");
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");
 
 // Named this way so they correspond to the extensions
 const HOME_URI_2 = "http://example.com/";
@@ -328,8 +326,7 @@ add_task(async function test_doorhanger_homepage_button() {
   // Click Restore Settings.
   let popupHidden = promisePopupHidden(panel);
   let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
-  document.getAnonymousElementByAttribute(
-    popupnotification, "anonid", "secondarybutton").click();
+  popupnotification.secondaryButton.click();
   await prefPromise;
   await popupHidden;
 
@@ -341,7 +338,7 @@ add_task(async function test_doorhanger_homepage_button() {
   // Click Restore Settings again.
   popupHidden = promisePopupHidden(panel);
   prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
-  document.getAnonymousElementByAttribute(popupnotification, "anonid", "secondarybutton").click();
+  popupnotification.secondaryButton.click();
   await popupHidden;
   await prefPromise;
 
@@ -401,7 +398,7 @@ add_task(async function test_doorhanger_new_window() {
   let popupHidden = promisePopupHidden(panel);
   let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
   let popupnotification = doc.getElementById("extension-homepage-notification");
-  doc.getAnonymousElementByAttribute(popupnotification, "anonid", "secondarybutton").click();
+  popupnotification.secondaryButton.click();
   await prefPromise;
   await popupHidden;
 
@@ -414,7 +411,7 @@ add_task(async function test_doorhanger_new_window() {
      "The extension name is in the popup");
 
   // Click Keep Changes.
-  doc.getAnonymousElementByAttribute(popupnotification, "anonid", "button").click();
+  popupnotification.button.click();
   await TestUtils.waitForCondition(() => isConfirmed(ext1Id));
 
   ok(getHomePageURL().endsWith("ext1.html"), "The homepage is still the set");
@@ -424,4 +421,119 @@ add_task(async function test_doorhanger_new_window() {
   await ext2.unload();
 
   ok(!isConfirmed(ext1Id), "The confirmation is cleaned up on uninstall");
+});
+
+add_task(async function test_overriding_home_page_incognito_not_allowed() {
+  await SpecialPowers.pushPrefEnv({set: [["extensions.allowPrivateBrowsingByDefault", false]]});
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      chrome_settings_overrides: {"homepage": "home.html"},
+      name: "extension",
+    },
+    background() {
+      browser.test.sendMessage("url", browser.runtime.getURL("home.html"));
+    },
+    files: {"home.html": "<h1>1</h1>"},
+    useAddonManager: "temporary",
+  });
+
+  await extension.startup();
+  let url = await extension.awaitMessage("url");
+
+  let windowOpenedPromise = BrowserTestUtils.waitForNewWindow({url});
+  let win = OpenBrowserWindow();
+  await windowOpenedPromise;
+  let doc = win.document;
+  let description = doc.getElementById("extension-homepage-notification-description");
+  let panel = doc.getElementById("extension-notification-panel");
+  await promisePopupShown(panel);
+
+  let popupnotification = description.closest("popupnotification");
+  is(description.textContent,
+     "An extension,  extension, changed what you see when you open your homepage and new windows.Learn more",
+     "The extension name is in the popup");
+  is(popupnotification.hidden, false, "The expected popup notification is visible");
+
+  ok(win.gURLBar.value.endsWith("home.html"), "extension is in control");
+  await BrowserTestUtils.closeWindow(win);
+
+  // Verify a private window does not open the extension page.
+  windowOpenedPromise = BrowserTestUtils.waitForNewWindow();
+  win = OpenBrowserWindow({private: true});
+  await windowOpenedPromise;
+  win.BrowserHome();
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+
+  is(win.gURLBar.value, "", "home page not used in private window");
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_overriding_home_page_incognito_spanning() {
+  await SpecialPowers.pushPrefEnv({set: [["extensions.allowPrivateBrowsingByDefault", false]]});
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      chrome_settings_overrides: {"homepage": "home.html"},
+      name: "private extension",
+      applications: {
+        gecko: {id: "@spanning-home"},
+      },
+    },
+    files: {"home.html": "<h1>1</h1>"},
+    useAddonManager: "permanent",
+    incognitoOverride: "spanning",
+  });
+
+  await extension.startup();
+
+  let windowOpenedPromise = BrowserTestUtils.waitForNewWindow();
+  let win = OpenBrowserWindow({private: true});
+  await windowOpenedPromise;
+  let doc = win.document;
+  let panel = doc.getElementById("extension-notification-panel");
+
+  let popupShown = promisePopupShown(panel);
+  win.BrowserHome();
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  await popupShown;
+
+  ok(getHomePageURL().endsWith("home.html"), "The homepage is set");
+  ok(win.gURLBar.value.endsWith("home.html"), "extension is in control in private window");
+
+  let popupHidden = promisePopupHidden(panel);
+  panel.hidePopup();
+  await popupHidden;
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_overriding_home_page_incognito_external() {
+  await SpecialPowers.pushPrefEnv({set: [["extensions.allowPrivateBrowsingByDefault", false]]});
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      chrome_settings_overrides: {"homepage": "https://example.com/home.html"},
+      name: "extension",
+    },
+    useAddonManager: "temporary",
+  });
+
+  await extension.startup();
+
+  // Verify a private window does not open the extension page.
+  let windowOpenedPromise = BrowserTestUtils.waitForNewWindow();
+  let win = OpenBrowserWindow({private: true});
+  await windowOpenedPromise;
+  win.BrowserHome();
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+
+  is(win.gURLBar.value, "", "home page not used in private window");
+  is(gBrowser.selectedBrowser.currentURI.spec, "about:home", "home page not used in private window");
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
 });

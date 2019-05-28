@@ -91,6 +91,7 @@
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
 #  include "mozilla/sandboxTarget.h"
 #  include "mozilla/sandboxing/loggingCallbacks.h"
+#  include "mozilla/RemoteSandboxBrokerProcessChild.h"
 #endif
 
 #if defined(MOZ_CONTENT_SANDBOX)
@@ -121,6 +122,11 @@ using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 
 #ifdef MOZ_JPROF
 #  include "jprof.h"
+#endif
+
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+#  include "mozilla/sandboxing/SandboxInitialization.h"
+#  include "mozilla/sandboxing/sandboxLogging.h"
 #endif
 
 #include "VRProcessChild.h"
@@ -184,7 +190,7 @@ nsresult XRE_InitEmbedding2(nsIFile* aLibXULDirectory, nsIFile* aAppDirectory,
                                        aAppDirProvider);
   if (NS_FAILED(rv)) return rv;
 
-  rv = NS_InitXPCOM2(nullptr, aAppDirectory, gDirServiceProvider);
+  rv = NS_InitXPCOM(nullptr, aAppDirectory, gDirServiceProvider);
   if (NS_FAILED(rv)) return rv;
 
   // We do not need to autoregister components here. The CheckCompatibility()
@@ -358,6 +364,9 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   // This has to happen before glib thread pools are started.
   mozilla::SandboxEarlyInit();
+  // This just needs to happen before sandboxing, to initialize the
+  // cached value, but libmozsandbox can't see this symbol.
+  mozilla::GetNumberOfProcessors();
 #endif
 
 #ifdef MOZ_JPROF
@@ -643,12 +652,20 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       uiLoopType = MessageLoop::TYPE_MOZILLA_CHILD;
       break;
     case GeckoProcessType_GMPlugin:
+    case GeckoProcessType_RemoteSandboxBroker:
       uiLoopType = MessageLoop::TYPE_DEFAULT;
       break;
     default:
       uiLoopType = MessageLoop::TYPE_UI;
       break;
   }
+
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+  if (aChildData->sandboxBrokerServices) {
+    SandboxBroker::Initialize(aChildData->sandboxBrokerServices);
+    SandboxBroker::GeckoDependentInitialize();
+  }
+#endif
 
   // If we are recording or replaying, initialize state and update arguments
   // according to those which were captured by the MiddlemanProcessChild in the
@@ -712,6 +729,11 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
           process = new net::SocketProcessImpl(parentPID);
           break;
 
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+        case GeckoProcessType_RemoteSandboxBroker:
+          process = new RemoteSandboxBrokerProcessChild(parentPID);
+          break;
+#endif
         default:
           MOZ_CRASH("Unknown main thread class");
       }
@@ -733,10 +755,13 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       mozilla::sandboxing::InitLoggingIfRequired(
           aChildData->ProvideLogFunction);
 #endif
-      mozilla::FilePreferences::InitDirectoriesWhitelist();
-      mozilla::FilePreferences::InitPrefs();
-
-      OverrideDefaultLocaleIfNeeded();
+      if (XRE_GetProcessType() != GeckoProcessType_RemoteSandboxBroker) {
+        // Remote sandbox launcher process doesn't have prerequisites for
+        // these...
+        mozilla::FilePreferences::InitDirectoriesWhitelist();
+        mozilla::FilePreferences::InitPrefs();
+        OverrideDefaultLocaleIfNeeded();
+      }
 
 #if defined(MOZ_CONTENT_SANDBOX)
       AddContentSandboxLevelAnnotation();

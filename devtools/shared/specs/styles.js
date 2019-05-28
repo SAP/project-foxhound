@@ -150,6 +150,14 @@ const pageStyleSpec = generateActorSpec({
         matched: "array:matchedselector",
       })),
     },
+    getRule: {
+      request: {
+        ruleId: Arg(0, "string"),
+      },
+      response: {
+        rule: RetVal("nullable:domstylerule"),
+      },
+    },
     getApplied: {
       request: {
         node: Arg(0, "domnode"),
@@ -175,7 +183,6 @@ const pageStyleSpec = generateActorSpec({
       request: {
         node: Arg(0, "domnode"),
         pseudoClasses: Arg(1, "nullable:array:string"),
-        editAuthored: Arg(2, "boolean"),
       },
       response: RetVal("appliedStylesReturn"),
     },
@@ -196,6 +203,11 @@ const styleRuleSpec = generateActorSpec({
   },
 
   methods: {
+    getRuleText: {
+      response: {
+        text: RetVal("string"),
+      },
+    },
     setRuleText: {
       request: {
         newText: Arg(0, "string"),
@@ -208,16 +220,6 @@ const styleRuleSpec = generateActorSpec({
       response: { rule: RetVal("domstylerule") },
     },
     modifySelector: {
-      request: {
-        node: Arg(0, "domnode"),
-        value: Arg(1, "string"),
-        editAuthored: Arg(2, "boolean"),
-      },
-      response: RetVal("modifiedStylesReturn"),
-    },
-    // Remove once Firefox 64 is no longer supported.
-    // @See StyleRuleActor.modifySelector()
-    modifySelector2: {
       request: {
         node: Arg(0, "domnode"),
         value: Arg(1, "string"),

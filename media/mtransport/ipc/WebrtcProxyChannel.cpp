@@ -169,7 +169,7 @@ nsresult WebrtcProxyChannel::Open(const nsCString& aHost, const int& aPort,
   // -the previous proxy tunnel didn't support redirects e.g. 307. don't need to
   // introduce new behavior. can't follow redirects on connect anyway.
   nsCOMPtr<nsIChannel> localChannel;
-  rv = ioService->NewChannelFromURIWithProxyFlags2(
+  rv = ioService->NewChannelFromURIWithProxyFlags(
       uri, nullptr,
       // Proxy flags are overridden by SetConnectOnly()
       0, aLoadInfo->LoadingNode(), aLoadInfo->LoadingPrincipal(),
@@ -213,7 +213,7 @@ nsresult WebrtcProxyChannel::Open(const nsCString& aHost, const int& aPort,
   rv = httpChannel->SetConnectOnly();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = NS_MaybeOpenChannelUsingAsyncOpen2(httpChannel, this);
+  rv = NS_MaybeOpenChannelUsingAsyncOpen(httpChannel, this);
 
   if (NS_FAILED(rv)) {
     LOG(("WebrtcProxyChannel %p: cannot async open\n", this));
@@ -331,16 +331,14 @@ WebrtcProxyChannel::OnTransportAvailable(nsISocketTransport* aTransport,
 
 // nsIRequestObserver (from nsIStreamListener)
 NS_IMETHODIMP
-WebrtcProxyChannel::OnStartRequest(nsIRequest* aRequest,
-                                   nsISupports* aContext) {
+WebrtcProxyChannel::OnStartRequest(nsIRequest* aRequest) {
   LOG(("WebrtcProxyChannel::OnStartRequest %p\n", this));
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebrtcProxyChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                                  nsresult aStatusCode) {
+WebrtcProxyChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   LOG(("WebrtcProxyChannel::OnStopRequest %p status=%u\n", this,
        static_cast<uint32_t>(aStatusCode)));
 
@@ -355,7 +353,7 @@ WebrtcProxyChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
 
 // nsIStreamListener
 NS_IMETHODIMP
-WebrtcProxyChannel::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
+WebrtcProxyChannel::OnDataAvailable(nsIRequest* aRequest,
                                     nsIInputStream* aInputStream,
                                     uint64_t aOffset, uint32_t aCount) {
   LOG(("WebrtcProxyChannel::OnDataAvailable %p count=%u\n", this, aCount));

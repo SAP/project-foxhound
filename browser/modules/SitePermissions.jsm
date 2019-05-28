@@ -4,8 +4,8 @@
 
 var EXPORTED_SYMBOLS = [ "SitePermissions" ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 var gStringBundle =
   Services.strings.createBundle("chrome://browser/locale/sitePermissions.properties");
@@ -24,13 +24,13 @@ const TemporaryPermissions = {
   // This is a three level deep map with the following structure:
   //
   // Browser => {
-  //   <prePath>: {
+  //   <baseDomain>: {
   //     <permissionID>: {Number} <timeStamp>
   //   }
   // }
   //
   // Only the top level browser elements are stored via WeakMap. The WeakMap
-  // value is an object with URI prePaths as keys. The keys of that object
+  // value is an object with URI baseDomains as keys. The keys of that object
   // are ids that identify permissions that were set for the specific URI.
   // The final value is an object containing the timestamp of when the permission
   // was set (in order to invalidate after a certain amount of time has passed).
@@ -38,16 +38,29 @@ const TemporaryPermissions = {
 
   // Private helper method that bundles some shared behavior for
   // get() and getAll(), e.g. deleting permissions when they have expired.
-  _get(entry, prePath, id, permission) {
+  _get(entry, baseDomain, id, permission) {
     if (permission == null || permission.timeStamp == null) {
-      delete entry[prePath][id];
+      delete entry[baseDomain][id];
       return null;
     }
     if (permission.timeStamp + SitePermissions.temporaryPermissionExpireTime < Date.now()) {
-      delete entry[prePath][id];
+      delete entry[baseDomain][id];
       return null;
     }
     return {id, state: permission.state, scope: SitePermissions.SCOPE_TEMPORARY};
+  },
+
+  // Extract baseDomain from uri. Fallback to hostname on conversion error.
+  _uriToBaseDomain(uri) {
+    try {
+      return Services.eTLD.getBaseDomain(uri);
+    } catch (error) {
+      if (error.result !== Cr.NS_ERROR_HOST_IS_IP_ADDRESS &&
+          error.result !== Cr.NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
+        throw error;
+      }
+      return uri.host;
+    }
   },
 
   // Sets a new permission for the specified browser.
@@ -59,35 +72,35 @@ const TemporaryPermissions = {
       this._stateByBrowser.set(browser, {});
     }
     let entry = this._stateByBrowser.get(browser);
-    let prePath = browser.currentURI.prePath;
-    if (!entry[prePath]) {
-      entry[prePath] = {};
+    let baseDomain = this._uriToBaseDomain(browser.currentURI);
+    if (!entry[baseDomain]) {
+      entry[baseDomain] = {};
     }
-    entry[prePath][id] = {timeStamp: Date.now(), state};
+    entry[baseDomain][id] = {timeStamp: Date.now(), state};
   },
 
   // Removes a permission with the specified id for the specified browser.
   remove(browser, id) {
-    if (!browser) {
+    if (!browser || !this._stateByBrowser.has(browser)) {
       return;
     }
     let entry = this._stateByBrowser.get(browser);
-    let prePath = browser.currentURI.prePath;
-    if (entry && entry[prePath]) {
-      delete entry[prePath][id];
+    let baseDomain = this._uriToBaseDomain(browser.currentURI);
+    if (entry[baseDomain]) {
+      delete entry[baseDomain][id];
     }
   },
 
   // Gets a permission with the specified id for the specified browser.
   get(browser, id) {
-    if (!browser || !browser.currentURI) {
+    if (!browser || !browser.currentURI || !this._stateByBrowser.has(browser)) {
       return null;
     }
     let entry = this._stateByBrowser.get(browser);
-    let prePath = browser.currentURI.prePath;
-    if (entry && entry[prePath]) {
-      let permission = entry[prePath][id];
-      return this._get(entry, prePath, id, permission);
+    let baseDomain = this._uriToBaseDomain(browser.currentURI);
+    if (entry[baseDomain]) {
+      let permission = entry[baseDomain][id];
+      return this._get(entry, baseDomain, id, permission);
     }
     return null;
   },
@@ -97,12 +110,15 @@ const TemporaryPermissions = {
   // of the passed browser element will be returned.
   getAll(browser) {
     let permissions = [];
+    if (!this._stateByBrowser.has(browser)) {
+      return permissions;
+    }
     let entry = this._stateByBrowser.get(browser);
-    let prePath = browser.currentURI.prePath;
-    if (entry && entry[prePath]) {
-      let timeStamps = entry[prePath];
+    let baseDomain = this._uriToBaseDomain(browser.currentURI);
+    if (entry[baseDomain]) {
+      let timeStamps = entry[baseDomain];
       for (let id of Object.keys(timeStamps)) {
-        let permission = this._get(entry, prePath, id, timeStamps[id]);
+        let permission = this._get(entry, baseDomain, id, timeStamps[id]);
         // _get() returns null when the permission has expired.
         if (permission) {
           permissions.push(permission);
@@ -148,15 +164,23 @@ const GloballyBlockedPermissions = {
       entry[prePath] = {};
     }
 
+    if (entry[prePath][id]) {
+      return;
+    }
     entry[prePath][id] = true;
 
-    // Listen to any top level navigations, once we see one clear the flag
-    // and remove the listener.
+    // Clear the flag and remove the listener once the user has navigated.
+    // WebProgress will report various things including hashchanges to us, the
+    // navigation we care about is either leaving the current page or reloading.
     browser.addProgressListener({
       QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener,
                                               Ci.nsISupportsWeakReference]),
       onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
-        if (aWebProgress.isTopLevel) {
+        let hasLeftPage = aLocation.prePath != prePath ||
+            !(aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT);
+        let isReload = !!(aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_RELOAD);
+
+        if (aWebProgress.isTopLevel && (hasLeftPage || isReload)) {
           GloballyBlockedPermissions.remove(browser, id, prePath);
           browser.removeProgressListener(this);
         }
@@ -504,7 +528,6 @@ var SitePermissions = {
    *        This needs to be provided if the scope is SCOPE_TEMPORARY!
    */
   set(uri, permissionID, state, scope = this.SCOPE_PERSISTENT, browser = null) {
-
     if (scope == this.SCOPE_GLOBAL && state == this.BLOCK) {
       GloballyBlockedPermissions.set(browser, permissionID);
       browser.dispatchEvent(new browser.ownerGlobal.CustomEvent("PermissionStateChange"));

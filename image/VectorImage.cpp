@@ -17,6 +17,7 @@
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGDocument.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Tuple.h"
@@ -425,7 +426,7 @@ nsresult VectorImage::OnImageDataComplete(nsIRequest* aRequest,
                                           nsresult aStatus, bool aLastPart) {
   // Call our internal OnStopRequest method, which only talks to our embedded
   // SVG document. This won't have any effect on our ProgressTracker.
-  nsresult finalStatus = OnStopRequest(aRequest, aContext, aStatus);
+  nsresult finalStatus = OnStopRequest(aRequest, aStatus);
 
   // Give precedence to Necko failure codes.
   if (NS_FAILED(aStatus)) {
@@ -451,7 +452,7 @@ nsresult VectorImage::OnImageDataAvailable(nsIRequest* aRequest,
                                            nsIInputStream* aInStr,
                                            uint64_t aSourceOffset,
                                            uint32_t aCount) {
-  return OnDataAvailable(aRequest, aContext, aInStr, aSourceOffset, aCount);
+  return OnDataAvailable(aRequest, aInStr, aSourceOffset, aCount);
 }
 
 nsresult VectorImage::StartAnimation() {
@@ -663,6 +664,15 @@ VectorImage::GetType(uint16_t* aType) {
 
 //******************************************************************************
 NS_IMETHODIMP
+VectorImage::GetProducerId(uint32_t* aId) {
+  NS_ENSURE_ARG_POINTER(aId);
+
+  *aId = ImageResource::GetImageProducerId();
+  return NS_OK;
+}
+
+//******************************************************************************
+NS_IMETHODIMP
 VectorImage::GetAnimated(bool* aAnimated) {
   if (mError || !mIsFullyLoaded) {
     return NS_ERROR_FAILURE;
@@ -746,10 +756,6 @@ VectorImage::GetFrameInternal(const IntSize& aSize,
     return MakeTuple(ImgDrawResult::NOT_READY, aSize, RefPtr<SourceSurface>());
   }
 
-  // We don't allow large surfaces to be rasterized on the Draw and
-  // GetImageContainerAtSize paths, because those have alternatives. If we get
-  // here however, then we know it came from GetFrame(AtSize) and that path does
-  // not have any fallback method, so we don't check UseSurfaceCacheForSize.
   RefPtr<SourceSurface> sourceSurface;
   IntSize decodeSize;
   Tie(sourceSurface, decodeSize) =
@@ -844,8 +850,7 @@ VectorImage::IsImageContainerAvailableAtSize(LayerManager* aManager,
                                              uint32_t aFlags) {
   // Since we only support image containers with WebRender, and it can handle
   // textures larger than the hw max texture size, we don't need to check aSize.
-  return !aSize.IsEmpty() && UseSurfaceCacheForSize(aSize) &&
-         IsImageContainerAvailable(aManager, aFlags);
+  return !aSize.IsEmpty() && IsImageContainerAvailable(aManager, aFlags);
 }
 
 //******************************************************************************
@@ -855,10 +860,6 @@ VectorImage::GetImageContainerAtSize(layers::LayerManager* aManager,
                                      const Maybe<SVGImageContext>& aSVGContext,
                                      uint32_t aFlags,
                                      layers::ImageContainer** aOutContainer) {
-  if (!UseSurfaceCacheForSize(aSize)) {
-    return ImgDrawResult::NOT_SUPPORTED;
-  }
-
   Maybe<SVGImageContext> newSVGContext;
   MaybeRestrictSVGContext(newSVGContext, aSVGContext, aFlags);
 
@@ -941,9 +942,13 @@ VectorImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
   // - We are using a DrawTargetRecording because we prefer the drawing commands
   //   in general to the rasterized surface. This allows blob images to avoid
   //   rasterized SVGs with WebRender.
-  // - The size exceeds what we are will to cache as a rasterized surface.
+  // - The size exceeds what we are willing to cache as a rasterized surface.
+  //   We don't do this for WebRender because the performance of the fallback
+  //   path is quite bad and upscaling the SVG from the clamped size is better
+  //   than bringing the browser to a crawl.
   if (aContext->GetDrawTarget()->GetBackendType() == BackendType::RECORDING ||
-      !UseSurfaceCacheForSize(aSize)) {
+      (!gfxVars::UseWebRender() &&
+       aSize != SurfaceCache::ClampVectorSize(aSize))) {
     aFlags |= FLAG_BYPASS_SURFACE_CACHE;
   }
 
@@ -1009,24 +1014,6 @@ already_AddRefed<gfxDrawable> VectorImage::CreateSVGDrawable(
 
   RefPtr<gfxDrawable> svgDrawable = new gfxCallbackDrawable(cb, aParams.size);
   return svgDrawable.forget();
-}
-
-bool VectorImage::UseSurfaceCacheForSize(const IntSize& aSize) const {
-  int32_t maxSizeKB = gfxPrefs::ImageCacheMaxRasterizedSVGThresholdKB();
-  if (maxSizeKB <= 0) {
-    return true;
-  }
-
-  if (!SurfaceCache::IsLegalSize(aSize)) {
-    return false;
-  }
-
-  // With factor of 2 mode, we should be willing to use a surface which is up
-  // to twice the width, and twice the height, of the maximum sized surface
-  // before switching to drawing to the target directly. That means the size in
-  // KB works out to be:
-  //   width * height * 4 [bytes/pixel] * / 1024 [bytes/KB] <= 2 * 2 * maxSizeKB
-  return aSize.width * aSize.height / 1024 <= maxSizeKB;
 }
 
 Tuple<RefPtr<SourceSurface>, IntSize> VectorImage::LookupCachedSurface(
@@ -1171,14 +1158,14 @@ void VectorImage::SendFrameComplete(bool aDidCache, uint32_t aFlags) {
                                          GetMaxSizedIntRect());
   } else {
     NotNull<RefPtr<VectorImage>> image = WrapNotNull(this);
-    NS_DispatchToMainThread(NS_NewRunnableFunction(
+    NS_DispatchToMainThread(CreateMediumHighRunnable(NS_NewRunnableFunction(
         "ProgressTracker::SyncNotifyProgress", [=]() -> void {
           RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
           if (tracker) {
             tracker->SyncNotifyProgress(FLAG_FRAME_COMPLETE,
                                         GetMaxSizedIntRect());
           }
-        }));
+        })));
   }
 }
 
@@ -1331,12 +1318,12 @@ VectorImage::GetFrameIndex(uint32_t aWhichFrame) {
 
 //******************************************************************************
 NS_IMETHODIMP
-VectorImage::OnStartRequest(nsIRequest* aRequest, nsISupports* aCtxt) {
+VectorImage::OnStartRequest(nsIRequest* aRequest) {
   MOZ_ASSERT(!mSVGDocumentWrapper,
              "Repeated call to OnStartRequest -- can this happen?");
 
   mSVGDocumentWrapper = new SVGDocumentWrapper();
-  nsresult rv = mSVGDocumentWrapper->OnStartRequest(aRequest, aCtxt);
+  nsresult rv = mSVGDocumentWrapper->OnStartRequest(aRequest);
   if (NS_FAILED(rv)) {
     mSVGDocumentWrapper = nullptr;
     mError = true;
@@ -1358,13 +1345,12 @@ VectorImage::OnStartRequest(nsIRequest* aRequest, nsISupports* aCtxt) {
 
 //******************************************************************************
 NS_IMETHODIMP
-VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
-                           nsresult aStatus) {
+VectorImage::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   if (mError) {
     return NS_ERROR_FAILURE;
   }
 
-  return mSVGDocumentWrapper->OnStopRequest(aRequest, aCtxt, aStatus);
+  return mSVGDocumentWrapper->OnStopRequest(aRequest, aStatus);
 }
 
 void VectorImage::OnSVGDocumentParsed() {
@@ -1459,15 +1445,14 @@ void VectorImage::OnSVGDocumentError() {
 
 //******************************************************************************
 NS_IMETHODIMP
-VectorImage::OnDataAvailable(nsIRequest* aRequest, nsISupports* aCtxt,
-                             nsIInputStream* aInStr, uint64_t aSourceOffset,
-                             uint32_t aCount) {
+VectorImage::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
+                             uint64_t aSourceOffset, uint32_t aCount) {
   if (mError) {
     return NS_ERROR_FAILURE;
   }
 
-  return mSVGDocumentWrapper->OnDataAvailable(aRequest, aCtxt, aInStr,
-                                              aSourceOffset, aCount);
+  return mSVGDocumentWrapper->OnDataAvailable(aRequest, aInStr, aSourceOffset,
+                                              aCount);
 }
 
 // --------------------------
@@ -1504,7 +1489,8 @@ void VectorImage::InvalidateObserversOnNextRefreshDriverTick() {
   nsCOMPtr<nsIRunnable> ev(NS_NewRunnableFunction(
       "VectorImage::SendInvalidationNotifications",
       [=]() -> void { self->SendInvalidationNotifications(); }));
-  eventTarget->Dispatch(ev.forget(), NS_DISPATCH_NORMAL);
+  eventTarget->Dispatch(CreateMediumHighRunnable(ev.forget()),
+                        NS_DISPATCH_NORMAL);
 }
 
 void VectorImage::PropagateUseCounters(Document* aParentDocument) {

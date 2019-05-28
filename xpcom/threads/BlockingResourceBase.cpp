@@ -44,7 +44,8 @@ const char* const BlockingResourceBase::kResourceTypeName[] = {
 #ifdef DEBUG
 
 PRCallOnceType BlockingResourceBase::sCallOnce;
-unsigned BlockingResourceBase::sResourceAcqnChainFrontTPI = (unsigned)-1;
+MOZ_THREAD_LOCAL(BlockingResourceBase*)
+BlockingResourceBase::sResourceAcqnChainFront;
 BlockingResourceBase::DDT* BlockingResourceBase::sDeadlockDetector;
 
 void BlockingResourceBase::StackWalkCallback(uint32_t aFrameNumber, void* aPc,
@@ -82,7 +83,7 @@ void BlockingResourceBase::GetStackTrace(AcquisitionState& aState) {
  * contexts into strings, all info is written to stderr, but only
  * some info is written into |aOut|
  */
-bool PrintCycle(
+static bool PrintCycle(
     const BlockingResourceBase::DDT::ResourceAcquisitionArray* aCycle,
     nsACString& aOut) {
   NS_ASSERTION(aCycle->Length() > 1, "need > 1 element for cycle!");
@@ -230,7 +231,7 @@ size_t BlockingResourceBase::SizeOfDeadlockDetector(
 }
 
 PRStatus BlockingResourceBase::InitStatics() {
-  PR_NewThreadPrivateIndex(&sResourceAcqnChainFrontTPI, 0);
+  MOZ_ASSERT(sResourceAcqnChainFront.init());
   sDeadlockDetector = new DDT();
   if (!sDeadlockDetector) {
     MOZ_CRASH("can't allocate deadlock detector");

@@ -19,6 +19,7 @@
 class nsCookie;
 class nsICookiePermission;
 class nsIEffectiveTLDService;
+class nsILoadInfo;
 
 struct nsCookieAttributes;
 
@@ -31,6 +32,8 @@ class CookieServiceChild : public PCookieServiceChild,
                            public nsIObserver,
                            public nsITimerCallback,
                            public nsSupportsWeakReference {
+  friend class PCookieServiceChild;
+
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSICOOKIESERVICE
@@ -58,13 +61,10 @@ class CookieServiceChild : public PCookieServiceChild,
   nsresult GetCookieStringInternal(nsIURI *aHostURI, nsIChannel *aChannel,
                                    char **aCookieString);
 
-  void GetCookieStringFromCookieHashTable(nsIURI *aHostURI, bool aIsForeign,
-                                          bool aIsTrackingResource,
-                                          bool aFirstPartyStorageAccessGranted,
-                                          bool aIsSafeTopLevelNav,
-                                          bool aIsSameSiteForeign,
-                                          const OriginAttributes &aAttrs,
-                                          nsCString &aCookieString);
+  void GetCookieStringFromCookieHashTable(
+      nsIURI *aHostURI, bool aIsForeign, bool aIsTrackingResource,
+      bool aFirstPartyStorageAccessGranted, bool aIsSafeTopLevelNav,
+      bool aIsSameSiteForeign, nsIChannel *aChannel, nsCString &aCookieString);
 
   nsresult SetCookieStringInternal(nsIURI *aHostURI, nsIChannel *aChannel,
                                    const char *aCookieString,
@@ -82,23 +82,22 @@ class CookieServiceChild : public PCookieServiceChild,
 
   void PrefChanged(nsIPrefBranch *aPrefBranch);
 
-  bool RequireThirdPartyCheck();
+  bool RequireThirdPartyCheck(nsILoadInfo *aLoadInfo);
 
-  virtual mozilla::ipc::IPCResult RecvTrackCookiesLoad(
+  mozilla::ipc::IPCResult RecvTrackCookiesLoad(
+      nsTArray<CookieStruct> &&aCookiesList, const OriginAttributes &aAttrs);
+
+  mozilla::ipc::IPCResult RecvRemoveAll();
+
+  mozilla::ipc::IPCResult RecvRemoveBatchDeletedCookies(
       nsTArray<CookieStruct> &&aCookiesList,
-      const OriginAttributes &aAttrs) override;
+      nsTArray<OriginAttributes> &&aAttrsList);
 
-  virtual mozilla::ipc::IPCResult RecvRemoveAll() override;
+  mozilla::ipc::IPCResult RecvRemoveCookie(const CookieStruct &aCookie,
+                                           const OriginAttributes &aAttrs);
 
-  virtual mozilla::ipc::IPCResult RecvRemoveBatchDeletedCookies(
-      nsTArray<CookieStruct> &&aCookiesList,
-      nsTArray<OriginAttributes> &&aAttrsList) override;
-
-  virtual mozilla::ipc::IPCResult RecvRemoveCookie(
-      const CookieStruct &aCookie, const OriginAttributes &aAttrs) override;
-
-  virtual mozilla::ipc::IPCResult RecvAddCookie(
-      const CookieStruct &aCookie, const OriginAttributes &aAttrs) override;
+  mozilla::ipc::IPCResult RecvAddCookie(const CookieStruct &aCookie,
+                                        const OriginAttributes &aAttrs);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -106,10 +105,8 @@ class CookieServiceChild : public PCookieServiceChild,
   nsCOMPtr<nsITimer> mCookieTimer;
   nsCOMPtr<mozIThirdPartyUtil> mThirdPartyUtil;
   nsCOMPtr<nsIEffectiveTLDService> mTLDService;
-  uint8_t mCookieBehavior;
   bool mThirdPartySession;
   bool mThirdPartyNonsecureSession;
-  bool mLeaveSecureAlone;
   bool mIPCOpen;
 };
 

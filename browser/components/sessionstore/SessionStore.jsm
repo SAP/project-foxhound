@@ -48,9 +48,7 @@ const OBSERVING = [
   "quit-application", "browser:purge-session-history",
   "browser:purge-session-history-for-domain",
   "idle-daily", "clear-origin-attributes-data",
-  "http-on-examine-response",
-  "http-on-examine-merged-response",
-  "http-on-examine-cached-response",
+  "http-on-may-change-process",
 ];
 
 // XUL Window properties to (re)store
@@ -375,8 +373,8 @@ var SessionStore = {
     return SessionStoreInternal.getSessionHistory(tab, updatedCallback);
   },
 
-  undoCloseById(aClosedId) {
-    return SessionStoreInternal.undoCloseById(aClosedId);
+  undoCloseById(aClosedId, aIncludePrivate) {
+    return SessionStoreInternal.undoCloseById(aClosedId, aIncludePrivate);
   },
 
   resetBrowserToLazyState(tab) {
@@ -684,14 +682,14 @@ var SessionStoreInternal = {
               // replace the crashed session with a restore-page-only session
               let url = "about:sessionrestore";
               let formdata = {id: {sessionData: state}, url};
-              let entry = {url, triggeringPrincipal_base64: Utils.SERIALIZED_SYSTEMPRINCIPAL };
+              let entry = {url, triggeringPrincipal_base64: E10SUtils.SERIALIZED_SYSTEMPRINCIPAL };
               state = { windows: [{ tabs: [{ entries: [entry], formdata }] }] };
             } else if (this._hasSingleTabWithURL(state.windows,
                                                  "about:welcomeback")) {
               // On a single about:welcomeback URL that crashed, replace about:welcomeback
               // with about:sessionrestore, to make clear to the user that we crashed.
               state.windows[0].tabs[0].entries[0].url = "about:sessionrestore";
-              state.windows[0].tabs[0].entries[0].triggeringPrincipal_base64 = Utils.SERIALIZED_SYSTEMPRINCIPAL;
+              state.windows[0].tabs[0].entries[0].triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
             }
           }
 
@@ -814,10 +812,8 @@ var SessionStoreInternal = {
           this._forgetTabsWithUserContextId(userContextId);
         }
         break;
-      case "http-on-examine-response":
-      case "http-on-examine-cached-response":
-      case "http-on-examine-merged-response":
-        this.onExamineResponse(aSubject);
+      case "http-on-may-change-process":
+        this.onMayChangeProcess(aSubject);
         break;
     }
   },
@@ -1595,7 +1591,7 @@ var SessionStoreInternal = {
   onQuitApplicationGranted: function ssi_onQuitApplicationGranted(syncShutdown = false) {
     // Collect an initial snapshot of window data before we do the flush.
     let index = 0;
-    for (let window of this._browserWindows) {
+    for (let window of this._orderedBrowserWindows) {
       this._collectWindowData(window);
       this._windows[window.__SSi].zIndex = ++index;
     }
@@ -2286,6 +2282,8 @@ var SessionStoreInternal = {
    * processes.
    */
   async _doProcessSwitch(aBrowser, aRemoteType, aChannel, aSwitchId) {
+    debug(`[process-switch]: performing switch from ${aBrowser.remoteType} to ${aRemoteType}`);
+
     // Don't try to switch tabs before delayed startup is completed.
     await aBrowser.ownerGlobal.delayedStartupPromise;
 
@@ -2309,13 +2307,16 @@ var SessionStoreInternal = {
     }
 
     // Tell our caller to redirect the load into this newly created process.
-    return aBrowser.frameLoader.tabParent;
+    let tabParent = aBrowser.frameLoader.tabParent;
+    debug(`[process-switch]: new tabID: ${tabParent.tabId}`);
+    return tabParent;
   },
 
   // Examine the channel response to see if we should change the process
   // performing the given load.
-  onExamineResponse(aChannel) {
-    if (!E10SUtils.useHttpResponseProcessSelection()) {
+  onMayChangeProcess(aChannel) {
+    if (!E10SUtils.useHttpResponseProcessSelection() &&
+        !E10SUtils.useCrossOriginOpenerPolicy()) {
       return;
     }
 
@@ -2323,13 +2324,21 @@ var SessionStoreInternal = {
       return; // Not a document load.
     }
 
-    let browsingContext = aChannel.loadInfo.browsingContext;
-    if (!browsingContext) {
-      return; // Not loading in a browsing context.
+    // Check that this is a toplevel document load.
+    let cpType = aChannel.loadInfo.externalContentPolicyType;
+    let toplevel = cpType == Ci.nsIContentPolicy.TYPE_DOCUMENT;
+    if (!toplevel) {
+      debug(`[process-switch]: non-toplevel - ignoring`);
+      return;
     }
 
-    if (browsingContext.parent) {
-      return; // Not a toplevel load, can't flip procs.
+    // Check that the document has a corresponding BrowsingContext.
+    let browsingContext = toplevel
+        ? aChannel.loadInfo.browsingContext
+        : aChannel.loadInfo.frameBrowsingContext;
+    if (!browsingContext) {
+      debug(`[process-switch]: no BrowsingContext - ignoring`);
+      return;
     }
 
     // Get principal for a document already loaded in the BrowsingContext.
@@ -2338,34 +2347,63 @@ var SessionStoreInternal = {
       currentPrincipal = browsingContext.currentWindowGlobal.documentPrincipal;
     }
 
-    let parentChannel = aChannel.notificationCallbacks
-                                .getInterface(Ci.nsIParentChannel);
-    if (!parentChannel) {
-      return; // Not an actor channel
+    // Ensure we have an nsIParentChannel listener for a remote load.
+    let parentChannel;
+    try {
+      parentChannel = aChannel.notificationCallbacks
+                              .getInterface(Ci.nsIParentChannel);
+    } catch (e) {
+      debug(`[process-switch]: No nsIParentChannel callback - ignoring`);
+      return;
     }
 
-    let tabParent = parentChannel.QueryInterface(Ci.nsIInterfaceRequestor)
-                                 .getInterface(Ci.nsITabParent);
-    if (!tabParent || !tabParent.ownerElement) {
-      console.warn("warning: Missing tabParent");
-      return; // Not an embedded browsing context
+    // Ensure we have a nsITabParent for our remote load.
+    let tabParent;
+    try {
+      tabParent = parentChannel.QueryInterface(Ci.nsIInterfaceRequestor)
+                               .getInterface(Ci.nsITabParent);
+    } catch (e) {
+      debug(`[process-switch]: No nsITabParent for channel - ignoring`);
+      return;
     }
 
+    // Ensure we're loaded in a regular tabbrowser environment, and can swap processes.
     let browser = tabParent.ownerElement;
-    if (browser.tagName !== "browser") {
-      console.warn("warning: Not a xul:browser element:", browser.tagName);
-      return; // Not a vanilla xul:browser element performing embedding.
+    if (!browser) {
+      debug(`[process-switch]: TabParent has no ownerElement - ignoring`);
+      return;
     }
 
+    let tabbrowser = browser.ownerGlobal.gBrowser;
+    if (!tabbrowser) {
+      debug(`[process-switch]: cannot find tabbrowser for loading tab - ignoring`);
+      return;
+    }
+
+    let tab = tabbrowser.getTabForBrowser(browser);
+    if (!tab) {
+      debug(`[process-switch]: not a normal tab, so cannot swap processes - ignoring`);
+      return;
+    }
+
+    // Determine the process type the load should be performed in.
     let resultPrincipal =
       Services.scriptSecurityManager.getChannelResultPrincipal(aChannel);
-    let useRemoteTabs = browser.ownerGlobal.gMultiProcessBrowser;
     let remoteType = E10SUtils.getRemoteTypeForPrincipal(resultPrincipal,
-                                                         useRemoteTabs,
+                                                         true,
                                                          browser.remoteType,
                                                          currentPrincipal);
-    if (browser.remoteType == remoteType) {
-      return; // Already in compatible process.
+    if (browser.remoteType == remoteType &&
+        (!E10SUtils.useCrossOriginOpenerPolicy() ||
+         !aChannel.hasCrossOriginOpenerPolicyMismatch())) {
+      debug(`[process-switch]: type (${remoteType}) is compatible - ignoring`);
+      return;
+    }
+
+    if (remoteType == E10SUtils.NOT_REMOTE ||
+        browser.remoteType == E10SUtils.NOT_REMOTE) {
+      debug(`[process-switch]: non-remote source/target - ignoring`);
+      return;
     }
 
     // ------------------------------------------------------------------------
@@ -2689,7 +2727,6 @@ var SessionStoreInternal = {
     if (!(aIndex in this._closedWindows)) {
       throw Components.Exception("Invalid index: not in the closed windows", Cr.NS_ERROR_INVALID_ARG);
     }
-
     // reopen the window
     let state = { windows: this._removeClosedWindow(aIndex) };
     delete state.windows[0].closedAt; // Window is now open.
@@ -2828,10 +2865,12 @@ var SessionStoreInternal = {
    *
    * @param aClosedId
    *        The closedId of the tab or window
+   * @param aIncludePrivate
+   *        Whether to restore private tabs or windows
    *
    * @returns a tab or window object
    */
-  undoCloseById(aClosedId) {
+  undoCloseById(aClosedId, aIncludePrivate = true) {
     // Check for a window first.
     for (let i = 0, l = this._closedWindows.length; i < l; i++) {
       if (this._closedWindows[i].closedId == aClosedId) {
@@ -2841,6 +2880,9 @@ var SessionStoreInternal = {
 
     // Check for a tab.
     for (let window of Services.wm.getEnumerator("navigator:browser")) {
+      if (!aIncludePrivate && PrivateBrowsingUtils.isWindowPrivate(window)) {
+        continue;
+      }
       let windowState = this._windows[window.__SSi];
       if (windowState) {
         for (let j = 0, l = windowState._closedTabs.length; j < l; j++) {
@@ -3227,6 +3269,14 @@ var SessionStoreInternal = {
       tabState.index = Math.max(1, Math.min(tabState.index, tabState.entries.length));
     } else {
       options.loadArguments = loadArguments;
+
+      // If we're resuming a load which has been redirected from another
+      // process, record the history index which is currently being requested.
+      // It has to be offset by 1 to get back to native history indices from
+      // SessionStore history indicies.
+      if (loadArguments.redirectLoadSwitchId) {
+        loadArguments.redirectHistoryIndex = tabState.requestedIndex - 1;
+      }
     }
 
     // Need to reset restoring tabs.
@@ -3295,7 +3345,7 @@ var SessionStoreInternal = {
     let tabbrowser = aWindow.gBrowser;
     let startupPref = this._prefBranch.getIntPref("startup.page");
     if (startupPref == 1)
-      homePages = homePages.concat(HomePage.get().split("|"));
+      homePages = homePages.concat(HomePage.get(aWindow).split("|"));
 
     for (let i = tabbrowser._numPinnedTabs; i < tabbrowser.tabs.length; i++) {
       let tab = tabbrowser.tabs[i];
@@ -3330,6 +3380,9 @@ var SessionStoreInternal = {
       winData[aAttr] = this._getWindowDimension(aWindow, aAttr);
     }, this);
 
+    if (winData.sizemode != "minimized")
+      winData.sizemodeBeforeMinimized = winData.sizemode;
+
     var hidden = WINDOW_HIDEABLE_FEATURES.filter(function(aItem) {
       return aWindow[aItem] && !aWindow[aItem].visible;
     });
@@ -3363,7 +3416,7 @@ var SessionStoreInternal = {
     if (RunState.isRunning) {
       // update the data for all windows with activities since the last save operation.
       let index = 0;
-      for (let window of this._browserWindows) {
+      for (let window of this._orderedBrowserWindows) {
         if (!this._isWindowLoaded(window)) // window data is still in _statesToRestore
           continue;
         if (aUpdateAll || DirtyWindows.has(window) || window == activeWindow) {
@@ -3630,7 +3683,7 @@ var SessionStoreInternal = {
         }
         tabbrowser.moveTabToEnd();
         if (aWindow.gMultiProcessBrowser && !tab.linkedBrowser.isRemoteBrowser) {
-          tabbrowser.updateBrowserRemoteness(tab.linkedBrowser, true);
+          tabbrowser.updateBrowserRemoteness(tab.linkedBrowser, { remoteType: E10SUtils.DEFAULT_REMOTE_TYPE });
         }
       }
 
@@ -3765,7 +3818,7 @@ var SessionStoreInternal = {
       });
       let sc = Services.io.QueryInterface(Ci.nsISpeculativeConnect);
       let uri = Services.io.newURI(url);
-      sc.speculativeConnect2(uri, principal, null);
+      sc.speculativeConnect(uri, principal, null);
       return true;
     }
     return false;
@@ -4167,7 +4220,7 @@ var SessionStoreInternal = {
     if (aOptions.remoteType !== undefined) {
       // We already have a selected remote type so we update to that.
       isRemotenessUpdate =
-        tabbrowser.updateBrowserRemoteness(browser, !!aOptions.remoteType,
+        tabbrowser.updateBrowserRemoteness(browser,
                                            { remoteType: aOptions.remoteType,
                                              newFrameloader });
     } else {
@@ -4288,7 +4341,8 @@ var SessionStoreInternal = {
         +(aWinData.height || 0),
         "screenX" in aWinData ? +aWinData.screenX : NaN,
         "screenY" in aWinData ? +aWinData.screenY : NaN,
-        aWinData.sizemode || "", aWinData.sidebar || "");
+        aWinData.sizemode || "", aWinData.sizemodeBeforeMinimized || "",
+        aWinData.sidebar || "");
     }, 0);
   },
 
@@ -4304,10 +4358,12 @@ var SessionStoreInternal = {
    *        Window top
    * @param aSizeMode
    *        Window size mode (eg: maximized)
+   * @param aSizeModeBeforeMinimized
+   *        Window size mode before window got minimized (eg: maximized)
    * @param aSidebar
    *        Sidebar command
    */
-  restoreDimensions: function ssi_restoreDimensions(aWindow, aWidth, aHeight, aLeft, aTop, aSizeMode, aSidebar) {
+  restoreDimensions: function ssi_restoreDimensions(aWindow, aWidth, aHeight, aLeft, aTop, aSizeMode, aSizeModeBeforeMinimized, aSidebar) {
     var win = aWindow;
     var _this = this;
     function win_(aName) { return _this._getWindowDimension(win, aName); }
@@ -4376,12 +4432,15 @@ var SessionStoreInternal = {
           aWindow.resizeTo(aWidth, aHeight);
         }
       }
+      this._windows[aWindow.__SSi].sizemodeBeforeMinimized = aSizeModeBeforeMinimized;
       if (aSizeMode && win_("sizemode") != aSizeMode && !gResistFingerprintingEnabled) {
         switch (aSizeMode) {
         case "maximized":
           aWindow.maximize();
           break;
         case "minimized":
+          if (aSizeModeBeforeMinimized == "maximized")
+            aWindow.maximize();
           aWindow.minimize();
           break;
         case "normal":
@@ -4468,12 +4527,38 @@ var SessionStoreInternal = {
   },
 
   /**
-   * Iterator that yields all currently opened browser windows, in order.
+   * Iterator that yields all currently opened browser windows.
    * (Might miss the most recent one.)
+   * This list is in focus order, but may include minimized windows
+   * before non-minimized windows.
    */
   _browserWindows: {
     * [Symbol.iterator]() {
       for (let window of BrowserWindowTracker.orderedWindows) {
+        if (window.__SSi && !window.closed)
+          yield window;
+      }
+    },
+  },
+
+  /**
+   * Iterator that yields all currently opened browser windows,
+   * with minimized windows last.
+   * (Might miss the most recent window.)
+   */
+  _orderedBrowserWindows: {
+    * [Symbol.iterator]() {
+      let windows = BrowserWindowTracker.orderedWindows;
+      windows.sort((a, b) => {
+        if (a.windowState == a.STATE_MINIMIZED && b.windowState != b.STATE_MINIMIZED) {
+          return 1;
+        }
+        if (a.windowState != a.STATE_MINIMIZED && b.windowState == b.STATE_MINIMIZED) {
+          return -1;
+        }
+        return 0;
+      });
+      for (let window of windows) {
         if (window.__SSi && !window.closed)
           yield window;
       }
@@ -4831,8 +4916,6 @@ var SessionStoreInternal = {
           // We don't want to increment wIndex here.
           continue;
         }
-
-
       }
       wIndex++;
     }
@@ -4873,7 +4956,6 @@ var SessionStoreInternal = {
    */
   _setWindowStateBusyValue:
     function ssi_changeWindowStateBusyValue(aWindow, aValue) {
-
     this._windows[aWindow.__SSi].busy = aValue;
 
     // Keep the to-be-restored state in sync because that is returned by

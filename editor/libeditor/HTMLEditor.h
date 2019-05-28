@@ -134,6 +134,7 @@ class HTMLEditor final : public TextEditor,
 
   NS_IMETHOD CanPaste(int32_t aSelectionType, bool* aCanPaste) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD PasteTransferable(nsITransferable* aTransferable) override;
 
   NS_IMETHOD DeleteNode(nsINode* aNode) override;
@@ -160,6 +161,7 @@ class HTMLEditor final : public TextEditor,
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult PasteAsQuotationAsAction(int32_t aClipboardType,
                                             bool aDispatchPasteEvent) override;
 
@@ -1410,6 +1412,7 @@ class HTMLEditor final : public TextEditor,
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult PasteInternal(int32_t aClipboardType, bool aDispatchPasteEvent);
 
   /**
@@ -1940,7 +1943,7 @@ class HTMLEditor final : public TextEditor,
   /**
    * InsertObject() inserts given object at aPointToInsert.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  MOZ_CAN_RUN_SCRIPT
   nsresult InsertObject(const nsACString& aType, nsISupports* aObject,
                         bool aIsSafe, Document* aSourceDoc,
                         const EditorDOMPoint& aPointToInsert,
@@ -1950,7 +1953,7 @@ class HTMLEditor final : public TextEditor,
   // (drag&drop or clipboard)
   virtual nsresult PrepareTransferable(nsITransferable** transferable) override;
   nsresult PrepareHTMLTransferable(nsITransferable** transferable);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  MOZ_CAN_RUN_SCRIPT
   nsresult InsertFromTransferable(nsITransferable* transferable,
                                   Document* aSourceDoc,
                                   const nsAString& aContextStr,
@@ -1963,10 +1966,10 @@ class HTMLEditor final : public TextEditor,
    * this editor.  Don't use this method for other purposes.
    */
   MOZ_CAN_RUN_SCRIPT
-  virtual nsresult InsertFromDataTransfer(dom::DataTransfer* aDataTransfer,
-                                          int32_t aIndex, Document* aSourceDoc,
-                                          const EditorDOMPoint& aDroppedAt,
-                                          bool aDoDeleteSelection) override;
+  nsresult InsertFromDataTransfer(dom::DataTransfer* aDataTransfer,
+                                  int32_t aIndex, Document* aSourceDoc,
+                                  const EditorDOMPoint& aDroppedAt,
+                                  bool aDoDeleteSelection);
 
   bool HavePrivateHTMLFlavor(nsIClipboard* clipboard);
   nsresult ParseCFHTML(nsCString& aCfhtml, char16_t** aStuffToPaste,
@@ -2123,8 +2126,8 @@ class HTMLEditor final : public TextEditor,
   void RemoveListenerAndDeleteRef(const nsAString& aEvent,
                                   nsIDOMEventListener* aListener,
                                   bool aUseCapture, ManualNACPtr aElement,
-                                  nsIPresShell* aShell);
-  void DeleteRefToAnonymousNode(ManualNACPtr aContent, nsIPresShell* aShell);
+                                  PresShell* aPresShell);
+  void DeleteRefToAnonymousNode(ManualNACPtr aContent, PresShell* aPresShell);
 
   /**
    * RefereshEditingUI() may refresh editing UIs for current Selection, focus,
@@ -2356,9 +2359,6 @@ class HTMLEditor final : public TextEditor,
   nsTArray<RefPtr<StyleSheet>> mStyleSheets;
 
   // resizing
-  // If the instance has shown resizers at least once, mHasShownResizers is
-  // set to true.
-  bool mHasShownResizers;
   bool mIsObjectResizingEnabled;
   bool mIsResizing;
   bool mPreserveRatio;
@@ -2367,18 +2367,12 @@ class HTMLEditor final : public TextEditor,
   // absolute positioning
   bool mIsAbsolutelyPositioningEnabled;
   bool mResizedObjectIsAbsolutelyPositioned;
-  // If the instance has shown grabber at least once, mHasShownGrabber is
-  // set to true.
-  bool mHasShownGrabber;
   bool mGrabberClicked;
   bool mIsMoving;
 
   bool mSnapToGridEnabled;
 
   // inline table editing
-  // If the instance has shown inline table editor at least once,
-  // mHasShownInlineTableEditor is set to true.
-  bool mHasShownInlineTableEditor;
   bool mIsInlineTableEditingEnabled;
 
   // resizing
@@ -2415,12 +2409,6 @@ class HTMLEditor final : public TextEditor,
   int32_t mYIncrementFactor;
   int32_t mWidthIncrementFactor;
   int32_t mHeightIncrementFactor;
-
-  // When resizers, grabber and/or inline table editor are operated by user
-  // actually, the following counters are increased.
-  uint32_t mResizerUsedCount;
-  uint32_t mGrabberUsedCount;
-  uint32_t mInlineTableEditorUsedCount;
 
   int8_t mInfoXIncrement;
   int8_t mInfoYIncrement;

@@ -106,8 +106,7 @@ class nsPluginFrame final : public nsFrame,
 
   virtual void SetIsDocumentActive(bool aIsActive) override;
 
-  virtual nsresult GetCursor(const nsPoint& aPoint,
-                             nsIFrame::Cursor& aCursor) override;
+  mozilla::Maybe<Cursor> GetCursor(const nsPoint&) override;
 
   // APIs used by nsRootPresContext to set up the widget position/size/clip
   // region.
@@ -231,7 +230,7 @@ class nsPluginFrame final : public nsFrame,
       nsDisplayListBuilder* aDisplayListBuilder);
 
  protected:
-  explicit nsPluginFrame(ComputedStyle* aStyle);
+  explicit nsPluginFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
   virtual ~nsPluginFrame();
 
   // NOTE:  This frame class does not inherit from |nsLeafFrame|, so

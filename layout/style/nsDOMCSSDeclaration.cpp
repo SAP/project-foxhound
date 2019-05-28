@@ -22,12 +22,14 @@
 #include "mozilla/layers/ScrollLinkedEffectDetector.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 nsDOMCSSDeclaration::~nsDOMCSSDeclaration() = default;
 
-/* virtual */ JSObject* nsDOMCSSDeclaration::WrapObject(
-    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
-  return dom::CSS2Properties_Binding::Wrap(aCx, this, aGivenProto);
+/* virtual */
+JSObject* nsDOMCSSDeclaration::WrapObject(JSContext* aCx,
+                                          JS::Handle<JSObject*> aGivenProto) {
+  return CSS2Properties_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_QUERY_INTERFACE(nsDOMCSSDeclaration, nsICSSDeclaration)
@@ -53,6 +55,9 @@ nsresult nsDOMCSSDeclaration::SetPropertyValue(
     case eCSSProperty_background_position_x:
     case eCSSProperty_background_position_y:
     case eCSSProperty_transform:
+    case eCSSProperty_translate:
+    case eCSSProperty_rotate:
+    case eCSSProperty_scale:
     case eCSSProperty_top:
     case eCSSProperty_left:
     case eCSSProperty_bottom:
@@ -190,7 +195,7 @@ nsDOMCSSDeclaration::SetProperty(const nsAString& aPropertyName,
   bool important;
   if (aPriority.IsEmpty()) {
     important = false;
-  } else if (aPriority.EqualsLiteral("important")) {
+  } else if (aPriority.LowerCaseEqualsASCII("important")) {
     important = true;
   } else {
     // XXX silent failure?
@@ -272,6 +277,8 @@ nsresult nsDOMCSSDeclaration::ModifyDeclaration(
 nsresult nsDOMCSSDeclaration::ParsePropertyValue(
     const nsCSSPropertyID aPropID, const nsAString& aPropValue,
     bool aIsImportant, nsIPrincipal* aSubjectPrincipal) {
+  AUTO_PROFILER_LABEL_CATEGORY_PAIR(LAYOUT_CSSParsing);
+
   DeclarationBlockMutationClosure closure = {};
   MutationClosureData closureData;
   GetPropertyChangeClosure(&closure, &closureData);

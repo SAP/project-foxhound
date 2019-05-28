@@ -1,13 +1,13 @@
 "use strict";
 
+var {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
+
 ChromeUtils.defineModuleGetter(this, "AddonManager",
                                "resource://gre/modules/AddonManager.jsm");
 ChromeUtils.defineModuleGetter(this, "AddonManagerPrivate",
                                "resource://gre/modules/AddonManager.jsm");
 ChromeUtils.defineModuleGetter(this, "ExtensionCommon",
                                "resource://gre/modules/ExtensionCommon.jsm");
-ChromeUtils.defineModuleGetter(this, "ExtensionParent",
-                               "resource://gre/modules/ExtensionParent.jsm");
 ChromeUtils.defineModuleGetter(this, "Services",
                                "resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "DevToolsShim",
@@ -134,7 +134,8 @@ this.runtime = class extends ExtensionAPI {
         },
 
         setUninstallURL: function(url) {
-          if (url.length == 0) {
+          if (url === null || url.length === 0) {
+            extension.uninstallURL = null;
             return Promise.resolve();
           }
 

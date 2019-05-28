@@ -34,7 +34,7 @@ const TEST_URL = "http://www.example.com/";
 const DIALOG_URL = "chrome://browser/content/places/bookmarkProperties.xul";
 const DIALOG_URL_MINIMAL_UI = "chrome://browser/content/places/bookmarkProperties2.xul";
 
-ChromeUtils.import("resource:///modules/BrowserWindowTracker.jsm");
+const {BrowserWindowTracker} = ChromeUtils.import("resource:///modules/BrowserWindowTracker.jsm");
 var win = BrowserWindowTracker.getTopWindow();
 
 function add_bookmark(url) {
@@ -282,7 +282,7 @@ gTests.push({
   async run() {
     // Open folder selector.
     var foldersExpander = this.window.document.getElementById("editBMPanel_foldersExpander");
-    var folderTree = this.window.document.getElementById("editBMPanel_folderTree");
+    var folderTree = this.window.gEditItemOverlay._folderTree;
     var self = this;
 
     let unloadPromise = new Promise(resolve => {
@@ -436,8 +436,9 @@ function open_properties_dialog(test) {
             command = "placesCmd_new:bookmark";
           else
             Assert.ok(false, "You didn't set a valid itemType for adding an item");
-        } else
+        } else {
           command = "placesCmd_createBookmark";
+        }
         break;
       default:
         Assert.ok(false, "You didn't set a valid action for this test");

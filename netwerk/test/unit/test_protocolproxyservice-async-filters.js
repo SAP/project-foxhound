@@ -9,7 +9,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService);
@@ -43,10 +43,7 @@ TestProtocolHandler.prototype = {
              .setSpec(spec)
              .finalize();
   },
-  newChannel2: function(uri, aLoadInfo) {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
-  newChannel: function(uri) {
+  newChannel: function(uri, aLoadInfo) {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
   allowPort: function(port, scheme) {

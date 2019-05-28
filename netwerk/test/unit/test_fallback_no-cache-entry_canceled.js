@@ -1,6 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var httpServer = null;
@@ -92,7 +91,7 @@ function run_test()
     chan.notificationCallbacks = new ChannelEventSink(ES_ABORT_REDIRECT);
     var chanac = chan.QueryInterface(Ci.nsIApplicationCacheChannel);
     chanac.chooseApplicationCache = true;
-    chan.asyncOpen2(new ChannelListener(finish_test, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(finish_test, null, CL_EXPECT_FAILURE));
   }}
 
   var os = Cc["@mozilla.org/observer-service;1"].

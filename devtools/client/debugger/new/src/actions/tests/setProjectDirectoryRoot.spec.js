@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import {
   createStore,
   selectors,
@@ -9,7 +11,9 @@ import {
   makeSource
 } from "../../utils/test-head";
 
-const { getProjectDirectoryRoot, getRelativeSources } = selectors;
+import type { Source } from "../../types";
+
+const { getProjectDirectoryRoot, getDisplayedSources } = selectors;
 
 describe("setProjectDirectoryRoot", () => {
   it("should set domain directory as root", async () => {
@@ -47,9 +51,9 @@ describe("setProjectDirectoryRoot", () => {
 
     dispatch(actions.setProjectDirectoryRoot("localhost:8000/examples/js"));
 
-    const filteredSourcesByThread = getRelativeSources(getState());
+    const filteredSourcesByThread = getDisplayedSources(getState());
     const filteredSources = Object.values(filteredSourcesByThread)[0];
-    const firstSource = Object.values(filteredSources)[0];
+    const firstSource: Source = (Object.values(filteredSources)[0]: any);
 
     expect(firstSource.url).toEqual(
       "http://localhost:8000/examples/js/scopes.js"

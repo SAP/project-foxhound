@@ -23,7 +23,8 @@ using namespace mozilla;
 
 nsIFrame* NS_NewMathMLmunderoverFrame(nsIPresShell* aPresShell,
                                       ComputedStyle* aStyle) {
-  return new (aPresShell) nsMathMLmunderoverFrame(aStyle);
+  return new (aPresShell)
+      nsMathMLmunderoverFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmunderoverFrame)
@@ -353,8 +354,10 @@ i.e.,:
  }
 */
 
-/* virtual */ nsresult nsMathMLmunderoverFrame::Place(
-    DrawTarget* aDrawTarget, bool aPlaceOrigin, ReflowOutput& aDesiredSize) {
+/* virtual */
+nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
+                                        bool aPlaceOrigin,
+                                        ReflowOutput& aDesiredSize) {
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
       StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_INLINE) {

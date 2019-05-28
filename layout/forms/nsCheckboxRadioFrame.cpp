@@ -22,11 +22,13 @@ using mozilla::dom::HTMLInputElement;
 
 nsCheckboxRadioFrame* NS_NewCheckboxRadioFrame(nsIPresShell* aPresShell,
                                                ComputedStyle* aStyle) {
-  return new (aPresShell) nsCheckboxRadioFrame(aStyle);
+  return new (aPresShell)
+      nsCheckboxRadioFrame(aStyle, aPresShell->GetPresContext());
 }
 
-nsCheckboxRadioFrame::nsCheckboxRadioFrame(ComputedStyle* aStyle)
-    : nsAtomicContainerFrame(aStyle, kClassID) {}
+nsCheckboxRadioFrame::nsCheckboxRadioFrame(ComputedStyle* aStyle,
+                                           nsPresContext* aPresContext)
+    : nsAtomicContainerFrame(aStyle, aPresContext, kClassID) {}
 
 nsCheckboxRadioFrame::~nsCheckboxRadioFrame() {}
 
@@ -43,16 +45,16 @@ NS_QUERYFRAME_HEAD(nsCheckboxRadioFrame)
   NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsAtomicContainerFrame)
 
-/* virtual */ nscoord nsCheckboxRadioFrame::GetMinISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsCheckboxRadioFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_MIN_INLINE_SIZE(this, result);
   result = StyleDisplay()->HasAppearance() ? DefaultSize() : 0;
   return result;
 }
 
-/* virtual */ nscoord nsCheckboxRadioFrame::GetPrefISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsCheckboxRadioFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_PREF_INLINE_SIZE(this, result);
   result = StyleDisplay()->HasAppearance() ? DefaultSize() : 0;

@@ -9,7 +9,12 @@ import { connect } from "../../../utils/connect";
 
 import Popup from "./Popup";
 
-import { getPreview, getSelectedSource, getIsPaused } from "../../../selectors";
+import {
+  getPreview,
+  getSelectedSource,
+  getIsPaused,
+  getCurrentThread
+} from "../../../selectors";
 import actions from "../../../actions";
 import { toEditorRange } from "../../../utils/editor";
 
@@ -41,19 +46,20 @@ function inPopup(e) {
   }
 
   const pop =
-    relatedTarget.closest(".tooltip") ||
-    relatedTarget.closest(".popover") ||
-    relatedTarget.classList.contains("debug-expression");
+    relatedTarget.closest(".tooltip") || relatedTarget.closest(".popover");
 
   return pop;
 }
 
 function getElementFromPos(pos: DOMRect) {
-  // $FlowIgnore
-  return document.elementFromPoint(
-    pos.x + pos.width / 2,
-    pos.y + pos.height / 2
-  );
+  // We need to use element*s*AtPoint because the tooltip overlays
+  // the token and thus an undesirable element may be returned
+  const elementsAtPoint = [
+    // $FlowIgnore
+    ...document.elementsFromPoint(pos.x + pos.width / 2, pos.y + pos.height / 2)
+  ];
+
+  return elementsAtPoint.find(el => el.className.startsWith("cm-"));
 }
 
 class Preview extends PureComponent<Props, State> {
@@ -178,7 +184,7 @@ class Preview extends PureComponent<Props, State> {
 
 const mapStateToProps = state => ({
   preview: getPreview(state),
-  isPaused: getIsPaused(state),
+  isPaused: getIsPaused(state, getCurrentThread(state)),
   selectedSource: getSelectedSource(state)
 });
 

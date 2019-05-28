@@ -383,7 +383,8 @@ static CRITICAL_SECTION* GetMutex() {
   return &mutex;
 }
 
-/* static */ bool RegisteredProxy::Find(REFIID aIid, ITypeInfo** aTypeInfo) {
+/* static */
+bool RegisteredProxy::Find(REFIID aIid, ITypeInfo** aTypeInfo) {
   AutoCriticalSection lock(GetMutex());
 
   if (!sRegistry) {
@@ -399,7 +400,8 @@ static CRITICAL_SECTION* GetMutex() {
   return false;
 }
 
-/* static */ void RegisteredProxy::AddToRegistry(RegisteredProxy* aProxy) {
+/* static */
+void RegisteredProxy::AddToRegistry(RegisteredProxy* aProxy) {
   MOZ_ASSERT(aProxy);
 
   AutoCriticalSection lock(GetMutex());
@@ -415,10 +417,11 @@ static CRITICAL_SECTION* GetMutex() {
 #endif
   }
 
-  sRegistry->emplaceBack(aProxy);
+  MOZ_ALWAYS_TRUE(sRegistry->emplaceBack(aProxy));
 }
 
-/* static */ void RegisteredProxy::DeleteFromRegistry(RegisteredProxy* aProxy) {
+/* static */
+void RegisteredProxy::DeleteFromRegistry(RegisteredProxy* aProxy) {
   MOZ_ASSERT(aProxy);
 
   AutoCriticalSection lock(GetMutex());
@@ -449,7 +452,7 @@ void RegisterArrayData(const ArrayData* aArrayData, size_t aLength) {
     ClearOnShutdown(&sArrayData, ShutdownPhase::ShutdownThreads);
   }
 
-  sArrayData->emplaceBack(MakePair(aArrayData, aLength));
+  MOZ_ALWAYS_TRUE(sArrayData->emplaceBack(MakePair(aArrayData, aLength)));
 }
 
 const ArrayData* FindArrayData(REFIID aIid, ULONG aMethodIndex) {

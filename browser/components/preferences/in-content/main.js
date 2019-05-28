@@ -7,15 +7,13 @@
 /* import-globals-from ../../../../toolkit/mozapps/preferences/fontbuilder.js */
 /* import-globals-from ../../../base/content/aboutDialog-appUpdater.js */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Downloads.jsm");
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-ChromeUtils.import("resource:///modules/ShellService.jsm");
-ChromeUtils.import("resource:///modules/TransientPrefs.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
-ChromeUtils.import("resource://gre/modules/L10nRegistry.jsm");
-ChromeUtils.import("resource://gre/modules/Localization.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {Downloads} = ChromeUtils.import("resource://gre/modules/Downloads.jsm");
+var {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var {TransientPrefs} = ChromeUtils.import("resource:///modules/TransientPrefs.jsm");
+var {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+var {L10nRegistry} = ChromeUtils.import("resource://gre/modules/L10nRegistry.jsm");
+var {Localization} = ChromeUtils.import("resource://gre/modules/Localization.jsm");
 ChromeUtils.defineModuleGetter(this, "CloudStorage",
   "resource://gre/modules/CloudStorage.jsm");
 ChromeUtils.defineModuleGetter(this, "SelectionChangedMenulist",
@@ -112,7 +110,8 @@ Preferences.addAll([
   { id: "browser.ctrlTab.recentlyUsedOrder", type: "bool" },
 
   // CFR
-  {id: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr", type: "bool"},
+  {id: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons", type: "bool"},
+  {id: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features", type: "bool"},
 
   // Fonts
   { id: "font.language.group", type: "wstring" },
@@ -321,9 +320,11 @@ var gMainPane = {
       gMainPane.initBrowserLocale();
     }
 
-    let cfrLearnMoreLink = document.getElementById("cfrLearnMore");
     let cfrLearnMoreUrl = Services.urlFormatter.formatURLPref("app.support.baseURL") + "extensionrecommendations";
-    cfrLearnMoreLink.setAttribute("href", cfrLearnMoreUrl);
+    for (const id of ["cfrLearnMore", "cfrFeaturesLearnMore"]) {
+      let link = document.getElementById(id);
+      link.setAttribute("href", cfrLearnMoreUrl);
+    }
 
     if (AppConstants.platform == "win") {
       // Functionality for "Show tabs in taskbar" on Windows 7 and up.
@@ -393,31 +394,25 @@ var gMainPane = {
       let row = document.getElementById("translationBox");
       row.removeAttribute("hidden");
       // Showing attribution only for Bing Translator.
-      ChromeUtils.import("resource:///modules/translation/Translation.jsm");
+      var {Translation} = ChromeUtils.import("resource:///modules/translation/Translation.jsm");
       if (Translation.translationEngine == "Bing") {
         document.getElementById("bingAttribution").removeAttribute("hidden");
       }
     }
 
-    if (AppConstants.MOZ_DEV_EDITION) {
-      let uAppData = OS.Constants.Path.userApplicationDataDir;
-      let ignoreSeparateProfile = OS.Path.join(uAppData, "ignore-dev-edition-profile");
-
-      setEventListener("separateProfileMode", "command", gMainPane.separateProfileModeChange);
-      let separateProfileModeCheckbox = document.getElementById("separateProfileMode");
-      setEventListener("getStarted", "click", gMainPane.onGetStarted);
-
-      OS.File.stat(ignoreSeparateProfile).then(() => separateProfileModeCheckbox.checked = false,
-        () => separateProfileModeCheckbox.checked = true);
-
-      if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
-        document.getElementById("sync-dev-edition-root").hidden = false;
-        fxAccounts.getSignedInUser().then(data => {
-          document.getElementById("getStarted").selectedIndex = data ? 1 : 0;
-        }).catch(Cu.reportError);
-      }
+    let drmInfoURL =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") + "drm-content";
+    document.getElementById("playDRMContentLink").setAttribute("href", drmInfoURL);
+    let emeUIEnabled = Services.prefs.getBoolPref("browser.eme.ui.enabled");
+    // Force-disable/hide on WinXP:
+    if (navigator.platform.toLowerCase().startsWith("win")) {
+      emeUIEnabled = emeUIEnabled && parseFloat(Services.sysinfo.get("version")) >= 6;
     }
-
+    if (!emeUIEnabled) {
+      // Don't want to rely on .hidden for the toplevel groupbox because
+      // of the pane hiding/showing code potentially interfering:
+      document.getElementById("drmGroup").setAttribute("style", "display: none !important");
+    }
     // Initialize the Firefox Updates section.
     let version = AppConstants.MOZ_APP_VERSION_DISPLAY;
 
@@ -477,7 +472,13 @@ var gMainPane = {
     }
 
     if (AppConstants.MOZ_UPDATER) {
-      gAppUpdater = new appUpdater();
+      // XXX Workaround bug 1523453 -- changing selectIndex of a <deck> before
+      // frame construction could confuse nsDeckFrame::RemoveFrame().
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          gAppUpdater = new appUpdater();
+        });
+      });
       setEventListener("showUpdateHistory", "command",
         gMainPane.showUpdates);
 
@@ -572,6 +573,8 @@ var gMainPane = {
 
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "main-pane-loaded");
+
+    this.setInitialized();
   },
 
   preInit() {
@@ -580,6 +583,7 @@ var gMainPane = {
       // By doing this after pageshow, we ensure it doesn't delay painting
       // of the preferences page.
       window.addEventListener("pageshow", async () => {
+        await this.initialized;
         try {
           this._initListEventHandlers();
           this._loadData();
@@ -1087,7 +1091,7 @@ var gMainPane = {
   },
 
   openTranslationProviderAttribution() {
-    ChromeUtils.import("resource:///modules/translation/Translation.jsm");
+    var {Translation} = ChromeUtils.import("resource:///modules/translation/Translation.jsm");
     Translation.openProviderAttribution();
   },
 
@@ -1551,9 +1555,9 @@ var gMainPane = {
       let type = wrappedHandlerInfo.type;
 
       let handlerInfoWrapper;
-      if (type in this._handledTypes)
+      if (type in this._handledTypes) {
         handlerInfoWrapper = this._handledTypes[type];
-      else {
+      } else {
         handlerInfoWrapper = new HandlerInfoWrapper(type, wrappedHandlerInfo);
         this._handledTypes[type] = handlerInfoWrapper;
       }
@@ -2087,7 +2091,6 @@ var gMainPane = {
 
     gSubDialog.open("chrome://browser/content/preferences/applicationManager.xul",
       "resizable=no", handlerInfo, onComplete);
-
   },
 
   chooseApp(aEvent) {
@@ -2482,6 +2485,10 @@ var gMainPane = {
     return currentDirPref.value;
   },
 };
+
+gMainPane.initialized = new Promise(res => {
+  gMainPane.setInitialized = res;
+});
 
 // Utilities
 

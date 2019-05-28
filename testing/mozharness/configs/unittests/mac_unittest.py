@@ -131,7 +131,6 @@ config = {
         "chrome-clipboard": ["--flavor=chrome", "--subsuite=clipboard"],
         "chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4"],
         "browser-chrome": ["--flavor=browser"],
-        "browser-chrome-gpu": ["--flavor=browser", "--subsuite=gpu"],
         "browser-chrome-clipboard": ["--flavor=browser", "--subsuite=clipboard"],
         "browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
         "browser-chrome-addons": ["--flavor=browser", "--chunk-by-runtime", "--tag=addons"],
@@ -144,6 +143,7 @@ config = {
         "mochitest-webgl2-deqp": ["--subsuite=webgl2-deqp"],
         "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
+        "mochitest-devtools-webreplay": ["--flavor=browser", "--subsuite=devtools-webreplay"],
         "a11y": ["--flavor=a11y"],
     },
     # local reftest suites

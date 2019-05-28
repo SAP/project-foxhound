@@ -12,9 +12,8 @@
  * - readAltContent3 checks that it gets back the newly saved alt-data
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
@@ -26,9 +25,9 @@ function make_and_open_channel(url, altContentType, callback) {
   let chan = NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
   if (altContentType) {
     let cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-    cc.preferAlternativeDataType(altContentType, "");
+    cc.preferAlternativeDataType(altContentType, "", true);
   }
-  chan.asyncOpen2(new ChannelListener(callback, null));
+  chan.asyncOpen(new ChannelListener(callback, null));
 }
 
 const responseContent = "response body";

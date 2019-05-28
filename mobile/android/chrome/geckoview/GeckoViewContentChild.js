@@ -3,15 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewChildModule} = ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+// This needs to match ScreenLength.java
+const SCREEN_LENGTH_TYPE_PIXEL = 0;
+const SCREEN_LENGTH_TYPE_VIEWPORT_WIDTH = 1;
+const SCREEN_LENGTH_TYPE_VIEWPORT_HEIGHT = 2;
+const SCREEN_LENGTH_DOCUMENT_WIDTH = 3;
+const SCREEN_LENGTH_DOCUMENT_HEIGHT = 4;
+
+// This need to match PanZoomController.java
+const SCROLL_BEHAVIOR_SMOOTH = 0;
+const SCROLL_BEHAVIOR_AUTO = 1;
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  FormData: "resource://gre/modules/FormData.jsm",
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
   GeckoViewAutoFill: "resource://gre/modules/GeckoViewAutoFill.jsm",
   PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.jsm",
 });
 
@@ -34,6 +44,8 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     this.messageManager.addMessageListener("GeckoView:SetActive", this);
     this.messageManager.addMessageListener("GeckoView:UpdateInitData", this);
     this.messageManager.addMessageListener("GeckoView:ZoomToInput", this);
+    this.messageManager.addMessageListener("GeckoView:ScrollBy", this);
+    this.messageManager.addMessageListener("GeckoView:ScrollTo", this);
 
     const options = {
         mozSystemGroup: true,
@@ -82,9 +94,8 @@ class GeckoViewContentChild extends GeckoViewChildModule {
 
   collectSessionState() {
     let history = SessionHistory.collect(docShell);
-    let [formdata, scrolldata] = this.Utils.mapFrameTree(
-        content, SessionStoreUtils.collectFormData,
-        SessionStoreUtils.collectScrollPosition);
+    let formdata = SessionStoreUtils.collectFormData(content);
+    let scrolldata = SessionStoreUtils.collectScrollPosition(content);
 
     // Save the current document resolution.
     let zoom = 1;
@@ -108,6 +119,31 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     formdata = PrivacyFilter.filterFormData(formdata || {});
 
     return {history, formdata, scrolldata};
+  }
+
+  toPixels(aLength, aType) {
+    if (aType === SCREEN_LENGTH_TYPE_PIXEL) {
+      return aLength;
+    } else if (aType === SCREEN_LENGTH_TYPE_VIEWPORT_WIDTH) {
+      return aLength * content.innerWidth;
+    } else if (aType === SCREEN_LENGTH_TYPE_VIEWPORT_HEIGHT) {
+      return aLength * content.innerHeight;
+    } else if (aType === SCREEN_LENGTH_DOCUMENT_WIDTH) {
+      return aLength * content.document.body.scrollWidth;
+    } else if (aType === SCREEN_LENGTH_DOCUMENT_HEIGHT) {
+      return aLength * content.document.body.scrollHeight;
+    }
+
+    return aLength;
+  }
+
+  toScrollBehavior(aBehavior) {
+    if (aBehavior === SCROLL_BEHAVIOR_SMOOTH) {
+      return "smooth";
+    } else if (aBehavior === SCROLL_BEHAVIOR_AUTO) {
+      return "auto";
+    }
+    return "smooth";
   }
 
   receiveMessage(aMsg) {
@@ -203,7 +239,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
                 // restore() will return false, and thus abort restoration for the
                 // current |frame| and its descendants, if |data.url| is given but
                 // doesn't match the loaded document's URL.
-                return FormData.restore(frame, data);
+                return SessionStoreUtils.restoreFormData(frame.document, data);
               });
             }
           }, {capture: true, mozSystemGroup: true, once: true});
@@ -247,6 +283,20 @@ class GeckoViewContentChild extends GeckoViewChildModule {
         Services.obs.notifyObservers(
             docShell, "geckoview-content-global-transferred");
         break;
+      case "GeckoView:ScrollBy":
+        content.scrollBy({
+          top: this.toPixels(aMsg.data.heightValue, aMsg.data.heightType),
+          left: this.toPixels(aMsg.data.widthValue, aMsg.data.widthType),
+          behavior: this.toScrollBehavior(aMsg.data.behavior),
+        });
+        break;
+      case "GeckoView:ScrollTo":
+        content.scrollTo({
+          top: this.toPixels(aMsg.data.heightValue, aMsg.data.heightType),
+          left: this.toPixels(aMsg.data.widthValue, aMsg.data.widthType),
+          behavior: this.toScrollBehavior(aMsg.data.behavior),
+        });
+        break;
     }
   }
 
@@ -264,8 +314,17 @@ class GeckoViewContentChild extends GeckoViewChildModule {
           return aNode && aNode.getAttribute && aNode.getAttribute(aAttribute);
         }
 
+        function createAbsoluteUri(aBaseUri, aUri) {
+          if (!aUri || !aBaseUri || !aBaseUri.displaySpec) {
+            return null;
+          }
+          return Services.io.newURI(aUri, null, aBaseUri).displaySpec;
+        }
+
         const node = aEvent.composedTarget;
-        const uri = nearestParentAttribute(node, "href");
+        const baseUri = node.ownerDocument.baseURIObject;
+        const uri = createAbsoluteUri(baseUri,
+          nearestParentAttribute(node, "href"));
         const title = nearestParentAttribute(node, "title");
         const alt = nearestParentAttribute(node, "alt");
         const elementType = ChromeUtils.getClassName(node);
@@ -279,6 +338,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
             type: "GeckoView:ContextMenu",
             screenX: aEvent.screenX,
             screenY: aEvent.screenY,
+            baseUri: (baseUri && baseUri.displaySpec) || null,
             uri,
             title,
             alt,
@@ -390,5 +450,5 @@ class GeckoViewContentChild extends GeckoViewChildModule {
   }
 }
 
-let {debug, warn} = GeckoViewContentChild.initLogging("GeckoViewContent");
-let module = GeckoViewContentChild.create(this);
+const {debug, warn} = GeckoViewContentChild.initLogging("GeckoViewContent"); // eslint-disable-line no-unused-vars
+const module = GeckoViewContentChild.create(this);

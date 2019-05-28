@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-function run_test() {
+async function run_test() {
   setupTestCommon();
 
   debugDump("testing cleanup of an update download in progress for an " +
@@ -29,19 +29,12 @@ function run_test() {
                "the first update errorCode" + MSG_SHOULD_EQUAL);
   Assert.equal(update.statusText, getString("statusFailed"),
                "the first update statusText " + MSG_SHOULD_EQUAL);
-  executeSoon(waitForUpdateXMLFiles);
-}
+  await waitForUpdateXMLFiles();
 
-/**
- * Called after the call to waitForUpdateXMLFiles finishes.
- */
-function waitForUpdateXMLFilesFinished() {
-  let dir = getUpdatesDir();
-  dir.append(DIR_PATCH);
+  let dir = getUpdateDirFile(DIR_PATCH);
   Assert.ok(dir.exists(), MSG_SHOULD_EXIST);
 
-  let statusFile = dir.clone();
-  statusFile.append(FILE_UPDATE_STATUS);
+  let statusFile = getUpdateDirFile(FILE_UPDATE_STATUS);
   Assert.ok(!statusFile.exists(), MSG_SHOULD_NOT_EXIST);
 
   doTestFinish();

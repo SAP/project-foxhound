@@ -203,7 +203,6 @@ add_task(async function e10sLostKeys() {
 
 function promiseFindFinished(searchText, highlightOn) {
   return new Promise(async (resolve) => {
-
     let findbar = await gBrowser.getFindBar();
     findbar.startFind(findbar.FIND_NORMAL);
     let highlightElement = findbar.getElement("highlight");
@@ -240,7 +239,6 @@ function promiseFindFinished(searchText, highlightOn) {
       findbar.browser.finder.addResultListener(resultListener);
       findbar._find();
     });
-
   });
 }
 
@@ -250,6 +248,8 @@ function promiseRemotenessChange(tab, shouldBeRemote) {
     tab.addEventListener("TabRemotenessChange", function() {
       resolve();
     }, {once: true});
-    gBrowser.updateBrowserRemoteness(browser, shouldBeRemote);
+    let remoteType = shouldBeRemote ?
+        E10SUtils.DEFAULT_REMOTE_TYPE : E10SUtils.NOT_REMOTE;
+    gBrowser.updateBrowserRemoteness(browser, { remoteType });
   });
 }

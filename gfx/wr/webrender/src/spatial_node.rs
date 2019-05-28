@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ExternalScrollId, LayoutPixel, LayoutPoint, LayoutRect, LayoutSize, LayoutTransform};
-use api::{LayoutVector2D, PipelineId, PropertyBinding, ReferenceFrameKind, ScrollClamping, ScrollLocation};
+use api::{ExternalScrollId, PipelineId, PropertyBinding, ReferenceFrameKind, ScrollClamping, ScrollLocation};
 use api::{TransformStyle, ScrollSensitivity, StickyOffsetBounds};
+use api::units::*;
 use clip_scroll_tree::{CoordinateSystem, CoordinateSystemId, SpatialNodeIndex, TransformUpdateState};
 use euclid::SideOffsets2D;
 use gpu_types::TransformPalette;
@@ -79,9 +79,7 @@ fn compute_offset_from(
         let ancestor = &previous_spatial_nodes[parent_index.0 as usize];
         match ancestor.node_type {
             SpatialNodeType::ReferenceFrame(..) => {
-                // FIXME(emilio, bug 1523436): Breaking here is technically
-                // wrong and can happen if the perspective frame is transformed
-                // as well.
+                // We don't want to scroll across reference frames.
                 break;
             },
             SpatialNodeType::ScrollFrame(ref info) => {
@@ -127,6 +125,7 @@ impl SpatialNode {
         content_size: &LayoutSize,
         scroll_sensitivity: ScrollSensitivity,
         frame_kind: ScrollFrameKind,
+        external_scroll_offset: LayoutVector2D,
     ) -> Self {
         let node_type = SpatialNodeType::ScrollFrame(ScrollFrameInfo::new(
                 *frame_rect,
@@ -137,6 +136,7 @@ impl SpatialNode {
                 ),
                 external_id,
                 frame_kind,
+                external_scroll_offset,
             )
         );
 
@@ -348,6 +348,7 @@ impl SpatialNode {
                             // Push that new coordinate system and record the new id.
                             let coord_system = CoordinateSystem {
                                 transform,
+                                is_flatten_root: !state.preserves_3d && info.transform_style == TransformStyle::Preserve3D,
                                 parent: Some(state.current_coordinate_system_id),
                             };
                             state.current_coordinate_system_id = CoordinateSystemId(coord_systems.len() as u32);
@@ -528,11 +529,13 @@ impl SpatialNode {
                 // We want nested sticky items to take into account the shift
                 // we applied as well.
                 state.nearest_scrolling_ancestor_offset += info.current_offset;
+                state.preserves_3d = false;
             }
             SpatialNodeType::ScrollFrame(ref scrolling) => {
                 state.parent_accumulated_scroll_offset += scrolling.offset;
                 state.nearest_scrolling_ancestor_offset = scrolling.offset;
                 state.nearest_scrolling_ancestor_viewport = scrolling.viewport_rect;
+                state.preserves_3d = false;
             }
             SpatialNodeType::ReferenceFrame(ref info) => {
                 state.parent_reference_frame_transform = self.world_viewport_transform;
@@ -544,6 +547,7 @@ impl SpatialNode {
                 if should_flatten {
                     state.parent_reference_frame_transform = state.parent_reference_frame_transform.project_to_2d();
                 }
+                state.preserves_3d = info.transform_style == TransformStyle::Preserve3D;
 
                 state.parent_accumulated_scroll_offset = LayoutVector2D::zero();
                 state.coordinate_system_relative_scale_offset = self.coordinate_system_relative_scale_offset;
@@ -653,6 +657,10 @@ pub struct ScrollFrameInfo {
     ///           to define scroll frames. However, that involves API changes
     ///           so we will use this as a temporary hack!
     pub frame_kind: ScrollFrameKind,
+
+    /// Amount that visual components attached to this scroll node have been
+    /// pre-scrolled in their local coordinates.
+    pub external_scroll_offset: LayoutVector2D,
 }
 
 /// Manages scrolling offset.
@@ -663,6 +671,7 @@ impl ScrollFrameInfo {
         scrollable_size: LayoutSize,
         external_id: Option<ExternalScrollId>,
         frame_kind: ScrollFrameKind,
+        external_scroll_offset: LayoutVector2D,
     ) -> ScrollFrameInfo {
         ScrollFrameInfo {
             viewport_rect,
@@ -671,6 +680,7 @@ impl ScrollFrameInfo {
             scrollable_size,
             external_id,
             frame_kind,
+            external_scroll_offset,
         }
     }
 
@@ -692,6 +702,7 @@ impl ScrollFrameInfo {
             scrollable_size: self.scrollable_size,
             external_id: self.external_id,
             frame_kind: self.frame_kind,
+            external_scroll_offset: self.external_scroll_offset,
         }
     }
 }

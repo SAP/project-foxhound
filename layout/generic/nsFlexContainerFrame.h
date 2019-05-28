@@ -222,8 +222,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * @param aFlexBasis the computed 'flex-basis' for a flex item.
    * @param aMainSize the computed main-size property for a flex item.
    */
-  static bool IsUsedFlexBasisContent(const nsStyleCoord* aFlexBasis,
-                                     const nsStyleCoord* aMainSize);
+  static bool IsUsedFlexBasisContent(const StyleFlexBasis& aFlexBasis,
+                                     const StyleSize& aMainSize);
 
   /**
    * Callback for nsFrame::MarkIntrinsicISizesDirty() on a flex item.
@@ -232,8 +232,9 @@ class nsFlexContainerFrame final : public nsContainerFrame {
 
  protected:
   // Protected constructor & destructor
-  explicit nsFlexContainerFrame(ComputedStyle* aStyle)
-      : nsContainerFrame(aStyle, kClassID),
+  explicit nsFlexContainerFrame(ComputedStyle* aStyle,
+                                nsPresContext* aPresContext)
+      : nsContainerFrame(aStyle, aPresContext, kClassID),
         mCachedMinISize(NS_INTRINSIC_WIDTH_UNKNOWN),
         mCachedPrefISize(NS_INTRINSIC_WIDTH_UNKNOWN),
         mBaselineFromLastReflow(NS_INTRINSIC_WIDTH_UNKNOWN),

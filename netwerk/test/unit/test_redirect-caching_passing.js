@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -37,7 +37,7 @@ function firstTimeThrough(request, buffer)
   Assert.equal(buffer, responseBody);
   var chan = make_channel(randomURI);
   chan.loadFlags |= Ci.nsIRequest.LOAD_FROM_CACHE;
-  chan.asyncOpen2(new ChannelListener(finish_test, null));
+  chan.asyncOpen(new ChannelListener(finish_test, null));
 }
 
 function finish_test(request, buffer)
@@ -54,6 +54,6 @@ function run_test()
   httpserver.start(-1);
 
   var chan = make_channel(randomURI);
-  chan.asyncOpen2(new ChannelListener(firstTimeThrough, null));
+  chan.asyncOpen(new ChannelListener(firstTimeThrough, null));
   do_test_pending();
 }

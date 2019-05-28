@@ -48,13 +48,12 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvDeleteSelf() {
 }
 
 mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
-    const OptionalURIParams& aURI, const nsCString& aOrigin,
+    const Maybe<URIParams>& aURI, const nsCString& aOrigin,
     const uint64_t& aInnerWindowID, const nsCString& aProtocol,
     const bool& aSecure, const uint32_t& aPingInterval,
     const bool& aClientSetPingInterval, const uint32_t& aPingTimeout,
-    const bool& aClientSetPingTimeout,
-    const OptionalLoadInfoArgs& aLoadInfoArgs,
-    const OptionalTransportProvider& aTransportProvider,
+    const bool& aClientSetPingTimeout, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+    const Maybe<PTransportProviderParent*>& aTransportProvider,
     const nsCString& aNegotiatedExtensions) {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
 
@@ -92,10 +91,9 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
   rv = mChannel->SetProtocol(aProtocol);
   if (NS_FAILED(rv)) goto fail;
 
-  if (aTransportProvider.type() != OptionalTransportProvider::Tvoid_t) {
+  if (aTransportProvider.isSome()) {
     RefPtr<TransportProviderParent> provider =
-        static_cast<TransportProviderParent*>(
-            aTransportProvider.get_PTransportProviderParent());
+        static_cast<TransportProviderParent*>(aTransportProvider.value());
     rv = mChannel->SetServerParameters(provider, aNegotiatedExtensions);
     if (NS_FAILED(rv)) {
       goto fail;

@@ -57,7 +57,7 @@ class FlattenedChildIterator;
 class nsCSSFrameConstructor final : public nsFrameManager {
  public:
   typedef mozilla::ComputedStyle ComputedStyle;
-  typedef mozilla::CSSPseudoElementType CSSPseudoElementType;
+  typedef mozilla::PseudoStyleType PseudoStyleType;
   typedef mozilla::dom::Element Element;
   typedef mozilla::dom::Text Text;
 
@@ -447,7 +447,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   void CreateGeneratedContentItem(nsFrameConstructorState& aState,
                                   nsContainerFrame* aParentFrame,
                                   Element& aOriginatingElement, ComputedStyle&,
-                                  CSSPseudoElementType aPseudoElement,
+                                  PseudoStyleType aPseudoElement,
                                   FrameConstructionItemList& aItems);
 
   // This method is called by ContentAppended() and ContentRangeInserted() when
@@ -721,7 +721,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     FrameFullConstructor mFullConstructor;
     // For cases when FCDATA_CREATE_BLOCK_WRAPPER_FOR_ALL_KIDS is set, the
     // anonymous box type to use for that wrapper.
-    nsCSSAnonBoxPseudoStaticAtom* const mAnonBoxPseudo;
+    PseudoStyleType const mAnonBoxPseudo;
   };
 
   /* Structure representing a mapping of an atom to a FrameConstructionData.
@@ -760,7 +760,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
      for a table pseudo-frame */
   struct PseudoParentData {
     const FrameConstructionData mFCData;
-    nsCSSAnonBoxPseudoStaticAtom* const mPseudoType;
+    mozilla::PseudoStyleType const mPseudoType;
   };
   /* Array of such structures that we use to properly construct table
      pseudo-frames as needed */
@@ -774,27 +774,24 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   struct MOZ_STACK_CLASS XBLBindingLoadInfo {
     RefPtr<ComputedStyle> mStyle;
     mozilla::UniquePtr<PendingBinding> mPendingBinding;
-    nsAtom* mTag = nullptr;
 
     // For the 'no binding loaded' case.
     XBLBindingLoadInfo(nsIContent&, ComputedStyle&);
 
     // For the case we actually load an XBL binding.
     XBLBindingLoadInfo(already_AddRefed<ComputedStyle>&& aStyle,
-                       mozilla::UniquePtr<PendingBinding> aPendingBinding,
-                       nsAtom* aTag);
+                       mozilla::UniquePtr<PendingBinding> aPendingBinding);
 
     // For the error case.
     XBLBindingLoadInfo();
   };
 
-  // Returns null mStyle / mTag members to signal an error.
+  // Returns null mStyle member to signal an error.
   XBLBindingLoadInfo LoadXBLBindingIfNeeded(nsIContent&, ComputedStyle&,
                                             uint32_t aFlags);
 
   const FrameConstructionData* FindDataForContent(nsIContent&, ComputedStyle&,
                                                   nsIFrame* aParentFrame,
-                                                  nsAtom* aTag,
                                                   uint32_t aFlags);
 
   // aParentFrame might be null.  If it is, that means it was an inline frame.
@@ -802,11 +799,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                    nsIFrame* aParentFrame);
   const FrameConstructionData* FindElementData(const Element&, ComputedStyle&,
                                                nsIFrame* aParentFrame,
-                                               nsAtom* aTag, uint32_t aFlags);
+                                               uint32_t aFlags);
   const FrameConstructionData* FindElementTagData(const Element&,
                                                   ComputedStyle&,
                                                   nsIFrame* aParentFrame,
-                                                  nsAtom* aTag,
                                                   uint32_t aFlags);
 
   /* A function that takes an integer, content, style, and array of
@@ -828,7 +824,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    * actually match, aTagFound will be true, even if the return value is null.
    */
   static const FrameConstructionData* FindDataByTag(
-      nsAtom* aTag, const Element& aElement, ComputedStyle& aComputedStyle,
+      const Element& aElement, ComputedStyle& aComputedStyle,
       const FrameConstructionDataByTag* aDataPtr, uint32_t aDataLength);
 
   /* A class representing a list of FrameConstructionItems.  Instances of this
@@ -1515,7 +1511,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // NOTE(emilio): This gets the overloaded tag and namespace id since they can
   // be overriden by extends="" in XBL.
   static const FrameConstructionData* FindXULTagData(const Element&,
-                                                     nsAtom* aTag,
                                                      ComputedStyle&);
   // XUL data-finding helper functions and structures
 #ifdef MOZ_XUL
@@ -1523,6 +1518,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                          ComputedStyle&);
   // sXULTextBoxData used for both labels and descriptions
   static const FrameConstructionData sXULTextBoxData;
+  static const FrameConstructionData* FindXULButtonData(const Element&,
+                                                        ComputedStyle&);
   static const FrameConstructionData* FindXULLabelData(const Element&,
                                                        ComputedStyle&);
   static const FrameConstructionData* FindXULDescriptionData(const Element&,
@@ -1552,7 +1549,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
       nsContainerFrame* aParentFrame, nsFrameItems& aFrameItems,
       ContainerFrameCreationFunc aConstructor,
       ContainerFrameCreationFunc aInnerConstructor,
-      nsCSSAnonBoxPseudoStaticAtom* aInnerPseudo, bool aCandidateRootFrame);
+      mozilla::PseudoStyleType aInnerPseudo, bool aCandidateRootFrame);
 
   /**
    * Construct an nsSVGOuterSVGFrame.
@@ -1697,7 +1694,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   already_AddRefed<ComputedStyle> BeginBuildingScrollFrame(
       nsFrameConstructorState& aState, nsIContent* aContent,
       ComputedStyle* aContentStyle, nsContainerFrame* aParentFrame,
-      nsAtom* aScrolledPseudo, bool aIsRoot, nsContainerFrame*& aNewFrame);
+      mozilla::PseudoStyleType aScrolledPseudo, bool aIsRoot,
+      nsContainerFrame*& aNewFrame);
 
   // Completes the building of the scrollframe:
   // Creates a view for the scrolledframe and makes it the child of the
@@ -1890,6 +1888,27 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                         nsContainerFrame* aInitialBlock,
                                         nsFrameList& aChildList,
                                         nsIFrame* aPositionedFrame);
+
+  // Reconstruct the multi-column containing block of aParentFrame when we want
+  // to insert aFrameList into aParentFrame immediately after aPrevSibling but
+  // cannot fix the frame tree because aFrameList contains some column-spans.
+  //
+  // Note: This method is intended to be called as a helper in ContentAppended()
+  // and ContentRangeInserted(). It assumes aState was set up locally and wasn't
+  // used to construct any ancestors of aParentFrame in aFrameList.
+  //
+  // @param aParentFrame the to-be parent frame for aFrameList.
+  // @param aFrameList the frames to be inserted. It will be cleared if we need
+  //        reconstruction.
+  // @param aPrevSibling the position where the frames in aFrameList are going
+  //        to be inserted. Nullptr means aFrameList is being inserted at
+  //        the beginning.
+  // @return true if the multi-column containing block of aParentFrame is
+  //         reconstructed; false otherwise.
+  bool MaybeRecreateForColumnSpan(nsFrameConstructorState& aState,
+                                  nsContainerFrame* aParentFrame,
+                                  nsFrameList& aFrameList,
+                                  nsIFrame* aPrevSibling);
 
   nsIFrame* ConstructInline(nsFrameConstructorState& aState,
                             FrameConstructionItem& aItem,

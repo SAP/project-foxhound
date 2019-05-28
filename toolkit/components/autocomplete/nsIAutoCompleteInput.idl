@@ -8,6 +8,7 @@
 interface nsIAutoCompletePopup;
 
 webidl Event;
+webidl Element;
 
 [scriptable, uuid(B068E70F-F82C-4C12-AD87-82E271C5C180)]
 interface nsIAutoCompleteInput : nsISupports
@@ -15,6 +16,7 @@ interface nsIAutoCompleteInput : nsISupports
   /*
    * The result view that will be used to display results
    */
+  readonly attribute Element popupElement;
   readonly attribute nsIAutoCompletePopup popup;
 
   /*
@@ -163,6 +165,11 @@ interface nsIAutoCompleteInput : nsISupports
    * Don't rollup the popup when the caret is moved.
    */
   readonly attribute boolean noRollupOnCaretMove;
+
+  /*
+   * Don't rollup the popup when the search string becomes "".
+   */
+  readonly attribute boolean noRollupOnEmptySearch;
 
   /**
    * The userContextId of the current browser.

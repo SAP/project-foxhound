@@ -13,6 +13,8 @@ mod boilerplate;
 use boilerplate::Example;
 use gleam::gl;
 use webrender::api::*;
+use webrender::api::units::*;
+
 
 fn init_gl_texture(
     id: gl::GLuint,
@@ -87,7 +89,7 @@ impl Example for App {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        _framebuffer_size: DeviceIntSize,
+        _framebuffer_size: FramebufferIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {

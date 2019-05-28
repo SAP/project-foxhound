@@ -53,12 +53,12 @@ bool nsGenConList::DestroyNodesFor(nsIFrame* aFrame) {
  * @return -1 for ::before, +1 for ::after, and 0 otherwise.
  */
 inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent) {
-  nsAtom* pseudo = aFrame->Style()->GetPseudo();
-  if (pseudo == nsCSSPseudoElements::before()) {
+  auto pseudo = aFrame->Style()->GetPseudoType();
+  if (pseudo == mozilla::PseudoStyleType::before) {
     *aContent = aFrame->GetContent()->GetParent();
     return -1;
   }
-  if (pseudo == nsCSSPseudoElements::after()) {
+  if (pseudo == mozilla::PseudoStyleType::after) {
     *aContent = aFrame->GetContent()->GetParent();
     return 1;
   }
@@ -66,8 +66,9 @@ inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent) {
   return 0;
 }
 
-/* static */ bool nsGenConList::NodeAfter(const nsGenConNode* aNode1,
-                                          const nsGenConNode* aNode2) {
+/* static */
+bool nsGenConList::NodeAfter(const nsGenConNode* aNode1,
+                             const nsGenConNode* aNode2) {
   nsIFrame* frame1 = aNode1->mPseudoFrame;
   nsIFrame* frame2 = aNode2->mPseudoFrame;
   if (frame1 == frame2) {

@@ -7,8 +7,8 @@
 // Note that this test is developed based on test_bug482601.js.
 
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserv = null;
 var test_nr = 0;
@@ -41,15 +41,15 @@ var observer = {
 };
 
 var listener = {
-  onStartRequest: function (request, ctx) {
+  onStartRequest: function (request) {
     buffer = "";
   },
 
-  onDataAvailable: function (request, ctx, stream, offset, count) {
+  onDataAvailable: function (request, stream, offset, count) {
     buffer = buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function (request, ctx, status) {
+  onStopRequest: function (request, status) {
     Assert.equal(status, Cr.NS_OK);
     Assert.equal(buffer, "0123456789");
     Assert.equal(channelResumed, true);
@@ -132,7 +132,7 @@ function test_partial2(status, entry) {
 
   var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
                       "/path/partial");
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function test_cached() {
@@ -161,7 +161,7 @@ function test_cached2(status, entry) {
   var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
                       "/path/cached");
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // PATHS

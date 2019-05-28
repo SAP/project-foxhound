@@ -130,13 +130,12 @@ use style::gecko_bindings::structs::nsCSSPropertyID;
 use style::gecko_bindings::structs::nsCSSValueSharedList;
 use style::gecko_bindings::structs::nsChangeHint;
 use style::gecko_bindings::structs::nsCompatibility;
-use style::gecko_bindings::structs::nsRestyleHint;
 use style::gecko_bindings::structs::nsStyleTransformMatrix::MatrixTransformOperator;
 use style::gecko_bindings::structs::nsTArray;
 use style::gecko_bindings::structs::nsTimingFunction;
 use style::gecko_bindings::structs::nsresult;
 use style::gecko_bindings::structs::AtomArray;
-use style::gecko_bindings::structs::CSSPseudoElementType;
+use style::gecko_bindings::structs::PseudoStyleType;
 use style::gecko_bindings::structs::CallerType;
 use style::gecko_bindings::structs::CompositeOperation;
 use style::gecko_bindings::structs::ComputedStyleStrong;
@@ -168,7 +167,7 @@ use style::gecko_bindings::sugar::ownership::{HasSimpleFFI, Strong};
 use style::gecko_bindings::sugar::refptr::RefPtr;
 use style::gecko_properties;
 use style::global_style_data::{GlobalStyleData, GLOBAL_STYLE_DATA, STYLE_THREAD_POOL};
-use style::invalidation::element::restyle_hints;
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::media_queries::MediaList;
 use style::parser::{self, Parse, ParserContext};
 use style::properties::animated_properties::AnimationValue;
@@ -201,9 +200,8 @@ use style::use_counters::UseCounters;
 use style::values::animated::{Animate, Procedure, ToAnimatedZero};
 use style::values::computed::{self, Context, QuotePair, ToComputedValue};
 use style::values::distance::ComputeSquaredDistance;
-use style::values::generics::rect::Rect;
 use style::values::specified;
-use style::values::specified::gecko::{IntersectionObserverRootMargin, PixelOrPercentage};
+use style::values::specified::gecko::IntersectionObserverRootMargin;
 use style::values::specified::source_size_list::SourceSizeList;
 use style::values::{CustomIdent, KeyframesName};
 use style_traits::{CssType, CssWriter, ParsingMode, StyleParseErrorKind, ToCss};
@@ -241,7 +239,6 @@ pub unsafe extern "C" fn Servo_Initialize(dummy_url_data: *mut URLExtraData) {
     thread_state::initialize(thread_state::ThreadState::LAYOUT);
 
     // Perform some debug-only runtime assertions.
-    restyle_hints::assert_restyle_hints_match();
     origin_flags::assert_flags_match();
     parser::assert_parsing_mode_match();
     traversal_flags::assert_traversal_flags_match();
@@ -857,22 +854,42 @@ pub extern "C" fn Servo_AnimationValue_Color(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_AnimationValue_GetTransform(
+pub unsafe extern "C" fn Servo_AnimationValue_GetTransform(
     value: RawServoAnimationValueBorrowed,
     list: *mut structs::RefPtr<nsCSSValueSharedList>,
 ) {
+    let list = &mut *list;
     let value = AnimationValue::as_arc(&value);
-    if let AnimationValue::Transform(ref servo_list) = **value {
-        let list = unsafe { &mut *list };
-        if servo_list.0.is_empty() {
-            unsafe {
+    match **value {
+        AnimationValue::Transform(ref servo_list) => {
+            if servo_list.0.is_empty() {
+                list.set_move(RefPtr::from_addrefed(Gecko_NewNoneTransform()));
+            } else {
+                gecko_properties::convert_transform(&servo_list.0, list);
+            }
+        },
+        AnimationValue::Translate(ref v) => {
+            if let Some(v) = v.to_transform_operation() {
+                gecko_properties::convert_transform(&[v], list);
+            } else {
                 list.set_move(RefPtr::from_addrefed(Gecko_NewNoneTransform()));
             }
-        } else {
-            gecko_properties::convert_transform(&servo_list.0, list);
-        }
-    } else {
-        panic!("The AnimationValue should be transform");
+        },
+        AnimationValue::Rotate(ref v) => {
+            if let Some(v) = v.to_transform_operation() {
+                gecko_properties::convert_transform(&[v], list);
+            } else {
+                list.set_move(RefPtr::from_addrefed(Gecko_NewNoneTransform()));
+            }
+        },
+        AnimationValue::Scale(ref v) => {
+            if let Some(v) = v.to_transform_operation() {
+                gecko_properties::convert_transform(&[v], list);
+            } else {
+                list.set_move(RefPtr::from_addrefed(Gecko_NewNoneTransform()));
+            }
+        },
+        _ => unreachable!("Unsupported transform-like animation value"),
     }
 }
 
@@ -2132,7 +2149,7 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
     rule: RawServoStyleRuleBorrowed,
     element: RawGeckoElementBorrowed,
     index: u32,
-    pseudo_type: CSSPseudoElementType,
+    pseudo_type: PseudoStyleType,
 ) -> bool {
     read_locked_arc(rule, |rule: &StyleRule| {
         let index = index as usize;
@@ -3129,15 +3146,15 @@ counter_style_descriptors! {
 #[no_mangle]
 pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
     parent_style_or_null: ComputedStyleBorrowedOrNull,
-    pseudo_tag: *mut nsAtom,
+    pseudo: PseudoStyleType,
     raw_data: RawServoStyleSetBorrowed,
 ) -> ComputedStyleStrong {
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
     let guards = StylesheetGuards::same(&guard);
     let data = PerDocumentStyleData::from_ffi(raw_data).borrow_mut();
-    let atom = Atom::from_raw(pseudo_tag);
-    let pseudo = PseudoElement::from_anon_box_atom(&atom).expect("Not an anon box pseudo?");
+    let pseudo = PseudoElement::from_pseudo_type(pseudo).unwrap();
+    debug_assert!(pseudo.is_anon_box());
 
     let metrics = get_metrics_provider_for_product();
 
@@ -3183,7 +3200,7 @@ pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
 #[no_mangle]
 pub extern "C" fn Servo_ResolvePseudoStyle(
     element: RawGeckoElementBorrowed,
-    pseudo_type: CSSPseudoElementType,
+    pseudo_type: PseudoStyleType,
     is_probe: bool,
     inherited_style: ComputedStyleBorrowedOrNull,
     raw_data: RawServoStyleSetBorrowed,
@@ -3330,17 +3347,19 @@ pub extern "C" fn Servo_SetExplicitStyle(
 
 #[no_mangle]
 pub extern "C" fn Servo_HasAuthorSpecifiedRules(
+    raw_data: RawServoStyleSetBorrowed,
     style: ComputedStyleBorrowed,
     element: RawGeckoElementBorrowed,
-    pseudo_type: CSSPseudoElementType,
     rule_type_mask: u32,
-    author_colors_allowed: bool,
 ) -> bool {
+    let data = PerDocumentStyleData::from_ffi(raw_data).borrow();
     let element = GeckoElement(element);
-    let pseudo = PseudoElement::from_pseudo_type(pseudo_type);
 
     let guard = (*GLOBAL_STYLE_DATA).shared_lock.read();
     let guards = StylesheetGuards::same(&guard);
+
+    let pseudo = style.pseudo();
+    let author_colors_allowed = data.stylist.device().use_document_colors();
 
     style.rules().has_author_specified_rules(
         element,
@@ -3455,15 +3474,15 @@ fn get_pseudo_style(
 #[no_mangle]
 pub unsafe extern "C" fn Servo_ComputedValues_Inherit(
     raw_data: RawServoStyleSetBorrowed,
-    pseudo_tag: *mut nsAtom,
+    pseudo: PseudoStyleType,
     parent_style_context: ComputedStyleBorrowedOrNull,
     target: structs::InheritTarget,
 ) -> ComputedStyleStrong {
     let data = PerDocumentStyleData::from_ffi(raw_data).borrow();
 
     let for_text = target == structs::InheritTarget::Text;
-    let atom = Atom::from_raw(pseudo_tag);
-    let pseudo = PseudoElement::from_anon_box_atom(&atom).expect("Not an anon-box? Gah!");
+    let pseudo = PseudoElement::from_pseudo_type(pseudo).unwrap();
+    debug_assert!(pseudo.is_anon_box());
 
     let mut style =
         StyleBuilder::for_inheritance(data.stylist.device(), parent_style_context, Some(&pseudo));
@@ -3557,7 +3576,8 @@ pub extern "C" fn Servo_ComputedValues_GetStyleRuleList(
 pub extern "C" fn Servo_StyleSet_Init(
     pres_context: RawGeckoPresContextBorrowed,
 ) -> *mut RawServoStyleSet {
-    let data = Box::new(PerDocumentStyleData::new(pres_context));
+    let doc = pres_context.mDocument.mRawPtr;
+    let data = Box::new(PerDocumentStyleData::new(doc));
     Box::into_raw(data) as *mut RawServoStyleSet
 }
 
@@ -3575,9 +3595,8 @@ pub extern "C" fn Servo_StyleSet_Drop(data: RawServoStyleSetOwned) {
 #[no_mangle]
 pub unsafe extern "C" fn Servo_StyleSet_CompatModeChanged(raw_data: RawServoStyleSetBorrowed) {
     let mut data = PerDocumentStyleData::from_ffi(raw_data).borrow_mut();
-    let doc = &*data.stylist.device().pres_context().mDocument.mRawPtr;
-    data.stylist
-        .set_quirks_mode(QuirksMode::from(doc.mCompatMode));
+    let quirks_mode = data.stylist.device().document().mCompatMode;
+    data.stylist.set_quirks_mode(quirks_mode.into());
 }
 
 fn parse_property_into(
@@ -3682,6 +3701,15 @@ pub unsafe extern "C" fn Servo_SerializeEasing(
         .mTiming
         .to_css(&mut CssWriter::new(&mut *output))
         .unwrap();
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn Servo_SerializeBorderRadius(
+    radius: *const computed::BorderRadius,
+    output: *mut nsAString,
+) {
+    (*radius).to_css(&mut CssWriter::new(&mut *output)).unwrap();
 }
 
 #[no_mangle]
@@ -4435,10 +4463,11 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
 ) {
     use style::properties::longhands::border_spacing::SpecifiedValue as BorderSpacing;
     use style::properties::{LonghandId, PropertyDeclaration};
-    use style::values::generics::length::MozLength;
+    use style::values::generics::length::Size;
     use style::values::generics::NonNegative;
+    use style::values::generics::length::LengthPercentageOrAuto;
     use style::values::specified::length::NonNegativeLengthPercentage;
-    use style::values::specified::length::{LengthPercentage, LengthPercentageOrAuto};
+    use style::values::specified::length::{LengthPercentage};
     use style::values::specified::length::{NoCalcLength, NonNegativeLength};
     use style::values::specified::{BorderCornerRadius, BorderSideWidth};
 
@@ -4447,8 +4476,8 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
     let lp = LengthPercentage::Length(nocalc);
     let lp_or_auto = LengthPercentageOrAuto::LengthPercentage(lp.clone());
     let prop = match_wrap_declared! { long,
-        Height => MozLength::LengthPercentageOrAuto(lp_or_auto),
-        Width => MozLength::LengthPercentageOrAuto(lp_or_auto),
+        Height => Size::LengthPercentage(NonNegative(lp)),
+        Width => Size::LengthPercentage(NonNegative(lp)),
         BorderTopWidth => BorderSideWidth::Length(nocalc.into()),
         BorderRightWidth => BorderSideWidth::Length(nocalc.into()),
         BorderBottomWidth => BorderSideWidth::Length(nocalc.into()),
@@ -4496,10 +4525,11 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
 ) {
     use style::properties::longhands::_moz_script_min_size::SpecifiedValue as MozScriptMinSize;
     use style::properties::{LonghandId, PropertyDeclaration};
-    use style::values::generics::length::MozLength;
+    use style::values::generics::NonNegative;
+    use style::values::generics::length::Size;
     use style::values::specified::length::NoCalcLength;
     use style::values::specified::length::{AbsoluteLength, FontRelativeLength};
-    use style::values::specified::length::{LengthPercentage, LengthPercentageOrAuto};
+    use style::values::specified::length::LengthPercentage;
 
     let long = get_longhand_from_id!(property);
     let nocalc = match unit {
@@ -4524,9 +4554,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
     };
 
     let prop = match_wrap_declared! { long,
-        Width => MozLength::LengthPercentageOrAuto(LengthPercentageOrAuto::LengthPercentage(
-                LengthPercentage::Length(nocalc)
-        )),
+        Width => Size::LengthPercentage(NonNegative(LengthPercentage::Length(nocalc))),
         FontSize => LengthPercentage::from(nocalc).into(),
         MozScriptMinSize => MozScriptMinSize(nocalc),
     };
@@ -4565,16 +4593,18 @@ pub extern "C" fn Servo_DeclarationBlock_SetPercentValue(
 ) {
     use style::properties::{LonghandId, PropertyDeclaration};
     use style::values::computed::Percentage;
-    use style::values::generics::length::MozLength;
-    use style::values::specified::length::{LengthPercentage, LengthPercentageOrAuto};
+    use style::values::generics::NonNegative;
+    use style::values::generics::length::{Size, LengthPercentageOrAuto};
+    use style::values::specified::length::LengthPercentage;
 
     let long = get_longhand_from_id!(property);
     let pc = Percentage(value);
-    let lp_or_auto = LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Percentage(pc));
+    let lp = LengthPercentage::Percentage(pc);
+    let lp_or_auto = LengthPercentageOrAuto::LengthPercentage(lp.clone());
 
     let prop = match_wrap_declared! { long,
-        Height => MozLength::LengthPercentageOrAuto(lp_or_auto),
-        Width => MozLength::LengthPercentageOrAuto(lp_or_auto),
+        Height => Size::LengthPercentage(NonNegative(lp)),
+        Width => Size::LengthPercentage(NonNegative(lp)),
         MarginTop => lp_or_auto,
         MarginRight => lp_or_auto,
         MarginBottom => lp_or_auto,
@@ -4592,14 +4622,14 @@ pub extern "C" fn Servo_DeclarationBlock_SetAutoValue(
     property: nsCSSPropertyID,
 ) {
     use style::properties::{LonghandId, PropertyDeclaration};
-    use style::values::specified::{LengthPercentageOrAuto, MozLength};
+    use style::values::generics::length::{LengthPercentageOrAuto, Size};
 
     let long = get_longhand_from_id!(property);
     let auto = LengthPercentageOrAuto::Auto;
 
     let prop = match_wrap_declared! { long,
-        Height => MozLength::auto(),
-        Width => MozLength::auto(),
+        Height => Size::auto(),
+        Width => Size::auto(),
         MarginTop => auto,
         MarginRight => auto,
         MarginBottom => auto,
@@ -4780,7 +4810,7 @@ pub extern "C" fn Servo_CSSSupports(cond: *const nsACString) -> bool {
 #[no_mangle]
 pub unsafe extern "C" fn Servo_NoteExplicitHints(
     element: RawGeckoElementBorrowed,
-    restyle_hint: nsRestyleHint,
+    restyle_hint: RestyleHint,
     change_hint: nsChangeHint,
 ) {
     GeckoElement(element).note_explicit_hints(restyle_hint, change_hint);
@@ -4839,7 +4869,7 @@ pub extern "C" fn Servo_ResolveStyle(
 #[no_mangle]
 pub extern "C" fn Servo_ResolveStyleLazily(
     element: RawGeckoElementBorrowed,
-    pseudo_type: CSSPseudoElementType,
+    pseudo_type: PseudoStyleType,
     rule_inclusion: StyleRuleInclusion,
     snapshots: *const ServoElementSnapshotTable,
     raw_data: RawServoStyleSetBorrowed,
@@ -6002,7 +6032,7 @@ pub extern "C" fn Servo_ComputeColor(
 #[no_mangle]
 pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_Parse(
     value: *const nsAString,
-    result: *mut structs::nsStyleSides,
+    result: *mut IntersectionObserverRootMargin,
 ) -> bool {
     let value = value.as_ref().unwrap().to_string();
     let result = result.as_mut().unwrap();
@@ -6024,7 +6054,7 @@ pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_Parse(
     let margin = parser.parse_entirely(|p| IntersectionObserverRootMargin::parse(&context, p));
     match margin {
         Ok(margin) => {
-            margin.0.to_gecko_rect(result);
+            *result = margin;
             true
         },
         Err(..) => false,
@@ -6033,13 +6063,11 @@ pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_Parse(
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_ToString(
-    rect: *const structs::nsStyleSides,
+    root_margin: *const IntersectionObserverRootMargin,
     result: *mut nsAString,
 ) {
-    let rect = Rect::<PixelOrPercentage>::from_gecko_rect(rect.as_ref().unwrap()).unwrap();
-    let root_margin = IntersectionObserverRootMargin(rect);
-    let mut writer = CssWriter::new(result.as_mut().unwrap());
-    root_margin.to_css(&mut writer).unwrap();
+    let mut writer = CssWriter::new(&mut *result);
+    (*root_margin).to_css(&mut writer).unwrap();
 }
 
 #[no_mangle]

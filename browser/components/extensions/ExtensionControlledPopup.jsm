@@ -19,9 +19,9 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionControlledPopup"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {ExtensionCommon} = ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AddonManager",
                                "resource://gre/modules/AddonManager.jsm");
@@ -31,6 +31,8 @@ ChromeUtils.defineModuleGetter(this, "CustomizableUI",
                                "resource:///modules/CustomizableUI.jsm");
 ChromeUtils.defineModuleGetter(this, "ExtensionSettingsStore",
                                "resource://gre/modules/ExtensionSettingsStore.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 let {
   makeWidgetId,
@@ -195,6 +197,12 @@ class ExtensionControlledPopup {
       extensionId = item && item.id;
     }
 
+    let win = targetWindow || this.topWindow;
+    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(win);
+    if (isPrivate && extensionId && !WebExtensionPolicy.getByID(extensionId).privateBrowsingAllowed) {
+      return;
+    }
+
     // The item should have an extension and the user shouldn't have confirmed
     // the change here, but just to be sure check that it is still controlled
     // and the user hasn't already confirmed the change.
@@ -203,7 +211,6 @@ class ExtensionControlledPopup {
       return;
     }
 
-    let win = targetWindow || this.topWindow;
     // If the window closes while waiting for focus, this might reject/throw,
     // and we should stop trying to show the popup.
     try {
@@ -228,7 +235,7 @@ class ExtensionControlledPopup {
     // Setup the command handler.
     let handleCommand = async (event) => {
       panel.hidePopup();
-      if (event.originalTarget.getAttribute("anonid") == "button") {
+      if (event.originalTarget == popupnotification.button) {
         // Main action is to keep changes.
         await this.setConfirmation(extensionId);
       } else {
@@ -271,7 +278,7 @@ class ExtensionControlledPopup {
     let anchor = doc.getAnonymousElementByAttribute(
       anchorButton, "class", "toolbarbutton-icon");
     panel.hidden = false;
-    popupnotification.hidden = false;
+    popupnotification.show();
     panel.openPopup(anchor);
   }
 
@@ -303,8 +310,8 @@ class ExtensionControlledPopup {
         BrowserUtils.getLocalizedFragment(doc, message, addonDetails));
     }
 
-    let link = doc.createXULElement("label");
-    link.setAttribute("class", "learnMore text-link");
+    let link = doc.createXULElement("label", {is: "text-link"});
+    link.setAttribute("class", "learnMore");
     link.href = Services.urlFormatter.formatURLPref("app.support.baseURL") + this.learnMoreLink;
     link.textContent = strBundle.GetStringFromName(this.learnMoreMessageId);
     description.appendChild(link);

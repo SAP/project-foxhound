@@ -74,7 +74,7 @@ class LogCollector;
 namespace net {
 extern mozilla::LazyLogModule gHttpLog;
 
-typedef nsTArray<Tuple<nsCString, nsCString>> ArrayOfStringPairs;
+class PreferredAlternativeDataTypeParams;
 
 enum CacheDisposition : uint8_t {
   kCacheUnresolved = 0,
@@ -169,7 +169,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetContentLength(int64_t *aContentLength) override;
   NS_IMETHOD SetContentLength(int64_t aContentLength) override;
   NS_IMETHOD Open(nsIInputStream **aResult) override;
-  NS_IMETHOD Open2(nsIInputStream **aResult) override;
   NS_IMETHOD GetBlockAuthPrompt(bool *aValue) override;
   NS_IMETHOD SetBlockAuthPrompt(bool aValue) override;
 
@@ -221,6 +220,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD RedirectTo(nsIURI *newURI) override;
   NS_IMETHOD SwitchProcessTo(mozilla::dom::Promise *aTabParent,
                              uint64_t aIdentifier) override;
+  NS_IMETHOD HasCrossOriginOpenerPolicyMismatch(bool *aMismatch) override;
   NS_IMETHOD UpgradeToSecure() override;
   NS_IMETHOD GetRequestContextID(uint64_t *aRCID) override;
   NS_IMETHOD GetTransferSize(uint64_t *aTransferSize) override;
@@ -236,13 +236,19 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetTopLevelContentWindowId(uint64_t aContentWindowId) override;
   NS_IMETHOD GetTopLevelOuterContentWindowId(uint64_t *aWindowId) override;
   NS_IMETHOD SetTopLevelOuterContentWindowId(uint64_t aWindowId) override;
-  NS_IMETHOD GetIsTrackingResource(bool *aIsTrackingResource) override;
-  NS_IMETHOD GetIsThirdPartyTrackingResource(
-      bool *aIsTrackingResource) override;
+  NS_IMETHOD IsTrackingResource(bool *aIsTrackingResource) override;
+  NS_IMETHOD IsThirdPartyTrackingResource(bool *aIsTrackingResource) override;
+  NS_IMETHOD GetClassificationFlags(uint32_t *aIsClassificationFlags) override;
+  NS_IMETHOD GetFirstPartyClassificationFlags(
+      uint32_t *aIsClassificationFlags) override;
+  NS_IMETHOD GetThirdPartyClassificationFlags(
+      uint32_t *aIsClassificationFlags) override;
   NS_IMETHOD OverrideTrackingFlagsForDocumentCookieAccessor(
       nsIHttpChannel *aDocumentChannel) override;
   NS_IMETHOD GetFlashPluginState(
       nsIHttpChannel::FlashPluginState *aState) override;
+
+  using nsIHttpChannel::IsThirdPartyTrackingResource;
 
   // nsIHttpChannelInternal
   NS_IMETHOD GetDocumentURI(nsIURI **aDocumentURI) override;
@@ -295,6 +301,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetFetchCacheMode(uint32_t aFetchCacheMode) override;
   NS_IMETHOD GetTopWindowURI(nsIURI **aTopWindowURI) override;
   NS_IMETHOD SetTopWindowURIIfUnknown(nsIURI *aTopWindowURI) override;
+  NS_IMETHOD SetTopWindowPrincipal(nsIPrincipal *aTopWindowPrincipal) override;
   NS_IMETHOD GetProxyURI(nsIURI **proxyURI) override;
   virtual void SetCorsPreflightParameters(
       const nsTArray<nsCString> &unsafeHeaders) override;
@@ -307,7 +314,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetLastRedirectFlags(uint32_t aValue) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp *aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
-  NS_IMETHOD CancelForTrackingProtection() override;
+  NS_IMETHOD CancelByChannelClassifier(nsresult aErrorCode) override;
   virtual void SetIPv4Disabled(void) override;
   virtual void SetIPv6Disabled(void) override;
 
@@ -416,7 +423,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // |EnsureUploadStreamIsCloneableComplete| to main thread.
   virtual void OnCopyComplete(nsresult aStatus);
 
-  void SetIsTrackingResource(bool aIsThirdParty);
+  void AddClassificationFlags(uint32_t aFlags, bool aIsThirdParty);
 
   void SetFlashPluginState(nsIHttpChannel::FlashPluginState aState);
 
@@ -441,6 +448,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
     if (NS_FAILED(rv)) {
       return rv;
     }
+    mOriginalReferrer = referrer;
     mReferrer = referrer;
     mReferrerPolicy = referrerPolicy;
     rv = mRequestHead.SetHeader(nsHttp::Referer, spec);
@@ -454,6 +462,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
  protected:
   nsresult GetTopWindowURI(nsIURI *aURIBeingLoaded, nsIURI **aTopWindowURI);
+  nsresult GetTopWindowPrincipal(nsIPrincipal **aTopWindowPrincipal);
 
   // Handle notifying listener, removing from loadgroup if request failed.
   void DoNotifyListener();
@@ -543,14 +552,19 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsILoadInfo> mLoadInfo;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIProgressEventSink> mProgressSink;
+  // When the referrer is set before calling AsyncOpen, we remember the referrer
+  // argument passed in case we need to readjust the referrer header being used
+  // depending on the active cookie policy once we have determined whether the
+  // channel is a tracking third-party resource or not.
+  nsCOMPtr<nsIURI> mOriginalReferrer;
   nsCOMPtr<nsIURI> mReferrer;
   nsCOMPtr<nsIApplicationCache> mApplicationCache;
   nsCOMPtr<nsIURI> mAPIRedirectToURI;
   nsCOMPtr<nsIURI> mProxyURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsIURI> mTopWindowURI;
+  nsCOMPtr<nsIPrincipal> mTopWindowPrincipal;
   nsCOMPtr<nsIStreamListener> mListener;
-  nsCOMPtr<nsISupports> mListenerContext;
   // An instance of nsHTTPCompressConv
   nsCOMPtr<nsIStreamListener> mCompressListener;
 
@@ -578,7 +592,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // the HTML file.
   nsString mInitiatorType;
   // Holds the name of the preferred alt-data type for each contentType.
-  ArrayOfStringPairs mPreferredCachedAltDataTypes;
+  nsTArray<PreferredAlternativeDataTypeParams> mPreferredCachedAltDataTypes;
   // Holds the name of the alternative data type the channel returned.
   nsCString mAvailableCachedAltDataType;
   nsString mIntegrityMetadata;
@@ -654,8 +668,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while channel
   // is canceled on main thread.
   Atomic<bool, ReleaseAcquire> mCanceled;
-  Atomic<bool, ReleaseAcquire> mIsFirstPartyTrackingResource;
-  Atomic<bool, ReleaseAcquire> mIsThirdPartyTrackingResource;
+  Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags;
+  Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags;
   Atomic<uint32_t, ReleaseAcquire> mFlashPluginState;
 
   uint32_t mLoadFlags;

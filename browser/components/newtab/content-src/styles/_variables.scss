@@ -13,10 +13,13 @@ $grey-60: #4A4A4F;
 $grey-70: #38383D;
 $grey-80: #2A2A2E;
 $grey-90: #0C0C0D;
+$teal-10: #A7FFFE;
+$teal-60: #00C8D7;
 $teal-70: #008EA4;
 $teal-80: #005A71;
 $red-60: #D70022;
 $yellow-50: #FFE900;
+$violet-20: #CB9EFF;
 
 // Photon opacity from http://design.firefox.com/photon/visuals/color.html#opacity
 $grey-10-10: rgba($grey-10, 0.1);
@@ -55,8 +58,12 @@ $black-30: rgba($black, 0.3);
 // Other colors
 $white: #FFF;
 $white-10: rgba($white, 0.1);
+$white-50: rgba($white, 0.5);
+$white-60: rgba($white, 0.6);
+$white-70: rgba($white, 0.7);
 $pocket-teal: #50BCB6;
 $pocket-red: #EF4056;
+$shadow-10: rgba(12, 12, 13, 0.1);
 $bookmark-icon-fill: #0A84FF;
 $download-icon-fill: #12BC00;
 $pocket-icon-fill: #D70022;
@@ -69,6 +76,9 @@ $about-welcome-gradient: linear-gradient(to bottom, $blue-70 40%, $aw-extra-blue
 $about-welcome-extra-links: #676F7E;
 $firefox-wordmark-default-color: #363959;
 $firefox-wordmark-darktheme-color: $white;
+$trailhead-purple: #2B2156;
+$trailhead-blue-60: #0250BB;
+$trailhead-blue-70: #054096;
 
 // Photon transitions from http://design.firefox.com/photon/motion/duration-and-easing.html
 $photon-easing: cubic-bezier(0.07, 0.95, 0, 1);
@@ -152,7 +162,7 @@ $textbox-shadow-size: 4px;
   .context-menu-button {
     background-clip: padding-box;
     background-color: var(--newtab-contextmenu-button-color);
-    background-image: url('chrome://browser/skin/page-action.svg');
+    background-image: url('chrome://global/skin/icons/more.svg');
     background-position: 55%;
     border: $border-primary;
     border-radius: 100%;

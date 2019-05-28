@@ -5,8 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["Sanitizer"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
@@ -470,8 +470,7 @@ var Sanitizer = {
 
         // Keep track of the time in case we get stuck in la-la-land because of onbeforeunload
         // dialogs
-        let existingWindow = Services.appShell.hiddenDOMWindow;
-        let startDate = existingWindow.performance.now();
+        let startDate = Date.now();
 
         // First check if all these windows are OK with being closed:
         let windowList = [];
@@ -487,10 +486,14 @@ var Sanitizer = {
           // hit until the prompt has been dismissed. If more than 1 minute has elapsed since we
           // started prompting, stop, because the user might not even remember initiating the
           // 'forget', and the timespans will be all wrong by now anyway:
-          if (existingWindow.performance.now() > (startDate + 60 * 1000)) {
+          if (Date.now() > (startDate + 60 * 1000)) {
             this._resetAllWindowClosures(windowList);
             throw new Error("Sanitize could not close windows: timeout");
           }
+        }
+
+        if (windowList.length == 0) {
+          return;
         }
 
         // If/once we get here, we should actually be able to close all windows.
@@ -503,8 +506,8 @@ var Sanitizer = {
         let handler = Cc["@mozilla.org/browser/clh;1"].getService(Ci.nsIBrowserHandler);
         let defaultArgs = handler.defaultArgs;
         let features = "chrome,all,dialog=no," + privateStateForNewWindow;
-        let newWindow = existingWindow.openDialog(AppConstants.BROWSER_CHROME_URL, "_blank",
-                                                  features, defaultArgs);
+        let newWindow = windowList[0].openDialog(AppConstants.BROWSER_CHROME_URL, "_blank",
+                                                 features, defaultArgs);
 
         let onFullScreen = null;
         if (AppConstants.platform == "macosx") {
@@ -664,14 +667,92 @@ async function sanitizeInternal(items, aItemsToClear, progress, options = {}) {
   }
 }
 
+// This is an helper that retrieves the principals with site data just once
+// and only when needed.
+class PrincipalsCollector {
+  constructor() {
+    this.principals = null;
+  }
+
+  async getAllPrincipals(progress) {
+    if (this.principals == null) {
+      // Here is the list of principals with site data.
+      progress.advancement = "get-principals";
+      this.principals = await this.getAllPrincipalsInternal(progress);
+    }
+
+    return this.principals;
+  }
+
+  async getAllPrincipalsInternal(progress) {
+    progress.step = "principals-quota-manager";
+    let principals = await new Promise(resolve => {
+      quotaManagerService.getUsage(request => {
+        progress.step = "principals-quota-manager-getUsage";
+        if (request.resultCode != Cr.NS_OK) {
+          // We are probably shutting down. We don't want to propagate the
+          // error, rejecting the promise.
+          resolve([]);
+          return;
+        }
+
+        let list = [];
+        for (let item of request.result) {
+          let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(item.origin);
+          let uri = principal.URI;
+          if (isSupportedURI(uri)) {
+            list.push(principal);
+          }
+        }
+
+        progress.step = "principals-quota-manager-completed";
+        resolve(list);
+      });
+    }).catch(ex => {
+      Cu.reportError("QuotaManagerService promise failed: " + ex);
+      return [];
+    });
+
+    progress.step = "principals-service-workers";
+    let serviceWorkers = serviceWorkerManager.getAllRegistrations();
+    for (let i = 0; i < serviceWorkers.length; i++) {
+      let sw = serviceWorkers.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo);
+      // We don't need to check the scheme. SW are just exposed to http/https URLs.
+      principals.push(sw.principal);
+    }
+
+    // Let's take the list of unique hosts+OA from cookies.
+    progress.step = "principals-cookies";
+    let enumerator = Services.cookies.enumerator;
+    let hosts = new Set();
+    for (let cookie of enumerator) {
+      hosts.add(cookie.rawHost + ChromeUtils.originAttributesToSuffix(cookie.originAttributes));
+    }
+
+    progress.step = "principals-host-cookie";
+    hosts.forEach(host => {
+      // Cookies and permissions are handled by origin/host. Doesn't matter if we
+      // use http: or https: schema here.
+      principals.push(
+        Services.scriptSecurityManager.createCodebasePrincipalFromOrigin("https://" + host));
+    });
+
+    progress.step = "total-principals:" + principals.length;
+    return principals;
+  }
+}
+
 async function sanitizeOnShutdown(progress) {
   log("Sanitizing on shutdown");
 
   if (Sanitizer.shouldSanitizeOnShutdown) {
     // Need to sanitize upon shutdown
+    progress.advancement = "shutdown-cleaner";
     let itemsToClear = getItemsToClearFromPrefBranch(Sanitizer.PREF_SHUTDOWN_BRANCH);
     await Sanitizer.sanitize(itemsToClear, { progress });
   }
+
+  let principalsCollector = new PrincipalsCollector();
 
   // Clear out QuotaManager storage for principals that have been marked as
   // session only.  The cookie service has special logic that avoids writing
@@ -698,9 +779,14 @@ async function sanitizeOnShutdown(progress) {
   if (Services.prefs.getIntPref(PREF_COOKIE_LIFETIME,
                                 Ci.nsICookieService.ACCEPT_NORMALLY) == Ci.nsICookieService.ACCEPT_SESSION) {
     log("Session-only configuration detected");
-    let principals = await getAllPrincipals();
-    await maybeSanitizeSessionPrincipals(principals);
+    progress.advancement = "session-only";
+
+    let principals = await principalsCollector.getAllPrincipals(progress);
+    await maybeSanitizeSessionPrincipals(progress, principals);
+    return;
   }
+
+  progress.advancement = "session-permission";
 
   // Let's see if we have to forget some particular site.
   for (let permission of Services.perms.enumerator) {
@@ -717,11 +803,13 @@ async function sanitizeOnShutdown(progress) {
     log("Custom session cookie permission detected for: " + permission.principal.URI.spec);
 
     // We use just the URI here, because permissions ignore OriginAttributes.
-    let principals = await getAllPrincipals(permission.principal.URI);
-    await maybeSanitizeSessionPrincipals(principals);
+    let principals = await principalsCollector.getAllPrincipals(progress);
+    let selectedPrincipals = extractMatchingPrincipals(principals, permission.principal.URI);
+    await maybeSanitizeSessionPrincipals(progress, selectedPrincipals);
   }
 
   if (Sanitizer.shouldSanitizeNewTabContainer) {
+    progress.advancement = "newtab-segregation";
     sanitizeNewTabSegregation();
     removePendingSanitization("newtab-container");
   }
@@ -732,79 +820,35 @@ async function sanitizeOnShutdown(progress) {
     removePendingSanitization("shutdown");
     Services.prefs.savePrefFile(null);
   }
+
+  progress.advancement = "done";
 }
 
-// Retrieve the list of nsIPrincipals with site data. If matchUri is not null,
-// it returns only the principals matching that URI, ignoring the
-// OriginAttributes.
-async function getAllPrincipals(matchUri = null) {
-  let principals = await new Promise(resolve => {
-    quotaManagerService.getUsage(request => {
-      if (request.resultCode != Cr.NS_OK) {
-        // We are probably shutting down. We don't want to propagate the
-        // error, rejecting the promise.
-        resolve([]);
-        return;
-      }
-
-      let list = [];
-      for (let item of request.result) {
-        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(item.origin);
-        let uri = principal.URI;
-        if (!isSupportedURI(uri)) {
-          continue;
-        }
-
-        if (!matchUri || Services.eTLD.hasRootDomain(matchUri.host, uri.host)) {
-          list.push(principal);
-        }
-      }
-      resolve(list);
-    });
-  }).catch(() => []);
-
-  let serviceWorkers = serviceWorkerManager.getAllRegistrations();
-  for (let i = 0; i < serviceWorkers.length; i++) {
-    let sw = serviceWorkers.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo);
-    let uri = sw.principal.URI;
-    // We don't need to check the scheme. SW are just exposed to http/https URLs.
-    if (!matchUri || Services.eTLD.hasRootDomain(matchUri.host, uri.host)) {
-      principals.push(sw.principal);
-    }
-  }
-
-  // Let's take the list of unique hosts+OA from cookies.
-  let enumerator = Services.cookies.enumerator;
-  let hosts = new Set();
-  for (let cookie of enumerator) {
-    if (!matchUri || Services.eTLD.hasRootDomain(matchUri.host, cookie.rawHost)) {
-      hosts.add(cookie.rawHost + ChromeUtils.originAttributesToSuffix(cookie.originAttributes));
-    }
-  }
-
-  hosts.forEach(host => {
-    // Cookies and permissions are handled by origin/host. Doesn't matter if we
-    // use http: or https: schema here.
-    principals.push(
-      Services.scriptSecurityManager.createCodebasePrincipalFromOrigin("https://" + host));
+// Extracts the principals matching matchUri as root domain.
+function extractMatchingPrincipals(principals, matchUri) {
+  return principals.filter(principal => {
+    return Services.eTLD.hasRootDomain(matchUri.host, principal.URI.host);
   });
-
-  return principals;
 }
 
 // This method receives a list of principals and it checks if some of them or
 // some of their sub-domain need to be sanitize.
-async function maybeSanitizeSessionPrincipals(principals) {
+async function maybeSanitizeSessionPrincipals(progress, principals) {
   log("Sanitizing " + principals.length + " principals");
 
   let promises = [];
 
   principals.forEach(principal => {
-    if (!cookiesAllowedForDomainOrSubDomain(principal)) {
-      promises.push(sanitizeSessionPrincipal(principal));
+    progress.step = "checking-principal";
+    let cookieAllowed = cookiesAllowedForDomainOrSubDomain(principal);
+    progress.step = "principal-checked:" + cookieAllowed;
+
+    if (!cookieAllowed) {
+      promises.push(sanitizeSessionPrincipal(progress, principal));
     }
   });
 
+  progress.step = "promises:" + promises.length;
   return Promise.all(promises);
 }
 
@@ -853,15 +897,17 @@ function cookiesAllowedForDomainOrSubDomain(principal) {
   return false;
 }
 
-async function sanitizeSessionPrincipal(principal) {
+async function sanitizeSessionPrincipal(progress, principal) {
   log("Sanitizing principal: " + principal.URI.spec);
 
+  progress.step = "sanitizing";
   await new Promise(resolve => {
     Services.clearData.deleteDataFromPrincipal(principal, true /* user request */,
                                                Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
                                                Ci.nsIClearDataService.CLEAR_COOKIES,
                                                resolve);
   });
+  progress.step = "sanitized";
 }
 
 function sanitizeNewTabSegregation() {

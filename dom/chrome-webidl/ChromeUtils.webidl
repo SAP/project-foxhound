@@ -281,15 +281,18 @@ partial namespace ChromeUtils {
    * Synchronously loads and evaluates the js file located at
    * 'aResourceURI' with a new, fully privileged global object.
    *
-   * If 'aTargetObj' is specified and null, this method just returns
-   * the module's global object. Otherwise (if 'aTargetObj' is not
-   * specified, or 'aTargetObj' is != null) looks for a property
-   * 'EXPORTED_SYMBOLS' on the new global object. 'EXPORTED_SYMBOLS'
-   * is expected to be an array of strings identifying properties on
-   * the global object.  These properties will be installed as
-   * properties on 'targetObj', or, if 'aTargetObj' is not specified,
-   * on the caller's global object. If 'EXPORTED_SYMBOLS' is not
-   * found, an error is thrown.
+   * If `aTargetObj` is specified, and non-null, all properties exported by
+   * the module are copied to that object.
+   *
+   * If `aTargetObj` is not specified, or is non-null, an object is returned
+   * containing all of the module's exported properties. The same object is
+   * returned for every call.
+   *
+   * If `aTargetObj` is specified and null, the module's global object is
+   * returned, rather than its explicit exports. This behavior is deprecated,
+   * and will removed in the near future, since it is incompatible with the
+   * ES6 module semanitcs we intend to migrate to. It should not be used in
+   * new code.
    *
    * @param aResourceURI A resource:// URI string to load the module from.
    * @param aTargetObj the object to install the exported properties on or null.
@@ -356,7 +359,7 @@ partial namespace ChromeUtils {
   /**
    * Request performance metrics to the current process & all content processes.
    */
-  [Throws, Func="DOMPrefs::dom_performance_enable_scheduler_timing"]
+  [Throws]
   Promise<sequence<PerformanceInfoDictionary>> requestPerformanceMetrics();
 
   /**
@@ -366,16 +369,10 @@ partial namespace ChromeUtils {
   Promise<sequence<IOActivityDataDictionary>> requestIOActivity();
 
   /**
-   * Returns the BrowsingContext referred by the given id.
-   */
-  [ChromeOnly]
-  BrowsingContext? getBrowsingContext(unsigned long long id);
-
-  /**
-   * Returns all the root BrowsingContexts.
-   */
-  [ChromeOnly]
-  sequence<BrowsingContext> getRootBrowsingContexts();
+  * Returns a Promise containing all processes info
+  */
+  [Throws]
+  Promise<ParentProcInfoDictionary> requestProcInfo();
 
   [ChromeOnly, Throws]
   boolean hasReportingHeaderForOrigin(DOMString aOrigin);
@@ -392,15 +389,80 @@ partial namespace ChromeUtils {
   [ChromeOnly]
   double lastExternalProtocolIframeAllowed();
 
+  /**
+   * For testing purpose we need to reset this value.
+   */
+  [ChromeOnly]
+  void resetLastExternalProtocolIframeAllowed();
+
   [ChromeOnly, Throws]
   void registerWindowActor(DOMString aName, WindowActorOptions aOptions);
+
+  [ChromeOnly]
+  void unregisterWindowActor(DOMString aName);
+
+  [ChromeOnly]
+  // aError should a nsresult.
+  boolean isClassifierBlockingErrorCode(unsigned long aError);
+};
+
+/**
+ * Holds information about Firefox running processes & threads.
+ *
+ * See widget/ProcInfo.h for fields documentation.
+ */
+enum ProcType {
+ "web",
+ "file",
+ "extension",
+ "privileged",
+ "webLargeAllocation",
+ "gpu",
+ "rdd",
+ "socket",
+ "browser",
+ "unknown"
+};
+
+dictionary ThreadInfoDictionary {
+  long long tid = 0;
+  DOMString name = "";
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+};
+
+dictionary ChildProcInfoDictionary {
+  // System info
+  long long pid = 0;
+  DOMString filename = "";
+  unsigned long long virtualMemorySize = 0;
+  long long residentSetSize = 0;
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+  sequence<ThreadInfoDictionary> threads = [];
+  // Firefox info
+  unsigned long long ChildID = 0;
+  ProcType type = "web";
+};
+
+dictionary ParentProcInfoDictionary {
+  // System info
+  long long pid = 0;
+  DOMString filename = "";
+  unsigned long long virtualMemorySize = 0;
+  long long residentSetSize = 0;
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+  sequence<ThreadInfoDictionary> threads = [];
+  sequence<ChildProcInfoDictionary> children = [];
+  // Firefox info
+  ProcType type = "browser";
 };
 
 /**
  * Dictionaries duplicating IPDL types in dom/ipc/DOMTypes.ipdlh
  * Used by requestPerformanceMetrics
  */
-
 dictionary MediaMemoryInfoDictionary {
   unsigned long long audioSize = 0;
   unsigned long long videoSize = 0;
@@ -531,14 +593,47 @@ dictionary Base64URLEncodeOptions {
 };
 
 dictionary WindowActorOptions {
+  /**
+   * If this is set to `true`, allow this actor to be created for subframes,
+   * and not just toplevel window globals.
+   */
+  boolean allFrames = false;
+
+  /**
+   * If this is set to `true`, allow this actor to be created for window
+   * globals loaded in chrome browsing contexts, such as those used to load the
+   * tabbrowser.
+   */
+  boolean includeChrome = false;
+
   /** This fields are used for configuring individual sides of the actor. */
   required WindowActorSidedOptions parent;
-  required WindowActorSidedOptions child;
+  required WindowActorChildOptions child;
 };
 
 dictionary WindowActorSidedOptions {
   /** The module path which should be loaded for the actor on this side. */
-  required DOMString moduleURI;
+  required ByteString moduleURI;
+};
+
+dictionary WindowActorChildOptions : WindowActorSidedOptions {
+  /**
+   * Events which this actor wants to be listening to. When these events fire,
+   * it will trigger actor creation, and then forward the event to the actor.
+   */
+  record<DOMString, AddEventListenerOptions> events;
+
+ /**
+  * Array of observer topics to listen to. A observer will be added for each
+  * topic in the list.
+  *
+  * Observers in the list much use the nsGlobalWindowInner object as their topic,
+  * and the events will only be dispatched to the corresponding window actor. If
+  * additional observer notifications are needed with different listening
+  * conditions, please file a bug in DOM requesting support for the subject
+  * required to be added to JS WindowActor objects.
+  **/
+  sequence<ByteString> observers;
 };
 
 enum Base64URLDecodePadding {

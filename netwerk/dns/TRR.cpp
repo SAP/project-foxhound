@@ -236,6 +236,7 @@ nsresult TRR::SendHTTPRequest() {
       getter_AddRefs(mChannel), dnsURI, nsContentUtils::GetSystemPrincipal(),
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
       nsIContentPolicy::TYPE_OTHER,
+      nullptr,  // nsICookieSettings
       nullptr,  // PerformanceStorage
       nullptr,  // aLoadGroup
       this,
@@ -307,7 +308,7 @@ nsresult TRR::SendHTTPRequest() {
           NS_LITERAL_CSTRING("application/dns-message")))) {
     LOG(("TRR::SendHTTPRequest: couldn't set content-type!\n"));
   }
-  if (NS_SUCCEEDED(httpChannel->AsyncOpen2(this))) {
+  if (NS_SUCCEEDED(httpChannel->AsyncOpen(this))) {
     NS_NewTimerWithCallback(getter_AddRefs(mTimeout), this,
                             gTRRService->GetRequestTimeout(),
                             nsITimer::TYPE_ONE_SHOT);
@@ -448,7 +449,7 @@ nsresult TRR::ReceivePush(nsIHttpChannel *pushed, nsHostRecord *pushedRec) {
     return rv;
   }
 
-  rv = pushed->AsyncOpen2(this);
+  rv = pushed->AsyncOpen(this);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -473,7 +474,7 @@ TRR::OnPush(nsIHttpChannel *associated, nsIHttpChannel *pushed) {
 }
 
 NS_IMETHODIMP
-TRR::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
+TRR::OnStartRequest(nsIRequest *aRequest) {
   LOG(("TRR::OnStartRequest %p %s %d\n", this, mHost.get(), mType));
   mStartTime = TimeStamp::Now();
   return NS_OK;
@@ -966,8 +967,7 @@ nsresult TRR::On200Response() {
 }
 
 NS_IMETHODIMP
-TRR::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
-                   nsresult aStatusCode) {
+TRR::OnStopRequest(nsIRequest *aRequest, nsresult aStatusCode) {
   // The dtor will be run after the function returns
   LOG(("TRR:OnStopRequest %p %s %d failed=%d code=%X\n", this, mHost.get(),
        mType, mFailed, (unsigned int)aStatusCode));
@@ -1015,9 +1015,8 @@ TRR::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
 }
 
 NS_IMETHODIMP
-TRR::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
-                     nsIInputStream *aInputStream, uint64_t aOffset,
-                     const uint32_t aCount) {
+TRR::OnDataAvailable(nsIRequest *aRequest, nsIInputStream *aInputStream,
+                     uint64_t aOffset, const uint32_t aCount) {
   LOG(("TRR:OnDataAvailable %p %s %d failed=%d aCount=%u\n", this, mHost.get(),
        mType, mFailed, (unsigned int)aCount));
   // receive DNS response into the local buffer

@@ -14,22 +14,9 @@ add_task(async function() {
   prepareCollapsibilitiesTest();
 
   const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
+  const { devtoolsTab } = await openAboutDevtoolsToolbox(document, tab, window);
 
-  info("Show about:devtools-toolbox page");
-  const target = findDebugTargetByText("about:debugging", document);
-  ok(target, "about:debugging tab target appeared");
-  const inspectButton = target.querySelector(".js-debug-target-inspect-button");
-  ok(inspectButton, "Inspect button for about:debugging appeared");
-  inspectButton.click();
-  await Promise.all([
-    waitUntil(() => tab.nextElementSibling),
-    waitForRequestsToSettle(window.AboutDebugging.store),
-    gDevTools.once("toolbox-ready"),
-  ]);
-
-  info("Wait for about:devtools-toolbox tab will be selected");
-  const devtoolsTab = tab.nextElementSibling;
-  await waitUntil(() => gBrowser.selectedTab === devtoolsTab);
   info("Check whether the menu items are disabled");
   const rootDocument = devtoolsTab.ownerDocument;
   await assertMenusItems(rootDocument, false);
@@ -39,7 +26,7 @@ add_task(async function() {
   info("Check whether the menu items are enabled");
   await assertMenusItems(rootDocument, true);
 
-  await closeAboutDevtoolsToolbox(devtoolsTab, window);
+  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
   await removeTab(tab);
 });
 

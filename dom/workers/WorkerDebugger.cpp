@@ -88,6 +88,15 @@ class CompileDebuggerScriptRunnable final : public WorkerDebuggerRunnable {
       return false;
     }
 
+    if (NS_WARN_IF(!aWorkerPrivate->EnsureCSPEventListener())) {
+      return false;
+    }
+
+    // Initialize performance state which might be used on the main thread, as
+    // in CompileScriptRunnable. This runnable might execute first.
+    aWorkerPrivate->EnsurePerformanceStorage();
+    aWorkerPrivate->EnsurePerformanceCounter();
+
     JS::Rooted<JSObject*> global(aCx, globalScope->GetWrapper());
 
     ErrorResult rv;
@@ -368,6 +377,11 @@ WorkerDebugger::RemoveListener(nsIWorkerDebuggerListener* aListener) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+WorkerDebugger::SetDebuggerReady(bool aReady) {
+  return mWorkerPrivate->SetIsDebuggerReady(aReady);
+}
+
 void WorkerDebugger::Close() {
   MOZ_ASSERT(mWorkerPrivate);
   mWorkerPrivate = nullptr;
@@ -383,7 +397,8 @@ void WorkerDebugger::PostMessageToDebugger(const nsAString& aMessage) {
 
   RefPtr<PostDebuggerMessageRunnable> runnable =
       new PostDebuggerMessageRunnable(this, aMessage);
-  if (NS_FAILED(mWorkerPrivate->DispatchToMainThread(runnable.forget()))) {
+  if (NS_FAILED(mWorkerPrivate->DispatchToMainThreadForMessaging(
+          runnable.forget()))) {
     NS_WARNING("Failed to post message to debugger on main thread!");
   }
 }
@@ -405,7 +420,8 @@ void WorkerDebugger::ReportErrorToDebugger(const nsAString& aFilename,
 
   RefPtr<ReportDebuggerErrorRunnable> runnable =
       new ReportDebuggerErrorRunnable(this, aFilename, aLineno, aMessage);
-  if (NS_FAILED(mWorkerPrivate->DispatchToMainThread(runnable.forget()))) {
+  if (NS_FAILED(mWorkerPrivate->DispatchToMainThreadForMessaging(
+          runnable.forget()))) {
     NS_WARNING("Failed to report error to debugger on main thread!");
   }
 }

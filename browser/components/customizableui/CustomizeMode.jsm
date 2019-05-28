@@ -21,14 +21,15 @@ const kDownloadAutohideCheckboxId = "downloads-button-autohide-checkbox";
 const kDownloadAutohidePanelId = "downloads-button-autohide-panel";
 const kDownloadAutoHidePref = "browser.download.autohideButton";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource:///modules/CustomizableUI.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {CustomizableUI} = ChromeUtils.import("resource:///modules/CustomizableUI.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["CSS"]);
 
+ChromeUtils.defineModuleGetter(this, "AMTelemetry",
+                               "resource://gre/modules/AddonManager.jsm");
 ChromeUtils.defineModuleGetter(this, "DragPositionManager",
                                "resource:///modules/DragPositionManager.jsm");
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
@@ -1206,11 +1207,13 @@ CustomizeMode.prototype = {
 
   openAddonsManagerThemes(aEvent) {
     aEvent.target.parentNode.parentNode.hidePopup();
+    AMTelemetry.recordLinkEvent({object: "customize", value: "manageThemes"});
     this.window.BrowserOpenAddonsMgr("addons://list/theme");
   },
 
   getMoreThemes(aEvent) {
     aEvent.target.parentNode.parentNode.hidePopup();
+    AMTelemetry.recordLinkEvent({object: "customize", value: "getThemes"});
     let getMoreURL = Services.urlFormatter.formatURLPref("lightweightThemes.getMoreURL");
     this.window.openTrustedLinkIn(getMoreURL, "tab");
   },
@@ -1388,6 +1391,11 @@ CustomizeMode.prototype = {
         else
           LightweightThemeManager.currentTheme = button.theme;
         onThemeSelected(panel);
+        AMTelemetry.recordActionEvent({
+          object: "customize",
+          action: "enable",
+          extra: {type: "theme", addonId: theme.id},
+        });
       });
       panel.insertBefore(button, recommendedLabel);
     }
@@ -1430,6 +1438,13 @@ CustomizeMode.prototype = {
         lwthemePrefs.setStringPref("recommendedThemes",
                                    JSON.stringify(recommendedThemes));
         onThemeSelected(panel);
+        let addonId = `${button.theme.id}@personas.mozilla.org`;
+        AMTelemetry.recordActionEvent({
+          object: "customize",
+          action: "enable",
+          value: "recommended",
+          extra: {type: "theme", addonId},
+        });
       });
       panel.insertBefore(button, footer);
     }

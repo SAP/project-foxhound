@@ -1,6 +1,6 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {MockRegistrar} = ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 var httpserv = null;
 
@@ -55,7 +55,7 @@ function run_test() {
 
   var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
                       "/target");
-  chan.asyncOpen2(new ChannelListener(checkValue, null));
+  chan.asyncOpen(new ChannelListener(checkValue, null));
 
   do_test_pending();
 }

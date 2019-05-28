@@ -6,6 +6,8 @@
 
 #include "AudioWorkletGlobalScope.h"
 
+#include "AudioNodeEngine.h"
+#include "AudioNodeStream.h"
 #include "AudioWorkletImpl.h"
 #include "jsapi.h"
 #include "mozilla/dom/AudioWorkletGlobalScopeBinding.h"
@@ -74,8 +76,9 @@ void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
     return;
   }
 
+  // We know processorConstructor is callable, so not a WindowProxy or Location.
   JS::Rooted<JSObject*> constructorUnwrapped(
-      aCx, js::CheckedUnwrap(processorConstructor));
+      aCx, js::CheckedUnwrapStatic(processorConstructor));
   if (!constructorUnwrapped) {
     // If the caller's compartment does not have permission to access the
     // unwrapped constructor then throw.
@@ -185,10 +188,17 @@ void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
   if (aRv.Failed()) {
     return;
   }
-  // TODO: we don't have a proper mechanism to communicate with the
-  // control thread currently. See
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1473467#c3
-  // and https://bugzilla.mozilla.org/show_bug.cgi?id=1492014
+
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "AudioWorkletGlobalScope: parameter descriptors",
+      [impl = mImpl, name = nsString(aName), map = std::move(map)]() mutable {
+        AudioNode* destinationNode =
+            impl->DestinationStream()->Engine()->NodeMainThread();
+        if (!destinationNode) {
+          return;
+        }
+        destinationNode->Context()->SetParamMapForWorkletName(name, &map);
+      }));
 }
 
 WorkletImpl* AudioWorkletGlobalScope::Impl() const { return mImpl; }

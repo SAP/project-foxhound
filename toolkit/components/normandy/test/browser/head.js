@@ -6,21 +6,20 @@ ChromeUtils.import("resource://normandy/lib/SandboxManager.jsm", this);
 ChromeUtils.import("resource://normandy/lib/NormandyDriver.jsm", this);
 ChromeUtils.import("resource://normandy/lib/NormandyApi.jsm", this);
 ChromeUtils.import("resource://normandy/lib/TelemetryEvents.jsm", this);
+ChromeUtils.defineModuleGetter(this, "TelemetryTestUtils",
+                               "resource://testing-common/TelemetryTestUtils.jsm");
 
-// Load mocking/stubbing library, sinon
-// docs: http://sinonjs.org/docs/
-/* global sinon */
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js");
+const CryptoHash = Components.Constructor("@mozilla.org/security/hash;1",
+                                          "nsICryptoHash", "initWithString");
+const FileInputStream = Components.Constructor("@mozilla.org/network/file-input-stream;1",
+                                               "nsIFileInputStream", "init");
+
+const {sinon} = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 // Make sinon assertions fail in a way that mochitest understands
 sinon.assert.fail = function(message) {
   ok(false, message);
 };
-
-registerCleanupFunction(async function() {
-  // Cleanup window or the test runner will throw an error
-  delete window.sinon;
-});
 
 // Prep Telemetry to receive events from tests
 TelemetryEvents.init();
@@ -29,8 +28,8 @@ this.UUID_REGEX = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/
 
 this.TEST_XPI_URL = (function() {
   const dir = getChromeDir(getResolvedURI(gTestPath));
-  dir.append("fixtures");
-  dir.append("normandy.xpi");
+  dir.append("addons");
+  dir.append("normandydriver-1.0.xpi");
   return Services.io.newFileURI(dir).spec;
 })();
 
@@ -127,7 +126,7 @@ this.withDriver = function(Assert, testFunction) {
 
 this.withMockNormandyApi = function(testFunction) {
   return async function inner(...args) {
-    const mockApi = {actions: [], recipes: [], implementations: {}};
+    const mockApi = {actions: [], recipes: [], implementations: {}, extensionDetails: {}};
 
     // Use callsFake instead of resolves so that the current values in mockApi are used.
     mockApi.fetchActions = sinon.stub(NormandyApi, "fetchActions").callsFake(async () => mockApi.actions);
@@ -141,6 +140,15 @@ this.withMockNormandyApi = function(testFunction) {
         return impl;
       }
     );
+    mockApi.fetchExtensionDetails = sinon.stub(NormandyApi, "fetchExtensionDetails").callsFake(
+      async extensionId => {
+        const details = mockApi.extensionDetails[extensionId];
+        if (!details) {
+          throw new Error(`Missing extension details for ${extensionId}`);
+        }
+        return details;
+      }
+    );
 
     try {
       await testFunction(mockApi, ...args);
@@ -148,6 +156,7 @@ this.withMockNormandyApi = function(testFunction) {
       mockApi.fetchActions.restore();
       mockApi.fetchRecipes.restore();
       mockApi.fetchImplementation.restore();
+      mockApi.fetchExtensionDetails.restore();
     }
   };
 };
@@ -293,6 +302,9 @@ this.addonStudyFactory = function(attrs) {
     addonUrl: "http://test/addon.xpi",
     addonVersion: "1.0.0",
     studyStartDate: new Date(),
+    extensionApiId: 1,
+    extensionHash: "ade1c14196ec4fe0aa0a6ba40ac433d7c8d1ec985581a8a94d43dc58991b5171",
+    extensionHashAlgorithm: "sha256",
   }, attrs);
 };
 
@@ -347,36 +359,17 @@ this.studyEndObserved = function(recipeId) {
 
 this.withSendEventStub = function(testFunction) {
   return async function wrappedTestFunction(...args) {
-
-    /* Checks that calls match the event schema. */
-    function checkEventMatchesSchema(method, object, value, extra) {
-      let match = true;
-      const spec = Array.from(Object.values(TelemetryEvents.eventSchema))
-        .filter(spec => spec.methods.includes(method))[0];
-
-      if (spec) {
-        if (!spec.objects.includes(object)) {
-          match = false;
-        }
-
-        for (const key of Object.keys(extra)) {
-          if (!spec.extra_keys.includes(key)) {
-            match = false;
-          }
-        }
-      } else {
-        match = false;
-      }
-
-      ok(match, `sendEvent(${method}, ${object}, ${value}, ${JSON.stringify(extra)}) should match spec`);
-    }
-
-    const stub = sinon.stub(TelemetryEvents, "sendEvent");
-    stub.callsFake(checkEventMatchesSchema);
+    const stub = sinon.spy(TelemetryEvents, "sendEvent");
+    stub.assertEvents = (expected) => {
+      expected = expected.map(event => ["normandy"].concat(event));
+      TelemetryTestUtils.assertEvents(expected, {category: "normandy"}, {clear: false});
+    };
+    Services.telemetry.clearEvents();
     try {
       await testFunction(...args, stub);
     } finally {
       stub.restore();
+      Assert.ok(!stub.threw(), "some telemetry call failed");
     }
   };
 };
@@ -400,3 +393,29 @@ function mockLogger() {
   logStub.trace = sinon.stub();
   return logStub;
 }
+
+this.CryptoUtils = {
+  _getHashStringForCrypto(aCrypto) {
+    // return the two-digit hexadecimal code for a byte
+    let toHexString = charCode => ("0" + charCode.toString(16)).slice(-2);
+
+    // convert the binary hash data to a hex string.
+    let binary = aCrypto.finish(false);
+    let hash = Array.from(binary, c => toHexString(c.charCodeAt(0)));
+    return hash.join("").toLowerCase();
+  },
+
+  /**
+   * Get the computed hash for a given file
+   * @param {nsIFile} file The file to be hashed
+   * @param {string} [algorithm] The hashing algorithm to use
+   */
+  getFileHash(file, algorithm = "sha256") {
+    const crypto = CryptoHash(algorithm);
+    const fis = new FileInputStream(file, -1, -1, false);
+    crypto.updateFromStream(fis, file.fileSize);
+    const hash = this._getHashStringForCrypto(crypto);
+    fis.close();
+    return hash;
+  },
+};

@@ -4,7 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "AppConstants", "resource://gre/modules/AppConstants.jsm");
 ChromeUtils.defineModuleGetter(this, "FeatureGateImplementation", "resource://featuregates/FeatureGateImplementation.jsm");
 
@@ -100,7 +100,8 @@ class FeatureGate {
       );
     }
 
-    const definition = featureDefinitions.get(id);
+    // Make a copy of the definition, since we are about to modify it
+    const definition = { ...featureDefinitions.get(id) };
     const targetValueKeys = ["defaultValue", "isPublic"];
     for (const key of targetValueKeys) {
       definition[key] = evaluateTargetedValue(definition[key], kTargetFacts);

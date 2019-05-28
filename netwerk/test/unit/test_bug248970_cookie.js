@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver;
 
@@ -23,7 +22,7 @@ function makeChan(path) {
 function setup_chan(path, isPrivate, callback) {
   var chan = makeChan(path);
   chan.QueryInterface(Ci.nsIPrivateBrowsingChannel).setPrivate(isPrivate);
-  chan.asyncOpen2(new ChannelListener(callback));  
+  chan.asyncOpen(new ChannelListener(callback));  
  }
 
 function set_cookie(value, callback) {
@@ -64,8 +63,10 @@ function setHandler(metadata, response) {
 
 function run_test() {
   // Allow all cookies if the pref service is available in this process.
-  if (!inChildProcess())
+  if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+    Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+  }
 
   httpserver = new HttpServer();
   httpserver.registerPathHandler("/set", setHandler);

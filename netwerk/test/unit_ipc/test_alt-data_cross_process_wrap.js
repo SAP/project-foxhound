@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // needs to be rooted
 var cacheFlushObserver = { observe: function() {
@@ -32,8 +32,8 @@ function load_channel(url) {
   URL = url; // save this to open the alt data channel later
   var chan = make_channel(url);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType("text/binary", "");
-  chan.asyncOpen2(new ChannelListener(readTextData, null));
+  cc.preferAlternativeDataType("text/binary", "", true);
+  chan.asyncOpen(new ChannelListener(readTextData, null));
 }
 
 function make_channel(url, callback, ctx) {
@@ -64,8 +64,8 @@ function readTextData(request, buffer)
 function openAltChannel() {
   var chan = make_channel(URL);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType("text/parent-binary", "");
-  chan.asyncOpen2(new ChannelListener(readAltData, null));
+  cc.preferAlternativeDataType("text/parent-binary", "", true);
+  chan.asyncOpen(new ChannelListener(readAltData, null));
 }
 
 function readAltData(request, buffer)

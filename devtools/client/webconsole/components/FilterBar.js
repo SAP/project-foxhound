@@ -4,7 +4,6 @@
 "use strict";
 
 const { Component } = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 const { getAllFilters } = require("devtools/client/webconsole/selectors/filters");
@@ -21,15 +20,14 @@ const {
 const FilterButton = require("devtools/client/webconsole/components/FilterButton");
 const FilterCheckbox = require("devtools/client/webconsole/components/FilterCheckbox");
 
+loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
+
 class FilterBar extends Component {
   static get propTypes() {
     return {
       dispatch: PropTypes.func.isRequired,
       filter: PropTypes.object.isRequired,
-      serviceContainer: PropTypes.shape({
-        attachRefToHud: PropTypes.func.isRequired,
-      }).isRequired,
-      filterBarVisible: PropTypes.bool.isRequired,
+      attachRefToWebConsoleUI: PropTypes.func.isRequired,
       persistLogs: PropTypes.bool.isRequired,
       hidePersistLogsCheckbox: PropTypes.bool.isRequired,
       filteredMessagesCount: PropTypes.object.isRequired,
@@ -47,7 +45,6 @@ class FilterBar extends Component {
   constructor(props) {
     super(props);
     this.onClickMessagesClear = this.onClickMessagesClear.bind(this);
-    this.onClickFilterBarToggle = this.onClickFilterBarToggle.bind(this);
     this.onClickRemoveAllFilters = this.onClickRemoveAllFilters.bind(this);
     this.onClickRemoveTextFilter = this.onClickRemoveTextFilter.bind(this);
     this.onSearchInput = this.onSearchInput.bind(this);
@@ -57,26 +54,25 @@ class FilterBar extends Component {
   }
 
   componentDidMount() {
-    this.props.serviceContainer.attachRefToHud(
+    this.props.attachRefToWebConsoleUI(
       "filterBox",
       this.wrapperNode.querySelector(".text-filter")
+    );
+    this.props.attachRefToWebConsoleUI(
+      "clearButton",
+      this.wrapperNode.querySelector(".clear-button")
     );
   }
 
   shouldComponentUpdate(nextProps, nextState) {
     const {
       filter,
-      filterBarVisible,
       persistLogs,
       filteredMessagesCount,
       closeButtonVisible,
     } = this.props;
 
     if (nextProps.filter !== filter) {
-      return true;
-    }
-
-    if (nextProps.filterBarVisible !== filterBarVisible) {
       return true;
     }
 
@@ -100,10 +96,6 @@ class FilterBar extends Component {
 
   onClickMessagesClear() {
     this.props.dispatch(actions.messagesClear());
-  }
-
-  onClickFilterBarToggle() {
-    this.props.dispatch(actions.filterBarToggle());
   }
 
   onClickRemoveAllFilters() {
@@ -238,7 +230,6 @@ class FilterBar extends Component {
   render() {
     const {
       filter,
-      filterBarVisible,
       persistLogs,
       filteredMessagesCount,
       hidePersistLogsCheckbox,
@@ -258,19 +249,21 @@ class FilterBar extends Component {
         dom.div({
           className: "devtools-separator",
         }),
-        dom.button({
-          className: "devtools-button devtools-filter-icon" + (
-            filterBarVisible ? " checked" : ""),
-          title: l10n.getStr("webconsole.toggleFilterButton.tooltip"),
-          onClick: this.onClickFilterBarToggle,
-        }),
-        dom.input({
-          className: "devtools-plaininput text-filter",
-          type: "search",
-          value: filter.text,
-          placeholder: l10n.getStr("webconsole.filterInput.placeholder"),
-          onInput: this.onSearchInput,
-        }),
+        dom.div(
+          { className: "devtools-searchbox has-clear-btn" },
+          dom.input({
+            className: "devtools-plaininput text-filter",
+            type: "search",
+            value: filter.text,
+            placeholder: l10n.getStr("webconsole.filterInput.placeholder"),
+            onInput: this.onSearchInput,
+          }),
+          dom.button({
+            className: "devtools-searchinput-clear clear-button",
+            hidden: filter.text == "",
+            onClick: this.onClickRemoveTextFilter,
+          }),
+        ),
         !hidePersistLogsCheckbox && FilterCheckbox({
           label: l10n.getStr("webconsole.enablePersistentLogs.label"),
           title: l10n.getStr("webconsole.enablePersistentLogs.tooltip"),
@@ -300,9 +293,7 @@ class FilterBar extends Component {
       ));
     }
 
-    if (filterBarVisible) {
-      children.push(this.renderFiltersConfigBar());
-    }
+    children.push(this.renderFiltersConfigBar());
 
     return (
       dom.div({
@@ -321,7 +312,6 @@ function mapStateToProps(state) {
   const uiState = getAllUi(state);
   return {
     filter: getAllFilters(state),
-    filterBarVisible: uiState.filterBarVisible,
     persistLogs: uiState.persistLogs,
     filteredMessagesCount: getFilteredMessagesCount(state),
     closeButtonVisible: uiState.closeButtonVisible,

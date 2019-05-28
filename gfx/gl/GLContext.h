@@ -191,8 +191,7 @@ enum class GLRenderer {
   Other
 };
 
-class GLContext : public GLLibraryLoader,
-                  public GenericAtomicRefCounted,
+class GLContext : public GenericAtomicRefCounted,
                   public SupportsWeakPtr<GLContext> {
  public:
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(GLContext)
@@ -414,6 +413,7 @@ class GLContext : public GLLibraryLoader,
     EXT_draw_buffers2,
     EXT_draw_instanced,
     EXT_draw_range_elements,
+    EXT_float_blend,
     EXT_frag_depth,
     EXT_framebuffer_blit,
     EXT_framebuffer_multisample,
@@ -468,6 +468,7 @@ class GLContext : public GLLibraryLoader,
     OES_depth32,
     OES_depth_texture,
     OES_element_index_uint,
+    OES_fbo_render_mipmap,
     OES_framebuffer_object,
     OES_packed_depth_stencil,
     OES_rgb8_rgba8,
@@ -3332,10 +3333,6 @@ class GLContext : public GLLibraryLoader,
   typedef gfx::SurfaceFormat SurfaceFormat;
 
  public:
-  virtual bool Init() = 0;
-
-  virtual bool SetupLookupFunction() = 0;
-
   virtual void ReleaseSurface() {}
 
   bool IsDestroyed() const {
@@ -3369,6 +3366,8 @@ class GLContext : public GLLibraryLoader,
    * Releases a color buffer that is being used as a texture
    */
   virtual bool ReleaseTexImage() { return false; }
+
+  virtual Maybe<SymbolLoader> GetSymbolLoader() const = 0;
 
   // Before reads from offscreen texture
   void GuaranteeResolve();
@@ -3452,8 +3451,6 @@ class GLContext : public GLLibraryLoader,
   // Shared code for GL extensions and GLX extensions.
   static bool ListHasExtension(const GLubyte* extensions,
                                const char* extension);
-
-  GLint GetMaxTextureImageSize() { return mMaxTextureImageSize; }
 
  public:
   std::map<GLuint, SharedSurface*> mFBOMapping;
@@ -3565,16 +3562,15 @@ class GLContext : public GLLibraryLoader,
 
   bool IsOffscreenSizeAllowed(const gfx::IntSize& aSize) const;
 
- protected:
-  bool InitWithPrefix(const char* prefix, bool trygl);
+  virtual bool Init();
 
  private:
-  bool InitWithPrefixImpl(const char* prefix, bool trygl);
-  void LoadMoreSymbols(const char* prefix, bool trygl);
-  bool LoadExtSymbols(const char* prefix, bool trygl, const SymLoadStruct* list,
+  bool InitImpl();
+  void LoadMoreSymbols(const SymbolLoader& loader);
+  bool LoadExtSymbols(const SymbolLoader& loader, const SymLoadStruct* list,
                       GLExtensions ext);
-  bool LoadFeatureSymbols(const char* prefix, bool trygl,
-                          const SymLoadStruct* list, GLFeature feature);
+  bool LoadFeatureSymbols(const SymbolLoader& loader, const SymLoadStruct* list,
+                          GLFeature feature);
 
  protected:
   void InitExtensions();
@@ -3585,7 +3581,6 @@ class GLContext : public GLLibraryLoader,
   uint32_t mMaxTexOrRbSize = 0;
   GLint mMaxTextureSize = 0;
   GLint mMaxCubeMapTextureSize = 0;
-  GLint mMaxTextureImageSize = 0;
   GLint mMaxRenderbufferSize = 0;
   GLint mMaxViewportDims[2] = {};
   GLsizei mMaxSamples = 0;

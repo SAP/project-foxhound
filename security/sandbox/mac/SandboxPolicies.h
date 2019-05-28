@@ -18,18 +18,20 @@ static const char pluginSandboxRules[] = R"SANDBOX_LITERAL(
   (define app-path (param "APP_PATH"))
   (define app-binary-path (param "APP_BINARY_PATH"))
 
-  (if (string=? should-log "TRUE")
-      (deny default)
-      (deny default (with no-log)))
+  (define (moz-deny feature)
+    (if (string=? should-log "TRUE")
+      (deny feature)
+      (deny feature (with no-log))))
 
+  (moz-deny default)
   ; These are not included in (deny default)
-  (deny process-info*)
+  (moz-deny process-info*)
   ; This isn't available in some older macOS releases.
   (if (defined? 'nvram*)
-    (deny nvram*))
-  ; This property require macOS 10.10+
+    (moz-deny nvram*))
+  ; This property requires macOS 10.10+
   (if (defined? 'file-map-executable)
-    (deny file-map-executable))
+    (moz-deny file-map-executable))
 
   (if (defined? 'file-map-executable)
     (allow file-map-executable file-read*
@@ -81,20 +83,25 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
   (define testingReadPath4 (param "TESTING_READ_PATH4"))
   (define crashPort (param "CRASH_PORT"))
 
-  (if (string=? should-log "TRUE")
-    (deny default)
-    (deny default (with no-log)))
-  (debug deny)
+  (define (moz-deny feature)
+    (if (string=? should-log "TRUE")
+      (deny feature)
+      (deny feature (with no-log))))
+
+  (moz-deny default)
   ; These are not included in (deny default)
-  (deny process-info*)
+  (moz-deny process-info*)
   ; This isn't available in some older macOS releases.
   (if (defined? 'nvram*)
-    (deny nvram*))
+    (moz-deny nvram*))
   ; The next two properties both require macOS 10.10+
   (if (defined? 'iokit-get-properties)
-    (deny iokit-get-properties))
+    (moz-deny iokit-get-properties))
   (if (defined? 'file-map-executable)
-    (deny file-map-executable))
+    (moz-deny file-map-executable))
+
+  (if (string=? should-log "TRUE")
+    (debug deny))
 
   (if (defined? 'file-map-executable)
     (allow file-map-executable file-read*
@@ -151,6 +158,8 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
       (sysctl-name "kern.osversion")
       (sysctl-name "kern.osrelease")
       (sysctl-name "kern.version")
+      (sysctl-name "kern.tcsm_available")
+      (sysctl-name "kern.tcsm_enable")
       ; TODO: remove "kern.hostname". Without it the tests hang, but the hostname
       ; is arguably sensitive information, so we should see what can be done about
       ; removing it.
@@ -186,6 +195,9 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
       (sysctl-name "machdep.cpu.stepping")
       (sysctl-name "debug.intel.gstLevelGST")
       (sysctl-name "debug.intel.gstLoaderControl")))
+  (if (> macosMinorVersion 9)
+    (allow sysctl-write
+      (sysctl-name "kern.tcsm_enable")))
 
   (define (home-regex home-relative-regex)
     (regex (string-append "^" (regex-quote home-path) home-relative-regex)))
@@ -347,6 +359,9 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
   (allow user-preference-read (preference-domain "com.nvidia.OpenGL"))
   (allow mach-lookup
       (global-name "com.apple.cvmsServ"))
+  (if (>= macosMinorVersion 14)
+    (allow mach-lookup
+      (global-name "com.apple.MTLCompilerService")))
   (allow iokit-open
       (iokit-connection "IOAccelerator")
       (iokit-user-client-class "IOAccelerationUserClient")

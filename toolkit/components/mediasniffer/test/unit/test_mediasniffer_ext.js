@@ -8,8 +8,8 @@ var BinaryOutputStream = CC("@mozilla.org/binaryoutputstream;1",
                             "nsIBinaryOutputStream",
                             "setOutputStream");
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -43,12 +43,12 @@ const tests = [
 
 // A basic listener that reads checks the if we sniffed properly.
 var listener = {
-  onStartRequest(request, context) {
+  onStartRequest(request) {
     info("Sniffing " + tests[testRan].path);
     Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType, tests[testRan].expected);
   },
 
-  onDataAvailable(request, context, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     try {
       var bis = Cc["@mozilla.org/binaryinputstream;1"]
                   .createInstance(Ci.nsIBinaryInputStream);
@@ -59,7 +59,7 @@ var listener = {
     }
   },
 
-  onStopRequest(request, context, status) {
+  onStopRequest(request, status) {
     testRan++;
     runNext();
   },
@@ -81,7 +81,7 @@ function runNext() {
     return;
   }
   var channel = setupChannel("/");
-  channel.asyncOpen2(listener);
+  channel.asyncOpen(listener);
 }
 
 function getFileContents(aFile) {

@@ -69,15 +69,16 @@
 
 "use strict";
 
+// Definitions needed to run eslint on this file.
 /* globals TESTS, runTest, finishTest */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+
+const DATA_URI_SPEC = "chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/chrome/";
 
 /* import-globals-from testConstants.js */
-Services.scriptloader.loadSubScript("chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/chrome/testConstants.js", this);
-
-const IS_MACOSX = ("nsILocalFileMac" in Ci);
-const IS_WIN = ("@mozilla.org/windows-registry-key;1" in Cc);
+Services.scriptloader.loadSubScript(DATA_URI_SPEC + "testConstants.js", this);
 
 // The tests have to use the pageid instead of the pageIndex due to the
 // app update wizard's access method being random.
@@ -103,13 +104,10 @@ const URL_HTTPS_UPDATE_XML = "https://example.com" + URL_PATH_UPDATE_XML;
 
 const URI_UPDATE_PROMPT_DIALOG  = "chrome://mozapps/content/update/updates.xul";
 
-const PREF_APP_UPDATE_INTERVAL = "app.update.interval";
-const PREF_APP_UPDATE_LASTUPDATETIME = "app.update.lastUpdateTime.background-update-timer";
-
 const LOG_FUNCTION = info;
 
-const BIN_SUFFIX = (IS_WIN ? ".exe" : "");
-const FILE_UPDATER_BIN = "updater" + (IS_MACOSX ? ".app" : BIN_SUFFIX);
+const BIN_SUFFIX = (AppConstants.platform == "win" ? ".exe" : "");
+const FILE_UPDATER_BIN = "updater" + (AppConstants.platform == "macosx" ? ".app" : BIN_SUFFIX);
 const FILE_UPDATER_BIN_BAK = FILE_UPDATER_BIN + ".bak";
 
 var gURLData = URL_HOST + "/" + REL_PATH_DATA + "/";
@@ -138,14 +136,13 @@ var gDocElem;
 var gPrefToCheck;
 var gUseTestUpdater = false;
 
-// Set to true to log additional information for debugging. To log additional
-// information for an individual test set DEBUG_AUS_TEST to true in the test's
-// onload function.
-var DEBUG_AUS_TEST = true;
-
-const DATA_URI_SPEC = "chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/chrome/";
 /* import-globals-from ../data/shared.js */
 Services.scriptloader.loadSubScript(DATA_URI_SPEC + "shared.js", this);
+
+// Set to true to log additional information for debugging. To log additional
+// information for individual tests set gDebugTest to false here and to true in
+// the test's onload function.
+gDebugTest = true;
 
 /**
  * The current test in TESTS array.
@@ -253,10 +250,9 @@ function runTestDefaultWaitForWindowClosed() {
 
     gCloseWindowTimeoutCounter = 0;
 
-    setupFiles();
     setupPrefs();
     gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
-    removeUpdateDirsAndFiles();
+    removeUpdateFiles(true);
     setupTimer(gTestTimeout);
     SimpleTest.executeSoon(setupTestUpdater);
   }
@@ -285,9 +281,8 @@ function finishTestDefault() {
 
   resetPrefs();
   gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "");
-  resetFiles();
-  removeUpdateDirsAndFiles();
   reloadUpdateManagerData(true);
+  removeUpdateFiles(true);
 
   Services.ww.unregisterNotification(gWindowObserver);
   if (gDocElem) {
@@ -492,7 +487,7 @@ function getContinueFile() {
  */
 function createContinueFile() {
   debugDump("creating 'continue' file for slow mar downloads");
-  writeFile(getContinueFile(), "");
+  getContinueFile().create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
 }
 
 /**
@@ -653,23 +648,6 @@ function verifyTestsRan() {
 }
 
 /**
- * Creates a backup of files the tests need to modify so they can be restored to
- * the original file when the test has finished and then modifies the files.
- */
-function setupFiles() {
-  // Backup the updater-settings.ini file if it exists by moving it.
-  let baseAppDir = getGREDir();
-  let updateSettingsIni = baseAppDir.clone();
-  updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
-  if (updateSettingsIni.exists()) {
-    updateSettingsIni.moveTo(baseAppDir, FILE_UPDATE_SETTINGS_INI_BAK);
-  }
-  updateSettingsIni = baseAppDir.clone();
-  updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
-  writeFile(updateSettingsIni, UPDATE_SETTINGS_CONTENTS);
-}
-
-/**
  * For tests that use the test updater restores the backed up real updater if
  * it exists and tries again on failure since Windows debug builds at times
  * leave the file in use. After success moveRealUpdater is called to continue
@@ -701,10 +679,23 @@ function setupTestUpdater() {
 function moveRealUpdater() {
   try {
     // Move away the real updater
-    let baseAppDir = getAppBaseDir();
-    let updater = baseAppDir.clone();
+    let greBinDir = getGREBinDir();
+    let updater = greBinDir.clone();
     updater.append(FILE_UPDATER_BIN);
-    updater.moveTo(baseAppDir, FILE_UPDATER_BIN_BAK);
+    updater.moveTo(greBinDir, FILE_UPDATER_BIN_BAK);
+
+    let greDir = getGREDir();
+    let updateSettingsIni = greDir.clone();
+    updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
+    if (updateSettingsIni.exists()) {
+      updateSettingsIni.moveTo(greDir, FILE_UPDATE_SETTINGS_INI_BAK);
+    }
+
+    let precomplete = greDir.clone();
+    precomplete.append(FILE_PRECOMPLETE);
+    if (precomplete.exists()) {
+      precomplete.moveTo(greDir, FILE_PRECOMPLETE_BAK);
+    }
   } catch (e) {
     logTestInfo("Attempt to move the real updater out of the way failed... " +
                 "will try again, Exception: " + e);
@@ -723,7 +714,7 @@ function moveRealUpdater() {
 function copyTestUpdater() {
   try {
     // Copy the test updater
-    let baseAppDir = getAppBaseDir();
+    let greBinDir = getGREBinDir();
     let testUpdaterDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
     let relPath = REL_PATH_DATA;
     let pathParts = relPath.split("/");
@@ -733,7 +724,16 @@ function copyTestUpdater() {
 
     let testUpdater = testUpdaterDir.clone();
     testUpdater.append(FILE_UPDATER_BIN);
-    testUpdater.copyToFollowingLinks(baseAppDir, FILE_UPDATER_BIN);
+    testUpdater.copyToFollowingLinks(greBinDir, FILE_UPDATER_BIN);
+
+    let greDir = getGREDir();
+    let updateSettingsIni = greDir.clone();
+    updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
+    writeFile(updateSettingsIni, UPDATE_SETTINGS_CONTENTS);
+
+    let precomplete = greDir.clone();
+    precomplete.append(FILE_PRECOMPLETE);
+    writeFile(precomplete, PRECOMPLETE_CONTENTS);
   } catch (e) {
     logTestInfo("Attempt to copy the test updater failed... " +
                 "will try again, Exception: " + e);
@@ -752,16 +752,43 @@ function copyTestUpdater() {
  * finished.
  */
 function restoreUpdaterBackup() {
-  let baseAppDir = getAppBaseDir();
-  let updater = baseAppDir.clone();
-  let updaterBackup = baseAppDir.clone();
+  let greBinDir = getGREBinDir();
+  let updater = greBinDir.clone();
+  let updaterBackup = greBinDir.clone();
   updater.append(FILE_UPDATER_BIN);
   updaterBackup.append(FILE_UPDATER_BIN_BAK);
   if (updaterBackup.exists()) {
     if (updater.exists()) {
       updater.remove(true);
     }
-    updaterBackup.moveTo(baseAppDir, FILE_UPDATER_BIN);
+    updaterBackup.moveTo(greBinDir, FILE_UPDATER_BIN);
+  }
+
+  let greDir = getGREDir();
+  let updateSettingsIniBackup = greDir.clone();
+  updateSettingsIniBackup.append(FILE_UPDATE_SETTINGS_INI_BAK);
+  if (updateSettingsIniBackup.exists()) {
+    let updateSettingsIni = greDir.clone();
+    updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
+    if (updateSettingsIni.exists()) {
+      updateSettingsIni.remove(false);
+    }
+    updateSettingsIniBackup.moveTo(greDir, FILE_UPDATE_SETTINGS_INI);
+  }
+
+  let precomplete = greDir.clone();
+  let precompleteBackup = greDir.clone();
+  precomplete.append(FILE_PRECOMPLETE);
+  precompleteBackup.append(FILE_PRECOMPLETE_BAK);
+  if (precompleteBackup.exists()) {
+    if (precomplete.exists()) {
+      precomplete.remove(false);
+    }
+    precompleteBackup.moveTo(greDir, FILE_PRECOMPLETE);
+  } else if (precomplete.exists()) {
+    if (readFile(precomplete) == PRECOMPLETE_CONTENTS) {
+      precomplete.remove(false);
+    }
   }
 }
 
@@ -772,7 +799,7 @@ function restoreUpdaterBackup() {
  * finished.
  */
 function setupPrefs() {
-  if (DEBUG_AUS_TEST) {
+  if (gDebugTest) {
     Services.prefs.setBoolPref(PREF_APP_UPDATE_LOG, true);
   }
 
@@ -789,8 +816,8 @@ function setupPrefs() {
   }
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DISABLEDFORTESTING, false);
 
-  if (IS_WIN) {
-    let configFile = getUpdateConfigFile();
+  if (AppConstants.platform == "win") {
+    let configFile = getUpdateDirFile(FILE_UPDATE_CONFIG_JSON);
     if (configFile.exists()) {
       let configData = JSON.parse(readFileBytes(configFile));
       gAppUpdateAuto = !!configData[CONFIG_APP_UPDATE_AUTO];
@@ -816,39 +843,6 @@ function setupPrefs() {
   Services.prefs.setIntPref(PREF_APP_UPDATE_PROMPTWAITTIME, 0);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_SILENT, false);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DOORHANGER, false);
-}
-
-/**
- * Restores files that were backed up for the tests and general file cleanup.
- */
-function resetFiles() {
-  // Restore the backed up updater-settings.ini if it exists.
-  let baseAppDir = getGREDir();
-  let updateSettingsIni = baseAppDir.clone();
-  updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI_BAK);
-  if (updateSettingsIni.exists()) {
-    updateSettingsIni.moveTo(baseAppDir, FILE_UPDATE_SETTINGS_INI);
-  }
-
-  // Not being able to remove the "updated" directory will not adversely affect
-  // subsequent tests so wrap it in a try block and don't test whether its
-  // removal was successful.
-  let updatedDir;
-  if (IS_MACOSX) {
-    updatedDir = getUpdatesDir();
-    updatedDir.append(DIR_PATCH);
-  } else {
-    updatedDir = getAppBaseDir();
-  }
-  updatedDir.append(DIR_UPDATED);
-  if (updatedDir.exists()) {
-    try {
-      removeDirRecursive(updatedDir);
-    } catch (e) {
-      logTestInfo("Unable to remove directory. Path: " + updatedDir.path +
-                  ", Exception: " + e);
-    }
-  }
 }
 
 /**

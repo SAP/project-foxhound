@@ -224,20 +224,8 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   bool GetRecvPacketTypeStats(
       webrtc::RtcpPacketTypeCounter* aPacketCounts) override;
 
-  bool GetVideoEncoderStats(double* framerateMean, double* framerateStdDev,
-                            double* bitrateMean, double* bitrateStdDev,
-                            uint32_t* droppedFrames, uint32_t* framesEncoded,
-                            Maybe<uint64_t>* qpSum) override {
-    return false;
-  }
-  bool GetVideoDecoderStats(double* framerateMean, double* framerateStdDev,
-                            double* bitrateMean, double* bitrateStdDev,
-                            uint32_t* discardedPackets,
-                            uint32_t* framesDecoded) override {
-    return false;
-  }
-  bool GetRTPStats(unsigned int* jitterMs,
-                   unsigned int* cumulativeLost) override;
+  bool GetRTPReceiverStats(unsigned int* jitterMs,
+                           unsigned int* cumulativeLost) override;
   bool GetRTCPReceiverReport(uint32_t* jitterMs, uint32_t* packetsReceived,
                              uint64_t* bytesReceived, uint32_t* cumulativeLost,
                              int32_t* rttMs) override;

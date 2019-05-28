@@ -61,7 +61,7 @@ broadcasterset, broadcaster, observes,
 keyset, key, toolbarpalette, toolbarset,
 template, rule, conditions, action,
 bindings, binding, content, member, triple,
-treechildren, treeitem, treeseparator, treerow, treecell {
+treeitem, treeseparator, treerow, treecell {
   display: none;
 }
 
@@ -100,8 +100,8 @@ vbox {
 /********** label **********/
 
 label.text-link, label[onclick] {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#text-link");
   -moz-user-focus: normal;
+  -moz-binding: none;
 }
 
 label[control], label.radio-label, label.checkbox-label, label.toolbarbutton-multiline-text {
@@ -174,17 +174,11 @@ iframe {
 
 /*********** popup notification ************/
 popupnotification {
-  -moz-binding: url("chrome://global/content/bindings/notification.xml#popup-notification");
+  -moz-box-orient: vertical;
 }
 
 .popup-notification-menubutton:not([label]) {
   display: none;
-}
-
-/********** checkbox **********/
-
-checkbox {
-  -moz-binding: url("chrome://global/content/bindings/checkbox.xml#checkbox");
 }
 
 /********** radio **********/
@@ -289,10 +283,6 @@ menuitem.menuitem-iconic {
 menuitem[type="checkbox"],
 menuitem[type="radio"] {
   -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic");
-}
-
-menucaption {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menucaption");
 }
 
 .menu-text {
@@ -430,29 +420,24 @@ column {
 
 /******** tree ******/
 
-tree {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#tree");
-}
-
 treecolpicker {
   -moz-box-ordinal-group: 2147483646;
 }
 
-tree > treechildren {
+treechildren {
   display: -moz-box;
   -moz-user-select: none;
   -moz-box-flex: 1;
 }
 
 tree {
+  -moz-binding: none;
   -moz-box-orient: vertical;
-  min-width: 0px;
-  min-height: 0px;
   width: 10px;
   height: 10px;
 }
 
-tree[hidecolumnpicker="true"] > treecols > treecolpicker {
+tree[hidecolumnpicker="true"] treecolpicker {
   display: none;
 }
 
@@ -466,7 +451,7 @@ treecol[hidden="true"] {
 }
 
 /* ::::: lines connecting cells ::::: */
-tree:not([treelines="true"]) > treechildren::-moz-tree-line {
+tree:not([treelines="true"]) treechildren::-moz-tree-line {
   visibility: hidden;
 }
 
@@ -534,25 +519,17 @@ textbox {
   text-shadow: none;
 }
 
-textbox[multiline="true"] {
-  -moz-binding: url("chrome://global/content/bindings/textbox.xml#textarea");
-}
-
-html|textarea.textbox-textarea {
-  resize: none;
-}
-
-textbox[resizable="true"] > moz-input-box > html|textarea.textbox-textarea {
-  resize: both;
-}
-
 textbox[type="search"] {
   -moz-binding: url("chrome://global/content/bindings/textbox.xml#search-textbox");
 }
 
+/* Prefix with (xul|*):root to workaround HTML tests loading xul.css */
+:root html|textarea:not([resizable="true"]) {
+  resize: none;
+}
+
 @supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  html|*.textbox-input,
-  html|*.textbox-textarea {
+  html|*.textbox-input {
     /* Be block-level, so that -moz-box-flex can take effect, when we are an item
        in a -moz-box being emulated by modified modern flex. */
     display: block;
@@ -573,7 +550,7 @@ textbox[type="autocomplete"] {
 }
 
 panel[type="autocomplete-richlistbox"] {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-rich-result-popup");
+  -moz-binding: none;
 }
 
 .autocomplete-richlistbox {
@@ -582,8 +559,9 @@ panel[type="autocomplete-richlistbox"] {
 }
 
 .autocomplete-richlistitem {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-richlistitem");
+  -moz-binding: none;
   -moz-box-orient: vertical;
+  -moz-box-align: center;
   overflow: -moz-hidden-unscrollable;
 }
 
@@ -603,12 +581,7 @@ panel[type="autocomplete-richlistbox"] {
 
 /********** menulist **********/
 
-menulist {
-  -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist");
-}
-
 menulist[popuponly="true"] {
-  -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist-popuponly");
   -moz-appearance: none !important;
   margin: 0 !important;
   height: 0 !important;
@@ -700,7 +673,6 @@ wizard:root /* override :root from above */ {
 }
 
 wizardpage {
-  -moz-binding: url("chrome://global/content/bindings/wizard.xml#wizardpage");
   -moz-box-orient: vertical;
   overflow: auto;
 }

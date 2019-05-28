@@ -31,8 +31,8 @@ PermissionObserver::~PermissionObserver() {
   gInstance = nullptr;
 }
 
-/* static */ already_AddRefed<PermissionObserver>
-PermissionObserver::GetInstance() {
+/* static */
+already_AddRefed<PermissionObserver> PermissionObserver::GetInstance() {
   RefPtr<PermissionObserver> instance = gInstance;
   if (!instance) {
     instance = new PermissionObserver();
@@ -105,7 +105,7 @@ PermissionObserver::Observe(nsISupports* aSubject, const char* aTopic,
 
   nsAutoCString type;
   perm->GetType(type);
-  Maybe<PermissionName> permission = TypeToPermissionName(type.get());
+  Maybe<PermissionName> permission = TypeToPermissionName(type);
   if (permission) {
     Notify(permission.value(), *principal);
   }

@@ -6,6 +6,8 @@
 /* import-globals-from helper_diff.js */
 "use strict";
 
+const beautify = require("devtools/shared/jsbeautify/beautify");
+
 loadHelperScript("helper_diff.js");
 
 /**
@@ -92,7 +94,8 @@ async function checkEventsForNode(test, inspector, testActor) {
   const cssSelector = nodeFront.nodeName + "#" + nodeFront.id;
 
   for (let i = 0; i < headers.length; i++) {
-    info("Processing header[" + i + "] for " + cssSelector);
+    const label = `${cssSelector}.${expected[i].type} (index ${i})`;
+    info(`${label} START`);
 
     const header = headers[i];
     const type = header.querySelector(".event-tooltip-event-type");
@@ -129,11 +132,18 @@ async function checkEventsForNode(test, inspector, testActor) {
         "We are in expanded state and icon changed");
 
     const editor = tooltip.eventTooltip._eventEditors.get(contentBox).editor;
-    testDiff(editor.getText(), expected[i].handler,
+    const tidiedHandler = beautify.js(expected[i].handler, {
+      "indent_size": 2,
+    });
+    testDiff(editor.getText(), tidiedHandler,
        "handler matches for " + cssSelector, ok);
+
+    info(`${label} END`);
   }
 
+  const tooltipHidden = tooltip.once("hidden");
   tooltip.hide();
+  await tooltipHidden;
 }
 
 /**

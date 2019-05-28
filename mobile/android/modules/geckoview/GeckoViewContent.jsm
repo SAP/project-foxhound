@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewContent"];
 
-ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewModule} = ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
@@ -25,6 +25,8 @@ class GeckoViewContent extends GeckoViewModule {
         "GeckoView:SetActive",
         "GeckoView:SetFocused",
         "GeckoView:ZoomToInput",
+        "GeckoView:ScrollBy",
+        "GeckoView:ScrollTo",
     ]);
 
     this.messageManager.addMessageListener("GeckoView:SaveStateFinish", this);
@@ -76,6 +78,12 @@ class GeckoViewContent extends GeckoViewModule {
       }
       case "GeckoView:ZoomToInput":
         this.messageManager.sendAsyncMessage(aEvent);
+        break;
+      case "GeckoView:ScrollBy":
+        this.messageManager.sendAsyncMessage(aEvent, aData);
+        break;
+      case "GeckoView:ScrollTo":
+        this.messageManager.sendAsyncMessage(aEvent, aData);
         break;
       case "GeckoView:SetActive":
         if (aData.active) {
@@ -342,3 +350,5 @@ class GeckoViewContent extends GeckoViewModule {
     finder.highlight(true, finder.searchString, linksOnly, !!aData.drawOutline);
   }
 }
+
+const {debug, warn} = GeckoViewContent.initLogging("GeckoViewContent"); // eslint-disable-line no-unused-vars

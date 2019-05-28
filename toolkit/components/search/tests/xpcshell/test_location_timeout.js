@@ -37,7 +37,7 @@ function run_test() {
   let url = "http://localhost:" + server.identity.primaryPort + "/lookup_country";
   Services.prefs.setCharPref("browser.search.geoip.url", url);
   Services.prefs.setIntPref("browser.search.geoip.timeout", 50);
-  Services.search.init(() => {
+  Services.search.init().then(() => {
     ok(!Services.prefs.prefHasUserValue("browser.search.region"), "should be no region pref");
     // should be no result recorded at all.
     checkCountryResultTelemetry(null);
@@ -50,7 +50,7 @@ function run_test() {
     // test server is still blocked on our promise.
     equal(getProbeSum("SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS"), 0);
 
-    waitForSearchNotification("geoip-lookup-xhr-complete").then(() => {
+    SearchTestUtils.promiseSearchNotification("geoip-lookup-xhr-complete").then(() => {
       // now we *should* have a report of how long the response took even though
       // it timed out.
       // The telemetry "sum" will be the actual time in ms - just check it's non-zero.

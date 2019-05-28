@@ -11,12 +11,12 @@
 use api::{ApiMsg, BuiltDisplayList, ClearCache, DebugCommand, DebugFlags};
 #[cfg(feature = "debugger")]
 use api::{BuiltDisplayListIter, SpecificDisplayItem};
-use api::{DevicePixelScale, DeviceIntPoint, DeviceIntRect, DeviceIntSize};
 use api::{DocumentId, DocumentLayer, ExternalScrollId, FrameMsg, HitTestFlags, HitTestResult};
-use api::{IdNamespace, LayoutPoint, PipelineId, RenderNotifier, SceneMsg, ScrollClamping};
-use api::{MemoryReport};
+use api::{IdNamespace, MemoryReport, PipelineId, RenderNotifier, SceneMsg, ScrollClamping};
 use api::{ScrollLocation, ScrollNodeState, TransactionMsg, ResourceUpdate, BlobImageKey};
 use api::{NotificationRequest, Checkpoint};
+use api::{ClipIntern, FilterDataIntern, PrimitiveKeyKind};
+use api::units::*;
 use api::channel::{MsgReceiver, MsgSender, Payload};
 #[cfg(feature = "capture")]
 use api::CaptureBits;
@@ -26,16 +26,19 @@ use clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
 #[cfg(feature = "debugger")]
 use debug_server;
 use frame_builder::{FrameBuilder, FrameBuilderConfig};
+use glyph_rasterizer::{FontInstance};
 use gpu_cache::GpuCache;
 use hit_test::{HitTest, HitTester};
-use intern_types;
+use intern::DataStore;
 use internal_types::{DebugOutput, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use picture::RetainedTiles;
 use prim_store::{PrimitiveScratchBuffer, PrimitiveInstance};
 use prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
+use prim_store::interned::*;
 use profiler::{BackendProfileCounters, IpcProfileCounters, ResourceProfileCounters};
 use record::ApiRecordingReceiver;
+use render_task::RenderTaskTreeCounters;
 use renderer::{AsyncPropertySampler, PipelineInfo};
 use resource_cache::ResourceCache;
 #[cfg(feature = "replay")]
@@ -50,22 +53,22 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 #[cfg(any(feature = "capture", feature = "replay"))]
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::mem::replace;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::u32;
 #[cfg(feature = "replay")]
 use tiling::Frame;
 use time::precise_time_ns;
-use util::{Recycler, drain_filter};
+use util::{Recycler, VecHelper, drain_filter};
+
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(Clone)]
 pub struct DocumentView {
-    pub window_size: DeviceIntSize,
-    pub inner_rect: DeviceIntRect,
+    pub framebuffer_rect: FramebufferIntRect,
     pub layer: DocumentLayer,
     pub pan: DeviceIntPoint,
     pub device_pixel_ratio: f32,
@@ -209,7 +212,7 @@ impl FrameStamp {
 }
 
 macro_rules! declare_data_stores {
-    ( $( $name: ident, )+ ) => {
+    ( $( $name:ident : $ty:ty, )+ ) => {
         /// A collection of resources that are shared by clips, primitives
         /// between display lists.
         #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -217,7 +220,7 @@ macro_rules! declare_data_stores {
         #[derive(Default)]
         pub struct DataStores {
             $(
-                pub $name: intern_types::$name::Store,
+                pub $name: DataStore<$ty>,
             )+
         }
 
@@ -346,12 +349,15 @@ struct Document {
     /// where we want to recycle the memory each new display list, to avoid constantly
     /// re-allocating and moving memory around.
     scratch: PrimitiveScratchBuffer,
+    /// Keep track of the size of render task tree to pre-allocate memory up-front
+    /// the next frame.
+    render_task_counters: RenderTaskTreeCounters,
 }
 
 impl Document {
     pub fn new(
         id: DocumentId,
-        window_size: DeviceIntSize,
+        size: FramebufferIntSize,
         layer: DocumentLayer,
         default_device_pixel_ratio: f32,
     ) -> Self {
@@ -359,8 +365,7 @@ impl Document {
             scene: Scene::new(),
             removed_pipelines: Vec::new(),
             view: DocumentView {
-                window_size,
-                inner_rect: DeviceIntRect::new(DeviceIntPoint::zero(), window_size),
+                framebuffer_rect: FramebufferIntRect::new(FramebufferIntPoint::zero(), size),
                 layer,
                 pan: DeviceIntPoint::zero(),
                 page_zoom_factor: 1.0,
@@ -379,6 +384,7 @@ impl Document {
             has_built_scene: false,
             data_stores: DataStores::default(),
             scratch: PrimitiveScratchBuffer::new(),
+            render_task_counters: RenderTaskTreeCounters::new(),
         }
     }
 
@@ -387,7 +393,7 @@ impl Document {
     }
 
     fn has_pixels(&self) -> bool {
-        !self.view.window_size.is_empty_or_negative()
+        !self.view.framebuffer_rect.size.is_empty_or_negative()
     }
 
     fn process_frame_msg(
@@ -397,13 +403,6 @@ impl Document {
         match message {
             FrameMsg::UpdateEpoch(pipeline_id, epoch) => {
                 self.scene.update_epoch(pipeline_id, epoch);
-            }
-            FrameMsg::EnableFrameOutput(pipeline_id, enable) => {
-                if enable {
-                    self.output_pipelines.insert(pipeline_id);
-                } else {
-                    self.output_pipelines.remove(&pipeline_id);
-                }
             }
             FrameMsg::Scroll(delta, cursor) => {
                 profile_scope!("Scroll");
@@ -515,12 +514,14 @@ impl Document {
                 &self.scene.pipelines,
                 accumulated_scale_factor,
                 self.view.layer,
+                self.view.framebuffer_rect.origin,
                 pan,
                 &mut resource_profile.texture_cache,
                 &mut resource_profile.gpu_cache,
                 &self.dynamic_properties,
                 &mut self.data_stores,
                 &mut self.scratch,
+                &mut self.render_task_counters,
                 debug_flags,
             );
             self.hit_tester = Some(frame_builder.create_hit_tester(
@@ -562,7 +563,7 @@ impl Document {
     }
 
     pub fn updated_pipeline_info(&mut self) -> PipelineInfo {
-        let removed_pipelines = replace(&mut self.removed_pipelines, Vec::new());
+        let removed_pipelines = self.removed_pipelines.take_and_preallocate();
         PipelineInfo {
             epochs: self.scene.pipeline_epochs.clone(),
             removed_pipelines,
@@ -611,15 +612,18 @@ impl Document {
         // surface tiles, that can be provided to the next frame builder.
         let mut retained_tiles = RetainedTiles::new();
         if let Some(frame_builder) = self.frame_builder.take() {
-            frame_builder.destroy(
+            let globals = frame_builder.destroy(
                 &mut retained_tiles,
                 &self.clip_scroll_tree,
             );
-        }
 
-        // Provide any cached tiles from the previous frame builder to
-        // the newly built one.
-        built_scene.frame_builder.set_retained_tiles(retained_tiles);
+            // Provide any cached tiles from the previous frame builder to
+            // the newly built one.
+            built_scene.frame_builder.set_retained_resources(
+                retained_tiles,
+                globals,
+            );
+        }
 
         self.frame_builder = Some(built_scene.frame_builder);
 
@@ -747,13 +751,11 @@ impl RenderBackend {
             SceneMsg::SetPageZoom(factor) => {
                 doc.view.page_zoom_factor = factor.get();
             }
-            SceneMsg::SetWindowParameters {
-                window_size,
-                inner_rect,
+            SceneMsg::SetDocumentView {
+                framebuffer_rect,
                 device_pixel_ratio,
             } => {
-                doc.view.window_size = window_size;
-                doc.view.inner_rect = inner_rect;
+                doc.view.framebuffer_rect = framebuffer_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
             }
             SceneMsg::SetDisplayList {
@@ -823,13 +825,18 @@ impl RenderBackend {
             }
             SceneMsg::SetRootPipeline(pipeline_id) => {
                 profile_scope!("SetRootPipeline");
-
                 txn.set_root_pipeline = Some(pipeline_id);
             }
             SceneMsg::RemovePipeline(pipeline_id) => {
                 profile_scope!("RemovePipeline");
-
                 txn.removed_pipelines.push(pipeline_id);
+            }
+            SceneMsg::EnableFrameOutput(pipeline_id, enable) => {
+                if enable {
+                    doc.output_pipelines.insert(pipeline_id);
+                } else {
+                    doc.output_pipelines.remove(&pipeline_id);
+                }
             }
         }
     }
@@ -884,7 +891,7 @@ impl RenderBackend {
                         }
 
                         self.resource_cache.add_rasterized_blob_images(
-                            replace(&mut txn.rasterized_blobs, Vec::new())
+                            txn.rasterized_blobs.take()
                         );
                         if let Some((rasterizer, info)) = txn.blob_rasterizer.take() {
                             self.resource_cache.set_blob_rasterizer(rasterizer, info);
@@ -892,10 +899,10 @@ impl RenderBackend {
 
                         self.update_document(
                             txn.document_id,
-                            replace(&mut txn.resource_updates, Vec::new()),
+                            txn.resource_updates.take(),
                             txn.interner_updates.take(),
-                            replace(&mut txn.frame_ops, Vec::new()),
-                            replace(&mut txn.notifications, Vec::new()),
+                            txn.frame_ops.take(),
+                            txn.notifications.take(),
                             txn.render_frame,
                             txn.invalidate_rendered_frame,
                             &mut frame_counter,
@@ -981,7 +988,8 @@ impl RenderBackend {
             }
             ApiMsg::GetGlyphDimensions(instance_key, glyph_indices, tx) => {
                 let mut glyph_dimensions = Vec::with_capacity(glyph_indices.len());
-                if let Some(font) = self.resource_cache.get_font_instance(instance_key) {
+                if let Some(base) = self.resource_cache.get_font_instance(instance_key) {
+                    let font = FontInstance::from_base(Arc::clone(&base));
                     for glyph_index in &glyph_indices {
                         let glyph_dim = self.resource_cache.get_glyph_dimensions(&font, *glyph_index);
                         glyph_dimensions.push(glyph_dim);
@@ -1089,7 +1097,6 @@ impl RenderBackend {
                             let captured = CapturedDocument {
                                 document_id: *id,
                                 root_pipeline_id: doc.scene.root_pipeline_id,
-                                window_size: doc.view.window_size,
                             };
                             tx.send(captured).unwrap();
 
@@ -1240,10 +1247,10 @@ impl RenderBackend {
 
             self.update_document(
                 txn.document_id,
-                replace(&mut txn.resource_updates, Vec::new()),
+                txn.resource_updates.take(),
                 None,
-                replace(&mut txn.frame_ops, Vec::new()),
-                replace(&mut txn.notifications, Vec::new()),
+                txn.frame_ops.take(),
+                txn.notifications.take(),
                 txn.render_frame,
                 txn.invalidate_rendered_frame,
                 frame_counter,
@@ -1582,6 +1589,8 @@ impl ToDebugString for SpecificDisplayItem {
             SpecificDisplayItem::PushShadow(..) => String::from("push_shadow"),
             SpecificDisplayItem::PushReferenceFrame(..) => String::from("push_reference_frame"),
             SpecificDisplayItem::PushStackingContext(..) => String::from("push_stacking_context"),
+            SpecificDisplayItem::SetFilterOps => String::from("set_filter_ops"),
+            SpecificDisplayItem::SetFilterData => String::from("set_filter_data"),
             SpecificDisplayItem::RadialGradient(..) => String::from("radial_gradient"),
             SpecificDisplayItem::Rectangle(..) => String::from("rectangle"),
             SpecificDisplayItem::ScrollFrame(..) => String::from("scroll_frame"),
@@ -1635,6 +1644,8 @@ impl RenderBackend {
                 config.serialize(&rendered_document.frame, file_name);
                 let file_name = format!("clip-scroll-{}-{}", (id.0).0, id.1);
                 config.serialize_tree(&doc.clip_scroll_tree, file_name);
+                let file_name = format!("builder-{}-{}", (id.0).0, id.1);
+                config.serialize(doc.frame_builder.as_ref().unwrap(), file_name);
             }
 
             let data_stores_name = format!("data-stores-{}-{}", (id.0).0, id.1);
@@ -1746,6 +1757,7 @@ impl RenderBackend {
                 has_built_scene: false,
                 data_stores,
                 scratch: PrimitiveScratchBuffer::new(),
+                render_task_counters: RenderTaskTreeCounters::new(),
             };
 
             let frame_name = format!("frame-{}-{}", (id.0).0, id.1);

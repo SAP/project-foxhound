@@ -262,8 +262,8 @@ class WebrtcVideoConduit
                             double* bitrateMean, double* bitrateStdDev,
                             uint32_t* discardedPackets,
                             uint32_t* framesDecoded) override;
-  bool GetRTPStats(unsigned int* jitterMs,
-                   unsigned int* cumulativeLost) override;
+  bool GetRTPReceiverStats(unsigned int* jitterMs,
+                           unsigned int* cumulativeLost) override;
   bool GetRTCPReceiverReport(uint32_t* jitterMs, uint32_t* packetsReceived,
                              uint64_t* bytesReceived, uint32_t* cumulativeLost,
                              int32_t* rttMs) override;
@@ -274,6 +274,10 @@ class WebrtcVideoConduit
   void DisableSsrcChanges() override {
     ASSERT_ON_THREAD(mStsThread);
     mAllowSsrcChange = false;
+  }
+
+  Maybe<RefPtr<VideoSessionConduit>> AsVideoSessionConduit() override {
+    return Some(RefPtr<VideoSessionConduit>(this));
   }
 
  private:

@@ -43,11 +43,12 @@ pref("security.remember_cert_checkbox_default_setting", true);
 pref("security.ask_for_password",        0);
 pref("security.password_lifetime",       30);
 
-// The supported values of this pref are:
-// 0: disable detecting Family Safety mode and importing the root
-// 1: only attempt to detect Family Safety mode (don't import the root)
-// 2: detect Family Safety mode and import the root
-// (This is only relevant to Windows 8.1)
+// On Windows 8.1, if the following preference is 2, we will attempt to detect
+// if the Family Safety TLS interception feature has been enabled. If so, we
+// will behave as if the enterprise roots feature has been enabled (i.e. import
+// and trust third party root certificates from the OS).
+// With any other value of the pref or on any other platform, this does nothing.
+// This preference takes precedence over "security.enterprise_roots.enabled".
 pref("security.family_safety.mode", 2);
 
 pref("security.enterprise_roots.enabled", false);
@@ -114,7 +115,7 @@ pref("security.pki.netscape_step_up_policy", 2);
 pref("security.pki.certificate_transparency.mode", 0);
 
 // Hardware Origin-bound Second Factor Support
-pref("security.webauth.u2f", false);
+pref("security.webauth.u2f", true);
 pref("security.webauth.webauthn", true);
 // Only one of "enable_softtoken" and "enable_usbtoken" can be true
 // at a time.
@@ -154,8 +155,13 @@ pref("security.pki.mitm_canary_issuer.enabled", true);
 pref("security.pki.mitm_detected", false);
 
 // Intermediate CA Preloading settings
+#if defined(RELEASE_OR_BETA) || defined(MOZ_WIDGET_ANDROID)
 pref("security.remote_settings.intermediates.enabled", false);
+#else
+pref("security.remote_settings.intermediates.enabled", true);
+#endif
 pref("security.remote_settings.intermediates.bucket", "security-state");
 pref("security.remote_settings.intermediates.collection", "intermediates");
 pref("security.remote_settings.intermediates.checked", 0);
+pref("security.remote_settings.intermediates.downloads_per_poll", 100);
 pref("security.remote_settings.intermediates.signer", "onecrl.content-signature.mozilla.org");

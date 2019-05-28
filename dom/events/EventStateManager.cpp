@@ -42,6 +42,7 @@
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
+#include "nsFrameLoaderOwner.h"
 #include "nsITextControlElement.h"
 #include "nsIWidget.h"
 #include "nsPresContext.h"
@@ -972,7 +973,8 @@ bool EventStateManager::CheckIfEventMatchesAccessKey(
 }
 
 bool EventStateManager::LookForAccessKeyAndExecute(
-    nsTArray<uint32_t>& aAccessCharCodes, bool aIsTrustedEvent, bool aExecute) {
+    nsTArray<uint32_t>& aAccessCharCodes, bool aIsTrustedEvent, bool aIsRepeat,
+    bool aExecute) {
   int32_t count, start = -1;
   nsIContent* focusedContent = GetFocusedContent();
   if (focusedContent) {
@@ -996,6 +998,11 @@ bool EventStateManager::LookForAccessKeyAndExecute(
           return true;
         }
         bool shouldActivate = Prefs::KeyCausesActivation();
+
+        if (aIsRepeat && nsContentUtils::IsChromeDoc(element->OwnerDoc())) {
+          shouldActivate = false;
+        }
+
         while (shouldActivate && ++count <= length) {
           nsIContent* oc = mAccessKeys[(start + count) % length];
           nsIFrame* of = oc->GetPrimaryFrame();
@@ -1120,7 +1127,7 @@ bool EventStateManager::WalkESMTreeToHandleAccessKey(
       aEvent->ModifiersMatchWithAccessKey(accessKeyType)) {
     // Someone registered an accesskey.  Find and activate it.
     if (LookForAccessKeyAndExecute(aAccessCharCodes, aEvent->IsTrusted(),
-                                   aExecute)) {
+                                   aEvent->mIsRepeat, aExecute)) {
       return true;
     }
   }
@@ -1241,10 +1248,7 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
     }
     case eDragEventClass: {
       RefPtr<TabParent> tabParent = remote;
-      if (tabParent->Manager()->IsContentParent()) {
-        tabParent->Manager()->AsContentParent()->MaybeInvokeDragSession(
-            tabParent);
-      }
+      tabParent->Manager()->MaybeInvokeDragSession(tabParent);
 
       nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
       uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
@@ -1340,7 +1344,7 @@ bool EventStateManager::HandleCrossProcessEvent(WidgetEvent* aEvent,
   // then dispatch the event to the remote content they represent.
   for (uint32_t i = 0; i < targets.Length(); ++i) {
     nsIContent* target = targets[i];
-    nsCOMPtr<nsIFrameLoaderOwner> loaderOwner = do_QueryInterface(target);
+    RefPtr<nsFrameLoaderOwner> loaderOwner = do_QueryObject(target);
     if (!loaderOwner) {
       continue;
     }
@@ -2852,6 +2856,21 @@ void EventStateManager::PostHandleKeyboardEvent(
       RefPtr<TabParent> remote =
           aTargetFrame ? TabParent::GetFrom(aTargetFrame->GetContent())
                        : nullptr;
+      if (remote && aKeyboardEvent->mLayersId.IsValid()) {
+        // remote is null-checked above in order to let pre-existing event
+        // targeting code's chrome vs. content decision override APZ if they
+        // disagree in order not to disrupt non-Fission e10s mode in case
+        // there are still bugs in the Fission-mode code. That is, if remote
+        // is nullptr, the pre-existing event targeting code has deemed this
+        // event to belong to chrome rather than content.
+        TabParent* preciseRemote =
+            TabParent::GetTabParentFromLayersId(aKeyboardEvent->mLayersId);
+        if (preciseRemote) {
+          remote = preciseRemote;
+        }
+        // else there was a race between APZ and the chrome-process LayersId
+        // to TabParent mapping.
+      }
       if (remote && !remote->IsReadyToHandleInputEvents()) {
         // We need to dispatch the event to the browser element again if we were
         // waiting for the key reply but the event wasn't sent to the content
@@ -3603,6 +3622,146 @@ void EventStateManager::ClearFrameRefs(nsIFrame* aFrame) {
   }
 }
 
+struct CursorImage {
+  gfx::IntPoint mHotspot;
+  nsCOMPtr<imgIContainer> mContainer;
+  bool mEarlierCursorLoading = false;
+};
+
+// Given the event that we're processing, and the computed cursor and hotspot,
+// determine whether the custom CSS cursor should be blocked (that is, not
+// honored).
+//
+// We will not honor it all of the following are true:
+//
+//  * layout.cursor.block.enabled is true.
+//  * the size of the custom cursor is bigger than layout.cursor.block.max-size.
+//  * the bounds of the cursor would end up outside of the viewport of the
+//    top-level content document.
+//
+// This is done in order to prevent hijacking the cursor, see bug 1445844 and
+// co.
+static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
+                                    WidgetEvent* aEvent,
+                                    const CursorImage& aCursor) {
+  if (!StaticPrefs::layout_cursor_block_enabled()) {
+    return false;
+  }
+
+  int32_t width = 0;
+  int32_t height = 0;
+  aCursor.mContainer->GetWidth(&width);
+  aCursor.mContainer->GetHeight(&height);
+
+  int32_t maxSize = StaticPrefs::layout_cursor_block_max_size();
+
+  if (width <= maxSize && height <= maxSize) {
+    return false;
+  }
+
+  // We don't want to deal with iframes, just let them do their thing unless
+  // they intersect UI.
+  //
+  // TODO(emilio, bug 1525561): In a fission world, we should have a better way
+  // to find the event coordinates relative to the content area.
+  nsPresContext* topLevel =
+      aPresContext->GetToplevelContentDocumentPresContext();
+  if (!topLevel) {
+    return false;
+  }
+
+  nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+      aEvent, topLevel->PresShell()->GetRootFrame());
+
+  nsSize size(CSSPixel::ToAppUnits(width), CSSPixel::ToAppUnits(height));
+  nsPoint hotspot(CSSPixel::ToAppUnits(aCursor.mHotspot.x),
+                  CSSPixel::ToAppUnits(aCursor.mHotspot.y));
+
+  nsRect cursorRect(point - hotspot, size);
+  return !topLevel->GetVisibleArea().Contains(cursorRect);
+}
+
+static gfx::IntPoint ComputeHotspot(imgIContainer* aContainer,
+                                    const Maybe<gfx::Point>& aHotspot) {
+  MOZ_ASSERT(aContainer);
+  // css3-ui says to use the CSS-specified hotspot if present,
+  // otherwise use the intrinsic hotspot, otherwise use the top left
+  // corner.
+  uint32_t hotspotX, hotspotY;
+  if (aHotspot) {
+    int32_t imgWidth, imgHeight;
+    aContainer->GetWidth(&imgWidth);
+    aContainer->GetHeight(&imgHeight);
+
+    // XXX std::max(NS_lround(x), 0)?
+    hotspotX = aHotspot->x > 0.0f ? uint32_t(aHotspot->x + 0.5f) : uint32_t(0);
+    if (hotspotX >= uint32_t(imgWidth)) hotspotX = imgWidth - 1;
+    hotspotY = aHotspot->y > 0.0f ? uint32_t(aHotspot->y + 0.5f) : uint32_t(0);
+    if (hotspotY >= uint32_t(imgHeight)) hotspotY = imgHeight - 1;
+  } else {
+    hotspotX = 0;
+    hotspotY = 0;
+    nsCOMPtr<nsIProperties> props(do_QueryInterface(aContainer));
+    if (props) {
+      nsCOMPtr<nsISupportsPRUint32> hotspotXWrap, hotspotYWrap;
+
+      props->Get("hotspotX", NS_GET_IID(nsISupportsPRUint32),
+                 getter_AddRefs(hotspotXWrap));
+      props->Get("hotspotY", NS_GET_IID(nsISupportsPRUint32),
+                 getter_AddRefs(hotspotYWrap));
+
+      if (hotspotXWrap) hotspotXWrap->GetData(&hotspotX);
+      if (hotspotYWrap) hotspotYWrap->GetData(&hotspotY);
+    }
+  }
+  return {hotspotX, hotspotY};
+}
+
+static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
+                                       WidgetEvent* aEvent,
+                                       const nsIFrame& aFrame,
+                                       const nsIFrame::Cursor& aCursor) {
+  if (aCursor.mAllowCustomCursor == nsIFrame::AllowCustomCursorImage::No) {
+    return {};
+  }
+  const ComputedStyle& style =
+      aCursor.mStyle ? *aCursor.mStyle : *aFrame.Style();
+
+  // If we are falling back because any cursor before us is loading, let the
+  // consumer know.
+  bool loading = false;
+  for (const nsCursorImage& image : style.StyleUI()->mCursorImages) {
+    uint32_t status;
+    imgRequestProxy* req = image.GetImage();
+    if (!req || NS_FAILED(req->GetImageStatus(&status))) {
+      continue;
+    }
+    if (!(status & imgIRequest::STATUS_LOAD_COMPLETE)) {
+      loading = true;
+      continue;
+    }
+    if (status & imgIRequest::STATUS_ERROR) {
+      continue;
+    }
+    nsCOMPtr<imgIContainer> container;
+    req->GetImage(getter_AddRefs(container));
+    if (!container) {
+      continue;
+    }
+    Maybe<gfx::Point> specifiedHotspot =
+        image.mHaveHotspot ? Some(gfx::Point{image.mHotspotX, image.mHotspotY})
+                           : Nothing();
+    gfx::IntPoint hotspot = ComputeHotspot(container, specifiedHotspot);
+    CursorImage result{hotspot, std::move(container), loading};
+    if (ShouldBlockCustomCursor(aPresContext, aEvent, result)) {
+      continue;
+    }
+    // This is the one we want!
+    return result;
+  }
+  return {{}, nullptr, loading};
+}
+
 void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
                                      WidgetEvent* aEvent,
                                      nsIFrame* aTargetFrame,
@@ -3612,9 +3771,8 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
   }
 
   auto cursor = StyleCursorKind::Default;
-  imgIContainer* container = nullptr;
-  bool haveHotspot = false;
-  float hotspotX = 0.0f, hotspotY = 0.0f;
+  nsCOMPtr<imgIContainer> container;
+  Maybe<gfx::IntPoint> hotspot;
 
   // If cursor is locked just use the locked one
   if (mLockCursor != kInvalidCursorKind) {
@@ -3622,11 +3780,11 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
   }
   // If not locked, look for correct cursor
   else if (aTargetFrame) {
-    nsIFrame::Cursor framecursor;
     nsPoint pt =
         nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, aTargetFrame);
-    // Avoid setting cursor when the mouse is over a windowless pluign.
-    if (NS_FAILED(aTargetFrame->GetCursor(pt, framecursor))) {
+    Maybe<nsIFrame::Cursor> framecursor = aTargetFrame->GetCursor(pt);
+    // Avoid setting cursor when the mouse is over a windowless plugin.
+    if (!framecursor) {
       if (XRE_IsContentProcess()) {
         mLastFrameConsumedSetCursor = true;
       }
@@ -3638,19 +3796,22 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
       ClearCachedWidgetCursor(aTargetFrame);
       mLastFrameConsumedSetCursor = false;
     }
+
+    CursorImage customCursor =
+        ComputeCustomCursor(aPresContext, aEvent, *aTargetFrame, *framecursor);
+
     // If the current cursor is from the same frame, and it is now
     // loading some new image for the cursor, we should wait for a
     // while rather than taking its fallback cursor directly.
-    if (framecursor.mLoading && gLastCursorSourceFrame == aTargetFrame &&
+    if (customCursor.mEarlierCursorLoading &&
+        gLastCursorSourceFrame == aTargetFrame &&
         TimeStamp::NowLoRes() - gLastCursorUpdateTime <
             TimeDuration::FromMilliseconds(kCursorLoadingTimeout)) {
       return;
     }
-    cursor = framecursor.mCursor;
-    container = framecursor.mContainer;
-    haveHotspot = framecursor.mHaveHotspot;
-    hotspotX = framecursor.mHotspotX;
-    hotspotY = framecursor.mHotspotY;
+    cursor = framecursor->mCursor;
+    container = customCursor.mContainer.forget();
+    hotspot = Some(customCursor.mHotspot);
   }
 
   if (nsContentUtils::UseActivityCursor()) {
@@ -3670,8 +3831,8 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
   }
 
   if (aTargetFrame) {
-    SetCursor(cursor, container, haveHotspot, hotspotX, hotspotY,
-              aTargetFrame->GetNearestWidget(), false);
+    SetCursor(cursor, container, hotspot, aTargetFrame->GetNearestWidget(),
+              false);
     gLastCursorSourceFrame = aTargetFrame;
     gLastCursorUpdateTime = TimeStamp::NowLoRes();
   }
@@ -3694,9 +3855,8 @@ void EventStateManager::ClearCachedWidgetCursor(nsIFrame* aTargetFrame) {
 
 nsresult EventStateManager::SetCursor(StyleCursorKind aCursor,
                                       imgIContainer* aContainer,
-                                      bool aHaveHotspot, float aHotspotX,
-                                      float aHotspotY, nsIWidget* aWidget,
-                                      bool aLockCursor) {
+                                      const Maybe<gfx::IntPoint>& aHotspot,
+                                      nsIWidget* aWidget, bool aLockCursor) {
   EnsureDocument(mPresContext);
   NS_ENSURE_TRUE(mDocument, NS_ERROR_FAILURE);
   sMouseOverDocument = mDocument.get();
@@ -3822,43 +3982,9 @@ nsresult EventStateManager::SetCursor(StyleCursorKind aCursor,
       break;
   }
 
-  // First, try the imgIContainer, if non-null
-  uint32_t hotspotX = 0;
-  uint32_t hotspotY = 0;
-  if (aContainer) {
-
-    // css3-ui says to use the CSS-specified hotspot if present,
-    // otherwise use the intrinsic hotspot, otherwise use the top left
-    // corner.
-    if (aHaveHotspot) {
-      int32_t imgWidth, imgHeight;
-      aContainer->GetWidth(&imgWidth);
-      aContainer->GetHeight(&imgHeight);
-
-      // XXX std::max(NS_lround(x), 0)?
-      hotspotX = aHotspotX > 0.0f ? uint32_t(aHotspotX + 0.5f) : uint32_t(0);
-      if (hotspotX >= uint32_t(imgWidth)) hotspotX = imgWidth - 1;
-      hotspotY = aHotspotY > 0.0f ? uint32_t(aHotspotY + 0.5f) : uint32_t(0);
-      if (hotspotY >= uint32_t(imgHeight)) hotspotY = imgHeight - 1;
-    } else {
-      hotspotX = 0;
-      hotspotY = 0;
-      nsCOMPtr<nsIProperties> props(do_QueryInterface(aContainer));
-      if (props) {
-        nsCOMPtr<nsISupportsPRUint32> hotspotXWrap, hotspotYWrap;
-
-        props->Get("hotspotX", NS_GET_IID(nsISupportsPRUint32),
-                   getter_AddRefs(hotspotXWrap));
-        props->Get("hotspotY", NS_GET_IID(nsISupportsPRUint32),
-                   getter_AddRefs(hotspotYWrap));
-
-        if (hotspotXWrap) hotspotXWrap->GetData(&hotspotX);
-        if (hotspotYWrap) hotspotYWrap->GetData(&hotspotY);
-      }
-    }
-  }
-
-  aWidget->SetCursor(c, aContainer, hotspotX, hotspotY);
+  int32_t x = aHotspot ? aHotspot->x : 0;
+  int32_t y = aHotspot ? aHotspot->y : 0;
+  aWidget->SetCursor(c, aContainer, x, y);
   return NS_OK;
 }
 
@@ -3879,16 +4005,18 @@ class MOZ_STACK_CLASS ESMEventCB : public EventDispatchingCallback {
   nsCOMPtr<nsIContent> mTarget;
 };
 
-/*static*/ bool EventStateManager::IsHandlingUserInput() {
+/*static*/
+bool EventStateManager::IsHandlingUserInput() {
   return sUserInputEventDepth > 0;
 }
 
-/*static*/ bool EventStateManager::IsHandlingKeyboardInput() {
+/*static*/
+bool EventStateManager::IsHandlingKeyboardInput() {
   return sUserKeyboardEventDepth > 0;
 }
 
-/*static*/ void EventStateManager::StartHandlingUserInput(
-    EventMessage aMessage) {
+/*static*/
+void EventStateManager::StartHandlingUserInput(EventMessage aMessage) {
   ++sUserInputEventDepth;
   ++sUserInputCounter;
   if (sUserInputEventDepth == 1) {
@@ -3899,8 +4027,8 @@ class MOZ_STACK_CLASS ESMEventCB : public EventDispatchingCallback {
   }
 }
 
-/*static*/ void EventStateManager::StopHandlingUserInput(
-    EventMessage aMessage) {
+/*static*/
+void EventStateManager::StopHandlingUserInput(EventMessage aMessage) {
   --sUserInputEventDepth;
   if (sUserInputEventDepth == 0) {
     sHandlingInputStart = TimeStamp();
@@ -4223,7 +4351,8 @@ void EventStateManager::GeneratePointerEnterExit(EventMessage aMessage,
   GenerateMouseEnterExit(&pointerEvent);
 }
 
-/* static */ void EventStateManager::UpdateLastRefPointOfMouseEvent(
+/* static */
+void EventStateManager::UpdateLastRefPointOfMouseEvent(
     WidgetMouseEvent* aMouseEvent) {
   if (aMouseEvent->mMessage != eMouseMove &&
       aMouseEvent->mMessage != ePointerMove) {
@@ -4254,8 +4383,8 @@ void EventStateManager::GeneratePointerEnterExit(EventMessage aMessage,
   }
 }
 
-/* static */ void
-EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
+/* static */
+void EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
     WidgetMouseEvent* aMouseEvent) {
   MOZ_ASSERT(sIsPointerLocked);
   if ((aMouseEvent->mMessage != eMouseMove &&
@@ -4297,7 +4426,8 @@ EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
   }
 }
 
-/* static */ void EventStateManager::UpdateLastPointerPosition(
+/* static */
+void EventStateManager::UpdateLastPointerPosition(
     WidgetMouseEvent* aMouseEvent) {
   if (aMouseEvent->mMessage != eMouseMove) {
     return;
@@ -4391,8 +4521,9 @@ OverOutElementsWrapper* EventStateManager::GetWrapperByEventID(
       .OrInsert([]() { return new OverOutElementsWrapper(); });
 }
 
-/* static */ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
-                                                    nsIContent* aElement) {
+/* static */
+void EventStateManager::SetPointerLock(nsIWidget* aWidget,
+                                       nsIContent* aElement) {
   // NOTE: aElement will be nullptr when unlocking.
   sIsPointerLocked = !!aElement;
 
@@ -5441,14 +5572,11 @@ nsresult EventStateManager::DoContentCommandEvent(
           nsIContent* focusedContent = fm ? fm->GetFocusedElement() : nullptr;
           RefPtr<TabParent> remote = TabParent::GetFrom(focusedContent);
           if (remote) {
-            NS_ENSURE_TRUE(remote->Manager()->IsContentParent(),
-                           NS_ERROR_FAILURE);
-
             nsCOMPtr<nsITransferable> transferable = aEvent->mTransferable;
             IPCDataTransfer ipcDataTransfer;
-            ContentParent* cp = remote->Manager()->AsContentParent();
             nsContentUtils::TransferableToIPCTransferable(
-                transferable, &ipcDataTransfer, false, nullptr, cp);
+                transferable, &ipcDataTransfer, false, nullptr,
+                remote->Manager());
             bool isPrivateData = transferable->GetIsPrivateData();
             nsCOMPtr<nsIPrincipal> requestingPrincipal =
                 transferable->GetRequestingPrincipal();

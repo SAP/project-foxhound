@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpServer = null;
 var path = "/bug699001";
@@ -108,7 +108,7 @@ function nextTest()
   // Give the old channel a chance to close the cache entry first.
   // XXX This is actually a race condition that might be considered a bug...
   executeSoon(function() {
-    chan.asyncOpen2(new ChannelListener(checkAndShiftTest, null));
+    chan.asyncOpen(new ChannelListener(checkAndShiftTest, null));
   });
 }
 

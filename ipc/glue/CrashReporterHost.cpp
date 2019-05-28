@@ -44,9 +44,12 @@ static_assert(nsICrashService::PROCESS_TYPE_RDD == (int)GeckoProcessType_RDD,
 static_assert(nsICrashService::PROCESS_TYPE_SOCKET ==
                   (int)GeckoProcessType_Socket,
               "GeckoProcessType enum is out of sync with nsICrashService!");
+static_assert(nsICrashService::PROCESS_TYPE_SANDBOX_BROKER ==
+                  (int)GeckoProcessType_RemoteSandboxBroker,
+              "GeckoProcessType enum is out of sync with nsICrashService!");
 // Add new static asserts here if you add more process types.
 // Update this static assert as well.
-static_assert(nsICrashService::PROCESS_TYPE_SOCKET + 1 ==
+static_assert(nsICrashService::PROCESS_TYPE_SANDBOX_BROKER + 1 ==
                   (int)GeckoProcessType_End,
               "GeckoProcessType enum is out of sync with nsICrashService!");
 
@@ -155,9 +158,10 @@ bool CrashReporterHost::FinalizeCrashReport() {
   return true;
 }
 
-/* static */ void CrashReporterHost::NotifyCrashService(
-    GeckoProcessType aProcessType, int32_t aCrashType,
-    const nsString& aChildDumpID) {
+/* static */
+void CrashReporterHost::NotifyCrashService(GeckoProcessType aProcessType,
+                                           int32_t aCrashType,
+                                           const nsString& aChildDumpID) {
   if (!NS_IsMainThread()) {
     RefPtr<Runnable> runnable = NS_NewRunnableFunction(
         "ipc::CrashReporterHost::NotifyCrashService", [&]() -> void {

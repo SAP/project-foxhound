@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function test() {
   waitForExplicitFinish();
@@ -52,8 +52,8 @@ function runConnectionTests(win) {
   let networkProxyTypePref = win.Preferences.get("network.proxy.type");
 
   // make sure the networkProxyNone textbox is formatted properly
-  is(networkProxyNone.getAttribute("multiline"), "true",
-     "networkProxyNone textbox is multiline");
+  is(networkProxyNone.localName, "textarea",
+     "networkProxyNone is a textarea");
   is(networkProxyNone.getAttribute("rows"), "2",
      "networkProxyNone textbox has two rows");
 

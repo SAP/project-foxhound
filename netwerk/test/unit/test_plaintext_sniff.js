@@ -1,7 +1,7 @@
 // Test the plaintext-or-binary sniffer
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // List of Content-Type headers to test.  For each header we have an array.
 // The first element in the array is the Content-Type header string.  The
@@ -88,7 +88,7 @@ function makeChan(headerIdx, bodyIdx) {
 
 function makeListener(headerIdx, bodyIdx) {
   var listener = {
-    onStartRequest : function test_onStartR(request, ctx) {
+    onStartRequest : function test_onStartR(request) {
       try {
         var chan = request.QueryInterface(Ci.nsIChannel);
 
@@ -122,7 +122,7 @@ function makeListener(headerIdx, bodyIdx) {
       do_throw("Should not get any data!");
     },
 
-    onStopRequest: function test_onStopR(request, ctx, status) {
+    onStopRequest: function test_onStopR(request, status) {
       // Advance to next test
       ++headerIdx;
       if (headerIdx == contentTypeHeaderList.length) {
@@ -149,7 +149,7 @@ function doTest(headerIdx, bodyIdx) {
 
   var listener = makeListener(headerIdx, bodyIdx);
 
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();    
 }

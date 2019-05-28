@@ -8,7 +8,7 @@ ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/FileUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 ChromeUtils.import("resource://testing-common/httpd.js", this);
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+var {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AddonTestUtils",
                                "resource://testing-common/AddonTestUtils.jsm");
@@ -16,6 +16,8 @@ ChromeUtils.defineModuleGetter(this, "OS",
                                "resource://gre/modules/osfile.jsm");
 ChromeUtils.defineModuleGetter(this, "TelemetrySend",
                                "resource://gre/modules/TelemetrySend.jsm");
+ChromeUtils.defineModuleGetter(this, "TelemetryStorage",
+                               "resource://gre/modules/TelemetryStorage.jsm");
 ChromeUtils.defineModuleGetter(this, "Log",
                                "resource://gre/modules/Log.jsm");
 ChromeUtils.defineModuleGetter(this, "NetUtil",
@@ -152,7 +154,7 @@ function decodeRequestPayload(request) {
     let converter = scs.asyncConvertData("gzip", "uncompressed",
                                          listener, null);
     converter.onStartRequest(null, null);
-    converter.onDataAvailable(null, null, s, 0, s.available());
+    converter.onDataAvailable(null, s, 0, s.available());
     converter.onStopRequest(null, null, null);
     let unicodeConverter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                     .createInstance(Ci.nsIScriptableUnicodeConverter);
@@ -169,6 +171,51 @@ function decodeRequestPayload(request) {
   Assert.notEqual(TelemetryUtils.knownClientID, payload.clientId, "Known clientId should never appear in a ping on the server");
 
   return payload;
+}
+
+function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
+  const APP_VERSION = "1";
+  const APP_NAME = "XPCShell";
+  const PING_FORMAT_VERSION = 4;
+  const PLATFORM_VERSION = "1.9.2";
+  const MANDATORY_PING_FIELDS = [
+    "type", "id", "creationDate", "version", "application", "payload",
+  ];
+
+  const APPLICATION_TEST_DATA = {
+    buildId: gAppInfo.appBuildID,
+    name: APP_NAME,
+    version: APP_VERSION,
+    displayVersion: AppConstants.MOZ_APP_VERSION_DISPLAY,
+    vendor: "Mozilla",
+    platformVersion: PLATFORM_VERSION,
+    xpcomAbi: "noarch-spidermonkey",
+  };
+
+  // Check that the ping contains all the mandatory fields.
+  for (let f of MANDATORY_PING_FIELDS) {
+    Assert.ok(f in aPing, f + " must be available.");
+  }
+
+  Assert.equal(aPing.type, aType, "The ping must have the correct type.");
+  Assert.equal(aPing.version, PING_FORMAT_VERSION, "The ping must have the correct version.");
+
+  // Test the application section.
+  for (let f in APPLICATION_TEST_DATA) {
+    Assert.equal(aPing.application[f], APPLICATION_TEST_DATA[f],
+                 f + " must have the correct value.");
+  }
+
+  // We can't check the values for channel and architecture. Just make
+  // sure they are in.
+  Assert.ok("architecture" in aPing.application,
+            "The application section must have an architecture field.");
+  Assert.ok("channel" in aPing.application,
+            "The application section must have a channel field.");
+
+  // Check the clientId and environment fields, as needed.
+  Assert.equal("clientId" in aPing, aHasClientId);
+  Assert.equal("environment" in aPing, aHasEnvironment);
 }
 
 function wrapWithExceptionHandler(f) {
@@ -215,7 +262,7 @@ function createAppInfo(ID = "xpcshell@tests.mozilla.org", name = "XPCShell",
 
 // Fake the timeout functions for the TelemetryScheduler.
 function fakeSchedulerTimer(set, clear) {
-  let session = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", {});
+  let session = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", null);
   session.Policy.setSchedulerTickTimeout = set;
   session.Policy.clearSchedulerTickTimeout = clear;
 }
@@ -234,12 +281,12 @@ function fakeSchedulerTimer(set, clear) {
 function fakeNow(...args) {
   const date = new Date(...args);
   const modules = [
-    ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm"),
-    ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm"),
-    ChromeUtils.import("resource://gre/modules/TelemetryController.jsm"),
-    ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm"),
-    ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm"),
-    ChromeUtils.import("resource://gre/modules/TelemetryReportingPolicy.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetryReportingPolicy.jsm", null),
   ];
 
   for (let m of modules) {
@@ -250,38 +297,38 @@ function fakeNow(...args) {
 }
 
 function fakeMonotonicNow(ms) {
-  const m = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", {});
+  const m = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", null);
   m.Policy.monotonicNow = () => ms;
   return ms;
 }
 
 // Fake the timeout functions for TelemetryController sending.
 function fakePingSendTimer(set, clear) {
-  let module = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", {});
+  let module = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", null);
   let obj = Cu.cloneInto({set, clear}, module, {cloneFunctions: true});
   module.Policy.setSchedulerTickTimeout = obj.set;
   module.Policy.clearSchedulerTickTimeout = obj.clear;
 }
 
 function fakeMidnightPingFuzzingDelay(delayMs) {
-  let module = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", {});
+  let module = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", null);
   module.Policy.midnightPingFuzzingDelay = () => delayMs;
 }
 
 function fakeGeneratePingId(func) {
-  let module = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", {});
+  let module = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", null);
   module.Policy.generatePingId = func;
 }
 
 function fakeCachedClientId(uuid) {
-  let module = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", {});
+  let module = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", null);
   module.Policy.getCachedClientID = () => uuid;
 }
 
 // Fake the gzip compression for the next ping to be sent out
 // and immediately reset to the original function.
 function fakeGzipCompressStringForNextPing(length) {
-  let send = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", {});
+  let send = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", null);
   let largePayload = generateString(length);
   send.Policy.gzipCompressString = (data) => {
     send.Policy.gzipCompressString = send.gzipCompressString;
@@ -290,12 +337,12 @@ function fakeGzipCompressStringForNextPing(length) {
 }
 
 function fakePrioEncode() {
-  const m = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", {});
+  const m = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", null);
   m.Policy.prioEncode = (batchID, prioParams) => prioParams;
 }
 
 function fakeIntlReady() {
-  const m = ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", {});
+  const m = ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", null);
   m.Policy._intlLoaded = true;
   // Dispatch the observer event in case the promise has been registered already.
   Services.obs.notifyObservers(null, "browser-delayed-startup-finished");
@@ -343,12 +390,9 @@ function getSnapshot(histogramId) {
 
 // Helper for setting an empty list of Environment preferences to watch.
 function setEmptyPrefWatchlist() {
-  let TelemetryEnvironment =
-    ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm").TelemetryEnvironment;
-  return TelemetryEnvironment.onInitialized().then(() => {
-    TelemetryEnvironment.testWatchPreferences(new Map());
-
-  });
+  const {TelemetryEnvironment} = ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm");
+  return TelemetryEnvironment.onInitialized().then(() =>
+    TelemetryEnvironment.testWatchPreferences(new Map()));
 }
 
 if (runningInParent) {

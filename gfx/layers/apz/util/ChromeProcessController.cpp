@@ -48,6 +48,18 @@ void ChromeProcessController::InitializeRoot() {
   APZCCallbackHelper::InitializeRootDisplayport(GetPresShell());
 }
 
+void ChromeProcessController::NotifyLayerTransforms(
+    const nsTArray<MatrixMessage>& aTransforms) {
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<nsTArray<MatrixMessage>>(
+        "layers::ChromeProcessController::NotifyLayerTransforms", this,
+        &ChromeProcessController::NotifyLayerTransforms, aTransforms));
+    return;
+  }
+
+  APZCCallbackHelper::NotifyLayerTransforms(aTransforms);
+}
+
 void ChromeProcessController::RequestContentRepaint(
     const RepaintRequest& aRequest) {
   MOZ_ASSERT(IsRepaintThread());
@@ -187,13 +199,17 @@ void ChromeProcessController::HandleTap(
     case TapType::eSecondTap:
       mAPZEventState->ProcessSingleTap(point, scale, aModifiers, aGuid, 2);
       break;
-    case TapType::eLongTap:
-      mAPZEventState->ProcessLongTap(presShell, point, scale, aModifiers, aGuid,
-                                     aInputBlockId);
+    case TapType::eLongTap: {
+      RefPtr<APZEventState> eventState(mAPZEventState);
+      eventState->ProcessLongTap(presShell, point, scale, aModifiers, aGuid,
+                                 aInputBlockId);
       break;
-    case TapType::eLongTapUp:
-      mAPZEventState->ProcessLongTapUp(presShell, point, scale, aModifiers);
+    }
+    case TapType::eLongTapUp: {
+      RefPtr<APZEventState> eventState(mAPZEventState);
+      eventState->ProcessLongTapUp(presShell, point, scale, aModifiers);
       break;
+    }
   }
 }
 

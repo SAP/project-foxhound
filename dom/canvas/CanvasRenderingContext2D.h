@@ -376,14 +376,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
                   double aH, const nsAString& aBgColor, uint32_t aFlags,
                   mozilla::ErrorResult& aError);
 
-  enum RenderingMode {
-    SoftwareBackendMode,
-    OpenGLBackendMode,
-    DefaultBackendMode
-  };
-
-  bool SwitchRenderingMode(RenderingMode aRenderingMode);
-
   // Eventually this should be deprecated. Keeping for now to keep the binding
   // functional.
   void Demote();
@@ -509,9 +501,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
 
   void OnShutdown();
 
-  // Check the global setup, as well as the compositor type:
-  bool AllowOpenGLCanvas() const;
-
   /**
    * Update CurrentState().filter with the filter description for
    * CurrentState().filterChain.
@@ -616,16 +605,12 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
    * is in turn an error in creating the sErrorTarget then they would both
    * be null so IsTargetValid() would still return null.
    *
-   * Returns the actual rendering mode being used by the created target.
+   * Returns true on success.
    */
-  RenderingMode EnsureTarget(
-      const gfx::Rect* aCoveredRect = nullptr,
-      RenderingMode aRenderMode = RenderingMode::DefaultBackendMode);
+  bool EnsureTarget(const gfx::Rect* aCoveredRect = nullptr,
+                    bool aWillClear = false);
 
   void RestoreClipsAndTransformToTarget();
-
-  bool TrySkiaGLTarget(RefPtr<gfx::DrawTarget>& aOutDT,
-                       RefPtr<layers::PersistentBufferProvider>& aOutProvider);
 
   bool TrySharedTarget(RefPtr<gfx::DrawTarget>& aOutDT,
                        RefPtr<layers::PersistentBufferProvider>& aOutProvider);
@@ -680,9 +665,9 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   /**
    * Returns true if we know for sure that the pattern for a given style is
    * opaque. Usefull to know if we can discard the content below in certain
-   * situations.
+   * situations. Optionally checks if the pattern is a color pattern.
    */
-  bool PatternIsOpaque(Style aStyle) const;
+  bool PatternIsOpaque(Style aStyle, bool* aIsColor = nullptr) const;
 
   nsLayoutUtils::SurfaceFromElementResult CachedSurfaceFromElement(
       Element* aElement);
@@ -703,19 +688,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
 
     return CurrentState().font;
   }
-
-  // This function maintains a list of raw pointers to cycle-collected
-  // objects. We need to ensure that no entries persist beyond unlink,
-  // since the objects are logically destructed at that point.
-  static std::vector<CanvasRenderingContext2D*>& DemotableContexts();
-  static void DemoteOldestContextIfNecessary();
-
-  static void AddDemotableContext(CanvasRenderingContext2D* aContext);
-  static void RemoveDemotableContext(CanvasRenderingContext2D* aContext);
-
-  RenderingMode mRenderingMode;
-
-  layers::LayersBackend mCompositorBackend;
 
   // Member vars
   int32_t mWidth, mHeight;
@@ -742,9 +714,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   bool mResetLayer;
   // This is needed for drawing in drawAsyncXULElement
   bool mIPC;
-  // True if the current DrawTarget is using skia-gl, used so we can avoid
-  // requesting the DT from mBufferProvider to check.
-  bool mIsSkiaGL;
 
   bool mHasPendingStableStateCallback;
 
@@ -759,14 +728,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   RefPtr<mozilla::gfx::DrawTarget> mTarget;
 
   RefPtr<mozilla::layers::PersistentBufferProvider> mBufferProvider;
-
-  uint32_t SkiaGLTex() const;
-
-  // This observes our draw calls at the beginning of the canvas
-  // lifetime and switches to software or GPU mode depending on
-  // what it thinks is best
-  CanvasDrawObserver* mDrawObserver;
-  void RemoveDrawObserver();
 
   RefPtr<CanvasShutdownObserver> mShutdownObserver;
   void RemoveShutdownObserver();
@@ -918,8 +879,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   nsresult DrawOrMeasureText(const nsAString& aText, float aX, float aY,
                              const Optional<double>& aMaxWidth,
                              TextDrawOperation aOp, float* aWidth);
-
-  bool CheckSizeForSkiaGL(mozilla::gfx::IntSize aSize);
 
   // A clip or a transform, recorded and restored in order.
   struct ClipState {

@@ -8,8 +8,8 @@
 
 const CACHED_STYLESHEETS = new WeakMap();
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "FormAutofill",
                                "resource://formautofill/FormAutofill.jsm");
@@ -127,11 +127,6 @@ this.formautofill = class extends ExtensionAPI {
     Services.mm.addMessageListener("FormAutoComplete:MaybeOpenPopup", onMaybeOpenPopup);
 
     formAutofillParent.init().catch(Cu.reportError);
-    /* eslint-disable no-unused-vars */
-    Services.ppmm.loadProcessScript("data:,new " + function() {
-      ChromeUtils.import("resource://formautofill/FormAutofillContent.jsm");
-    }, true);
-    /* eslint-enable no-unused-vars */
     Services.mm.loadFrameScript("chrome://formautofill/content/FormAutofillFrameScript.js", true, true);
   }
 

@@ -5,9 +5,9 @@
 
 var EXPORTED_SYMBOLS = ["PlacesUIUtils"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["Element"]);
 
@@ -345,7 +345,7 @@ var PlacesUIUtils = {
     while (Element.isInstance(node)) {
       if (node._placesView)
         return node._placesView;
-      if (node.localName == "tree" && node.getAttribute("type") == "places")
+      if (node.localName == "tree" && node.getAttribute("is") == "places-tree")
         return node;
 
       node = node.parentNode;
@@ -712,7 +712,7 @@ var PlacesUIUtils = {
       aWindow.openTrustedLinkIn(aNode.uri, aWhere, {
         allowPopups: isJavaScriptURL,
         inBackground: this.loadBookmarksInBackground,
-        allowInheritPrincipal: isJavaScriptURL && aWhere == "current",
+        allowInheritPrincipal: isJavaScriptURL,
         private: aPrivate,
       });
     }
@@ -751,8 +751,9 @@ var PlacesUIUtils = {
         // Use (no title) for non-standard URIs (data:, javascript:, ...)
         title = "";
       }
-    } else
+    } else {
       title = aNode.title;
+    }
 
     return title || this.getString("noTitle");
   },

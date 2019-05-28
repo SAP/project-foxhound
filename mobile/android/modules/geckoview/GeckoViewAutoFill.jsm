@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewAutoFill"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
@@ -15,7 +15,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   LoginManagerContent: "resource://gre/modules/LoginManagerContent.jsm",
 });
 
-GeckoViewUtils.initLogging("AutoFill", this);
+const {debug, warn} = GeckoViewUtils.initLogging("AutoFill"); // eslint-disable-line no-unused-vars
 
 class GeckoViewAutoFill {
   constructor(aEventDispatcher) {
@@ -149,7 +149,6 @@ class GeckoViewAutoFill {
                   winUtils.removeManuallyManagedState(element, AUTOFILL_STATE),
                   { mozSystemGroup: true, once: true });
             }
-
           } else if (element) {
             warn `Don't know how to auto-fill ${element.tagName}`;
           }

@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewChildModule} = ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 class GeckoViewMediaChild extends GeckoViewChildModule {
   onInit() {
@@ -426,8 +426,7 @@ class GeckoViewMediaChild extends GeckoViewChildModule {
       type: "GeckoView:MediaRemoveAll",
     });
   }
-
 }
 
-const {debug, warn} = GeckoViewMediaChild.initLogging("GeckoViewMedia");
+const {debug, warn} = GeckoViewMediaChild.initLogging("GeckoViewMedia"); // eslint-disable-line no-unused-vars
 const module = GeckoViewMediaChild.create(this);

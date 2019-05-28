@@ -10,8 +10,8 @@
  * - only difference is that we get a newer version of the content from the server during the second request
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -72,7 +72,7 @@ function run_test_content1a()
   var chan = make_channel(URL + "/content1");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener1a, null));
+  chan.asyncOpen(new ChannelListener(contentListener1a, null));
 }
 
 function contentListener1a(request, buffer)
@@ -96,7 +96,7 @@ function cacheCheck1(status, entry)
   var chan = make_channel(URL + "/content1");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener1b, null, CL_IGNORE_CL));
+  chan.asyncOpen(new ChannelListener(contentListener1b, null, CL_IGNORE_CL));
 }
 
 function contentListener1b(request, buffer)
@@ -117,7 +117,7 @@ function run_test_content2a()
   var chan = make_channel(URL + "/content2");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener2a, null));
+  chan.asyncOpen(new ChannelListener(contentListener2a, null));
 }
 
 function contentListener2a(request, buffer)
@@ -142,7 +142,7 @@ function cacheCheck2(status, entry)
   var chan = make_channel(URL + "/content2");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener2b, null));
+  chan.asyncOpen(new ChannelListener(contentListener2b, null));
 }
 
 function contentListener2b(request, buffer)

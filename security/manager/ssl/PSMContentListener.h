@@ -9,6 +9,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsIURIContentListener.h"
+#include "nsIStreamListener.h"
 #include "nsWeakReference.h"
 #include "mozilla/psm/PPSMContentDownloaderChild.h"
 #include "mozilla/psm/PPSMContentDownloaderParent.h"
@@ -56,22 +57,19 @@ class PSMContentDownloaderParent : public PPSMContentDownloaderParent,
  public:
   explicit PSMContentDownloaderParent(uint32_t type);
 
-  virtual mozilla::ipc::IPCResult RecvOnStartRequest(
-      const uint32_t &contentLength) override;
-  virtual mozilla::ipc::IPCResult RecvOnDataAvailable(
-      const nsCString &data, const uint64_t &offset,
-      const uint32_t &count) override;
-  virtual mozilla::ipc::IPCResult RecvOnStopRequest(
-      const nsresult &code) override;
+  mozilla::ipc::IPCResult RecvOnStartRequest(const uint32_t &contentLength);
+  mozilla::ipc::IPCResult RecvOnDataAvailable(const nsCString &data,
+                                              const uint64_t &offset,
+                                              const uint32_t &count);
+  mozilla::ipc::IPCResult RecvOnStopRequest(const nsresult &code);
 
   // We inherit most of nsIStreamListener from PSMContentStreamListener, but
   // we have to override OnStopRequest to know when we're done with our IPC
   // ref.
-  NS_IMETHOD OnStopRequest(nsIRequest *request, nsISupports *aContext,
-                           nsresult code) override;
+  NS_IMETHOD OnStopRequest(nsIRequest *request, nsresult code) override;
 
-  virtual mozilla::ipc::IPCResult RecvDivertToParentUsing(
-      mozilla::net::PChannelDiverterParent *diverter) override;
+  mozilla::ipc::IPCResult RecvDivertToParentUsing(
+      mozilla::net::PChannelDiverterParent *diverter);
 
  protected:
   virtual ~PSMContentDownloaderParent();

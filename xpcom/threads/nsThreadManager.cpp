@@ -36,7 +36,11 @@ static MOZ_THREAD_LOCAL(PRThread*) gTlsCurrentVirtualThread;
 
 bool NS_IsMainThreadTLSInitialized() { return sTLSIsMainThread.initialized(); }
 
+extern "C" {
+// This uses the C language linkage because it's exposed to Rust
+// via the xpcom/rust/moz_task crate.
 bool NS_IsMainThread() { return sTLSIsMainThread.get(); }
+}
 
 void NS_SetMainThread() {
   if (!sTLSIsMainThread.init()) {
@@ -74,7 +78,8 @@ static bool sShutdownComplete;
 
 //-----------------------------------------------------------------------------
 
-/* static */ void nsThreadManager::ReleaseThread(void* aData) {
+/* static */
+void nsThreadManager::ReleaseThread(void* aData) {
   if (sShutdownComplete) {
     // We've already completed shutdown and released the references to all or
     // our TLS wrappers. Don't try to release them again.
@@ -175,7 +180,8 @@ StaticRefPtr<ShutdownObserveHelper> gShutdownObserveHelper;
   return sInstance;
 }
 
-/* static */ void nsThreadManager::InitializeShutdownObserver() {
+/* static */
+void nsThreadManager::InitializeShutdownObserver() {
   MOZ_ASSERT(!gShutdownObserveHelper);
 
   RefPtr<ShutdownObserveHelper> observer;

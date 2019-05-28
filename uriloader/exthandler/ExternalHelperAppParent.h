@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PExternalHelperAppParent.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "nsIChannel.h"
 #include "nsIMultiPartChannel.h"
 #include "nsIResumableChannel.h"
@@ -19,7 +20,7 @@ class URI;
 namespace mozilla {
 
 namespace ipc {
-class OptionalURIParams;
+class URIParams;
 }  // namespace ipc
 
 namespace net {
@@ -60,8 +61,6 @@ class ExternalHelperAppParent
       public nsIStreamListener,
       public net::PrivateBrowsingChannel<ExternalHelperAppParent>,
       public nsIExternalHelperAppParent {
-  typedef mozilla::ipc::OptionalURIParams OptionalURIParams;
-
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIREQUEST
@@ -83,14 +82,15 @@ class ExternalHelperAppParent
 
   bool WasFileChannel() override { return mWasFileChannel; }
 
-  ExternalHelperAppParent(const OptionalURIParams& uri,
+  ExternalHelperAppParent(const Maybe<mozilla::ipc::URIParams>& uri,
                           const int64_t& contentLength,
                           const bool& wasFileChannel,
                           const nsCString& aContentDispositionHeader,
                           const uint32_t& aContentDispositionHint,
                           const nsString& aContentDispositionFilename);
-  void Init(ContentParent* parent, const nsCString& aMimeContentType,
-            const bool& aForceSave, const OptionalURIParams& aReferrer,
+  void Init(const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
+            const nsCString& aMimeContentType, const bool& aForceSave,
+            const Maybe<mozilla::ipc::URIParams>& aReferrer,
             PBrowserParent* aBrowser);
 
  protected:
@@ -102,6 +102,7 @@ class ExternalHelperAppParent
  private:
   nsCOMPtr<nsIStreamListener> mListener;
   nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsILoadInfo> mLoadInfo;
   bool mPending;
 #ifdef DEBUG
   bool mDiverted;

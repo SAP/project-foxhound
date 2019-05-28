@@ -17,7 +17,6 @@
 #include "mozilla/dom/MediaSource.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/LoadInfo.h"
-#include "mozilla/ModuleUtils.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SystemGroup.h"
@@ -532,8 +531,10 @@ BlobURLProtocolHandler::BlobURLProtocolHandler() { Init(); }
 
 BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
 
-/* static */ nsresult BlobURLProtocolHandler::AddDataEntry(
-    BlobImpl* aBlobImpl, nsIPrincipal* aPrincipal, nsACString& aUri) {
+/* static */
+nsresult BlobURLProtocolHandler::AddDataEntry(BlobImpl* aBlobImpl,
+                                              nsIPrincipal* aPrincipal,
+                                              nsACString& aUri) {
   MOZ_ASSERT(aBlobImpl);
   MOZ_ASSERT(aPrincipal);
 
@@ -549,8 +550,10 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   return NS_OK;
 }
 
-/* static */ nsresult BlobURLProtocolHandler::AddDataEntry(
-    MediaSource* aMediaSource, nsIPrincipal* aPrincipal, nsACString& aUri) {
+/* static */
+nsresult BlobURLProtocolHandler::AddDataEntry(MediaSource* aMediaSource,
+                                              nsIPrincipal* aPrincipal,
+                                              nsACString& aUri) {
   MOZ_ASSERT(aMediaSource);
   MOZ_ASSERT(aPrincipal);
 
@@ -565,15 +568,18 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   return NS_OK;
 }
 
-/* static */ nsresult BlobURLProtocolHandler::AddDataEntry(
-    const nsACString& aURI, nsIPrincipal* aPrincipal, BlobImpl* aBlobImpl) {
+/* static */
+nsresult BlobURLProtocolHandler::AddDataEntry(const nsACString& aURI,
+                                              nsIPrincipal* aPrincipal,
+                                              BlobImpl* aBlobImpl) {
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aBlobImpl);
 
   return AddDataEntryInternal(aURI, aBlobImpl, aPrincipal);
 }
 
-/* static */ bool BlobURLProtocolHandler::GetAllBlobURLEntries(
+/* static */
+bool BlobURLProtocolHandler::GetAllBlobURLEntries(
     nsTArray<BlobURLRegistrationData>& aRegistrations, ContentParent* aCP) {
   MOZ_ASSERT(aCP);
 
@@ -605,8 +611,9 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   return true;
 }
 
-/*static */ void BlobURLProtocolHandler::RemoveDataEntry(
-    const nsACString& aUri, bool aBroadcastToOtherProcesses) {
+/*static */
+void BlobURLProtocolHandler::RemoveDataEntry(const nsACString& aUri,
+                                             bool aBroadcastToOtherProcesses) {
   if (!gDataTable) {
     return;
   }
@@ -628,7 +635,8 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   ReleasingTimerHolder::Create(aUri);
 }
 
-/* static */ void BlobURLProtocolHandler::RemoveDataEntries() {
+/* static */
+void BlobURLProtocolHandler::RemoveDataEntries() {
   if (!gDataTable) {
     return;
   }
@@ -638,12 +646,14 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   gDataTable = nullptr;
 }
 
-/* static */ bool BlobURLProtocolHandler::HasDataEntry(const nsACString& aUri) {
+/* static */
+bool BlobURLProtocolHandler::HasDataEntry(const nsACString& aUri) {
   return !!GetDataInfo(aUri);
 }
 
-/* static */ nsresult BlobURLProtocolHandler::GenerateURIString(
-    nsIPrincipal* aPrincipal, nsACString& aUri) {
+/* static */
+nsresult BlobURLProtocolHandler::GenerateURIString(nsIPrincipal* aPrincipal,
+                                                   nsACString& aUri) {
   nsresult rv;
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
       do_GetService("@mozilla.org/uuid-generator;1", &rv);
@@ -675,7 +685,8 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   return NS_OK;
 }
 
-/* static */ nsIPrincipal* BlobURLProtocolHandler::GetDataEntryPrincipal(
+/* static */
+nsIPrincipal* BlobURLProtocolHandler::GetDataEntryPrincipal(
     const nsACString& aUri) {
   if (!gDataTable) {
     return nullptr;
@@ -690,7 +701,8 @@ BlobURLProtocolHandler::~BlobURLProtocolHandler() = default;
   return res->mPrincipal;
 }
 
-/* static */ void BlobURLProtocolHandler::Traverse(
+/* static */
+void BlobURLProtocolHandler::Traverse(
     const nsACString& aUri, nsCycleCollectionTraversalCallback& aCallback) {
   if (!gDataTable) {
     return;
@@ -765,8 +777,8 @@ BlobURLProtocolHandler::NewURI(const nsACString& aSpec, const char* aCharset,
 }
 
 NS_IMETHODIMP
-BlobURLProtocolHandler::NewChannel2(nsIURI* aURI, nsILoadInfo* aLoadInfo,
-                                    nsIChannel** aResult) {
+BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
+                                   nsIChannel** aResult) {
   RefPtr<BlobURLChannel> channel = new BlobURLChannel(aURI, aLoadInfo);
 
   auto raii = MakeScopeExit([&] {
@@ -815,11 +827,6 @@ BlobURLProtocolHandler::NewChannel2(nsIURI* aURI, nsILoadInfo* aLoadInfo,
 }
 
 NS_IMETHODIMP
-BlobURLProtocolHandler::NewChannel(nsIURI* uri, nsIChannel** result) {
-  return NewChannel2(uri, nullptr, result);
-}
-
-NS_IMETHODIMP
 BlobURLProtocolHandler::AllowPort(int32_t port, const char* scheme,
                                   bool* _retval) {
   // don't override anything.
@@ -833,8 +840,9 @@ BlobURLProtocolHandler::GetScheme(nsACString& result) {
   return NS_OK;
 }
 
-/* static */ bool BlobURLProtocolHandler::GetBlobURLPrincipal(
-    nsIURI* aURI, nsIPrincipal** aPrincipal) {
+/* static */
+bool BlobURLProtocolHandler::GetBlobURLPrincipal(nsIURI* aURI,
+                                                 nsIPrincipal** aPrincipal) {
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(aPrincipal);
 
@@ -907,33 +915,6 @@ nsresult NS_GetSourceForMediaSourceURI(nsIURI* aURI, MediaSource** aSource) {
 
 namespace mozilla {
 namespace dom {
-
-#define NS_BLOBPROTOCOLHANDLER_CID                   \
-  {                                                  \
-    0xb43964aa, 0xa078, 0x44b2, {                    \
-      0xb0, 0x6b, 0xfd, 0x4d, 0x1b, 0x17, 0x2e, 0x66 \
-    }                                                \
-  }
-
-NS_GENERIC_FACTORY_CONSTRUCTOR(BlobURLProtocolHandler)
-
-NS_DEFINE_NAMED_CID(NS_BLOBPROTOCOLHANDLER_CID);
-
-static const Module::CIDEntry kBlobURLProtocolHandlerCIDs[] = {
-    {&kNS_BLOBPROTOCOLHANDLER_CID, false, nullptr,
-     BlobURLProtocolHandlerConstructor},
-    {nullptr}};
-
-static const Module::ContractIDEntry kBlobURLProtocolHandlerContracts[] = {
-    {NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX BLOBURI_SCHEME,
-     &kNS_BLOBPROTOCOLHANDLER_CID},
-    {nullptr}};
-
-static const Module kBlobURLProtocolHandlerModule = {
-    Module::kVersion, kBlobURLProtocolHandlerCIDs,
-    kBlobURLProtocolHandlerContracts};
-
-NSMODULE_DEFN(BlobURLProtocolHandler) = &kBlobURLProtocolHandlerModule;
 
 bool IsType(nsIURI* aUri, DataInfo::ObjectType aType) {
   DataInfo* info = GetDataInfoFromURI(aUri);

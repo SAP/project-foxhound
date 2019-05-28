@@ -11,27 +11,17 @@ add_task(async function() {
   const EXTENSION_NAME = "Temporary web extension";
   const EXTENSION_ID = "test-devtools@mozilla.org";
 
-  const { document, tab } = await openAboutDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
-  const manifest = {
-    "manifest_version": 2,
-    "name": EXTENSION_NAME,
-    "version": "1.0",
-    "applications": {
-      "gecko": {
-        "id": EXTENSION_ID,
-      },
+  await installTemporaryExtensionFromXPI({
+    id: EXTENSION_ID,
+    name: EXTENSION_NAME,
+    extraProperties: {
+      // This property is not expected in the manifest and should trigger a warning!
+      "wrongProperty": {},
     },
-    // This property is not expected in the manifest and should trigger a warning!
-    "wrongProperty": {},
-  };
-
-  const tempExt = new TemporaryExtension(EXTENSION_ID);
-  tempExt.writeManifest(manifest);
-  registerCleanupFunction(() => tempExt.remove());
-
-  info("Install a temporary extension");
-  await AddonManager.installTemporaryAddon(tempExt.sourceDir);
+  }, document);
 
   info("Wait until a debug target item appears");
   await waitUntil(() => findDebugTargetByText(EXTENSION_NAME, document));

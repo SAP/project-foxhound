@@ -564,7 +564,7 @@ MarkupContainer.prototype = {
       const type = target.dataset.type;
       // Make container tabbable descendants not tabbable (by default).
       this.canFocus = false;
-      this.markup.inspector.followAttributeLink(type, link);
+      this.markup.followAttributeLink(type, link);
       return;
     }
 
@@ -654,13 +654,13 @@ MarkupContainer.prototype = {
    */
   flashMutation: function() {
     if (!this.selected) {
-      flashElementOn(this.tagState, this.editor.elt);
+      flashElementOn(this.tagState, { foregroundElt: this.editor.elt });
       if (this._flashMutationTimer) {
         clearTimeout(this._flashMutationTimer);
         this._flashMutationTimer = null;
       }
       this._flashMutationTimer = setTimeout(() => {
-        flashElementOff(this.tagState, this.editor.elt);
+        flashElementOff(this.tagState, { foregroundElt: this.editor.elt });
       }, this.markup.CONTAINER_FLASHING_DURATION);
     }
   },

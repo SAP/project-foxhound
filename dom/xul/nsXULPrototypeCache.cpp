@@ -76,7 +76,8 @@ nsXULPrototypeCache::~nsXULPrototypeCache() { FlushScripts(); }
 
 NS_IMPL_ISUPPORTS(nsXULPrototypeCache, nsIObserver)
 
-/* static */ nsXULPrototypeCache* nsXULPrototypeCache::GetInstance() {
+/* static */
+nsXULPrototypeCache* nsXULPrototypeCache::GetInstance() {
   if (!sInstance) {
     NS_ADDREF(sInstance = new nsXULPrototypeCache());
 
@@ -395,8 +396,10 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
 
   nsAutoCString path;
   aURI->GetPathQueryRef(path);
-  if (!StringEndsWith(path, NS_LITERAL_CSTRING(".xul")))
+  if (!(StringEndsWith(path, NS_LITERAL_CSTRING(".xul")) ||
+        StringEndsWith(path, NS_LITERAL_CSTRING(".xhtml")))) {
     return NS_ERROR_NOT_AVAILABLE;
+  }
 
   StartupCache* startupCache = StartupCache::GetSingleton();
   if (!startupCache) return NS_ERROR_FAILURE;
@@ -543,7 +546,8 @@ static void AppendURIForMemoryReport(nsIURI* aUri, nsACString& aOutput) {
   aOutput += spec;
 }
 
-/* static */ void nsXULPrototypeCache::CollectMemoryReports(
+/* static */
+void nsXULPrototypeCache::CollectMemoryReports(
     nsIHandleReportCallback* aHandleReport, nsISupports* aData) {
   if (!sInstance) {
     return;

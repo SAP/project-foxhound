@@ -661,7 +661,13 @@ nsresult nsHttpChannelAuthProvider::GetCredentialsForChallenge(
   rv = mAuthChannel->GetLoadFlags(&loadFlags);
   if (NS_FAILED(rv)) return rv;
 
+  // Fill only for non-proxy auth, proxy credentials are not OA-isolated.
+  nsAutoCString suffix;
+
   if (!proxyAuth) {
+    nsCOMPtr<nsIChannel> chan = do_QueryInterface(mAuthChannel);
+    GetOriginAttributesSuffix(chan, suffix);
+
     // if this is the first challenge, then try using the identity
     // specified in the URL.
     if (mIdent.IsEmpty()) {
@@ -680,10 +686,6 @@ nsresult nsHttpChannelAuthProvider::GetCredentialsForChallenge(
     LOG(("Skipping authentication for anonymous non-proxy request\n"));
     return NS_ERROR_NOT_AVAILABLE;
   }
-
-  nsCOMPtr<nsIChannel> chan = do_QueryInterface(mAuthChannel);
-  nsAutoCString suffix;
-  GetOriginAttributesSuffix(chan, suffix);
 
   //
   // if we already tried some credentials for this transaction, then
@@ -899,47 +901,44 @@ bool nsHttpChannelAuthProvider::BlockPrompt(bool proxyAuth) {
   }
 
   nsCOMPtr<nsIChannel> chan = do_QueryInterface(mAuthChannel);
-  nsCOMPtr<nsILoadInfo> loadInfo;
-  chan->GetLoadInfo(getter_AddRefs(loadInfo));
+  nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
 
   // We will treat loads w/o loadInfo as a top level document.
   bool topDoc = true;
   bool xhr = false;
   bool nonWebContent = false;
 
-  if (loadInfo) {
-    if (loadInfo->GetExternalContentPolicyType() !=
-        nsIContentPolicy::TYPE_DOCUMENT) {
-      topDoc = false;
-    }
+  if (loadInfo->GetExternalContentPolicyType() !=
+      nsIContentPolicy::TYPE_DOCUMENT) {
+    topDoc = false;
+  }
 
-    if (!topDoc) {
-      nsCOMPtr<nsIPrincipal> triggeringPrinc = loadInfo->TriggeringPrincipal();
-      if (nsContentUtils::IsSystemPrincipal(triggeringPrinc)) {
-        nonWebContent = true;
+  if (!topDoc) {
+    nsCOMPtr<nsIPrincipal> triggeringPrinc = loadInfo->TriggeringPrincipal();
+    if (nsContentUtils::IsSystemPrincipal(triggeringPrinc)) {
+      nonWebContent = true;
+    }
+  }
+
+  if (loadInfo->GetExternalContentPolicyType() ==
+      nsIContentPolicy::TYPE_XMLHTTPREQUEST) {
+    xhr = true;
+  }
+
+  if (!topDoc && !xhr) {
+    nsCOMPtr<nsIURI> topURI;
+    Unused << chanInternal->GetTopWindowURI(getter_AddRefs(topURI));
+
+    if (!topURI) {
+      // If we do not have topURI try the loadingPrincipal.
+      nsCOMPtr<nsIPrincipal> loadingPrinc = loadInfo->LoadingPrincipal();
+      if (loadingPrinc) {
+        loadingPrinc->GetURI(getter_AddRefs(topURI));
       }
     }
 
-    if (loadInfo->GetExternalContentPolicyType() ==
-        nsIContentPolicy::TYPE_XMLHTTPREQUEST) {
-      xhr = true;
-    }
-
-    if (!topDoc && !xhr) {
-      nsCOMPtr<nsIURI> topURI;
-      Unused << chanInternal->GetTopWindowURI(getter_AddRefs(topURI));
-
-      if (!topURI) {
-        // If we do not have topURI try the loadingPrincipal.
-        nsCOMPtr<nsIPrincipal> loadingPrinc = loadInfo->LoadingPrincipal();
-        if (loadingPrinc) {
-          loadingPrinc->GetURI(getter_AddRefs(topURI));
-        }
-      }
-
-      if (!NS_SecurityCompareURIs(topURI, mURI, true)) {
-        mCrossOrigin = true;
-      }
+    if (!NS_SecurityCompareURIs(topURI, mURI, true)) {
+      mCrossOrigin = true;
     }
   }
 
@@ -1247,7 +1246,10 @@ NS_IMETHODIMP nsHttpChannelAuthProvider::OnAuthAvailable(
 
   nsCOMPtr<nsIChannel> chan = do_QueryInterface(mAuthChannel);
   nsAutoCString suffix;
-  GetOriginAttributesSuffix(chan, suffix);
+  if (!mProxyAuth) {
+    // Fill only for non-proxy auth, proxy credentials are not OA-isolated.
+    GetOriginAttributesSuffix(chan, suffix);
+  }
 
   nsHttpAuthCache *authCache = gHttpHandler->AuthCache(mIsPrivate);
   nsHttpAuthEntry *entry = nullptr;

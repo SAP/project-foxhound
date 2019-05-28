@@ -99,11 +99,13 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
   return mInternalWidget;
 }
 
-/* static */ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
+/* static */
+already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
     nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
-    const OriginAttributes& aOriginAttributes, mozIDOMWindowProxy* aOpener,
-    int aItemType) {
-  RefPtr<nsWebBrowser> browser = new nsWebBrowser(aItemType);
+    const OriginAttributes& aOriginAttributes,
+    dom::BrowsingContext* aBrowsingContext) {
+  RefPtr<nsWebBrowser> browser = new nsWebBrowser(
+      aBrowsingContext->IsContent() ? typeContentWrapper : typeChromeWrapper);
 
   // nsWebBrowser::SetContainer also calls nsWebBrowser::EnsureDocShellTreeOwner
   NS_ENSURE_SUCCESS(browser->SetContainerWindow(aContainerWindow), nullptr);
@@ -114,19 +116,7 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
     return nullptr;
   }
 
-  // XXX(nika): Consider supporting creating nsWebBrowser for an existing
-  // BrowsingContext (e.g. during a X-process load).
-  using BrowsingContext = mozilla::dom::BrowsingContext;
-  RefPtr<BrowsingContext> openerContext =
-      aOpener ? nsPIDOMWindowOuter::From(aOpener)->GetBrowsingContext()
-              : nullptr;
-
-  RefPtr<BrowsingContext> browsingContext = BrowsingContext::Create(
-      /* aParent */ nullptr, openerContext, EmptyString(),
-      aItemType != typeChromeWrapper ? BrowsingContext::Type::Content
-                                     : BrowsingContext::Type::Chrome);
-
-  RefPtr<nsDocShell> docShell = nsDocShell::Create(browsingContext);
+  RefPtr<nsDocShell> docShell = nsDocShell::Create(aBrowsingContext);
   if (NS_WARN_IF(!docShell)) {
     return nullptr;
   }
@@ -373,7 +363,8 @@ nsWebBrowser::NameEquals(const nsAString& aName, bool* aResult) {
   return NS_OK;
 }
 
-/* virtual */ int32_t nsWebBrowser::ItemType() { return mContentType; }
+/* virtual */
+int32_t nsWebBrowser::ItemType() { return mContentType; }
 
 NS_IMETHODIMP
 nsWebBrowser::GetItemType(int32_t* aItemType) {
@@ -579,8 +570,9 @@ nsWebBrowser::SetOriginAttributesBeforeLoading(
 }
 
 NS_IMETHODIMP
-nsWebBrowser::ResumeRedirectedLoad(uint64_t aIdentifier) {
-  return mDocShellAsNav->ResumeRedirectedLoad(aIdentifier);
+nsWebBrowser::ResumeRedirectedLoad(uint64_t aIdentifier,
+                                   int32_t aHistoryIndex) {
+  return mDocShellAsNav->ResumeRedirectedLoad(aIdentifier, aHistoryIndex);
 }
 
 NS_IMETHODIMP
@@ -609,13 +601,6 @@ nsWebBrowser::GetCurrentURI(nsIURI** aURI) {
   NS_ENSURE_STATE(mDocShell);
 
   return mDocShellAsNav->GetCurrentURI(aURI);
-}
-
-NS_IMETHODIMP
-nsWebBrowser::GetReferringURI(nsIURI** aURI) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsNav->GetReferringURI(aURI);
 }
 
 // XXX(nika): Consider making the mozilla::dom::ChildSHistory version the

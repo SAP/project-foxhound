@@ -41,6 +41,7 @@ exports.ConsoleMessage = function(props) {
     stacktrace: null,
     frame: null,
     groupId: null,
+    errorMessageName: null,
     exceptionDocURL: null,
     executionPoint: undefined,
     userProvidedStyles: null,
@@ -48,6 +49,7 @@ exports.ConsoleMessage = function(props) {
     indent: 0,
     prefix: "",
     private: false,
+    logpointId: undefined,
   }, props);
 };
 

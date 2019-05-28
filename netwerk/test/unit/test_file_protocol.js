@@ -1,6 +1,6 @@
 /* run some tests on the file:// protocol handler */
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const PR_RDONLY = 0x1;  // see prio.h
 
@@ -74,7 +74,7 @@ FileStreamListener.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     if (this._got_onstartrequest)
       do_throw("Got second onStartRequest event!");
     this._got_onstartrequest = true;
@@ -87,7 +87,7 @@ FileStreamListener.prototype = {
     }
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     if (!this._got_onstartrequest)
       do_throw("onDataAvailable without onStartRequest event!");
     if (this._got_onstoprequest)
@@ -98,7 +98,7 @@ FileStreamListener.prototype = {
     this._buffer = this._buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     if (!this._got_onstartrequest)
       do_throw("onStopRequest without onStartRequest event!");
     if (this._got_onstoprequest)
@@ -141,7 +141,7 @@ function test_read_file() {
   }
 
   chan.contentType = special_type;
-  chan.asyncOpen2(new FileStreamListener(on_read_complete));
+  chan.asyncOpen(new FileStreamListener(on_read_complete));
 }
 
 function do_test_read_dir(set_type, expected_type) {
@@ -163,7 +163,7 @@ function do_test_read_dir(set_type, expected_type) {
 
   if (set_type)
     chan.contentType = expected_type;
-  chan.asyncOpen2(new FileStreamListener(on_read_complete));
+  chan.asyncOpen(new FileStreamListener(on_read_complete));
 }
 
 function test_read_dir_1() {
@@ -222,7 +222,7 @@ function test_upload_file() {
   }
 
   chan.contentType = special_type;
-  chan.asyncOpen2(new FileStreamListener(on_upload_complete));
+  chan.asyncOpen(new FileStreamListener(on_upload_complete));
 }
 
 function test_load_replace() {

@@ -1,7 +1,7 @@
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+var {Services} = ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 // This test supports both e10s and non-e10s mode. In non-e10s mode, this test
 // drives itself by creating a profile directory, setting up the URL classifier
@@ -33,8 +33,8 @@ function listener(tracking, priority, throttleable, nextTest) {
   this._nextTest = nextTest;
 }
 listener.prototype = {
-  onStartRequest: function(request, context) {
-    Assert.equal(request.QueryInterface(Ci.nsIHttpChannel).isTrackingResource,
+  onStartRequest: function(request) {
+    Assert.equal(request.QueryInterface(Ci.nsIHttpChannel).isTrackingResource(),
                  this._tracking, "tracking flag");
     Assert.equal(request.QueryInterface(Ci.nsISupportsPriority).priority,
                  this._priority, "channel priority");
@@ -46,8 +46,8 @@ listener.prototype = {
     request.cancel(Cr.NS_ERROR_ABORT);
     this._nextTest();
   },
-  onDataAvailable: (request, context, stream, offset, count) => {},
-  onStopRequest: (request, context, status) => {},
+  onDataAvailable: (request, stream, offset, count) => {},
+  onStopRequest: (request, status) => {},
 };
 
 var httpServer;
@@ -96,7 +96,7 @@ function doPriorityTest() {
   Assert.ok("topWindowURI" in currentTest, "check for incomplete test case");
 
   var channel = makeChannel(currentTest.path, currentTest.loadingPrincipal, currentTest.topWindowURI);
-  channel.asyncOpen2(new listener(currentTest.expectedTracking,
+  channel.asyncOpen(new listener(currentTest.expectedTracking,
                                   currentTest.expectedPriority,
                                   currentTest.expectedThrottleable,
                                   doPriorityTest));

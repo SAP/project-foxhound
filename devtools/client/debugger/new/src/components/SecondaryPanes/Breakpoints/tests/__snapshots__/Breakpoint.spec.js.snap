@@ -8,14 +8,17 @@ exports[`Breakpoint disabled 1`] = `
   onDoubleClick={[Function]}
 >
   <input
+    aria-labelledby="1-label"
     checked={false}
     className="breakpoint-checkbox"
+    id={1}
     onChange={[Function]}
     onClick={[Function]}
     type="checkbox"
   />
-  <label
-    className="breakpoint-label cm-s-mozilla"
+  <span
+    className="breakpoint-label cm-s-mozilla devtools-monospace"
+    id="1-label"
     onClick={[Function]}
   >
     <span
@@ -25,14 +28,14 @@ exports[`Breakpoint disabled 1`] = `
         }
       }
     />
-  </label>
+  </span>
   <div
     className="breakpoint-line-close"
   >
     <div
-      className="breakpoint-line"
+      className="breakpoint-line devtools-monospace"
     >
-      53
+      53:73
     </div>
     <CloseButton
       handleClick={[Function]}
@@ -50,14 +53,17 @@ exports[`Breakpoint paused at a different 1`] = `
   onDoubleClick={[Function]}
 >
   <input
+    aria-labelledby="1-label"
     checked={true}
     className="breakpoint-checkbox"
+    id={1}
     onChange={[Function]}
     onClick={[Function]}
     type="checkbox"
   />
-  <label
-    className="breakpoint-label cm-s-mozilla"
+  <span
+    className="breakpoint-label cm-s-mozilla devtools-monospace"
+    id="1-label"
     onClick={[Function]}
   >
     <span
@@ -67,14 +73,14 @@ exports[`Breakpoint paused at a different 1`] = `
         }
       }
     />
-  </label>
+  </span>
   <div
     className="breakpoint-line-close"
   >
     <div
-      className="breakpoint-line"
+      className="breakpoint-line devtools-monospace"
     >
-      53
+      53:73
     </div>
     <CloseButton
       handleClick={[Function]}
@@ -92,14 +98,17 @@ exports[`Breakpoint paused at a generatedLocation 1`] = `
   onDoubleClick={[Function]}
 >
   <input
+    aria-labelledby="1-label"
     checked={true}
     className="breakpoint-checkbox"
+    id={1}
     onChange={[Function]}
     onClick={[Function]}
     type="checkbox"
   />
-  <label
-    className="breakpoint-label cm-s-mozilla"
+  <span
+    className="breakpoint-label cm-s-mozilla devtools-monospace"
+    id="1-label"
     onClick={[Function]}
   >
     <span
@@ -109,14 +118,14 @@ exports[`Breakpoint paused at a generatedLocation 1`] = `
         }
       }
     />
-  </label>
+  </span>
   <div
     className="breakpoint-line-close"
   >
     <div
-      className="breakpoint-line"
+      className="breakpoint-line devtools-monospace"
     >
-      53
+      53:73
     </div>
     <CloseButton
       handleClick={[Function]}
@@ -134,14 +143,17 @@ exports[`Breakpoint paused at an original location 1`] = `
   onDoubleClick={[Function]}
 >
   <input
+    aria-labelledby="1-label"
     checked={true}
     className="breakpoint-checkbox"
+    id={1}
     onChange={[Function]}
     onClick={[Function]}
     type="checkbox"
   />
-  <label
-    className="breakpoint-label cm-s-mozilla"
+  <span
+    className="breakpoint-label cm-s-mozilla devtools-monospace"
+    id="1-label"
     onClick={[Function]}
   >
     <span
@@ -151,14 +163,14 @@ exports[`Breakpoint paused at an original location 1`] = `
         }
       }
     />
-  </label>
+  </span>
   <div
     className="breakpoint-line-close"
   >
     <div
-      className="breakpoint-line"
+      className="breakpoint-line devtools-monospace"
     >
-      5
+      5:7
     </div>
     <CloseButton
       handleClick={[Function]}
@@ -176,14 +188,17 @@ exports[`Breakpoint simple 1`] = `
   onDoubleClick={[Function]}
 >
   <input
+    aria-labelledby="1-label"
     checked={true}
     className="breakpoint-checkbox"
+    id={1}
     onChange={[Function]}
     onClick={[Function]}
     type="checkbox"
   />
-  <label
-    className="breakpoint-label cm-s-mozilla"
+  <span
+    className="breakpoint-label cm-s-mozilla devtools-monospace"
+    id="1-label"
     onClick={[Function]}
   >
     <span
@@ -193,14 +208,14 @@ exports[`Breakpoint simple 1`] = `
         }
       }
     />
-  </label>
+  </span>
   <div
     className="breakpoint-line-close"
   >
     <div
-      className="breakpoint-line"
+      className="breakpoint-line devtools-monospace"
     >
-      53
+      53:73
     </div>
     <CloseButton
       handleClick={[Function]}

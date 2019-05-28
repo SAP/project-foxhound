@@ -27,6 +27,42 @@ InputEvent::InputEvent(EventTarget* aOwner, nsPresContext* aPresContext,
   }
 }
 
+void InputEvent::GetData(nsAString& aData, CallerType aCallerType) {
+  InternalEditorInputEvent* editorInputEvent = mEvent->AsEditorInputEvent();
+  MOZ_ASSERT(editorInputEvent);
+  // If clipboard event is disabled, user may not want to leak clipboard
+  // information via DOM events.  If so, we should return empty string instead.
+  if (mEvent->IsTrusted() && aCallerType != CallerType::System &&
+      !StaticPrefs::dom_event_clipboardevents_enabled() &&
+      ExposesClipboardDataOrDataTransfer(editorInputEvent->mInputType)) {
+    aData = editorInputEvent->mData.IsVoid() ? VoidString() : EmptyString();
+    return;
+  }
+  aData = editorInputEvent->mData;
+}
+
+already_AddRefed<DataTransfer> InputEvent::GetDataTransfer(
+    CallerType aCallerType) {
+  InternalEditorInputEvent* editorInputEvent = mEvent->AsEditorInputEvent();
+  MOZ_ASSERT(editorInputEvent);
+  // If clipboard event is disabled, user may not want to leak clipboard
+  // information via DOM events.  If so, we should return DataTransfer which
+  // has empty string instead.  The reason why we make it have empty string is,
+  // web apps may not expect that InputEvent.dataTransfer returns empty and
+  // non-null DataTransfer instance.
+  if (mEvent->IsTrusted() && aCallerType != CallerType::System &&
+      !StaticPrefs::dom_event_clipboardevents_enabled() &&
+      ExposesClipboardDataOrDataTransfer(editorInputEvent->mInputType)) {
+    if (!editorInputEvent->mDataTransfer) {
+      return nullptr;
+    }
+    return do_AddRef(
+        new DataTransfer(editorInputEvent->mDataTransfer->GetParentObject(),
+                         editorInputEvent->mMessage, EmptyString()));
+  }
+  return do_AddRef(editorInputEvent->mDataTransfer);
+}
+
 void InputEvent::GetInputType(nsAString& aInputType) {
   InternalEditorInputEvent* editorInputEvent = mEvent->AsEditorInputEvent();
   MOZ_ASSERT(editorInputEvent);
@@ -55,6 +91,8 @@ already_AddRefed<InputEvent> InputEvent::Constructor(
   if (internalEvent->mInputType == EditorInputType::eUnknown) {
     e->mInputTypeValue = aParam.mInputType;
   }
+  internalEvent->mData = aParam.mData;
+  internalEvent->mDataTransfer = aParam.mDataTransfer;
   internalEvent->mIsComposing = aParam.mIsComposing;
   e->SetTrusted(trusted);
   e->SetComposed(aParam.mComposed);

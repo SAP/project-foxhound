@@ -248,6 +248,7 @@ OptionsPanel.prototype = {
 
       checkboxLabel.appendChild(checkboxInput);
       checkboxLabel.appendChild(checkboxSpanLabel);
+
       return checkboxLabel;
     };
 
@@ -459,9 +460,9 @@ OptionsPanel.prototype = {
       });
     }
 
-    if (this.target.activeTab && !this.target.chrome) {
+    if (!this.target.chrome) {
       this.disableJSNode.checked =
-        !this.target.activeTab.configureOptions.javascriptEnabled;
+        !this.target.configureOptions.javascriptEnabled;
       this.disableJSNode.addEventListener("click", this._disableJSClicked);
     } else {
       // Hide the checkbox and label
@@ -511,7 +512,7 @@ OptionsPanel.prototype = {
       "javascriptEnabled": !checked,
     };
 
-    this.target.activeTab.reconfigure({ options });
+    this.target.reconfigure({ options });
   },
 
   destroy: function() {
@@ -522,9 +523,7 @@ OptionsPanel.prototype = {
 
     this._removeListeners();
 
-    if (this.target.activeTab) {
-      this.disableJSNode.removeEventListener("click", this._disableJSClicked);
-    }
+    this.disableJSNode.removeEventListener("click", this._disableJSClicked);
 
     this.panelWin = this.panelDoc = this.disableJSNode = this.toolbox = null;
   },

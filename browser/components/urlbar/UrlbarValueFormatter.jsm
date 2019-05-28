@@ -6,12 +6,13 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarValueFormatter"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
+  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 /**
@@ -123,12 +124,39 @@ class UrlbarValueFormatter {
       trimmedLength = "http://".length;
     }
 
+    // This RegExp is not a perfect match, and for specially crafted URLs it may
+    // get the host wrong; for safety reasons we will later compare the found
+    // host with the one that will actually be loaded.
     let matchedURL = url.match(/^(([a-z]+:\/\/)(?:[^\/#?]+@)?)(\S+?)(?::\d+)?\s*(?:[\/#?]|$)/);
     if (!matchedURL) {
       return null;
     }
-
     let [, preDomain, schemeWSlashes, domain] = matchedURL;
+
+    // If the found host differs from the fixed URI one, we can't properly
+    // highlight it. To stay on the safe side, we clobber user's input with
+    // the fixed URI and apply highlight to that one instead.
+    let replaceUrl = false;
+    try {
+      replaceUrl = Services.io.newURI("http://" + domain).displayHost != uriInfo.fixedURI.displayHost;
+    } catch (ex) {
+      return null;
+    }
+    if (replaceUrl) {
+      if (this._inGetUrlMetaData) {
+        // Protect from infinite recursion.
+        return null;
+      }
+      try {
+        this._inGetUrlMetaData = true;
+        this.window.gBrowser.userTypedValue = null;
+        this.window.URLBarSetURI(uriInfo.fixedURI);
+        return this._getUrlMetaData();
+      } finally {
+        this._inGetUrlMetaData = false;
+      }
+    }
+
     return { preDomain, schemeWSlashes, domain, url, uriInfo, trimmedLength };
   }
 
@@ -271,71 +299,29 @@ class UrlbarValueFormatter {
       return false;
     }
 
-    let popup = this.urlbarInput.popup;
-    if (!popup) {
-      // TODO: make this work with UrlbarView
-      return false;
-    }
-
-    if (popup.oneOffSearchButtons.selectedButton) {
-      return false;
-    }
-
     let editor = this.urlbarInput.editor;
     let textNode = editor.rootElement.firstChild;
     let value = textNode.textContent;
     let trimmedValue = value.trim();
 
-    if (!trimmedValue.startsWith("@")) {
+    if (!trimmedValue.startsWith("@") ||
+        (this.urlbarInput.popup || this.urlbarInput.view)
+          .oneOffSearchButtons.selectedButton) {
       return false;
     }
 
-    // To determine whether the input contains a valid alias, check the value of
-    // the selected result -- whether it's a search engine result with an alias.
-    // Actually, check the selected listbox item, not the result in the
-    // controller, because we want to continue highlighting the alias when the
-    // popup is closed and the search has stopped.  The selected index when the
-    // popup is closed is zero, however, which is why we also check the previous
-    // selected index.
-    let itemIndex =
-      popup.selectedIndex < 0 ? popup._previousSelectedIndex :
-      popup.selectedIndex;
-    if (itemIndex < 0) {
-      return false;
-    }
-    let item = popup.richlistbox.children[itemIndex] || null;
-
-    // This actiontype check isn't necessary because we call _parseActionUrl
-    // below and we could check action.type instead.  But since this method is
-    // called very often, as an optimization, first do a simple string
-    // comparison on actiontype before continuing with the more expensive regexp
-    // that _parseActionUrl uses.
-    if (!item || item.getAttribute("actiontype") != "searchengine") {
-      return false;
-    }
-
-    let url = item.getAttribute("url");
-    let action = this.urlbarInput._parseActionUrl(url);
-    if (!action) {
-      return false;
-    }
-    let alias = action.params.alias || null;
+    let alias = UrlbarPrefs.get("quantumbar") ? this._getSearchAlias() :
+                this._getSearchAliasAwesomebar();
     if (!alias) {
       return false;
     }
 
-    // Make sure the item's input matches the current urlbar input because the
-    // urlbar input can change without the popup results changing.  Most notably
-    // that happens when the user performs a search using an alias: The popup
-    // closes (preserving its items), the search results page is loaded, and the
-    // urlbar value is set to the URL of the page.
-    //
-    // If the item is the heuristic item, then its input is the value that the
-    // user has typed in the input.  If the item is not the heuristic item, then
-    // its input is "@engine ".  So in order to make sure the item's input
-    // matches the current urlbar input, we need to check that the urlbar input
-    // starts with the item's input.
-    if (!trimmedValue.startsWith(action.params.input.trim())) {
+    // Make sure the current input starts with the alias because it can change
+    // without the popup results changing.  Most notably that happens when the
+    // user performs a search using an alias: The popup closes (preserving its
+    // results), the search results page loads, and the input value is set to
+    // the URL of the page.
+    if (trimmedValue != alias && !trimmedValue.startsWith(alias + " ")) {
       return false;
     }
 
@@ -380,5 +366,55 @@ class UrlbarValueFormatter {
     }
 
     return true;
+  }
+
+  _getSearchAlias() {
+    // To determine whether the input contains a valid alias, check the value of
+    // the selected result -- whether it's a search result with an alias.  The
+    // selected result is null when the popup is closed, but we want to continue
+    // highlighting the alias when the popup is closed, and that's why we keep
+    // around the previously selected result in _selectedResult.
+    this._selectedResult =
+      this.urlbarInput.view.selectedResult || this._selectedResult;
+    if (this._selectedResult &&
+        this._selectedResult.type == UrlbarUtils.RESULT_TYPE.SEARCH) {
+      return this._selectedResult.payload.keyword || null;
+    }
+    return null;
+  }
+
+  _getSearchAliasAwesomebar() {
+    let popup = this.urlbarInput.popup;
+
+    // To determine whether the input contains a valid alias, check the value of
+    // the selected result -- whether it's a search engine result with an alias.
+    // Actually, check the selected listbox item, not the result in the
+    // controller, because we want to continue highlighting the alias when the
+    // popup is closed and the search has stopped.  The selected index when the
+    // popup is closed is zero, however, which is why we also check the previous
+    // selected index.
+    let itemIndex =
+      popup.selectedIndex < 0 ? popup._previousSelectedIndex :
+      popup.selectedIndex;
+    if (itemIndex < 0) {
+      return null;
+    }
+    let item = popup.richlistbox.children[itemIndex] || null;
+
+    // This actiontype check isn't necessary because we call _parseActionUrl
+    // below and we could check action.type instead.  But since this method is
+    // called very often, as an optimization, first do a simple string
+    // comparison on actiontype before continuing with the more expensive regexp
+    // that _parseActionUrl uses.
+    if (!item || item.getAttribute("actiontype") != "searchengine") {
+      return null;
+    }
+
+    let url = item.getAttribute("url");
+    let action = this.urlbarInput._parseActionUrl(url);
+    if (!action) {
+      return null;
+    }
+    return action.params.alias || null;
   }
 }

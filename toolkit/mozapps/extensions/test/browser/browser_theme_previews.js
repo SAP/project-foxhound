@@ -1,4 +1,4 @@
-const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", {});
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
 
 let gManagerWindow;
 let gCategoryUtilities;
@@ -134,6 +134,12 @@ add_task(async function testThemeOrdering() {
       themeId(5), // The theme without a preview last.
     ],
     "Themes are ordered by enabled, previews, then name");
+
+  // Ensure allow in private mode badge is hidden for themes.
+  for (let item of list.itemChildren) {
+    let badge = gManagerWindow.document.getAnonymousElementByAttribute(item, "anonid", "privateBrowsing");
+    is_element_hidden(badge, `private browsing badge is hidden`);
+  }
 
   await close_manager(gManagerWindow);
   for (let addon of await promiseAddonsByIDs(themeIds)) {

@@ -55,20 +55,25 @@ static bool IsActivelyCapturingOrHasAPermission(nsPIDOMWindowInner* aWindow) {
   }
 
   auto principal = nsGlobalWindowInner::Cast(aWindow)->GetPrincipal();
-  return (nsContentUtils::IsExactSitePermAllow(principal, "camera") ||
-          nsContentUtils::IsExactSitePermAllow(principal, "microphone") ||
-          nsContentUtils::IsExactSitePermAllow(principal, "screen"));
+  return (nsContentUtils::IsExactSitePermAllow(principal,
+                                               NS_LITERAL_CSTRING("camera")) ||
+          nsContentUtils::IsExactSitePermAllow(
+              principal, NS_LITERAL_CSTRING("microphone")) ||
+          nsContentUtils::IsExactSitePermAllow(principal,
+                                               NS_LITERAL_CSTRING("screen")));
 }
 
 static bool IsSiteInAutoplayWhiteList(const Document* aDocument) {
   return aDocument ? nsContentUtils::IsExactSitePermAllow(
-                         aDocument->NodePrincipal(), "autoplay-media")
+                         aDocument->NodePrincipal(),
+                         NS_LITERAL_CSTRING("autoplay-media"))
                    : false;
 }
 
 static bool IsSiteInAutoplayBlackList(const Document* aDocument) {
   return aDocument ? nsContentUtils::IsExactSitePermDeny(
-                         aDocument->NodePrincipal(), "autoplay-media")
+                         aDocument->NodePrincipal(),
+                         NS_LITERAL_CSTRING("autoplay-media"))
                    : false;
 }
 
@@ -85,16 +90,6 @@ static bool IsWindowAllowedToPlay(nsPIDOMWindowInner* aWindow) {
   }
 
   if (!aWindow->GetExtantDoc()) {
-    return false;
-  }
-
-  // Here we are checking whether the current document is blocked via
-  // feature-policy, and further down we walk up the doc tree to the top level
-  // content document and check permissions etc on the top level content
-  // document. FeaturePolicy propagates the permission to any sub-documents if
-  // they don't have special directives.
-  if (!FeaturePolicyUtils::IsFeatureAllowed(aWindow->GetExtantDoc(),
-                                            NS_LITERAL_STRING("autoplay"))) {
     return false;
   }
 
@@ -162,13 +157,15 @@ static bool IsEnableBlockingWebAudioByUserGesturePolicy() {
                               false);
 }
 
-/* static */ bool AutoplayPolicy::WouldBeAllowedToPlayIfAutoplayDisabled(
+/* static */
+bool AutoplayPolicy::WouldBeAllowedToPlayIfAutoplayDisabled(
     const HTMLMediaElement& aElement) {
   return IsMediaElementAllowedToPlay(aElement) ||
          IsWindowAllowedToPlay(aElement.OwnerDoc()->GetInnerWindow());
 }
 
-/* static */ bool AutoplayPolicy::WouldBeAllowedToPlayIfAutoplayDisabled(
+/* static */
+bool AutoplayPolicy::WouldBeAllowedToPlayIfAutoplayDisabled(
     const AudioContext& aContext) {
   return IsAudioContextAllowedToPlay(aContext);
 }
@@ -211,16 +208,16 @@ static bool IsAllowedToPlayInternal(const HTMLMediaElement& aElement) {
   return IsWindowAllowedToPlay(aElement.OwnerDoc()->GetInnerWindow());
 }
 
-/* static */ bool AutoplayPolicy::IsAllowedToPlay(
-    const HTMLMediaElement& aElement) {
+/* static */
+bool AutoplayPolicy::IsAllowedToPlay(const HTMLMediaElement& aElement) {
   const bool result = IsAllowedToPlayInternal(aElement);
   AUTOPLAY_LOG("IsAllowedToPlay, mediaElement=%p, isAllowToPlay=%s", &aElement,
                result ? "allowed" : "blocked");
   return result;
 }
 
-/* static */ bool AutoplayPolicy::IsAllowedToPlay(
-    const AudioContext& aContext) {
+/* static */
+bool AutoplayPolicy::IsAllowedToPlay(const AudioContext& aContext) {
   /**
    * The autoplay checking has 4 different phases,
    * 1. check whether audio context itself meets the autoplay condition
@@ -258,7 +255,8 @@ static bool IsAllowedToPlayInternal(const HTMLMediaElement& aElement) {
   return IsWindowAllowedToPlay(window);
 }
 
-/* static */ DocumentAutoplayPolicy AutoplayPolicy::IsAllowedToPlay(
+/* static */
+DocumentAutoplayPolicy AutoplayPolicy::IsAllowedToPlay(
     const Document& aDocument) {
   if (DefaultAutoplayBehaviour() == nsIAutoplay::ALLOWED ||
       IsWindowAllowedToPlay(aDocument.GetInnerWindow())) {

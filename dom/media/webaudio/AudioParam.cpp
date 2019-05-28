@@ -72,6 +72,8 @@ void AudioParam::DisconnectFromGraphAndDestroyStream() {
   }
 }
 
+MediaStream* AudioParam::GetStream() const { return mStream; }
+
 MediaStream* AudioParam::Stream() {
   if (mStream) {
     return mStream;

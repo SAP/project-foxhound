@@ -108,6 +108,7 @@ class TsBase(Test):
         'tpmozafterpaint',
         'fnbpaint',
         'tphero',
+        'tpmanifest',
         'profile',
         'firstpaint',
         'userready',
@@ -166,6 +167,14 @@ class ts_paint_heavy(ts_paint):
 @register_test()
 class ts_paint_flex(ts_paint):
     preferences = {'layout.css.emulate-moz-box-with-flex': True}
+
+
+@register_test()
+class startup_about_home_paint(ts_paint):
+    url = None
+    cycles = 20
+    extensions = ['${talos}/startup_test/startup_about_home_paint/addon']
+    tpmanifest = '${talos}/startup_test/startup_about_home_paint/startup_about_home_paint.manifest'
 
 
 @register_test()
@@ -282,6 +291,28 @@ class tpaint(PageloaderTest):
 
 
 @register_test()
+class twinopen(PageloaderTest):
+    """
+    Tests the amount of time it takes an open browser to open a new browser
+    window and paint the browser chrome. This test does not include startup
+    time. Multiple test windows are opened in succession.
+    (Measures ctrl-n performance.)
+    """
+    extensions = ['${talos}/pageloader', '${talos}/tests/twinopen']
+    tpmanifest = '${talos}/tests/twinopen/twinopen.manifest'
+    tppagecycles = 20
+    timeout = 300
+    gecko_profile_interval = 1
+    gecko_profile_entries = 2000000
+    tpmozafterpaint = True
+    filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
+    preferences = {
+        'browser.startup.homepage': 'about:blank'
+    }
+
+
+@register_test()
 class cpstartup(PageloaderTest):
     """
     Tests the amount of time it takes to start up a new content process and
@@ -330,12 +361,12 @@ class tabpaint(PageloaderTest):
 
 
 @register_test()
-class tps(PageloaderTest):
+class tabswitch(PageloaderTest):
     """
     Tests the amount of time it takes to switch between tabs
     """
     extensions = ['${talos}/tests/tabswitch', '${talos}/pageloader']
-    tpmanifest = '${talos}/tests/tabswitch/tps.manifest'
+    tpmanifest = '${talos}/tests/tabswitch/tabswitch.manifest'
     tppagecycles = 5
     gecko_profile_entries = 5000000
     tploadnocache = True

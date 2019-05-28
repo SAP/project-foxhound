@@ -43,8 +43,15 @@ only-for-build-platforms:
     - macosx64-devedition-nightly/opt
     - win32-devedition-nightly/opt
     - win64-devedition-nightly/opt
+    - win64-aarch64-devedition-nightly/opt
     - linux64-asan-reporter-nightly/opt
     - win64-asan-reporter-nightly/opt
 
 job-template:
     shipping-phase: promote
+    attributes:
+        artifact_map:
+            by-project:
+                default: taskcluster/taskgraph/manifests/firefox_nightly.yml
+                mozilla-beta: taskcluster/taskgraph/manifests/firefox_candidates.yml
+                mozilla-release: taskcluster/taskgraph/manifests/firefox_candidates.yml

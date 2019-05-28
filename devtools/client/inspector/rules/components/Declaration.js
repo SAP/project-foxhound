@@ -109,6 +109,20 @@ class Declaration extends PureComponent {
     );
   }
 
+  renderOverriddenFilter() {
+    if (this.props.declaration.isDeclarationValid) {
+      return null;
+    }
+
+    return (
+      dom.div({
+        className: "ruleview-warning",
+        title: this.props.declaration.isNameValid ?
+               getStr("rule.warningName.title") : getStr("rule.warning.title"),
+      })
+    );
+  }
+
   renderShorthandOverriddenList() {
     if (this.state.isComputedListExpanded || this.props.declaration.isOverridden) {
       return null;
@@ -145,25 +159,43 @@ class Declaration extends PureComponent {
     );
   }
 
+  renderWarning() {
+    if (!this.props.declaration.isDeclarationValid ||
+        !this.props.declaration.isOverridden) {
+      return null;
+    }
+
+    return (
+      dom.div({
+        className: "ruleview-overridden-rule-filter",
+        title: getStr("rule.filterProperty.title"),
+      })
+    );
+  }
+
   render() {
     const {
       computedProperties,
-      isDeclarationValid,
       isEnabled,
       isKnownProperty,
-      isNameValid,
       isOverridden,
+      isPropertyChanged,
       name,
       value,
     } = this.props.declaration;
 
+    let declarationClassName = "ruleview-property";
+
+    if (!isEnabled || !isKnownProperty || isOverridden) {
+      declarationClassName += " ruleview-overridden";
+    }
+
+    if (isPropertyChanged) {
+      declarationClassName += " ruleview-changed";
+    }
+
     return (
-      dom.li(
-        {
-          className: "ruleview-property" +
-                     (!isEnabled || !isKnownProperty || isOverridden ?
-                      " ruleview-overridden" : ""),
-        },
+      dom.li({ className: declarationClassName },
         dom.div({ className: "ruleview-propertycontainer" },
           dom.div({
             className: "ruleview-enableproperty theme-checkbox" +
@@ -199,17 +231,8 @@ class Declaration extends PureComponent {
             ),
             ";"
           ),
-          dom.div({
-            className: "ruleview-warning" +
-                       (isDeclarationValid ? " hidden" : ""),
-            title: isNameValid ?
-                   getStr("rule.warningName.title") : getStr("rule.warning.title"),
-          }),
-          dom.div({
-            className: "ruleview-overridden-rule-filter" +
-                       (!isDeclarationValid || !isOverridden ? " hidden" : ""),
-            title: getStr("rule.filterProperty.title"),
-          })
+          this.renderWarning(),
+          this.renderOverriddenFilter()
         ),
         this.renderComputedPropertyList(),
         this.renderShorthandOverriddenList()

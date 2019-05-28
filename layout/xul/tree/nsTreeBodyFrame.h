@@ -54,7 +54,7 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
   typedef mozilla::image::ImgDrawResult ImgDrawResult;
 
  public:
-  explicit nsTreeBodyFrame(ComputedStyle* aStyle);
+  explicit nsTreeBodyFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
   ~nsTreeBodyFrame();
 
   NS_DECL_QUERYFRAME
@@ -156,8 +156,7 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
   virtual void DestroyFrom(nsIFrame* aDestructRoot,
                            PostDestroyData& aPostDestroyData) override;
 
-  virtual nsresult GetCursor(const nsPoint& aPoint,
-                             nsIFrame::Cursor& aCursor) override;
+  mozilla::Maybe<Cursor> GetCursor(const nsPoint&) override;
 
   virtual nsresult HandleEvent(nsPresContext* aPresContext,
                                mozilla::WidgetGUIEvent* aEvent,

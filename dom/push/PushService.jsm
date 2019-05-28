@@ -5,23 +5,24 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-const {
+var {
   PushCrypto,
-  getCryptoParams,
   CryptoError,
-} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
+} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm", null);
 const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
+
+var PushServiceWebSocket, PushServiceHttp2;
 
 const CONNECTION_PROTOCOLS = (function() {
   if ('android' != AppConstants.MOZ_WIDGET_TOOLKIT) {
-    const {PushServiceWebSocket} = ChromeUtils.import("resource://gre/modules/PushServiceWebSocket.jsm");
-    const {PushServiceHttp2} = ChromeUtils.import("resource://gre/modules/PushServiceHttp2.jsm");
+    ({PushServiceWebSocket} = ChromeUtils.import("resource://gre/modules/PushServiceWebSocket.jsm"));
+    ({PushServiceHttp2} = ChromeUtils.import("resource://gre/modules/PushServiceHttp2.jsm"));
     return [PushServiceWebSocket, PushServiceHttp2];
   } else {
     const {PushServiceAndroidGCM} = ChromeUtils.import("resource://gre/modules/PushServiceAndroidGCM.jsm");
@@ -40,7 +41,7 @@ ChromeUtils.defineModuleGetter(this, "pushBroadcastService", "resource://gre/mod
 var EXPORTED_SYMBOLS = ["PushService"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushService",
@@ -216,7 +217,6 @@ var PushService = {
       this._service.disconnect();
     }
 
-    let records = await this.getAllUnexpired();
     let broadcastListeners = await pushBroadcastService.getListeners();
 
     // In principle, a listener could be added to the
@@ -229,13 +229,7 @@ var PushService = {
     // getListeners.
     this._setState(PUSH_SERVICE_RUNNING);
 
-    if (records.length > 0 || prefs.get("alwaysConnect")) {
-      // Connect if we have existing subscriptions, or if the always-on pref
-      // is set. We gate on the pref to let us do load testing before
-      // turning it on for everyone, but if the user has push
-      // subscriptions, we need to connect them anyhow.
-      this._service.connect(records, broadcastListeners);
-    }
+    this._service.connect(broadcastListeners);
   },
 
   _changeStateConnectionEnabledEvent: function(enabled) {
@@ -296,7 +290,7 @@ var PushService = {
                                   CHANGING_SERVICE_EVENT)
           );
 
-        } else if (aData == "dom.push.connection.enabled" || aData == "dom.push.alwaysConnect") {
+        } else if (aData == "dom.push.connection.enabled") {
           this._stateChangeProcessEnqueue(_ =>
             this._changeStateConnectionEnabledEvent(prefs.get("connection.enabled"))
           );
@@ -459,7 +453,7 @@ var PushService = {
    *                                        PUSH_SERVICE_ACTIVE_OFFLINE or
    *                                        PUSH_SERVICE_CONNECTION_DISABLE.
    */
-  init: function(options = {}) {
+  async init(options = {}) {
     console.debug("init()");
 
     if (this._state > PUSH_SERVICE_UNINIT) {
@@ -474,13 +468,13 @@ var PushService = {
     if (options.serverURI) {
       // this is use for xpcshell test.
 
-      return this._stateChangeProcessEnqueue(_ =>
+      await this._stateChangeProcessEnqueue(_ =>
         this._changeServerURL(options.serverURI, STARTING_SERVICE_EVENT, options));
 
     } else {
       // This is only used for testing. Different tests require connecting to
       // slightly different URLs.
-      return this._stateChangeProcessEnqueue(_ =>
+      await this._stateChangeProcessEnqueue(_ =>
         this._changeServerURL(prefs.get("serverURL"), STARTING_SERVICE_EVENT));
     }
   },
@@ -501,8 +495,6 @@ var PushService = {
 
     // Used to monitor if the user wishes to disable Push.
     prefs.observe("connection.enabled", this);
-    // Used to load-test the server-side infrastructure for broadcast.
-    prefs.observe("alwaysConnect", this);
 
     // Prunes expired registrations and notifies dormant service workers.
     Services.obs.addObserver(this, "idle-daily");
@@ -586,7 +578,6 @@ var PushService = {
     }
 
     prefs.ignore("connection.enabled", this);
-    prefs.ignore("alwaysConnect", this);
 
     Services.obs.removeObserver(this, "network:offline-status-changed");
     Services.obs.removeObserver(this, "clear-origin-attributes-data");
@@ -601,7 +592,7 @@ var PushService = {
     return promiseChangeURL;
   },
 
-  uninit: function() {
+  async uninit() {
     console.debug("uninit()");
 
     if (this._state == PUSH_SERVICE_UNINIT) {
@@ -611,7 +602,7 @@ var PushService = {
     prefs.ignore("serverURL", this);
     Services.obs.removeObserver(this, "quit-application");
 
-    this._stateChangeProcessEnqueue(_ => this._shutdownService());
+    await this._stateChangeProcessEnqueue(_ => this._shutdownService());
   },
 
   /**

@@ -43,6 +43,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/InputAPZContext.h"
@@ -68,7 +69,7 @@ static already_AddRefed<nsIContent> GetContentOfBox(nsIFrame* aBox) {
 }
 
 nsIFrame* NS_NewSliderFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsSliderFrame(aStyle);
+  return new (aPresShell) nsSliderFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSliderFrame)
@@ -77,8 +78,8 @@ NS_QUERYFRAME_HEAD(nsSliderFrame)
   NS_QUERYFRAME_ENTRY(nsSliderFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsBoxFrame)
 
-nsSliderFrame::nsSliderFrame(ComputedStyle* aStyle)
-    : nsBoxFrame(aStyle, kClassID),
+nsSliderFrame::nsSliderFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsBoxFrame(aStyle, aPresContext, kClassID),
       mRatio(0.0f),
       mDragStart(0),
       mThumbStart(0),
@@ -325,7 +326,7 @@ void nsSliderFrame::BuildDisplayListForChildren(
           aBuilder->GetVisibleRect(), overflow, refSize);
 
       nsDisplayListBuilder::AutoBuildingDisplayList buildingDisplayList(
-          aBuilder, this, dirty, dirty, false);
+          aBuilder, this, dirty, dirty);
 
       // Clip the thumb layer to the slider track. This is necessary to ensure
       // FrameLayerBuilder is able to merge content before and after the
@@ -933,6 +934,11 @@ static bool UsesSVGEffects(nsIFrame* aFrame) {
 }
 
 static bool ScrollFrameWillBuildScrollInfoLayer(nsIFrame* aScrollFrame) {
+  if (gfx::gfxVars::UseWebRender()) {
+    // If WebRender is enabled, even scrollframes enclosed in SVG effects can
+    // be drag-scrolled by APZ.
+    return false;
+  }
   nsIFrame* current = aScrollFrame;
   while (current) {
     if (UsesSVGEffects(current)) {

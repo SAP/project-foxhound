@@ -2,8 +2,8 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", {});
-const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm", {});
+const {AddonTestUtils} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
 
 // This test function helps to detect when an addon options browser have been inserted
 // in the about:addons page.
@@ -81,12 +81,8 @@ add_task(async function test_options_on_addon_reload() {
 
   for (let i = 0; i < 5; i++) {
     const onceOptionsReloaded = Promise.all([
-      // Reloading the addon currently prevents the extension.awaitMessage test helper to be able
-      // to receive test messages from the reloaded extension, this test function helps to wait
-      // the extension has been restarted on addon reload.
       AddonTestUtils.promiseWebExtensionStartup(),
-      TestUtils.topicObserved(AddonManager.OPTIONS_NOTIFICATION_DISPLAYED,
-                              (subject, data) => data == extension.id),
+      waitOptionsBrowserInserted(),
     ]);
 
     await addon.reload();

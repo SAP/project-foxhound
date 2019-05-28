@@ -2,12 +2,12 @@
 
 exports[`PaneToggleButton renders default 1`] = `
 <CommandBarButton
-  className="toggle-button vertical"
+  className="toggle-button start vertical"
   onClick={[Function]}
-  title="Expand panes"
+  title="Collapse Sources and Outline panes"
 >
   <AccessibleImage
-    className="toggle-panes"
+    className="pane-collapse"
   />
 </CommandBarButton>
 `;

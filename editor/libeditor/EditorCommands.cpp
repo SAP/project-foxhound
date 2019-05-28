@@ -73,7 +73,8 @@ UndoCommand::DoCommand(const char* aCommandName, nsISupports* aCommandRefCon) {
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  return textEditor->Undo(1);
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  return MOZ_KnownLive(textEditor)->Undo(1);
 }
 
 NS_IMETHODIMP
@@ -126,7 +127,8 @@ RedoCommand::DoCommand(const char* aCommandName, nsISupports* aCommandRefCon) {
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  return textEditor->Redo(1);
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  return MOZ_KnownLive(textEditor)->Redo(1);
 }
 
 NS_IMETHODIMP
@@ -143,64 +145,6 @@ RedoCommand::GetCommandStateParams(const char* aCommandName,
   bool canUndo;
   IsCommandEnabled(aCommandName, aCommandRefCon, &canUndo);
   return aParams->AsCommandParams()->SetBool(STATE_ENABLED, canUndo);
-}
-
-/******************************************************************************
- * mozilla::ClearUndoCommand
- ******************************************************************************/
-
-NS_IMETHODIMP
-ClearUndoCommand::IsCommandEnabled(const char* aCommandName,
-                                   nsISupports* aCommandRefCon,
-                                   bool* aIsEnabled) {
-  if (NS_WARN_IF(!aIsEnabled)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-  nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
-  if (!editor) {
-    *aIsEnabled = false;
-    return NS_OK;
-  }
-  TextEditor* textEditor = editor->AsTextEditor();
-  MOZ_ASSERT(textEditor);
-  *aIsEnabled = textEditor->IsSelectionEditable();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ClearUndoCommand::DoCommand(const char* aCommandName,
-                            nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
-  if (!editor) {
-    return NS_ERROR_FAILURE;
-  }
-  TextEditor* textEditor = editor->AsTextEditor();
-  MOZ_ASSERT(textEditor);
-  // XXX Should we return NS_ERROR_FAILURE if ClearUndoRedo() returns false?
-  DebugOnly<bool> clearedUndoRedo = textEditor->ClearUndoRedo();
-  NS_WARNING_ASSERTION(clearedUndoRedo,
-                       "Failed to clear undo/redo transactions");
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ClearUndoCommand::DoCommandParams(const char* aCommandName,
-                                  nsICommandParams* aParams,
-                                  nsISupports* aCommandRefCon) {
-  return DoCommand(aCommandName, aCommandRefCon);
-}
-
-NS_IMETHODIMP
-ClearUndoCommand::GetCommandStateParams(const char* aCommandName,
-                                        nsICommandParams* aParams,
-                                        nsISupports* aCommandRefCon) {
-  NS_ENSURE_ARG_POINTER(aParams);
-
-  bool enabled;
-  nsresult rv = IsCommandEnabled(aCommandName, aCommandRefCon, &enabled);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return aParams->AsCommandParams()->SetBool(STATE_ENABLED, enabled);
 }
 
 /******************************************************************************
@@ -421,63 +365,6 @@ CopyOrDeleteCommand::GetCommandStateParams(const char* aCommandName,
 }
 
 /******************************************************************************
- * mozilla::CopyAndCollapseToEndCommand
- ******************************************************************************/
-
-NS_IMETHODIMP
-CopyAndCollapseToEndCommand::IsCommandEnabled(const char* aCommandName,
-                                              nsISupports* aCommandRefCon,
-                                              bool* aIsEnabled) {
-  if (NS_WARN_IF(!aIsEnabled)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-  nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
-  if (!editor) {
-    *aIsEnabled = false;
-    return NS_OK;
-  }
-  TextEditor* textEditor = editor->AsTextEditor();
-  MOZ_ASSERT(textEditor);
-  return textEditor->CanCopy(aIsEnabled);
-}
-
-NS_IMETHODIMP
-CopyAndCollapseToEndCommand::DoCommand(const char* aCommandName,
-                                       nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
-  if (!editor) {
-    return NS_ERROR_FAILURE;
-  }
-  TextEditor* textEditor = editor->AsTextEditor();
-  MOZ_ASSERT(textEditor);
-  nsresult rv = textEditor->Copy();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  RefPtr<dom::Selection> selection = textEditor->GetSelection();
-  if (selection) {
-    selection->CollapseToEnd(IgnoreErrors());
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-CopyAndCollapseToEndCommand::DoCommandParams(const char* aCommandName,
-                                             nsICommandParams* aParams,
-                                             nsISupports* aCommandRefCon) {
-  return DoCommand(aCommandName, aCommandRefCon);
-}
-
-NS_IMETHODIMP
-CopyAndCollapseToEndCommand::GetCommandStateParams(
-    const char* aCommandName, nsICommandParams* aParams,
-    nsISupports* aCommandRefCon) {
-  bool canUndo;
-  IsCommandEnabled(aCommandName, aCommandRefCon, &canUndo);
-  return aParams->AsCommandParams()->SetBool(STATE_ENABLED, canUndo);
-}
-
-/******************************************************************************
  * mozilla::PasteCommand
  ******************************************************************************/
 
@@ -510,7 +397,9 @@ PasteCommand::DoCommand(const char* aCommandName, nsISupports* aCommandRefCon) {
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  return textEditor->PasteAsAction(nsIClipboard::kGlobalClipboard, true);
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  return MOZ_KnownLive(textEditor)
+      ->PasteAsAction(nsIClipboard::kGlobalClipboard, true);
 }
 
 NS_IMETHODIMP
@@ -584,12 +473,9 @@ PasteTransferableCommand::DoCommandParams(const char* aCommandName,
 
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  nsresult rv = textEditor->PasteTransferable(trans);
-  if (rv == NS_ERROR_EDITOR_DESTROYED) {
-    // Return NS_OK when editor is destroyed since it's expected by the
-    // web app.
-    return NS_OK;
-  }
+  // We know textEditor is known-live here because we are holding a ref to it
+  // via "editor".
+  nsresult rv = MOZ_KnownLive(textEditor)->PasteTransferable(trans);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -655,7 +541,8 @@ SwitchTextDirectionCommand::DoCommand(const char* aCommandName,
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  return textEditor->ToggleTextDirection();
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  return MOZ_KnownLive(textEditor)->ToggleTextDirection();
 }
 
 NS_IMETHODIMP
@@ -1211,13 +1098,10 @@ PasteQuotationCommand::DoCommand(const char* aCommandName,
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  nsresult rv = textEditor->PasteAsQuotationAsAction(
-      nsIClipboard::kGlobalClipboard, true);
-  if (rv == NS_ERROR_EDITOR_DESTROYED) {
-    // Return NS_OK when editor is destroyed since it's expected by the
-    // web app.
-    return NS_OK;
-  }
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  nsresult rv =
+      MOZ_KnownLive(textEditor)
+          ->PasteAsQuotationAsAction(nsIClipboard::kGlobalClipboard, true);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1234,13 +1118,10 @@ PasteQuotationCommand::DoCommandParams(const char* aCommandName,
   }
   TextEditor* textEditor = editor->AsTextEditor();
   MOZ_ASSERT(textEditor);
-  nsresult rv = textEditor->PasteAsQuotationAsAction(
-      nsIClipboard::kGlobalClipboard, true);
-  if (rv == NS_ERROR_EDITOR_DESTROYED) {
-    // Return NS_OK when editor is destroyed since it's expected by the
-    // web app.
-    return NS_OK;
-  }
+  // MOZ_KnownLive because we are holding a stack ref in "editor".
+  nsresult rv =
+      MOZ_KnownLive(textEditor)
+          ->PasteAsQuotationAsAction(nsIClipboard::kGlobalClipboard, true);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

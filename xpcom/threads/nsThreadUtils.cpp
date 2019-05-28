@@ -12,6 +12,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsITimer.h"
+#include "prsystem.h"
 
 #ifdef MOZILLA_INTERNAL_API
 #  include "nsThreadManager.h"
@@ -114,6 +115,13 @@ NS_IMETHODIMP
 PrioritizableRunnable::GetPriority(uint32_t* aPriority) {
   *aPriority = mPriority;
   return NS_OK;
+}
+
+already_AddRefed<nsIRunnable> mozilla::CreateMediumHighRunnable(
+    already_AddRefed<nsIRunnable>&& aRunnable) {
+  nsCOMPtr<nsIRunnable> runnable = new PrioritizableRunnable(
+      std::move(aRunnable), nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
+  return runnable.forget();
 }
 
 #endif  // XPCOM_GLUE_AVOID_NSPR
@@ -570,6 +578,16 @@ nsISerialEventTarget* GetMainThreadSerialEventTarget() {
   return thread->SerialEventTarget();
 }
 
+size_t GetNumberOfProcessors() {
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  static const PRInt32 procs = PR_GetNumberOfProcessors();
+#else
+  PRInt32 procs = PR_GetNumberOfProcessors();
+#endif
+  MOZ_ASSERT(procs > 0);
+  return static_cast<size_t>(procs);
+}
+
 }  // namespace mozilla
 
 bool nsIEventTarget::IsOnCurrentThread() {
@@ -577,4 +595,40 @@ bool nsIEventTarget::IsOnCurrentThread() {
     return mVirtualThread == GetCurrentVirtualThread();
   }
   return IsOnCurrentThreadInfallible();
+}
+
+extern "C" {
+// These functions use the C language linkage because they're exposed to Rust
+// via the xpcom/rust/moz_task crate, which wraps them in safe Rust functions
+// that enable Rust code to get/create threads and dispatch runnables on them.
+
+nsresult NS_GetCurrentThreadEventTarget(nsIEventTarget** aResult) {
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentThreadEventTarget();
+  if (!target) {
+    return NS_ERROR_UNEXPECTED;
+  }
+  target.forget(aResult);
+  return NS_OK;
+}
+
+nsresult NS_GetMainThreadEventTarget(nsIEventTarget** aResult) {
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetMainThreadEventTarget();
+  if (!target) {
+    return NS_ERROR_UNEXPECTED;
+  }
+  target.forget(aResult);
+  return NS_OK;
+}
+
+// NS_NewNamedThread's aStackSize parameter has the default argument
+// nsIThreadManager::DEFAULT_STACK_SIZE, but we can't omit default arguments
+// when calling a C++ function from Rust, and we can't access
+// nsIThreadManager::DEFAULT_STACK_SIZE in Rust to pass it explicitly,
+// since it is defined in a %{C++ ... %} block within nsIThreadManager.idl.
+// So we indirect through this function.
+nsresult NS_NewNamedThreadWithDefaultStackSize(const nsACString& aName,
+                                               nsIThread** aResult,
+                                               nsIRunnable* aEvent) {
+  return NS_NewNamedThread(aName, aResult, aEvent);
+}
 }

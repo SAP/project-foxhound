@@ -100,7 +100,7 @@ enum class TableSelection : uint32_t;
   NS_DECL_QUERYFRAME_TARGET(class)                                             \
   static constexpr nsIFrame::ClassID kClassID = nsIFrame::ClassID::class##_id; \
   void* operator new(size_t, nsIPresShell*) MOZ_MUST_OVERRIDE;                 \
-  nsQueryFrame::FrameIID GetFrameId() override MOZ_MUST_OVERRIDE {             \
+  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE {       \
     return nsQueryFrame::class##_id;                                           \
   }
 
@@ -111,7 +111,7 @@ enum class TableSelection : uint32_t;
 
 #define NS_DECL_ABSTRACT_FRAME(class)                                   \
   void* operator new(size_t, nsIPresShell*) MOZ_MUST_OVERRIDE = delete; \
-  virtual nsQueryFrame::FrameIID GetFrameId() override MOZ_MUST_OVERRIDE = 0;
+  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE = 0;
 
 //----------------------------------------------------------------------
 
@@ -155,7 +155,7 @@ class nsFrame : public nsBox {
   // nsQueryFrame
   NS_DECL_QUERYFRAME
   NS_DECL_QUERYFRAME_TARGET(nsFrame)
-  virtual nsQueryFrame::FrameIID GetFrameId() MOZ_MUST_OVERRIDE {
+  virtual nsQueryFrame::FrameIID GetFrameId() const MOZ_MUST_OVERRIDE {
     return kFrameIID;
   }
   void* operator new(size_t, nsIPresShell*) MOZ_MUST_OVERRIDE;
@@ -177,7 +177,6 @@ class nsFrame : public nsBox {
                        nsEventStatus* aEventStatus) override;
   nsresult GetContentForEvent(mozilla::WidgetEvent* aEvent,
                               nsIContent** aContent) override;
-  nsresult GetCursor(const nsPoint& aPoint, nsIFrame::Cursor& aCursor) override;
 
   nsresult GetPointFromOffset(int32_t inOffset, nsPoint* outPoint) override;
   nsresult GetCharacterRectsInRange(int32_t aInOffset, int32_t aLength,
@@ -216,7 +215,8 @@ class nsFrame : public nsBox {
           PeekOffsetCharacterOptions()) override;
   FrameSearchResult PeekOffsetWord(bool aForward, bool aWordSelectEatSpace,
                                    bool aIsKeyboardSelect, int32_t* aOffset,
-                                   PeekWordState* aState) override;
+                                   PeekWordState* aState,
+                                   bool aTrimSpaces) override;
   /**
    * Check whether we should break at a boundary between punctuation and
    * non-punctuation. Only call it at a punctuation boundary
@@ -536,14 +536,14 @@ class nsFrame : public nsBox {
    *                           Must not be null.
    * @param aChildPseudo the child's pseudo type, if any.
    */
-  static nsIFrame* CorrectStyleParentFrame(nsIFrame* aProspectiveParent,
-                                           nsAtom* aChildPseudo);
+  static nsIFrame* CorrectStyleParentFrame(
+      nsIFrame* aProspectiveParent, mozilla::PseudoStyleType aChildPseudo);
 
  protected:
   // Protected constructor and destructor
-  nsFrame(ComputedStyle* aStyle, ClassID aID);
-  explicit nsFrame(ComputedStyle* aStyle)
-      : nsFrame(aStyle, ClassID::nsFrame_id) {}
+  nsFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID);
+  explicit nsFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+      : nsFrame(aStyle, aPresContext, ClassID::nsFrame_id) {}
   virtual ~nsFrame();
 
   /**
@@ -654,9 +654,6 @@ class nsFrame : public nsBox {
                                     int32_t* aContentOffset,
                                     mozilla::TableSelection* aTarget);
 
-  // Fills aCursor with the appropriate information from ui
-  static void FillCursorInformationFromStyle(const nsStyleUI* ui,
-                                             nsIFrame::Cursor& aCursor);
   NS_IMETHOD DoXULLayout(nsBoxLayoutState& aBoxLayoutState) override;
 
   nsBoxLayoutMetrics* BoxMetrics() const;

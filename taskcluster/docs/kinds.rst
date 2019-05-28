@@ -61,6 +61,12 @@ unit tests, source-code analysis, or measurement work. While source-test tasks r
 a source checkout, it is still possible for them to depend on a build artifact, though
 often they do not.
 
+code-review
+-----------
+
+Publish issues found by source-test tasks on Phabricator.
+This is a part of Release Management code review Bot.
+
 upload-symbols
 --------------
 
@@ -190,14 +196,16 @@ release-beetmover-push-to-release publishes promoted releases from the
 candidates directory to the release directory. This is part of release
 promotion.
 
+beetmover-snap
+--------------
+Beetmover-source publishes Ubuntu's snap. This is part of release promotion.
+
 beetmover-source
 ----------------
-
 Beetmover-source publishes release source. This is part of release promotion.
 
 beetmover-geckoview
 -------------------
-
 Beetmover-geckoview publishes the Android library called "geckoview".
 
 checksums-signing
@@ -463,6 +471,10 @@ mar-signing-l10n
 ----------------
 Mar-signing-l10n takes the complete update MARs and signs them for localized versions.
 
+mar-signing-autograph-stage
+---------------------------
+These tasks are only to test autograph-stage, when the autograph team asks for their staging environment to be tested.
+
 repackage-msi
 -------------
 Repackage-msi takes the signed full installer and produces an msi installer (that wraps the full installer)
@@ -528,6 +540,14 @@ addon
 -----
 Tasks used to build/package add-ons.
 
+openh264-plugin
+-----
+Tasks used to build the openh264 plugin.
+
+openh264-signing
+----------------
+Signing for the openh264 plugin.
+
 webrender
 ---------
 Tasks used to do testing of WebRender standalone (without gecko). The
@@ -544,3 +564,8 @@ generate-profile
 Tasks that take a build configured for PGO and run the binary against a sample
 set to generate profile data. This is the 2nd stage of the full 3-step PGO
 process.
+
+geckodriver-repack
+------------------
+Tasks to repackage the geckodriver binary from a build tasks's common
+test archive into it's own archive.

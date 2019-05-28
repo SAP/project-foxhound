@@ -19,6 +19,7 @@
 #include <fontconfig/fontconfig.h>
 #include "gfxPlatformGtk.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/RelativeLuminanceUtils.h"
 #include "ScreenHelperGTK.h"
 
 #include "gtkdrawing.h"
@@ -47,13 +48,7 @@ using mozilla::LookAndFeel;
 #  define GTK_STATE_FLAG_LINK (static_cast<GtkStateFlags>(1 << 9))
 #endif
 
-nsLookAndFeel::nsLookAndFeel()
-    : nsXPLookAndFeel(),
-      mDefaultFontCached(false),
-      mButtonFontCached(false),
-      mFieldFontCached(false),
-      mMenuFontCached(false),
-      mInitialized(false) {}
+nsLookAndFeel::nsLookAndFeel() = default;
 
 nsLookAndFeel::~nsLookAndFeel() {}
 
@@ -712,6 +707,21 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = enableAnimations ? 0 : 1;
       break;
     }
+    case eIntID_SystemUsesDarkTheme: {
+      // It seems GTK doesn't have an API to query if the current theme is
+      // "light" or "dark", so we synthesize it from the CSS2 Window/WindowText
+      // colors instead, by comparing their luminosity.
+      nscolor fg, bg;
+      if (NS_SUCCEEDED(NativeGetColor(eColorID_windowtext, fg)) &&
+          NS_SUCCEEDED(NativeGetColor(eColorID_window, bg))) {
+        aResult = (RelativeLuminanceUtils::Compute(bg) <
+                   RelativeLuminanceUtils::Compute(fg))
+                      ? 1
+                      : 0;
+        break;
+      }
+      MOZ_FALLTHROUGH;
+    }
     default:
       aResult = 0;
       res = NS_ERROR_FAILURE;
@@ -773,18 +783,15 @@ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
     // |size| is in pango-points, so convert to pixels.
     size *= float(gfxPlatformGtk::GetFontScaleDPI()) / POINTS_PER_INCH_FLOAT;
   }
-  // |size| is now pixels but not scaled for the hidpi displays,
-  // this needs to be done in GetFontImpl where the aDevPixPerCSSPixel
-  // parameter is provided.
 
+  // |size| is now pixels but not scaled for the hidpi displays,
   aFontStyle->size = size;
 
   pango_font_description_free(desc);
 }
 
 bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                gfxFontStyle& aFontStyle,
-                                float aDevPixPerCSSPixel) {
+                                gfxFontStyle& aFontStyle) {
   switch (aID) {
     case eFont_Menu:          // css2
     case eFont_PullDownMenu:  // css3
@@ -821,17 +828,17 @@ bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
       aFontStyle = mDefaultFontStyle;
       break;
   }
+
   // Scale the font for the current monitor
   double scaleFactor = nsIWidget::DefaultScaleOverride();
   if (scaleFactor > 0) {
     aFontStyle.size *=
-        mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
+        widget::ScreenHelperGTK::GetGTKMonitorScaleFactor() / scaleFactor;
   } else {
-    // Remove effect of font scale because it has been already applied in
-    // GetSystemFontInfo
-    aFontStyle.size *=
-        aDevPixPerCSSPixel / gfxPlatformGtk::GetFontScaleFactor();
+    // Convert gdk pixels to CSS pixels.
+    aFontStyle.size /= gfxPlatformGtk::GetFontScaleFactor();
   }
+
   return true;
 }
 
@@ -852,6 +859,11 @@ void nsLookAndFeel::EnsureInit() {
   // ask Gtk to create it explicitly. Otherwise we may end up
   // with wrong color theme, see Bug 972382
   GtkSettings* settings = gtk_settings_get_for_screen(gdk_screen_get_default());
+
+  if (MOZ_UNLIKELY(!settings)) {
+      NS_WARNING("EnsureInit: No settings");
+      return;
+  }
 
   // Dark themes interacts poorly with widget styling (see bug 1216658).
   // We disable dark themes by default for all processes (chrome, web content)

@@ -4,9 +4,9 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://normandy/lib/LogManager.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {LogManager} = ChromeUtils.import("resource://normandy/lib/LogManager.jsm");
 
 ChromeUtils.defineModuleGetter(
   this, "CanonicalJSON", "resource://gre/modules/CanonicalJSON.jsm");
@@ -162,6 +162,18 @@ var NormandyApi = {
    */
   async fetchActions(filters = {}) {
     return this.fetchSignedObjects("action", filters);
+  },
+
+  /**
+   * Fetch details for an extension from the server.
+   * @param extensionId {integer} The ID of the extension to look up
+   * @resolves {Object}
+   */
+  async fetchExtensionDetails(extensionId) {
+    const baseUrl = await this.getApiUrl("extension-list");
+    const extensionDetailsUrl = `${baseUrl}${extensionId}/`;
+    const response = await this.get(extensionDetailsUrl);
+    return response.json();
   },
 
   async fetchImplementation(action) {

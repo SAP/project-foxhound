@@ -44,6 +44,7 @@ UNIFIED_SOURCES += [
     'nsSound.cpp',
     'nsToolkit.cpp',
     'nsWidgetFactory.cpp',
+    'ProcInfo.cpp',
     'ScreenHelperGTK.cpp',
     'TaskbarProgress.cpp',
     'WakeLockListener.cpp',
@@ -110,6 +111,10 @@ UNIFIED_SOURCES += [
     'gtk3drawing.cpp',
     'nsApplicationChooser.cpp',
     'WidgetStyleCache.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

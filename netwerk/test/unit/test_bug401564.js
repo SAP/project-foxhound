@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 "use strict";
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 const noRedirectURI = "/content";
@@ -42,7 +42,7 @@ function run_test()
   chan.QueryInterface(Ci.nsIHttpChannel);
   chan.setRequestHeader("Accept", acceptType, false);
 
-  chan.asyncOpen2(new ChannelListener(dummyHandler, null));
+  chan.asyncOpen(new ChannelListener(dummyHandler, null));
 
   do_test_pending();
 }

@@ -400,9 +400,10 @@ nsresult SdpHelper::GetMsids(const SdpMediaSection& msection,
                              std::vector<SdpMsidAttributeList::Msid>* msids) {
   if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMsidAttribute)) {
     *msids = msection.GetAttributeList().GetMsid().mMsids;
+    return NS_OK;
   }
 
-  // Can we find some additional msids in ssrc attributes?
+  // If there are no a=msid, can we find msids in ssrc attributes?
   // (Chrome does not put plain-old msid attributes in its SDP)
   if (msection.GetAttributeList().HasAttribute(SdpAttribute::kSsrcAttribute)) {
     auto& ssrcs = msection.GetAttributeList().GetSsrc().mSsrcs;
@@ -554,6 +555,7 @@ bool SdpHelper::HasRtcp(SdpMediaSection::Protocol proto) const {
     case SdpMediaSection::kDccpRtpSavp:
     case SdpMediaSection::kUdpTlsRtpSavp:
     case SdpMediaSection::kTcpTlsRtpSavp:
+    case SdpMediaSection::kTcpDtlsRtpSavp:
     case SdpMediaSection::kDccpTlsRtpSavp:
     case SdpMediaSection::kUdpMbmsFecRtpAvp:
     case SdpMediaSection::kUdpMbmsFecRtpSavp:
@@ -593,8 +595,8 @@ void SdpHelper::appendSdpParseErrors(
   *aErrorString += os.str();
 }
 
-/* static */ bool SdpHelper::GetPtAsInt(const std::string& ptString,
-                                        uint16_t* ptOutparam) {
+/* static */
+bool SdpHelper::GetPtAsInt(const std::string& ptString, uint16_t* ptOutparam) {
   char* end;
   unsigned long pt = strtoul(ptString.c_str(), &end, 10);
   size_t length = static_cast<size_t>(end - ptString.c_str());

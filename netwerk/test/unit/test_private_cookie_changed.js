@@ -1,8 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function makeChan(uri, isPrivate) {
   var chan = NetUtil.newChannel ({
@@ -15,6 +14,9 @@ function makeChan(uri, isPrivate) {
 }
 
 function run_test() {
+  // We don't want to have CookieSettings blocking this test.
+  Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+
   // Allow all cookies.
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
   

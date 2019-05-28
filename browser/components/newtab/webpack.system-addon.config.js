@@ -5,14 +5,15 @@ const absolute = relPath => path.join(__dirname, relPath);
 
 const resourcePathRegEx = /^resource:\/\/activity-stream\//;
 
-module.exports = {
+module.exports = (env = {}) => ({
   mode: "none",
   entry: absolute("content-src/activity-stream.jsx"),
   output: {
     path: absolute("data/content"),
     filename: "activity-stream.bundle.js",
   },
-  devtool: "source-map",
+  // TODO: switch to eval-source-map for faster builds. Requires CSP changes
+  devtool: env.development ? "inline-source-map" : false,
   plugins: [new webpack.optimize.ModuleConcatenationPlugin()],
   module: {
     rules: [
@@ -34,7 +35,7 @@ module.exports = {
         exclude: /node_modules/,
         loader: "babel-loader",
         // Converts .jsm files into common-js modules
-        options: {plugins: [["jsm-to-esmodules", {basePath: resourcePathRegEx, replace: true}], ["transform-object-rest-spread", {"useBuiltIns": true}]]},
+        options: {plugins: [["jsm-to-esmodules", {basePath: resourcePathRegEx, removeOtherImports: true, replace: true}], ["transform-object-rest-spread", {"useBuiltIns": true}]]},
       },
     ],
   },
@@ -54,4 +55,4 @@ module.exports = {
     "redux": "Redux",
     "react-redux": "ReactRedux",
   },
-};
+});

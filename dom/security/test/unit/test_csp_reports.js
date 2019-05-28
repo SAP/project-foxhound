@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpServer = new HttpServer();
 httpServer.start(-1);
@@ -153,7 +153,7 @@ function run_test() {
         csp.shouldLoad(Ci.nsIContentPolicy.TYPE_SCRIPT,
                       null, // nsICSPEventListener
                       NetUtil.newURI("http://blocked.test/foo.js"),
-                      null, null, null, null, true);
+                      null, null, null, null, true, null);
       });
 
   // test that inline script violations cause a report in report-only policy
@@ -206,7 +206,7 @@ function run_test() {
       csp.shouldLoad(Ci.nsIContentPolicy.TYPE_IMAGE,
                      null, // nsICSPEventListener
                      NetUtil.newURI("data:image/png;base64," + base64data),
-                     null, null, null, null, true);
+                     null, null, null, null, true, null);
       });
 
   // test that only the uri's scheme is reported for globally unique identifiers
@@ -216,7 +216,7 @@ function run_test() {
       csp.shouldLoad(Ci.nsIContentPolicy.TYPE_SUBDOCUMENT,
                      null, // nsICSPEventListener
                      NetUtil.newURI("intent://mymaps.com/maps?um=1&ie=UTF-8&fb=1&sll"),
-                     null, null, null, null, true);
+                     null, null, null, null, true, null);
       });
 
   // test fragment removal
@@ -227,7 +227,7 @@ function run_test() {
       csp.shouldLoad(Ci.nsIContentPolicy.TYPE_SCRIPT,
                      null, // nsICSPEventListener
                      NetUtil.newURI(selfSpec + "#bar"),
-                     null, null, null, null, true);
+                     null, null, null, null, true, null);
       });
 
   // test scheme of ftp:
@@ -237,6 +237,6 @@ function run_test() {
       csp.shouldLoad(Ci.nsIContentPolicy.TYPE_SCRIPT,
                      null, // nsICSPEventListener
                     NetUtil.newURI("ftp://blocked.test/profile.png"),
-                    null, null, null, null, true);
+                    null, null, null, null, true, null);
     });
 }

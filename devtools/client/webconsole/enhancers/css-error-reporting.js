@@ -13,10 +13,10 @@ const {
  * This is responsible for ensuring that error reporting is enabled if the CSS
  * filter is toggled on.
  */
-function ensureCSSErrorReportingEnabled(hud) {
+function ensureCSSErrorReportingEnabled(webConsoleUI) {
   return next => (reducer, initialState, enhancer) => {
     function ensureErrorReportingEnhancer(state, action) {
-      const proxy = hud ? hud.proxy : null;
+      const proxy = webConsoleUI ? webConsoleUI.proxy : null;
       if (!proxy) {
         return reducer(state, action);
       }
@@ -29,7 +29,7 @@ function ensureCSSErrorReportingEnabled(hud) {
       const cssFilterToggled =
         action.type == FILTER_TOGGLE && action.filter == "css";
       if (cssFilterToggled || action.type == INITIALIZE) {
-        proxy.target.activeTab.ensureCSSErrorReportingEnabled();
+        proxy.target.ensureCSSErrorReportingEnabled();
       }
       return state;
     }

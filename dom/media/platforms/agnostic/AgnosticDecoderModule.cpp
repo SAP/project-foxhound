@@ -24,10 +24,17 @@ bool AgnosticDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
       VPXDecoder::IsVPX(aMimeType) || OpusDataDecoder::IsOpus(aMimeType) ||
-      VorbisDataDecoder::IsVorbis(aMimeType) ||
       WaveDataDecoder::IsWave(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
+  if (!StaticPrefs::MediaRddVorbisEnabled() ||
+      !StaticPrefs::MediaRddProcessEnabled()) {
+    supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+  }
 #ifdef MOZ_AV1
-  if (StaticPrefs::MediaAv1Enabled()) {
+  // We remove support for decoding AV1 here if RDD is enabled so that
+  // decoding on the content process doesn't accidentally happen in case
+  // something goes wrong with launching the RDD process.
+  if (StaticPrefs::MediaAv1Enabled() &&
+      !StaticPrefs::MediaRddProcessEnabled()) {
     supports |= AOMDecoder::IsAV1(aMimeType);
   }
 #endif
@@ -45,7 +52,9 @@ already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateVideoDecoder(
     m = new VPXDecoder(aParams);
   }
 #ifdef MOZ_AV1
+  // see comment above about AV1 and the RDD process
   else if (AOMDecoder::IsAV1(aParams.mConfig.mMimeType) &&
+           !StaticPrefs::MediaRddProcessEnabled() &&
            StaticPrefs::MediaAv1Enabled()) {
     if (StaticPrefs::MediaAv1UseDav1d()) {
       m = new DAV1DDecoder(aParams);

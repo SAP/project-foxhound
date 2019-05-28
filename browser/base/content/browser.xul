@@ -72,7 +72,6 @@
         retargetdocumentfocus="urlbar"
         persist="screenX screenY width height sizemode"
 #ifdef BROWSER_XHTML
-        hidden="true"
         mozpersist=""
 #endif
         >
@@ -82,11 +81,7 @@
 # that they can be shared with macWindow.inc.xul.
 #include global-scripts.inc
 
-<script type="application/javascript"
-#ifdef BROWSER_XHTML
-xmlns="http://www.w3.org/1999/xhtml"
-#endif
->
+<script type="application/javascript">
   Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-captivePortal.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-compacttheme.js", this);
@@ -103,23 +98,16 @@ xmlns="http://www.w3.org/1999/xhtml"
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-sidebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-tabsintitlebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/search/autocomplete-popup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/searchbar.js", this);
 
   window.onload = gBrowserInit.onLoad.bind(gBrowserInit);
   window.onunload = gBrowserInit.onUnload.bind(gBrowserInit);
   window.onclose = WindowIsClosing;
 
-#ifdef BROWSER_XHTML
-  window.addEventListener("readystatechange", () => {
-    // We initially hide the window to prevent layouts during parse. This lets us
-    // avoid accidental XBL construction and better match browser.xul (see Bug 1497975).
-    gBrowserInit.onBeforeInitialXULLayout();
-    document.documentElement.removeAttribute("hidden");
-  }, { once: true, capture: true });
-#else
   window.addEventListener("MozBeforeInitialXULLayout",
     gBrowserInit.onBeforeInitialXULLayout.bind(gBrowserInit), { once: true });
-#endif
+
   // The listener of DOMContentLoaded must be set on window, rather than
   // document, because the window can go away before the event is fired.
   // In that case, we don't want to initialize anything, otherwise we
@@ -236,7 +224,8 @@ xmlns="http://www.w3.org/1999/xhtml"
 
     <!-- for search and content formfill/pw manager -->
 
-    <panel type="autocomplete-richlistbox"
+    <panel is="autocomplete-richlistbox-popup"
+           type="autocomplete-richlistbox"
            id="PopupAutoComplete"
            role="group"
            noautofocus="true"
@@ -246,7 +235,8 @@ xmlns="http://www.w3.org/1999/xhtml"
            nomaxresults="true" />
 
     <!-- for search with one-off buttons -->
-    <panel type="autocomplete-richlistbox"
+    <panel is="search-autocomplete-richlistbox-popup"
+           type="autocomplete-richlistbox"
            id="PopupSearchAutoComplete"
            role="group"
            noautofocus="true"
@@ -261,27 +251,6 @@ xmlns="http://www.w3.org/1999/xhtml"
            flip="none"
            level="parent"
            overflowpadding="15" />
-
-    <!-- for url bar autocomplete -->
-    <panel id="urlbar-results"
-           role="group"
-           noautofocus="true"
-           hidden="true"
-           flip="none"
-           consumeoutsideclicks="never"
-           norolluponanchor="true"
-           level="parent">
-      <html:div class="urlbarView-body-outer">
-        <html:div class="urlbarView-body-inner">
-          <!-- TODO: add search suggestions notification -->
-          <html:div class="urlbarView-results"/>
-        </html:div>
-      </html:div>
-      <hbox class="search-one-offs"
-            compact="true"
-            includecurrentengine="true"
-            disabletab="true"/>
-    </panel>
 
     <!-- for date/time picker. consumeoutsideclicks is set to never, so that
          clicks on the anchored input box are never consumed. -->
@@ -573,6 +542,8 @@ xmlns="http://www.w3.org/1999/xhtml"
            position="bottomcenter topright"
            tabspecific="true"
            noautofocus="true"
+           pinTab-title="&pinTab.label;"
+           unpinTab-title="&unpinTab.label;"
            pocket-title="&saveToPocketCmd.label;"
            copyURL-title="&pageAction.copyLink.label;"
            emailLink-title="&emailPageCmd.label;"
@@ -599,9 +570,12 @@ xmlns="http://www.w3.org/1999/xhtml"
            tabspecific="true"
            noautofocus="true">
       <hbox id="confirmation-hint-checkmark-animation-container">
-        <image id="confirmation-hint-checkmark-image"/>
+       <image id="confirmation-hint-checkmark-image"/>
       </hbox>
-      <label id="confirmation-hint-message"/>
+      <vbox id="confirmation-hint-message-container">
+       <label id="confirmation-hint-message"/>
+       <label id="confirmation-hint-description"/>
+      </vbox>
     </panel>
 
     <menupopup id="pageActionContextMenu"
@@ -835,6 +809,7 @@ xmlns="http://www.w3.org/1999/xhtml"
              overflowpanel="widget-overflow"
              context="toolbar-context-menu">
 
+      <toolbartabstop/>
       <hbox id="nav-bar-customization-target" flex="1">
         <toolbarbutton id="back-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
                        label="&backCmd.label;"
@@ -888,11 +863,13 @@ xmlns="http://www.w3.org/1999/xhtml"
         <toolbaritem id="urlbar-container" flex="400" persist="width"
                      removable="false"
                      class="chromeclass-location" overflows="false">
+            <toolbartabstop/>
             <textbox id="urlbar" flex="1"
                      placeholder="&urlbar.placeholder2;"
                      defaultPlaceholder="&urlbar.placeholder2;"
                      focused="true"
                      type="autocomplete"
+                     quantumbar="false"
                      autocompletesearch="unifiedcomplete"
                      autocompletesearchparam="enable-actions"
                      autocompletepopup="PopupAutoCompleteRichResult"
@@ -1007,6 +984,7 @@ xmlns="http://www.w3.org/1999/xhtml"
                 <label id="extension" class="urlbar-display urlbar-display-extension" value="&urlbar.extension.label;"/>
               </box>
               <hbox id="page-action-buttons" context="pageActionContextMenu">
+                <toolbartabstop/>
                 <hbox id="contextual-feature-recommendation" role="button" hidden="true">
                   <hbox id="cfr-label-container">
                     <label id="cfr-label"/>
@@ -1064,6 +1042,7 @@ xmlns="http://www.w3.org/1999/xhtml"
                 </hbox>
               </hbox>
             </textbox>
+            <toolbartabstop/>
         </toolbaritem>
 
         <toolbarspring cui-areatype="toolbar" class="chromeclass-toolbar-additional"/>
@@ -1075,6 +1054,7 @@ xmlns="http://www.w3.org/1999/xhtml"
                        class="toolbarbutton-1 chromeclass-toolbar-additional badged-button"
                        key="key_openDownloads"
                        onmousedown="DownloadsIndicatorView.onCommand(event);"
+                       onkeypress="DownloadsIndicatorView.onCommand(event);"
                        ondrop="DownloadsIndicatorView.onDrop(event);"
                        ondragover="DownloadsIndicatorView.onDragOver(event);"
                        ondragenter="DownloadsIndicatorView.onDragOver(event);"
@@ -1107,6 +1087,19 @@ xmlns="http://www.w3.org/1999/xhtml"
                        tooltiptext="&libraryButton.tooltip;"
                        label="&places.library.title;"/>
 
+        <toolbarbutton id="fxa-toolbar-menu-button" class="toolbarbutton-1 badged-button chromeclass-toolbar-additional subviewbutton-nav"
+                       onmousedown="gSync.toggleAccountPanel('PanelUI-fxa', event)"
+                       onkeypress="gSync.toggleAccountPanel('PanelUI-fxa', event)"
+                       consumeanchor="fxa-toolbar-menu-button"
+                       closemenu="none"
+                       label="&fxa.menu.firefoxAccount;"
+                       tooltiptext="&fxa.menu.firefoxAccount;"
+                       cui-areatype="toolbar"
+                       removable="true">
+                       <vbox>
+                        <image id="fxa-avatar-image"/>
+                       </vbox>
+        </toolbarbutton>
       </hbox>
 
       <toolbarbutton id="nav-bar-overflow-button"
@@ -1159,6 +1152,7 @@ xmlns="http://www.w3.org/1999/xhtml"
              toolbarname="&personalbarCmd.label;" accesskey="&personalbarCmd.accesskey;"
              collapsed="true"
              customizable="true">
+      <toolbartabstop skipintoolbarset="true"/>
       <toolbaritem id="personal-bookmarks"
                    title="&bookmarksToolbarItem.label;"
                    cui-areatype="toolbar"
@@ -1328,7 +1322,9 @@ xmlns="http://www.w3.org/1999/xhtml"
                    align="center"
                    flex="100"
                    persist="width">
+        <toolbartabstop/>
         <searchbar id="searchbar" flex="1"/>
+        <toolbartabstop/>
       </toolbaritem>
     </toolbarpalette>
   </toolbox>

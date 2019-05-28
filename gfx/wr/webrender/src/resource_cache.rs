@@ -4,15 +4,13 @@
 
 use api::{AddFont, BlobImageResources, AsyncBlobImageRasterizer, ResourceUpdate};
 use api::{BlobImageDescriptor, BlobImageHandler, BlobImageRequest, RasterizedBlobImage};
-use api::{ClearCache, ColorF, DeviceIntPoint, DeviceIntRect, DeviceIntSize};
-use api::{DebugFlags, FontInstanceKey, FontKey, FontTemplate, GlyphIndex};
+use api::{ClearCache, DebugFlags, FontInstanceKey, FontKey, FontTemplate, GlyphIndex};
 use api::{ExternalImageData, ExternalImageType, BlobImageResult, BlobImageParams};
 use api::{FontInstanceData, FontInstanceOptions, FontInstancePlatformOptions, FontVariation};
-use api::{GlyphDimensions, IdNamespace};
-use api::{ImageData, ImageDescriptor, ImageKey, ImageRendering, ImageDirtyRect, DirtyRect};
-use api::{BlobImageKey, BlobDirtyRect, MemoryReport, VoidPtrToSizeFn};
-use api::{TileOffset, TileSize, TileRange, BlobImageData, LayoutIntRect, LayoutIntSize};
-use app_units::Au;
+use api::{DirtyRect, GlyphDimensions, IdNamespace};
+use api::{ImageData, ImageDescriptor, ImageKey, ImageRendering, TileSize};
+use api::{BlobImageData, BlobImageKey, MemoryReport, VoidPtrToSizeFn};
+use api::units::*;
 #[cfg(feature = "capture")]
 use capture::ExternalCaptureImage;
 #[cfg(feature = "replay")]
@@ -24,10 +22,10 @@ use euclid::{point2, size2};
 use glyph_cache::GlyphCache;
 #[cfg(not(feature = "pathfinder"))]
 use glyph_cache::GlyphCacheEntry;
-use glyph_rasterizer::{FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
+use glyph_rasterizer::{BaseFontInstance, FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
 use gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
 use gpu_types::UvRectKind;
-use image::{compute_tile_range, for_each_tile_in_range};
+use image::{compute_tile_size, compute_tile_range, for_each_tile_in_range};
 use internal_types::{FastHashMap, FastHashSet, TextureSource, TextureUpdateList};
 use profiler::{ResourceProfileCounters, TextureCacheProfileCounters};
 use render_backend::{FrameId, FrameStamp};
@@ -373,7 +371,7 @@ impl ImageResult {
 }
 
 type ImageCache = ResourceClassCache<ImageKey, ImageResult, ()>;
-pub type FontInstanceMap = Arc<RwLock<FastHashMap<FontInstanceKey, FontInstance>>>;
+pub type FontInstanceMap = Arc<RwLock<FastHashMap<FontInstanceKey, Arc<BaseFontInstance>>>>;
 
 #[derive(Default)]
 struct Resources {
@@ -405,7 +403,10 @@ impl BlobImageResources for Resources {
     }
 }
 
-pub type GlyphDimensionsCache = FastHashMap<(FontInstance, GlyphIndex), Option<GlyphDimensions>>;
+// We only use this to report glyph dimensions to the user of the API, so using
+// the font instance key should be enough. If we start using it to cache dimensions
+// for internal font instances we should change the hash key accordingly.
+pub type GlyphDimensionsCache = FastHashMap<(FontInstanceKey, GlyphIndex), Option<GlyphDimensions>>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlobImageRasterizerEpoch(usize);
@@ -779,7 +780,7 @@ impl ResourceCache {
         &mut self,
         instance_key: FontInstanceKey,
         font_key: FontKey,
-        glyph_size: Au,
+        size: Au,
         options: Option<FontInstanceOptions>,
         platform_options: Option<FontInstancePlatformOptions>,
         variations: Vec<FontVariation>,
@@ -791,17 +792,17 @@ impl ResourceCache {
             synthetic_italics,
             ..
         } = options.unwrap_or_default();
-        let instance = FontInstance::new(
+        let instance = Arc::new(BaseFontInstance {
+            instance_key,
             font_key,
-            glyph_size,
-            ColorF::new(0.0, 0.0, 0.0, 1.0),
+            size,
             bg_color,
             render_mode,
             flags,
             synthetic_italics,
             platform_options,
             variations,
-        );
+        });
         self.resources.font_instances
             .write()
             .unwrap()
@@ -822,9 +823,9 @@ impl ResourceCache {
         self.resources.font_instances.clone()
     }
 
-    pub fn get_font_instance(&self, instance_key: FontInstanceKey) -> Option<FontInstance> {
+    pub fn get_font_instance(&self, instance_key: FontInstanceKey) -> Option<Arc<BaseFontInstance>> {
         let instance_map = self.resources.font_instances.read().unwrap();
-        instance_map.get(&instance_key).cloned()
+        instance_map.get(&instance_key).map(|instance| { Arc::clone(instance) })
     }
 
     pub fn add_image_template(
@@ -1125,7 +1126,7 @@ impl ResourceCache {
                             LayoutIntRect {
                                 origin: point2(tile.x, tile.y) * tile_size as i32,
                                 size: blob_size(compute_tile_size(
-                                    &template.descriptor,
+                                    &template.descriptor.size.into(),
                                     tile_size,
                                     tile,
                                 )),
@@ -1248,7 +1249,7 @@ impl ResourceCache {
                         rect: LayoutIntRect {
                             origin: point2(tile.x, tile.y) * tile_size as i32,
                             size: blob_size(compute_tile_size(
-                                &template.descriptor,
+                                &template.descriptor.size.into(),
                                 tile_size,
                                 tile,
                             )),
@@ -1502,7 +1503,7 @@ impl ResourceCache {
         font: &FontInstance,
         glyph_index: GlyphIndex,
     ) -> Option<GlyphDimensions> {
-        match self.cached_glyph_dimensions.entry((font.clone(), glyph_index)) {
+        match self.cached_glyph_dimensions.entry((font.instance_key, glyph_index)) {
             Occupied(entry) => *entry.get(),
             Vacant(entry) => *entry.insert(
                 self.glyph_rasterizer
@@ -1691,7 +1692,7 @@ impl ResourceCache {
 
                 if let Some(tile) = request.tile {
                     let tile_size = image_template.tiling.unwrap();
-                    let clipped_tile_size = compute_tile_size(&descriptor, tile_size, tile);
+                    let clipped_tile_size = compute_tile_size(&descriptor.size.into(), tile_size, tile);
 
                     // The tiled image could be stored on the CPU as one large image or be
                     // already broken up into tiles. This affects the way we compute the stride
@@ -1792,7 +1793,7 @@ impl ResourceCache {
             self.cached_render_tasks.clear();
         }
         if what.contains(ClearCache::TEXTURE_CACHE) {
-            self.texture_cache.clear();
+            self.texture_cache.clear_all();
         }
         if what.contains(ClearCache::RASTERIZED_BLOBS) {
             self.rasterized_blob_images.clear();
@@ -1902,32 +1903,6 @@ pub fn get_blob_tiling(
     tiling
 }
 
-
-// Compute the width and height of a tile depending on its position in the image.
-pub fn compute_tile_size(
-    descriptor: &ImageDescriptor,
-    base_size: TileSize,
-    tile: TileOffset,
-) -> DeviceIntSize {
-    let base_size = base_size as i32;
-    // Most tiles are going to have base_size as width and height,
-    // except for tiles around the edges that are shrunk to fit the mage data
-    // (See decompose_tiled_image in frame.rs).
-    let actual_width = if (tile.x as i32) < descriptor.size.width / base_size {
-        base_size
-    } else {
-        descriptor.size.width % base_size
-    };
-
-    let actual_height = if (tile.y as i32) < descriptor.size.height / base_size {
-        base_size
-    } else {
-        descriptor.size.height % base_size
-    };
-
-    size2(actual_width, actual_height)
-}
-
 #[cfg(any(feature = "capture", feature = "replay"))]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -1953,7 +1928,7 @@ struct PlainImageTemplate {
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PlainResources {
     font_templates: FastHashMap<FontKey, PlainFontTemplate>,
-    font_instances: FastHashMap<FontInstanceKey, FontInstance>,
+    font_instances: FastHashMap<FontInstanceKey, Arc<BaseFontInstance>>,
     image_templates: FastHashMap<ImageKey, PlainImageTemplate>,
 }
 
@@ -2225,6 +2200,7 @@ impl ResourceCache {
                 self.texture_cache = TextureCache::new(
                     self.texture_cache.max_texture_size(),
                     self.texture_cache.max_texture_layers(),
+                    self.texture_cache.picture_tile_size(),
                 );
             }
         }

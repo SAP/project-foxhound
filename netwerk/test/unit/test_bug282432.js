@@ -1,4 +1,4 @@
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function run_test() {
   do_test_pending();
@@ -14,15 +14,15 @@ function run_test() {
       throw Cr.NS_NOINTERFACE;
     },
 
-    onStartRequest: function(aRequest, aContext) {},
+    onStartRequest: function(aRequest) {},
 
-    onStopRequest: function(aRequest, aContext, aStatusCode) {
+    onStopRequest: function(aRequest, aStatusCode) {
       // Make sure we can catch the error NS_ERROR_FILE_NOT_FOUND here.
       Assert.equal(aStatusCode, Cr.NS_ERROR_FILE_NOT_FOUND);
       do_test_finished();
     },
 
-    onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+    onDataAvailable: function(aRequest, aStream, aOffset, aCount) {
       do_throw("The channel must not call onDataAvailable().");
     }
   };
@@ -38,5 +38,5 @@ function run_test() {
     uri: ios.newFileURI(file),
     loadUsingSystemPrincipal: true
   });
-  channel.asyncOpen2(listener);
+  channel.asyncOpen(listener);
 }

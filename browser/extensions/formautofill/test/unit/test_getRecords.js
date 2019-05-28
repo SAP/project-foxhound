@@ -4,13 +4,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/CreditCard.jsm");
+const {CreditCard} = ChromeUtils.import("resource://gre/modules/CreditCard.jsm");
 
 let FormAutofillParent;
 let OSKeyStore;
 add_task(async function setup() {
-  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", {}));
-  ({OSKeyStore} = ChromeUtils.import("resource://formautofill/OSKeyStore.jsm", {}));
+  ({FormAutofillParent} = ChromeUtils.import("resource://formautofill/FormAutofillParent.jsm", null));
+  ({OSKeyStore} = ChromeUtils.import("resource://formautofill/OSKeyStore.jsm"));
 });
 
 const TEST_ADDRESS_1 = {
@@ -180,7 +180,7 @@ add_task(async function test_getRecords_creditCards() {
     clonedRecord["cc-number-encrypted"] = await OSKeyStore.encrypt(record["cc-number"]);
     return clonedRecord;
   }));
-  sinon.stub(collection, "getAll", () =>
+  sinon.stub(collection, "getAll").callsFake(() =>
     Promise.resolve([Object.assign({}, encryptedCCRecords[0]), Object.assign({}, encryptedCCRecords[1])]));
 
   let testCases = [

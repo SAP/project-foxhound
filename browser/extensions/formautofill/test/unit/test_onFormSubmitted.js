@@ -1,7 +1,8 @@
 "use strict";
 
+var FormAutofillContent;
 add_task(async function setup() {
-  ChromeUtils.import("resource://formautofill/FormAutofillContent.jsm");
+  ({FormAutofillContent} = ChromeUtils.import("resource://formautofill/FormAutofillContent.jsm"));
 });
 
 const MOCK_DOC = MockDocument.createTestDocument("http://localhost:8080/test/",
@@ -490,12 +491,12 @@ const TESTCASES = [
   },
 ];
 
-add_task(async function handle_earlyformsubmit_event() {
+add_task(async function handle_invalid_form() {
   info("Starting testcase: Test an invalid form element");
   let fakeForm = MOCK_DOC.createElement("form");
   sinon.spy(FormAutofillContent, "_onFormSubmit");
 
-  Assert.equal(FormAutofillContent.notify(fakeForm), true);
+  FormAutofillContent.formSubmitted(fakeForm, null);
   Assert.equal(FormAutofillContent._onFormSubmit.called, false);
   FormAutofillContent._onFormSubmit.restore();
 });
@@ -524,35 +525,35 @@ add_task(async function autofill_disabled() {
   // are disabled.
   Services.prefs.setBoolPref("extensions.formautofill.addresses.enabled", false);
   Services.prefs.setBoolPref("extensions.formautofill.creditCards.enabled", false);
-  FormAutofillContent.notify(form);
+  FormAutofillContent.formSubmitted(form, null);
   Assert.equal(FormAutofillContent._onFormSubmit.called, false);
-  FormAutofillContent._onFormSubmit.reset();
+  FormAutofillContent._onFormSubmit.resetHistory();
 
   // "_onFormSubmit" should be called as usual.
   Services.prefs.clearUserPref("extensions.formautofill.addresses.enabled");
   Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
-  FormAutofillContent.notify(form);
+  FormAutofillContent.formSubmitted(form, null);
   Assert.equal(FormAutofillContent._onFormSubmit.called, true);
   Assert.notDeepEqual(FormAutofillContent._onFormSubmit.args[0][0].address, []);
   Assert.notDeepEqual(FormAutofillContent._onFormSubmit.args[0][0].creditCard, []);
-  FormAutofillContent._onFormSubmit.reset();
+  FormAutofillContent._onFormSubmit.resetHistory();
 
   // "address" should be empty if "addresses" pref is disabled.
   Services.prefs.setBoolPref("extensions.formautofill.addresses.enabled", false);
-  FormAutofillContent.notify(form);
+  FormAutofillContent.formSubmitted(form, null);
   Assert.equal(FormAutofillContent._onFormSubmit.called, true);
   Assert.deepEqual(FormAutofillContent._onFormSubmit.args[0][0].address, []);
   Assert.notDeepEqual(FormAutofillContent._onFormSubmit.args[0][0].creditCard, []);
-  FormAutofillContent._onFormSubmit.reset();
+  FormAutofillContent._onFormSubmit.resetHistory();
   Services.prefs.clearUserPref("extensions.formautofill.addresses.enabled");
 
   // "creditCard" should be empty if "creditCards" pref is disabled.
   Services.prefs.setBoolPref("extensions.formautofill.creditCards.enabled", false);
-  FormAutofillContent.notify(form);
+  FormAutofillContent.formSubmitted(form, null);
   Assert.deepEqual(FormAutofillContent._onFormSubmit.called, true);
   Assert.notDeepEqual(FormAutofillContent._onFormSubmit.args[0][0].address, []);
   Assert.deepEqual(FormAutofillContent._onFormSubmit.args[0][0].creditCard, []);
-  FormAutofillContent._onFormSubmit.reset();
+  FormAutofillContent._onFormSubmit.resetHistory();
   Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
 
   FormAutofillContent._onFormSubmit.restore();
@@ -581,7 +582,7 @@ TESTCASES.forEach(testcase => {
 
     let element = MOCK_DOC.getElementById(TARGET_ELEMENT_ID);
     FormAutofillContent.identifyAutofillFields(element);
-    FormAutofillContent.notify(form);
+    FormAutofillContent.formSubmitted(form, null);
 
     Assert.equal(FormAutofillContent._onFormSubmit.called,
                  testcase.expectedResult.formSubmission,

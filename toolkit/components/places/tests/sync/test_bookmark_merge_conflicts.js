@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 // This is tricky to test, because we need to induce a race between a write
 // on the main connection, and the merge transaction on the mirror connection.
@@ -20,10 +20,12 @@ add_task(async function test_bookmark_change_during_sync() {
   info("Make remote changes");
   await storeRecords(buf, [{
     id: "menu",
+    parentid: "places",
     type: "folder",
     children: ["bookmarkAAAA"],
   }, {
     id: "bookmarkAAAA",
+    parentid: "menu",
     type: "bookmark",
     title: "A",
     bmkUri: "http://example.com/a",

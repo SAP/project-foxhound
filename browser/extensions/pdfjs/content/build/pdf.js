@@ -2,7 +2,7 @@
  * @licstart The following is the entire license notice for the
  * Javascript code in this page
  *
- * Copyright 2018 Mozilla Foundation
+ * Copyright 2019 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,8 +123,8 @@ return /******/ (function(modules) { // webpackBootstrap
 "use strict";
 
 
-var pdfjsVersion = '2.1.220';
-var pdfjsBuild = 'ca472be4';
+var pdfjsVersion = '2.2.71';
+var pdfjsBuild = '80135378';
 
 var pdfjsSharedUtil = __w_pdfjs_require__(1);
 
@@ -134,7 +134,7 @@ var pdfjsDisplayTextLayer = __w_pdfjs_require__(18);
 
 var pdfjsDisplayAnnotationLayer = __w_pdfjs_require__(19);
 
-var pdfjsDisplayDOMUtils = __w_pdfjs_require__(7);
+var pdfjsDisplayDisplayUtils = __w_pdfjs_require__(7);
 
 var pdfjsDisplaySVG = __w_pdfjs_require__(20);
 
@@ -170,11 +170,11 @@ exports.shadow = pdfjsSharedUtil.shadow;
 exports.Util = pdfjsSharedUtil.Util;
 exports.ReadableStream = pdfjsSharedUtil.ReadableStream;
 exports.URL = pdfjsSharedUtil.URL;
-exports.RenderingCancelledException = pdfjsDisplayDOMUtils.RenderingCancelledException;
-exports.getFilenameFromUrl = pdfjsDisplayDOMUtils.getFilenameFromUrl;
-exports.LinkTarget = pdfjsDisplayDOMUtils.LinkTarget;
-exports.addLinkAttributes = pdfjsDisplayDOMUtils.addLinkAttributes;
-exports.loadScript = pdfjsDisplayDOMUtils.loadScript;
+exports.RenderingCancelledException = pdfjsDisplayDisplayUtils.RenderingCancelledException;
+exports.getFilenameFromUrl = pdfjsDisplayDisplayUtils.getFilenameFromUrl;
+exports.LinkTarget = pdfjsDisplayDisplayUtils.LinkTarget;
+exports.addLinkAttributes = pdfjsDisplayDisplayUtils.addLinkAttributes;
+exports.loadScript = pdfjsDisplayDisplayUtils.loadScript;
 exports.GlobalWorkerOptions = pdfjsDisplayWorkerOptions.GlobalWorkerOptions;
 exports.apiCompatibilityParams = pdfjsDisplayAPICompatibility.apiCompatibilityParams;
 
@@ -188,18 +188,15 @@ exports.apiCompatibilityParams = pdfjsDisplayAPICompatibility.apiCompatibilityPa
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.toRomanNumerals = toRomanNumerals;
 exports.arrayByteLength = arrayByteLength;
 exports.arraysToBytes = arraysToBytes;
 exports.assert = assert;
 exports.bytesToString = bytesToString;
 exports.createPromiseCapability = createPromiseCapability;
-exports.deprecated = deprecated;
-exports.getInheritableProperty = getInheritableProperty;
-exports.getLookupTableFactory = getLookupTableFactory;
 exports.getVerbosityLevel = getVerbosityLevel;
 exports.info = info;
 exports.isArrayBuffer = isArrayBuffer;
+exports.isArrayEqual = isArrayEqual;
 exports.isBool = isBool;
 exports.isEmptyObj = isEmptyObj;
 exports.isNum = isNum;
@@ -235,7 +232,7 @@ Object.defineProperty(exports, "URL", {
     return _url_polyfill.URL;
   }
 });
-exports.createObjectURL = exports.FormatError = exports.XRefParseException = exports.XRefEntryException = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.MissingDataException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
+exports.createObjectURL = exports.FormatError = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
 
 __w_pdfjs_require__(2);
 
@@ -526,10 +523,6 @@ function warn(msg) {
   }
 }
 
-function deprecated(details) {
-  console.log('Deprecated API usage: ' + details);
-}
-
 function unreachable(msg) {
   throw new Error(msg);
 }
@@ -599,19 +592,6 @@ function shadow(obj, prop, value) {
   return value;
 }
 
-function getLookupTableFactory(initializer) {
-  var lookup;
-  return function () {
-    if (initializer) {
-      lookup = Object.create(null);
-      initializer(lookup);
-      initializer = null;
-    }
-
-    return lookup;
-  };
-}
-
 var PasswordException = function PasswordExceptionClosure() {
   function PasswordException(msg, code) {
     this.name = 'PasswordException';
@@ -679,47 +659,6 @@ var UnexpectedResponseException = function UnexpectedResponseExceptionClosure() 
 }();
 
 exports.UnexpectedResponseException = UnexpectedResponseException;
-
-var MissingDataException = function MissingDataExceptionClosure() {
-  function MissingDataException(begin, end) {
-    this.begin = begin;
-    this.end = end;
-    this.message = 'Missing data [' + begin + ', ' + end + ')';
-  }
-
-  MissingDataException.prototype = new Error();
-  MissingDataException.prototype.name = 'MissingDataException';
-  MissingDataException.constructor = MissingDataException;
-  return MissingDataException;
-}();
-
-exports.MissingDataException = MissingDataException;
-
-const XRefEntryException = function XRefEntryExceptionClosure() {
-  function XRefEntryException(msg) {
-    this.message = msg;
-  }
-
-  XRefEntryException.prototype = new Error();
-  XRefEntryException.prototype.name = 'XRefEntryException';
-  XRefEntryException.constructor = XRefEntryException;
-  return XRefEntryException;
-}();
-
-exports.XRefEntryException = XRefEntryException;
-
-var XRefParseException = function XRefParseExceptionClosure() {
-  function XRefParseException(msg) {
-    this.message = msg;
-  }
-
-  XRefParseException.prototype = new Error();
-  XRefParseException.prototype.name = 'XRefParseException';
-  XRefParseException.constructor = XRefParseException;
-  return XRefParseException;
-}();
-
-exports.XRefParseException = XRefParseException;
 
 let FormatError = function FormatErrorClosure() {
   function FormatError(msg) {
@@ -876,42 +815,6 @@ function isEvalSupported() {
   }
 }
 
-function getInheritableProperty({
-  dict,
-  key,
-  getArray = false,
-  stopWhenFound = true
-}) {
-  const LOOP_LIMIT = 100;
-  let loopCount = 0;
-  let values;
-
-  while (dict) {
-    const value = getArray ? dict.getArray(key) : dict.get(key);
-
-    if (value !== undefined) {
-      if (stopWhenFound) {
-        return value;
-      }
-
-      if (!values) {
-        values = [];
-      }
-
-      values.push(value);
-    }
-
-    if (++loopCount > LOOP_LIMIT) {
-      warn(`getInheritableProperty: maximum loop count exceeded for "${key}"`);
-      break;
-    }
-
-    dict = dict.get('Parent');
-  }
-
-  return values;
-}
-
 var Util = function UtilClosure() {
   function Util() {}
 
@@ -1019,29 +922,6 @@ var Util = function UtilClosure() {
 }();
 
 exports.Util = Util;
-const ROMAN_NUMBER_MAP = ['', 'C', 'CC', 'CCC', 'CD', 'D', 'DC', 'DCC', 'DCCC', 'CM', '', 'X', 'XX', 'XXX', 'XL', 'L', 'LX', 'LXX', 'LXXX', 'XC', '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
-
-function toRomanNumerals(number, lowerCase = false) {
-  assert(Number.isInteger(number) && number > 0, 'The number should be a positive integer.');
-  let pos,
-      romanBuf = [];
-
-  while (number >= 1000) {
-    number -= 1000;
-    romanBuf.push('M');
-  }
-
-  pos = number / 100 | 0;
-  number %= 100;
-  romanBuf.push(ROMAN_NUMBER_MAP[pos]);
-  pos = number / 10 | 0;
-  number %= 10;
-  romanBuf.push(ROMAN_NUMBER_MAP[10 + pos]);
-  romanBuf.push(ROMAN_NUMBER_MAP[20 + number]);
-  const romanStr = romanBuf.join('');
-  return lowerCase ? romanStr.toLowerCase() : romanStr;
-}
-
 const PDFStringTranslateTable = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2D8, 0x2C7, 0x2C6, 0x2D9, 0x2DD, 0x2DB, 0x2DA, 0x2DC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x192, 0x2044, 0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019, 0x201A, 0x2122, 0xFB01, 0xFB02, 0x141, 0x152, 0x160, 0x178, 0x17D, 0x131, 0x142, 0x153, 0x161, 0x17E, 0, 0x20AC];
 
 function stringToPDFString(str) {
@@ -1095,15 +975,39 @@ function isArrayBuffer(v) {
   return typeof v === 'object' && v !== null && v.byteLength !== undefined;
 }
 
+function isArrayEqual(arr1, arr2) {
+  if (arr1.length !== arr2.length) {
+    return false;
+  }
+
+  return arr1.every(function (element, index) {
+    return element === arr2[index];
+  });
+}
+
 function isSpace(ch) {
   return ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A;
 }
 
 function createPromiseCapability() {
-  var capability = {};
+  const capability = Object.create(null);
+  let isSettled = false;
+  Object.defineProperty(capability, 'settled', {
+    get() {
+      return isSettled;
+    }
+
+  });
   capability.promise = new Promise(function (resolve, reject) {
-    capability.resolve = resolve;
-    capability.reject = reject;
+    capability.resolve = function (data) {
+      isSettled = true;
+      resolve(data);
+    };
+
+    capability.reject = function (reason) {
+      isSettled = true;
+      reject(reason);
+    };
   });
   return capability;
 }
@@ -1199,7 +1103,7 @@ exports.build = exports.version = exports.PDFPageProxy = exports.PDFDocumentProx
 
 var _util = __w_pdfjs_require__(1);
 
-var _dom_utils = __w_pdfjs_require__(7);
+var _display_utils = __w_pdfjs_require__(7);
 
 var _font_loader = __w_pdfjs_require__(8);
 
@@ -1294,7 +1198,7 @@ function getDocument(src) {
   }
 
   params.rangeChunkSize = params.rangeChunkSize || DEFAULT_RANGE_CHUNK_SIZE;
-  params.CMapReaderFactory = params.CMapReaderFactory || _dom_utils.DOMCMapReaderFactory;
+  params.CMapReaderFactory = params.CMapReaderFactory || _display_utils.DOMCMapReaderFactory;
   params.ignoreErrors = params.stopAtErrors !== true;
   params.pdfBug = params.pdfBug === true;
   const NativeImageDecoderValues = Object.values(_util.NativeImageDecoding);
@@ -1397,7 +1301,7 @@ function _fetchDocument(worker, source, pdfDataRangeTransport, docId) {
 
   return worker.messageHandler.sendWithPromise('GetDocRequest', {
     docId,
-    apiVersion: '2.1.220',
+    apiVersion: '2.2.71',
     source: {
       data: source.data,
       url: source.url,
@@ -1457,7 +1361,7 @@ const PDFDocumentLoadingTask = function PDFDocumentLoadingTaskClosure() {
     }
 
     then(onFulfilled, onRejected) {
-      (0, _util.deprecated)('PDFDocumentLoadingTask.then method, ' + 'use the `promise` getter instead.');
+      (0, _display_utils.deprecated)('PDFDocumentLoadingTask.then method, ' + 'use the `promise` getter instead.');
       return this.promise.then.apply(this.promise, arguments);
     }
 
@@ -1525,8 +1429,7 @@ class PDFDataRangeTransport {
 exports.PDFDataRangeTransport = PDFDataRangeTransport;
 
 class PDFDocumentProxy {
-  constructor(pdfInfo, transport, loadingTask) {
-    this.loadingTask = loadingTask;
+  constructor(pdfInfo, transport) {
     this._pdfInfo = pdfInfo;
     this._transport = transport;
   }
@@ -1611,6 +1514,10 @@ class PDFDocumentProxy {
     return this._transport.loadingParams;
   }
 
+  get loadingTask() {
+    return this._transport.loadingTask;
+  }
+
 }
 
 exports.PDFDocumentProxy = PDFDocumentProxy;
@@ -1620,7 +1527,7 @@ class PDFPageProxy {
     this.pageIndex = pageIndex;
     this._pageInfo = pageInfo;
     this._transport = transport;
-    this._stats = pdfBug ? new _dom_utils.StatTimer() : _dom_utils.DummyStatTimer;
+    this._stats = pdfBug ? new _display_utils.StatTimer() : _display_utils.DummyStatTimer;
     this._pdfBug = pdfBug;
     this.commonObjs = transport.commonObjs;
     this.objs = new PDFObjects();
@@ -1655,7 +1562,7 @@ class PDFPageProxy {
     rotation = this.rotate,
     dontFlip = false
   } = {}) {
-    return new _dom_utils.PageViewport({
+    return new _display_utils.PageViewport({
       viewBox: this.view,
       scale,
       rotation,
@@ -1689,7 +1596,7 @@ class PDFPageProxy {
     stats.time('Overall');
     this.pendingCleanup = false;
     const renderingIntent = intent === 'print' ? 'print' : 'display';
-    const canvasFactoryInstance = canvasFactory || new _dom_utils.DOMCanvasFactory();
+    const canvasFactoryInstance = canvasFactory || new _display_utils.DOMCanvasFactory();
     const webGLContext = new _webgl.WebGLContext({
       enable: enableWebGL
     });
@@ -1912,8 +1819,8 @@ class PDFPageProxy {
     this.objs.clear();
     this.annotationsPromise = null;
 
-    if (resetStats && this._stats instanceof _dom_utils.StatTimer) {
-      this._stats = new _dom_utils.StatTimer();
+    if (resetStats && this._stats instanceof _display_utils.StatTimer) {
+      this._stats = new _display_utils.StatTimer();
     }
 
     this.pendingCleanup = false;
@@ -1949,7 +1856,7 @@ class PDFPageProxy {
   }
 
   get stats() {
-    return this._stats instanceof _dom_utils.StatTimer ? this._stats : null;
+    return this._stats instanceof _display_utils.StatTimer ? this._stats : null;
   }
 
 }
@@ -2092,7 +1999,7 @@ const PDFWorker = function PDFWorkerClosure() {
     }
 
     const loader = fakeWorkerFilesLoader || function () {
-      return (0, _dom_utils.loadScript)(getWorkerSrc()).then(function () {
+      return (0, _display_utils.loadScript)(getWorkerSrc()).then(function () {
         return window.pdfjsWorker.WorkerMessageHandler;
       });
     };
@@ -2478,10 +2385,9 @@ class WorkerTransport {
     messageHandler.on('GetDoc', function ({
       pdfInfo
     }) {
-      this.numPages = pdfInfo.numPages;
-      this.pdfDocument = new PDFDocumentProxy(pdfInfo, this, loadingTask);
+      this._numPages = pdfInfo.numPages;
 
-      loadingTask._capability.resolve(this.pdfDocument);
+      loadingTask._capability.resolve(new PDFDocumentProxy(pdfInfo, this));
     }, this);
     messageHandler.on('PasswordRequest', function (exception) {
       this._passwordCapability = (0, _util.createPromiseCapability)();
@@ -2669,11 +2575,11 @@ class WorkerTransport {
         return;
       }
 
-      const page = this.pageCache[data.pageNum - 1];
+      const page = this.pageCache[data.pageIndex];
       const intentState = page.intentStates[data.intent];
 
       if (intentState.displayReadyCapability) {
-        intentState.displayReadyCapability.reject(data.error);
+        intentState.displayReadyCapability.reject(new Error(data.error));
       } else {
         throw new Error(data.error);
       }
@@ -2706,15 +2612,17 @@ class WorkerTransport {
         const img = new Image();
 
         img.onload = function () {
-          const width = img.width;
-          const height = img.height;
+          const {
+            width,
+            height
+          } = img;
           const size = width * height;
           const rgbaLength = size * 4;
           const buf = new Uint8ClampedArray(size * components);
-          const tmpCanvas = document.createElement('canvas');
+          let tmpCanvas = document.createElement('canvas');
           tmpCanvas.width = width;
           tmpCanvas.height = height;
-          const tmpCtx = tmpCanvas.getContext('2d');
+          let tmpCtx = tmpCanvas.getContext('2d');
           tmpCtx.drawImage(img, 0, 0);
           const data = tmpCtx.getImageData(0, 0, width, height).data;
 
@@ -2735,6 +2643,10 @@ class WorkerTransport {
             width,
             height
           });
+          tmpCanvas.width = 0;
+          tmpCanvas.height = 0;
+          tmpCanvas = null;
+          tmpCtx = null;
         };
 
         img.onerror = function () {
@@ -2772,7 +2684,7 @@ class WorkerTransport {
   }
 
   getPage(pageNumber) {
-    if (!Number.isInteger(pageNumber) || pageNumber <= 0 || pageNumber > this.numPages) {
+    if (!Number.isInteger(pageNumber) || pageNumber <= 0 || pageNumber > this._numPages) {
       return Promise.reject(new Error('Invalid page request'));
     }
 
@@ -2962,7 +2874,7 @@ class RenderTask {
   }
 
   then(onFulfilled, onRejected) {
-    (0, _util.deprecated)('RenderTask.then method, use the `promise` getter instead.');
+    (0, _display_utils.deprecated)('RenderTask.then method, use the `promise` getter instead.');
     return this.promise.then.apply(this.promise, arguments);
   }
 
@@ -3048,7 +2960,7 @@ const InternalRenderTask = function InternalRenderTaskClosure() {
       }
     }
 
-    cancel() {
+    cancel(error = null) {
       this.running = false;
       this.cancelled = true;
 
@@ -3060,7 +2972,7 @@ const InternalRenderTask = function InternalRenderTaskClosure() {
         canvasInRendering.delete(this._canvas);
       }
 
-      this.callback(new _dom_utils.RenderingCancelledException('Rendering cancelled, page ' + this.pageNumber, 'canvas'));
+      this.callback(error || new _display_utils.RenderingCancelledException(`Rendering cancelled, page ${this.pageNumber}`, 'canvas'));
     }
 
     operatorListChanged() {
@@ -3100,10 +3012,10 @@ const InternalRenderTask = function InternalRenderTaskClosure() {
     _scheduleNext() {
       if (this._useRequestAnimationFrame) {
         window.requestAnimationFrame(() => {
-          this._nextBound().catch(this.callback);
+          this._nextBound().catch(this.cancel.bind(this));
         });
       } else {
-        Promise.resolve().then(this._nextBound).catch(this.callback);
+        Promise.resolve().then(this._nextBound).catch(this.cancel.bind(this));
       }
     }
 
@@ -3134,9 +3046,9 @@ const InternalRenderTask = function InternalRenderTaskClosure() {
   return InternalRenderTask;
 }();
 
-const version = '2.1.220';
+const version = '2.2.71';
 exports.version = version;
-const build = 'ca472be4';
+const build = '80135378';
 exports.build = build;
 
 /***/ }),
@@ -3151,7 +3063,10 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.addLinkAttributes = addLinkAttributes;
 exports.getFilenameFromUrl = getFilenameFromUrl;
+exports.isFetchSupported = isFetchSupported;
+exports.isValidFetchUrl = isValidFetchUrl;
 exports.loadScript = loadScript;
+exports.deprecated = deprecated;
 exports.DummyStatTimer = exports.StatTimer = exports.DOMSVGFactory = exports.DOMCMapReaderFactory = exports.DOMCanvasFactory = exports.DEFAULT_LINK_REL = exports.LinkTarget = exports.RenderingCancelledException = exports.PageViewport = void 0;
 
 var _util = __w_pdfjs_require__(1);
@@ -3163,11 +3078,11 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 class DOMCanvasFactory {
   create(width, height) {
     if (width <= 0 || height <= 0) {
-      throw new Error('invalid canvas size');
+      throw new Error('Invalid canvas size');
     }
 
-    let canvas = document.createElement('canvas');
-    let context = canvas.getContext('2d');
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
     canvas.width = width;
     canvas.height = height;
     return {
@@ -3178,11 +3093,11 @@ class DOMCanvasFactory {
 
   reset(canvasAndContext, width, height) {
     if (!canvasAndContext.canvas) {
-      throw new Error('canvas is not specified');
+      throw new Error('Canvas is not specified');
     }
 
     if (width <= 0 || height <= 0) {
-      throw new Error('invalid canvas size');
+      throw new Error('Invalid canvas size');
     }
 
     canvasAndContext.canvas.width = width;
@@ -3191,7 +3106,7 @@ class DOMCanvasFactory {
 
   destroy(canvasAndContext) {
     if (!canvasAndContext.canvas) {
-      throw new Error('canvas is not specified');
+      throw new Error('Canvas is not specified');
     }
 
     canvasAndContext.canvas.width = 0;
@@ -3213,53 +3128,38 @@ class DOMCMapReaderFactory {
     this.isCompressed = isCompressed;
   }
 
-  fetch({
+  async fetch({
     name
   }) {
     if (!this.baseUrl) {
-      return Promise.reject(new Error('The CMap "baseUrl" parameter must be specified, ensure that ' + 'the "cMapUrl" and "cMapPacked" API parameters are provided.'));
+      throw new Error('The CMap "baseUrl" parameter must be specified, ensure that ' + 'the "cMapUrl" and "cMapPacked" API parameters are provided.');
     }
 
     if (!name) {
-      return Promise.reject(new Error('CMap name must be specified.'));
+      throw new Error('CMap name must be specified.');
     }
 
-    return new Promise((resolve, reject) => {
-      let url = this.baseUrl + name + (this.isCompressed ? '.bcmap' : '');
-      let request = new XMLHttpRequest();
-      request.open('GET', url, true);
-
-      if (this.isCompressed) {
-        request.responseType = 'arraybuffer';
+    const url = this.baseUrl + name + (this.isCompressed ? '.bcmap' : '');
+    const compressionType = this.isCompressed ? _util.CMapCompressionType.BINARY : _util.CMapCompressionType.NONE;
+    return fetch(url).then(async response => {
+      if (!response.ok) {
+        throw new Error(response.statusText);
       }
 
-      request.onreadystatechange = () => {
-        if (request.readyState !== XMLHttpRequest.DONE) {
-          return;
-        }
+      let cMapData;
 
-        if (request.status === 200 || request.status === 0) {
-          let data;
+      if (this.isCompressed) {
+        cMapData = new Uint8Array((await response.arrayBuffer()));
+      } else {
+        cMapData = (0, _util.stringToBytes)((await response.text()));
+      }
 
-          if (this.isCompressed && request.response) {
-            data = new Uint8Array(request.response);
-          } else if (!this.isCompressed && request.responseText) {
-            data = (0, _util.stringToBytes)(request.responseText);
-          }
-
-          if (data) {
-            resolve({
-              cMapData: data,
-              compressionType: this.isCompressed ? _util.CMapCompressionType.BINARY : _util.CMapCompressionType.NONE
-            });
-            return;
-          }
-        }
-
-        reject(new Error('Unable to load ' + (this.isCompressed ? 'binary ' : '') + 'CMap at: ' + url));
+      return {
+        cMapData,
+        compressionType
       };
-
-      request.send(null);
+    }).catch(reason => {
+      throw new Error(`Unable to load ${this.isCompressed ? 'binary ' : ''}` + `CMap at: ${url}`);
     });
   }
 
@@ -3270,7 +3170,7 @@ exports.DOMCMapReaderFactory = DOMCMapReaderFactory;
 class DOMSVGFactory {
   create(width, height) {
     (0, _util.assert)(width > 0 && height > 0, 'Invalid SVG dimensions');
-    let svg = document.createElementNS(SVG_NS, 'svg:svg');
+    const svg = document.createElementNS(SVG_NS, 'svg:svg');
     svg.setAttribute('version', '1.1');
     svg.setAttribute('width', width + 'px');
     svg.setAttribute('height', height + 'px');
@@ -3302,8 +3202,8 @@ class PageViewport {
     this.rotation = rotation;
     this.offsetX = offsetX;
     this.offsetY = offsetY;
-    let centerX = (viewBox[2] + viewBox[0]) / 2;
-    let centerY = (viewBox[3] + viewBox[1]) / 2;
+    const centerX = (viewBox[2] + viewBox[0]) / 2;
+    const centerY = (viewBox[3] + viewBox[1]) / 2;
     let rotateA, rotateB, rotateC, rotateD;
     rotation = rotation % 360;
     rotation = rotation < 0 ? rotation + 360 : rotation;
@@ -3383,11 +3283,11 @@ class PageViewport {
   }
 
   convertToViewportRectangle(rect) {
-    let tl = _util.Util.applyTransform([rect[0], rect[1]], this.transform);
+    const topLeft = _util.Util.applyTransform([rect[0], rect[1]], this.transform);
 
-    let br = _util.Util.applyTransform([rect[2], rect[3]], this.transform);
+    const bottomRight = _util.Util.applyTransform([rect[2], rect[3]], this.transform);
 
-    return [tl[0], tl[1], br[0], br[1]];
+    return [topLeft[0], topLeft[1], bottomRight[0], bottomRight[1]];
   }
 
   convertToPdfPoint(x, y) {
@@ -3398,7 +3298,7 @@ class PageViewport {
 
 exports.PageViewport = PageViewport;
 
-var RenderingCancelledException = function RenderingCancelledException() {
+const RenderingCancelledException = function RenderingCancelledException() {
   function RenderingCancelledException(msg, type) {
     this.message = msg;
     this.type = type;
@@ -3430,16 +3330,16 @@ function addLinkAttributes(link, {
 
   if (url) {
     const LinkTargetValues = Object.values(LinkTarget);
-    let targetIndex = LinkTargetValues.includes(target) ? target : LinkTarget.NONE;
+    const targetIndex = LinkTargetValues.includes(target) ? target : LinkTarget.NONE;
     link.target = LinkTargetStringMap[targetIndex];
     link.rel = typeof rel === 'string' ? rel : DEFAULT_LINK_REL;
   }
 }
 
 function getFilenameFromUrl(url) {
-  var anchor = url.indexOf('#');
-  var query = url.indexOf('?');
-  var end = Math.min(anchor > 0 ? anchor : url.length, query > 0 ? query : url.length);
+  const anchor = url.indexOf('#');
+  const query = url.indexOf('?');
+  const end = Math.min(anchor > 0 ? anchor : url.length, query > 0 ? query : url.length);
   return url.substring(url.lastIndexOf('/', end) + 1, end);
 }
 
@@ -3480,22 +3380,20 @@ class StatTimer {
   }
 
   toString() {
-    let times = this.times;
     let out = '',
         longest = 0;
 
-    for (let i = 0, ii = times.length; i < ii; ++i) {
-      let name = times[i]['name'];
+    for (const time of this.times) {
+      const name = time.name;
 
       if (name.length > longest) {
         longest = name.length;
       }
     }
 
-    for (let i = 0, ii = times.length; i < ii; ++i) {
-      let span = times[i];
-      let duration = span.end - span.start;
-      out += `${span['name'].padEnd(longest)} ${duration}ms\n`;
+    for (const time of this.times) {
+      const duration = time.end - time.start;
+      out += `${time.name.padEnd(longest)} ${duration}ms\n`;
     }
 
     return out;
@@ -3522,9 +3420,24 @@ class DummyStatTimer {
 
 exports.DummyStatTimer = DummyStatTimer;
 
+function isFetchSupported() {
+  return typeof fetch !== 'undefined' && typeof Response !== 'undefined' && 'body' in Response.prototype && typeof ReadableStream !== 'undefined';
+}
+
+function isValidFetchUrl(url, baseUrl) {
+  try {
+    const {
+      protocol
+    } = baseUrl ? new _util.URL(url, baseUrl) : new _util.URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch (ex) {
+    return false;
+  }
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
-    let script = document.createElement('script');
+    const script = document.createElement('script');
     script.src = src;
     script.onload = resolve;
 
@@ -3534,6 +3447,10 @@ function loadScript(src) {
 
     (document.head || document.documentElement).appendChild(script);
   });
+}
+
+function deprecated(details) {
+  console.log('Deprecated API usage: ' + details);
 }
 
 /***/ }),
@@ -4112,7 +4029,10 @@ function compileType3Glyph(imgData) {
 
       coords.push(p % width1);
       coords.push(p / width1 | 0);
-      --count;
+
+      if (!points[p]) {
+        --count;
+      }
     } while (p0 !== p);
 
     outlines.push(coords);
@@ -5113,7 +5033,9 @@ var CanvasGraphics = function CanvasGraphicsClosure() {
     },
 
     get isFontSubpixelAAEnabled() {
-      var ctx = this.canvasFactory.create(10, 10).context;
+      const {
+        context: ctx
+      } = this.cachedCanvases.getCanvas('isFontSubpixelAAEnabled', 10, 10);
       ctx.scale(1.5, 1);
       ctx.fillText('I', 0, 10);
       var data = ctx.getImageData(0, 0, 10, 10).data;
@@ -8546,6 +8468,14 @@ var renderTextLayer = function renderTextLayerClosure() {
     this._capability = (0, _util.createPromiseCapability)();
     this._renderTimer = null;
     this._bounds = [];
+
+    this._capability.promise.finally(() => {
+      if (this._layoutTextCtx) {
+        this._layoutTextCtx.canvas.width = 0;
+        this._layoutTextCtx.canvas.height = 0;
+        this._layoutTextCtx = null;
+      }
+    });
   }
 
   TextLayerRenderTask.prototype = {
@@ -8554,20 +8484,20 @@ var renderTextLayer = function renderTextLayerClosure() {
     },
 
     cancel: function TextLayer_cancel() {
+      this._canceled = true;
+
       if (this._reader) {
-        this._reader.cancel(new _util.AbortException('text layer task cancelled'));
+        this._reader.cancel(new _util.AbortException('TextLayer task cancelled.'));
 
         this._reader = null;
       }
-
-      this._canceled = true;
 
       if (this._renderTimer !== null) {
         clearTimeout(this._renderTimer);
         this._renderTimer = null;
       }
 
-      this._capability.reject('canceled');
+      this._capability.reject(new Error('TextLayer task cancelled.'));
     },
 
     _processItems(items, styleCache) {
@@ -8770,7 +8700,7 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.AnnotationLayer = void 0;
 
-var _dom_utils = __w_pdfjs_require__(7);
+var _display_utils = __w_pdfjs_require__(7);
 
 var _util = __w_pdfjs_require__(1);
 
@@ -8980,9 +8910,9 @@ class LinkAnnotationElement extends AnnotationElement {
       linkService
     } = this;
     let link = document.createElement('a');
-    (0, _dom_utils.addLinkAttributes)(link, {
+    (0, _display_utils.addLinkAttributes)(link, {
       url: data.url,
-      target: data.newWindow ? _dom_utils.LinkTarget.BLANK : linkService.externalLinkTarget,
+      target: data.newWindow ? _display_utils.LinkTarget.BLANK : linkService.externalLinkTarget,
       rel: linkService.externalLinkRel
     });
 
@@ -9634,7 +9564,7 @@ class FileAttachmentAnnotationElement extends AnnotationElement {
       filename,
       content
     } = this.data.file;
-    this.filename = (0, _dom_utils.getFilenameFromUrl)(filename);
+    this.filename = (0, _display_utils.getFilenameFromUrl)(filename);
     this.content = content;
 
     if (this.linkService.eventBus) {
@@ -9691,7 +9621,7 @@ class AnnotationLayer {
         downloadManager: parameters.downloadManager,
         imageResourcesPath: parameters.imageResourcesPath || '',
         renderInteractiveForms: parameters.renderInteractiveForms || false,
-        svgFactory: new _dom_utils.DOMSVGFactory()
+        svgFactory: new _display_utils.DOMSVGFactory()
       });
 
       if (element.isRenderable) {
@@ -9731,7 +9661,7 @@ exports.SVGGraphics = void 0;
 
 var _util = __w_pdfjs_require__(1);
 
-var _dom_utils = __w_pdfjs_require__(7);
+var _display_utils = __w_pdfjs_require__(7);
 
 var _is_node = _interopRequireDefault(__w_pdfjs_require__(21));
 

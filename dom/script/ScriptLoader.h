@@ -341,12 +341,6 @@ class ScriptLoader final : public nsISupports {
 
   Document* GetDocument() const { return mDocument; }
 
-  /*
-   * Clear the map of loaded modules. Called when a Document object is reused
-   * for a different global.
-   */
-  void ClearModuleMap();
-
  private:
   virtual ~ScriptLoader();
 
@@ -390,8 +384,8 @@ class ScriptLoader final : public nsISupports {
    * Helper function to check the content policy for a given request.
    */
   static nsresult CheckContentPolicy(Document* aDocument, nsISupports* aContext,
-                                     nsIURI* aURI, const nsAString& aType,
-                                     bool aIsPreLoad);
+                                     const nsAString& aType,
+                                     ScriptLoadRequest* aRequest);
 
   /**
    * Start a load for aRequest's URI.
@@ -406,14 +400,6 @@ class ScriptLoader final : public nsISupports {
   nsresult RestartLoad(ScriptLoadRequest* aRequest);
 
   void HandleLoadError(ScriptLoadRequest* aRequest, nsresult aResult);
-
-  static bool BinASTEncodingEnabled() {
-#ifdef JS_BUILD_BINAST
-    return StaticPrefs::dom_script_loader_binast_encoding_enabled();
-#else
-    return false;
-#endif
-  }
 
   /**
    * Process any pending requests asynchronously (i.e. off an event) if there
@@ -538,8 +524,8 @@ class ScriptLoader final : public nsISupports {
   RefPtr<mozilla::GenericPromise> StartFetchingModuleAndDependencies(
       ModuleLoadRequest* aParent, nsIURI* aURI);
 
-  nsresult AssociateSourceElementsForModuleTree(JSContext* aCx,
-                                                ModuleLoadRequest* aRequest);
+  nsresult InitDebuggerDataForModuleTree(JSContext* aCx,
+                                         ModuleLoadRequest* aRequest);
 
   void RunScriptWhenSafe(ScriptLoadRequest* aRequest);
 

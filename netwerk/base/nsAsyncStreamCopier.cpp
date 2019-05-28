@@ -112,14 +112,15 @@ void nsAsyncStreamCopier::Complete(nsresult status) {
   if (observer) {
     LOG(("  calling OnStopRequest [status=%" PRIx32 "]\n",
          static_cast<uint32_t>(status)));
-    observer->OnStopRequest(AsRequest(), ctx, status);
+    observer->OnStopRequest(AsRequest(), status);
   }
 }
 
 void nsAsyncStreamCopier::OnAsyncCopyComplete(void *closure, nsresult status) {
-  nsAsyncStreamCopier *self = (nsAsyncStreamCopier *)closure;
+  // AddRef'd in AsyncCopy. Will be released at the end of the method.
+  RefPtr<nsAsyncStreamCopier> self =
+      dont_AddRef((nsAsyncStreamCopier *)closure);
   self->Complete(status);
-  NS_RELEASE(self);  // addref'd in AsyncCopy
 }
 
 //-----------------------------------------------------------------------------
@@ -328,7 +329,7 @@ nsAsyncStreamCopier::AsyncCopy(nsIRequestObserver *observer, nsISupports *ctx) {
   mIsPending = true;
 
   if (mObserver) {
-    rv = mObserver->OnStartRequest(AsRequest(), nullptr);
+    rv = mObserver->OnStartRequest(AsRequest());
     if (NS_FAILED(rv)) Cancel(rv);
   }
 
@@ -364,9 +365,9 @@ void nsAsyncStreamCopier::AsyncCopyInternal() {
              mMode == NS_ASYNCCOPY_VIA_WRITESEGMENTS);
 
   nsresult rv;
-  // we want to receive progress notifications; release happens in
+  // We want to receive progress notifications; release happens in
   // OnAsyncCopyComplete.
-  NS_ADDREF_THIS();
+  RefPtr<nsAsyncStreamCopier> self = this;
   {
     MutexAutoLock lock(mLock);
     rv = NS_AsyncCopy(mSource, mSink, mTarget, mMode, mChunkSize,
@@ -374,7 +375,9 @@ void nsAsyncStreamCopier::AsyncCopyInternal() {
                       getter_AddRefs(mCopierCtx));
   }
   if (NS_FAILED(rv)) {
-    NS_RELEASE_THIS();
     Cancel(rv);
+    return;  // release self
   }
+
+  Unused << self.forget();  // Will be released in OnAsyncCopyComplete
 }

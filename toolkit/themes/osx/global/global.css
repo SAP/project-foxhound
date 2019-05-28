@@ -8,6 +8,7 @@
 
 %include shared.inc
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
 
 %include ../../shared/global.inc.css
 
@@ -132,13 +133,6 @@ separator.groove[orient="vertical"] {
   margin-right: 0.4em;
 }
 
-.plain {
-  -moz-appearance: none;
-  margin: 0 !important;
-  border: none;
-  padding: 0;
-}
-
 description,
 label {
   cursor: default;
@@ -164,20 +158,12 @@ label[disabled="true"] {
   font-weight: bold;
 }
 
-.monospace {
-  font-family: monospace;
-}
-
 .indent {
   margin-inline-start: 23px;
 }
 
 .box-padded {
   padding: 5px;
-}
-
-.spaced {
-  margin: 3px 5px 4px;
 }
 
 .text-link {
@@ -272,4 +258,3 @@ popupnotificationcontent {
 .popup-internal-box > .scrollbutton-down[disabled="true"] {
   visibility: collapse;
 }
-

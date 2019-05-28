@@ -9,8 +9,8 @@
 // authorization header got added at all and if so it gets removed. This test
 // passes iff both succeeds.
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var notification = "http-on-modify-request";
 
@@ -78,13 +78,13 @@ RequestObserver.prototype = {
 }
 
 var listener = {
-  onStartRequest: function test_onStartR(request, ctx) {},
+  onStartRequest: function test_onStartR(request) {},
 
   onDataAvailable: function test_ODA() {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     if (current_test < (tests.length - 1)) {
       current_test++;
       tests[current_test]();
@@ -117,7 +117,7 @@ function run_test() {
 
 function startAuthHeaderTest() {
   var chan = makeChan(authCredsURL);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -129,7 +129,7 @@ function removeAuthHeaderTest() {
   var chan = makeChan(authURL);
   // Indicating that the request is coming from the second test.
   chan.setRequestHeader("Test", "1", false);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }

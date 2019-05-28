@@ -8,8 +8,6 @@
  * Basic functionality test, from the client programmer's POV.
  */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 XPCOMUtils.defineLazyGetter(this, "port", function() {
   return srv.identity.primaryPort;
 });
@@ -60,7 +58,7 @@ function commonCheck(ch) {
   Assert.ok(!ch.isPrivateResponse());
 }
 
-function start_objHandler(ch, cx) {
+function start_objHandler(ch) {
   commonCheck(ch);
 
   Assert.equal(ch.responseStatus, 200);
@@ -75,7 +73,7 @@ function start_objHandler(ch, cx) {
             reqMin.value == respMin.value);
 }
 
-function start_functionHandler(ch, cx) {
+function start_functionHandler(ch) {
   commonCheck(ch);
 
   Assert.equal(ch.responseStatus, 404);
@@ -90,14 +88,14 @@ function start_functionHandler(ch, cx) {
   Assert.ok(respMaj.value == 1 && respMin.value == 1);
 }
 
-function start_non_existent_path(ch, cx) {
+function start_non_existent_path(ch) {
   commonCheck(ch);
 
   Assert.equal(ch.responseStatus, 404);
   Assert.ok(!ch.requestSucceeded);
 }
 
-function start_lots_of_headers(ch, cx) {
+function start_lots_of_headers(ch) {
   commonCheck(ch);
 
   Assert.equal(ch.responseStatus, 200);
