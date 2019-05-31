@@ -2213,6 +2213,8 @@ void CreateDependentString::generate(MacroAssembler& masm,
     }
     masm.bind(&joins_[kind]);
     masm.store32(Imm32(flags), Address(string_, JSString::offsetOfFlags()));
+    // TaintFox: initialize taint information.
+    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
   };
 
   // Compute the string length.
@@ -2291,16 +2293,16 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
 
-    // TaintFox: initialize taint information.
-    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
-
     masm.push(string_);
     masm.push(base);
 
     // Adjust the start index address for the above pushes.
     MOZ_ASSERT(startIndexAddress.base == masm.getStackPointer());
     BaseIndex newStartIndexAddress = startIndexAddress;
-    newStartIndexAddress.offset += 2 * sizeof(void*);
+    // Taintfox: number of inline chars has been increased to 3 (upstream = 2)
+    // to ensure the JSString total size is divisible by the gc::CellSize.
+    // see StringType.h for more details
+    newStartIndexAddress.offset += 3 * sizeof(void*);
 
     // Load chars pointer for the new string.
     masm.loadInlineStringCharsForStore(string_, string_);
@@ -9220,6 +9222,9 @@ void CodeGenerator::visitFromCodePoint(LFromCodePoint* lir) {
       masm.newGCString(output, temp1, ool->entry(),
                        gen->stringsCanBeInNursery());
       masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
+
+      // TaintFox: initialize taint information.
+      masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
     }
 
     Label isSupplementary;

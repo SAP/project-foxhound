@@ -164,14 +164,15 @@ static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
  * at least X (e.g., ensureLinear will change a JSRope to be a JSFlatString).
  *
  * TaintFox: the JSString class (and all subclasses) are taint aware.
+ * TODO: check if it would be better to move TaintableString to later in
+ * the Data struct.
  */
 // clang-format on
 
-class JSString : public js::gc::Cell, public TaintableString {
+class JSString : public js::gc::Cell {
  protected:
   // TaintFox: We add another pointer size of inline chars here to make the total size of JString
   // evenly divisible by the gc::CellSize on 32 bit platforms.
-  // Reduced from 3 to 2 on 64 bit build
   static const size_t NUM_INLINE_CHARS_LATIN1 =
       3 * sizeof(void*) / sizeof(JS::Latin1Char);
   static const size_t NUM_INLINE_CHARS_TWO_BYTE =
@@ -194,6 +195,10 @@ class JSString : public js::gc::Cell, public TaintableString {
     // Additional storage for length if |flags_| is too small to fit both.
     uint32_t length_; /* JSString */
 #endif
+
+    // Taintfox: add the taint information
+    StringTaint taint_;
+
     union {
       union {
         /* JS(Fat)InlineString */
@@ -216,6 +221,7 @@ class JSString : public js::gc::Cell, public TaintableString {
         } u3;
       } s;
     };
+
   } d;
 
  public:
@@ -390,8 +396,11 @@ class JSString : public js::gc::Cell, public TaintableString {
         EXTERNAL_FLAGS == String::EXTERNAL_FLAGS,
         "shadow::String::EXTERNAL_FLAGS must match JSString::EXTERNAL_FLAGS");
     /* TaintFox: taint info offset assertion. */
-    static_assert(offsetof(JSString, taint_) == offsetof(String, taint),
+    static_assert(offsetof(JSString, d.taint_) == offsetof(String, taint),
                   "shadow::String taint offset must match JSString");
+    static_assert(offsetof(JSString, d.flags_) == 0x0,
+                  "JSString flags must be at start of memory for GC!");
+
   }
 
   /* Avoid lame compile errors in JSRope::flatten */
@@ -412,8 +421,7 @@ class JSString : public js::gc::Cell, public TaintableString {
         js::TaintFoxReport("Warning: cannot taint atomized string!");
         return;
       }
-
-      TaintableString::setTaint(taint);
+      d.taint_ = taint;
     }
   }
 
@@ -423,9 +431,33 @@ class JSString : public js::gc::Cell, public TaintableString {
         js::TaintFoxReport("Warning: cannot taint atomized string!");
         return;
       }
-      TaintableString::setTaint(taint);
+      d.taint_ = taint;
     }
   }
+
+  // Direct access to the associated taint information.
+  const StringTaint& taint() const { return d.taint_; }
+  const StringTaint& Taint() const { return d.taint_; }
+  StringTaint& taint() { return d.taint_; }
+  StringTaint& Taint() { return d.taint_; }
+
+  // A string is tainted if at least one of its characters is tainted.
+  bool isTainted() const { return d.taint_.hasTaint(); }
+
+  // Remove all taint information associated with this string.
+  void clearTaint() { d.taint_.clear(); }
+
+  // Initialize the taint information.
+  //
+  // This can be used instead of the public constructor, as done by JSString
+  // and its derived classes.
+  void initTaint() { new (&d.taint_) StringTaint(); }
+
+  // Finalize this instance.
+  //
+  // Same as above, this can be used instead of the destructor. It guarantees
+  // that all owned resources of this instance are released.
+  void finalizeTaint() { d.taint_.~StringTaint(); }
 
   MOZ_ALWAYS_INLINE
   uint32_t flags() const { return uint32_t(d.flags_); }
@@ -621,7 +653,7 @@ class JSString : public js::gc::Cell, public TaintableString {
 
   /* TaintFox: taint property offset calculation. */
   static size_t offsetOfTaint() {
-    return offsetof(JSString, taint_);
+    return offsetof(JSString, d.taint_);
   }
 
   // Offsets for direct field from jit code. A number of places directly

@@ -200,16 +200,13 @@ struct String {
   static const uint32_t PERMANENT_ATOM_MASK = NON_ATOM_BIT | JS_BIT(8);
   static const uint32_t PERMANENT_ATOM_FLAGS = JS_BIT(8);
 
-  // TaintFox: make shadow::String compatible with JSString.
-  //
-  // Superclasses come first in the object layout, thus the taint
-  // property will be at offset zero in JSString.
-  StringTaint taint;
-
   uintptr_t flags_;
 #if JS_BITS_PER_WORD == 32
   uint32_t length_;
 #endif
+
+  // TaintFox: make shadow::String compatible with JSString.
+  StringTaint taint;
 
   union {
     const JS::Latin1Char* nonInlineCharsLatin1;

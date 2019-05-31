@@ -41,6 +41,7 @@ enum nsStringBufferCanary : uint32_t {
  * count is 1.
  *
  * TaintFox: nsStringBuffer is taint aware.
+ * TODO: check if this would be better as a member, rather than inheriting
  */
 class nsStringBuffer : public TaintableString {
  private:

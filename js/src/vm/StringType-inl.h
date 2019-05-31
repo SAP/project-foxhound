@@ -459,7 +459,7 @@ MOZ_ALWAYS_INLINE void JSString::finalize(js::FreeOp* fop) {
   }
 
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 inline void JSFlatString::finalize(js::FreeOp* fop) {
@@ -471,7 +471,7 @@ inline void JSFlatString::finalize(js::FreeOp* fop) {
   }
 
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 inline void JSFatInlineString::finalize(js::FreeOp* fop) {
@@ -480,7 +480,7 @@ inline void JSFatInlineString::finalize(js::FreeOp* fop) {
 
   // Nothing to do.
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 inline void JSAtom::finalize(js::FreeOp* fop) {
@@ -493,7 +493,7 @@ inline void JSAtom::finalize(js::FreeOp* fop) {
   }
 
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 inline void js::FatInlineAtom::finalize(js::FreeOp* fop) {
@@ -502,7 +502,7 @@ inline void js::FatInlineAtom::finalize(js::FreeOp* fop) {
 
   // Nothing to do.
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 inline void JSExternalString::finalize(js::FreeOp* fop) {
@@ -518,7 +518,7 @@ inline void JSExternalString::finalize(js::FreeOp* fop) {
   fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));
 
   // TaintFox
-  TaintableString::finalize();
+  finalizeTaint();
 }
 
 #endif /* vm_StringType_inl_h */
