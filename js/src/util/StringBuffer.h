@@ -77,7 +77,9 @@ class StringBuffer : public TaintableString {
 
  public:
   explicit StringBuffer(JSContext* cx)
-      : cx(cx)
+      : TaintableString()
+        ,
+        cx(cx)
 #ifdef DEBUG
         ,
         hasEnsuredTwoByteChars_(false)
@@ -101,6 +103,7 @@ class StringBuffer : public TaintableString {
     } else {
       twoByteChars().clear();
     }
+    taint().clear();
   }
   MOZ_MUST_USE bool reserve(size_t len) {
     if (len > reserved_) {

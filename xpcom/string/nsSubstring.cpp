@@ -228,7 +228,7 @@ already_AddRefed<nsStringBuffer> nsStringBuffer::Alloc(size_t aSize) {
 
     hdr->mRefCount = 1;
     hdr->mStorageSize = aSize;
-    hdr->InitTaint();         // TaintFox: initialize taint information.
+    hdr->initTaint();         // TaintFox: initialize taint information.
 #ifdef STRING_BUFFER_CANARY
     hdr->mCanary = CANARY_OK;
 #endif
@@ -254,10 +254,14 @@ nsStringBuffer* nsStringBuffer::Realloc(nsStringBuffer* aHdr, size_t aSize) {
   // logging will claim we've leaked all sorts of stuff.
   NS_LOG_RELEASE(aHdr, 0, "nsStringBuffer");
 
+  aHdr->clearTaint();
+  aHdr->finalize();
+
   aHdr = (nsStringBuffer*)realloc(aHdr, sizeof(nsStringBuffer) + aSize);
   if (aHdr) {
     NS_LOG_ADDREF(aHdr, 1, "nsStringBuffer", sizeof(*aHdr));
     aHdr->mStorageSize = aSize;
+    aHdr->InitTaint();
   }
 
   return aHdr;
@@ -274,8 +278,7 @@ nsStringBuffer* nsStringBuffer::FromString(const nsAString& aStr) {
   nsStringBuffer *buf = FromData(accessor->data());
 
   // TaintFox: copy taint into StringBuffer.
-  if (aStr.isTainted())
-    buf->AssignTaint(aStr.Taint());
+  buf->AssignTaint(aStr.Taint());
 
   return buf;
 }
@@ -291,8 +294,7 @@ nsStringBuffer* nsStringBuffer::FromString(const nsACString& aStr) {
   nsStringBuffer *buf = FromData(accessor->data());
 
   // TaintFox: copy taint into StringBuffer.
-  if (aStr.isTainted())
-    buf->AssignTaint(aStr.Taint());
+  buf->AssignTaint(aStr.Taint());
 
   return buf;
 }

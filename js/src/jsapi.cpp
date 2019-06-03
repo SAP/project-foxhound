@@ -4722,7 +4722,7 @@ JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len),
-                              NullHandleValue, vp, nullptr);
+                              NullHandleValue, vp, EmptyTaint);
 }
 
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
@@ -4737,7 +4737,7 @@ JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, const char16_t* chars,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len),
-                              reviver, vp, nullptr);
+                              reviver, vp, EmptyTaint);
 }
 
 JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, HandleString str,
@@ -4754,9 +4754,9 @@ JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, HandleString str,
 
   return stableChars.isLatin1()
              ? ParseJSONWithReviver(cx, stableChars.latin1Range(), reviver,
-                                    vp, &str->taint())
+                                    vp, str->taint())
              : ParseJSONWithReviver(cx, stableChars.twoByteRange(), reviver,
-                                    vp, &str->taint());
+                                    vp, str->taint());
 }
 
 /************************************************************************/

@@ -127,10 +127,10 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
         return token(OOM);
       }
       // TaintFox: propagate taint.
-      if (ST != JSONParser::PropertyName && inputTaint) {
+      if (ST != JSONParser::PropertyName && inputTaint.hasTaint()) {
         // The 'if' is currently required since we don't handle atom tainting.
         ptrdiff_t offset = start - begin;
-        StringTaint taint = StringTaint::substr(*inputTaint, offset, offset + length);
+        StringTaint taint = StringTaint::substr(inputTaint, offset, offset + length);
         str->setTaint(taint.extend(TaintOperation("JSON.parse")));
       }
       return stringToken(str);
@@ -154,8 +154,8 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
   StringBuffer buffer(cx);
   do {
     // TaintFox: add taint information for next chunk of characters.
-    if (inputTaint && inputTaint->hasTaint()) {
-        buffer.appendTaintAt(buffer.length(), inputTaint->subtaint(start - begin, current - begin));
+    if (inputTaint.hasTaint()) {
+      buffer.appendTaintAt(buffer.length(), inputTaint.subtaint(start - begin, current - begin));
     }
 
     if (start < current && !buffer.append(start.get(), current.get())) {
@@ -250,8 +250,8 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
     }
 
     // TaintFox: add taint information for next output character.
-    if (inputTaint && inputTaint->hasTaint()) {
-        if (auto flow = inputTaint->at(current - 1 - begin))
+    if (inputTaint.hasTaint()) {
+        if (auto flow = inputTaint.at(current - 1 - begin))
             buffer.taint().append(TaintRange(buffer.length(), buffer.length() + 1, *flow));
     }
 

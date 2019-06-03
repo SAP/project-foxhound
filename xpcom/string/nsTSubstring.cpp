@@ -491,6 +491,9 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
     return true;
   }
 
+  // Taintfox: clear Taint
+  this->mTaint.clear();
+
   if (aStr.mDataFlags & DataFlags::REFCOUNTED) {
     // nice! we can avoid a string copy :-)
 
@@ -515,7 +518,6 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
     AssignLiteral(aStr.mData, aStr.mLength);
 
     // TaintFox: propagate taint information.
-    // Do we need to move here too?
     this->mTaint = aStr.mTaint;
 
     return true;
@@ -558,6 +560,9 @@ bool nsTSubstring<T>::Assign(self_type&& aStr, const fallible_t& aFallible) {
 
     ::ReleaseData(this->mData, this->mDataFlags);
 
+    // Taintfox: clear Taint
+    this->mTaint.clear();
+
     SetData(aStr.mData, aStr.mLength, aStr.mDataFlags);
     // Taintfox: do not make a new copy, just copy references
     this->mTaint = std::move(aStr.mTaint);
@@ -598,7 +603,6 @@ bool nsTSubstring<T>::Assign(const substring_tuple_type& aTuple,
   }
 
   aTuple.WriteTo(this->mData, length);
-
 
   // TaintFox: propagate taint.
   this->mTaint = aTuple.Taint();

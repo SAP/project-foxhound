@@ -2213,8 +2213,6 @@ void CreateDependentString::generate(MacroAssembler& masm,
     }
     masm.bind(&joins_[kind]);
     masm.store32(Imm32(flags), Address(string_, JSString::offsetOfFlags()));
-    // TaintFox: initialize taint information.
-    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
   };
 
   // Compute the string length.
@@ -2231,6 +2229,12 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
   masm.bind(&nonEmpty);
 
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(base, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 failure_);
+
   // Complete matches use the base string.
   Label nonBaseStringMatch;
   masm.branchTest32(Assembler::NonZero, temp2_, temp2_, &nonBaseStringMatch);
@@ -2240,12 +2244,6 @@ void CreateDependentString::generate(MacroAssembler& masm,
   masm.jump(&done);
 
   masm.bind(&nonBaseStringMatch);
-
-  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
-  masm.branchPtr(Assembler::NotEqual,
-                 Address(base, JSString::offsetOfTaint()),
-                 ImmPtr(nullptr),
-                 failure_);
 
   Label notInline;
 
@@ -2293,16 +2291,16 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
 
+    // TaintFox: initialize taint information.
+    masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
+
     masm.push(string_);
     masm.push(base);
 
     // Adjust the start index address for the above pushes.
     MOZ_ASSERT(startIndexAddress.base == masm.getStackPointer());
     BaseIndex newStartIndexAddress = startIndexAddress;
-    // Taintfox: number of inline chars has been increased to 3 (upstream = 2)
-    // to ensure the JSString total size is divisible by the gc::CellSize.
-    // see StringType.h for more details
-    newStartIndexAddress.offset += 3 * sizeof(void*);
+    newStartIndexAddress.offset += 2 * sizeof(void*);
 
     // Load chars pointer for the new string.
     masm.loadInlineStringCharsForStore(string_, string_);
@@ -8911,9 +8909,6 @@ JitCode* JitRealm::generateStringConcatStub(JSContext* cx) {
   // stringsCanBeInNursery. (As a result, no post barriers are needed below.)
   masm.newGCString(output, temp3, &failure, stringsCanBeInNursery);
 
-  // TaintFox: initialize taint information.
-  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
-
   // Store rope length and flags. temp1 still holds the result of AND'ing the
   // lhs and rhs flags, so we just have to clear the other flags and set
   // NON_ATOM_BIT to get our rope flags (Latin1 if both lhs and rhs are
@@ -8924,6 +8919,9 @@ JitCode* JitRealm::generateStringConcatStub(JSContext* cx) {
   masm.or32(Imm32(JSString::NON_ATOM_BIT), temp1);
   masm.store32(temp1, Address(output, JSString::offsetOfFlags()));
   masm.store32(temp2, Address(output, JSString::offsetOfLength()));
+
+  // TaintFox: initialize taint information.
+  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 
   // Store left and right nodes.
   masm.storeRopeChildren(lhs, rhs, output);

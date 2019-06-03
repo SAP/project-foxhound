@@ -425,16 +425,6 @@ class JSString : public js::gc::Cell {
     }
   }
 
-  void setTaint(StringTaint&& taint) {
-    if (length() > 0 && taint.hasTaint()) {
-      if (isAtom()) {
-        js::TaintFoxReport("Warning: cannot taint atomized string!");
-        return;
-      }
-      d.taint_ = taint;
-    }
-  }
-
   // Direct access to the associated taint information.
   const StringTaint& taint() const { return d.taint_; }
   const StringTaint& Taint() const { return d.taint_; }

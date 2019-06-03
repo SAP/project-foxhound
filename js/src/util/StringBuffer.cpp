@@ -94,6 +94,8 @@ static JSFlatString* FinishStringFlat(JSContext* cx, StringBuffer& sb,
 
   // TaintFox: Propagate taint to newly created string.
   str->setTaint(sb.taint());
+  // Taintfox: clear the stringbuffer taint information
+  sb.clearTaint();
 
   return str;
 }
@@ -149,7 +151,10 @@ JSAtom* StringBuffer::finishAtom() {
 
   JSAtom* atom = AtomizeChars(cx, twoByteChars().begin(), len);
   twoByteChars().clear();
+
   // TaintFox: We loose taint here, can't taint atoms..
+  this->clearTaint();
+
   return atom;
 }
 

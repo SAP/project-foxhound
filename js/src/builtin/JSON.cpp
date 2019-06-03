@@ -58,10 +58,13 @@ static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               RangedPtr<DstCharT> dstPtr) // dstPtr after post-incrementation
 {
   // TODO: probably not very efficient as we are adding character wise to the the taint ranges
-  if (auto flow = srcTaint.at(std::distance(srcBegin.get(), src.get())))
-    dstTaint.append(TaintRange(std::distance(dstBegin.get(), dstCharBegin.get()),
-                               std::distance(dstBegin.get(), dstPtr.get()),
-                               *flow));
+  if (const TaintFlow* flow = srcTaint.at(src - srcBegin)) {
+    if ((dstCharBegin >= dstBegin) && (dstPtr >= dstBegin)) {
+      dstTaint.append(TaintRange(dstCharBegin - dstBegin,
+                                 dstPtr - dstBegin,
+                                 *flow));
+    }
+  }
 }
 
 /* ES5 15.12.3 Quote.
@@ -95,6 +98,9 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
         0,   0,  '\\', // rest are all zeros
       // clang-format on
   };
+
+  // Clear any existing taint information
+  dstTaint.clear();
 
   /* Step 1. */
   *dstPtr++ = '"';
@@ -1039,7 +1045,7 @@ template <typename CharT>
 bool js::ParseJSONWithReviver(JSContext* cx,
                               const mozilla::Range<const CharT> chars,
                               HandleValue reviver, MutableHandleValue vp,
-                              const StringTaint* taint) {
+                              const StringTaint& taint) {
   /* 15.12.2 steps 2-3. */
   Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, taint));
   if (!parser.parse(vp)) {
@@ -1055,11 +1061,11 @@ bool js::ParseJSONWithReviver(JSContext* cx,
 
 template bool js::ParseJSONWithReviver(
     JSContext* cx, const mozilla::Range<const Latin1Char> chars,
-    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+    HandleValue reviver, MutableHandleValue vp, const StringTaint& taint);
 
 template bool js::ParseJSONWithReviver(
     JSContext* cx, const mozilla::Range<const char16_t> chars,
-    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+    HandleValue reviver, MutableHandleValue vp, const StringTaint& taint);
 
 static bool json_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -1093,8 +1099,8 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
   /* Steps 2-5. */
   // TaintFox
   return linearChars.isLatin1()
-           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), &linear->taint())
-           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), &linear->taint());
+           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), linear->taint())
+           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), linear->taint());
 }
 
 /* ES6 24.3.2. */
