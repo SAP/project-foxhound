@@ -1,4 +1,4 @@
-# Taintfox -- a taint-aware Firefox
+# ![Taintfox Logo](https://github.wdf.sap.corp/WebSecResearch/taintfox/raw/master/browser/branding/taintfox/default48.png) Taintfox
 
 You have found Taintfox, a modified Firefox capable of tracking taint information as data flows through the browser.
 
