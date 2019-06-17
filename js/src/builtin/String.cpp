@@ -3679,6 +3679,8 @@ bool js::str_concat(JSContext* cx, unsigned argc, Value* vp) {
       }
       str = strRoot;
     }
+    // TaintFox: add string arguments
+    arguments.push_back(taintarg(cx, RootedString(cx, argStr)));
 
     JSString* next = ConcatStrings<NoGC>(cx, str, argStr);
     if (next) {
@@ -3690,7 +3692,7 @@ bool js::str_concat(JSContext* cx, unsigned argc, Value* vp) {
         return false;
       }
     }
-    arguments.push_back(taintarg(cx, RootedString(cx, argStr)));
+
   }
 
   // TaintFox: add concat operation to taint flow.

@@ -1089,6 +1089,10 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  // Taintfox: save the taint in a local variable
+  // Calling linear->taint() later is not valid
+  StringTaint taint = linear->taint();
+
   AutoStableStringChars linearChars(cx);
   if (!linearChars.init(cx, linear)) {
     return false;
@@ -1097,10 +1101,10 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
   HandleValue reviver = args.get(1);
 
   /* Steps 2-5. */
-  // TaintFox
+  // TaintFox - pass the taint to the parser
   return linearChars.isLatin1()
-           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), linear->taint())
-           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), linear->taint());
+           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), taint)
+           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), taint);
 }
 
 /* ES6 24.3.2. */

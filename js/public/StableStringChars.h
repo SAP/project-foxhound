@@ -53,6 +53,7 @@ class MOZ_STACK_CLASS JS_FRIEND_API AutoStableStringChars final {
   // TODO: check this should be sizeof(void*)
   static const size_t InlineCapacity = 24 + sizeof(void*);
 
+
   /* Ensure the string is kept alive while we're using its chars. */
   Rooted<JSString*> s_;
   union MOZ_INIT_OUTSIDE_CTOR {

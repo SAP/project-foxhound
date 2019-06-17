@@ -12,10 +12,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
-#include "Taint.h"
-// Taintfox: need to add TaintString to struct String, where is it?
-// and AutoStableStringChars
-
 #include "jspubtd.h"
 
 #include "js/CallArgs.h"

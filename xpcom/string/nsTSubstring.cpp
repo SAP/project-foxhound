@@ -378,11 +378,13 @@ bool nsTSubstring<T>::Assign(char_type aChar, const fallible_t&) {
   if (MOZ_UNLIKELY(r.isErr())) {
     return false;
   }
-  // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->isTainted());
 
   *this->mData = aChar;
   FinishBulkWriteImpl(1);
+
+  // TaintFox: clear taint
+  this->mTaint.clear();
+
   return true;
 }
 
@@ -420,11 +422,13 @@ bool nsTSubstring<T>::Assign(const char_type* aData, size_type aLength,
   if (MOZ_UNLIKELY(r.isErr())) {
     return false;
   }
-  // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->isTainted());
 
   char_traits::copy(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
+
+  // TaintFox: clear taint
+  this->mTaint.clear();
+
   return true;
 }
 
@@ -452,11 +456,13 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
   if (MOZ_UNLIKELY(r.isErr())) {
     return false;
   }
-  // TaintFox: cannot be tainted anymore.
-  MOZ_ASSERT(!this->isTainted());
 
   char_traits::copyASCII(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
+
+  // TaintFox: clear taint
+  this->mTaint.clear();
+
   return true;
 }
 
@@ -465,7 +471,7 @@ void nsTSubstring<T>::AssignLiteral(const char_type* aData, size_type aLength) {
   ::ReleaseData(this->mData, this->mDataFlags);
   SetData(const_cast<char_type*>(aData), aLength,
           DataFlags::TERMINATED | DataFlags::LITERAL);
-  SetTaint(EmptyTaint);
+  this->mTaint.clear();
 }
 
 template <typename T>
@@ -616,8 +622,8 @@ void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
   if (aData) {
     ::ReleaseData(this->mData, this->mDataFlags);
 
-    // TaintFox: remove taint here. Caller is responsible to propagate taint in
-    // this case.
+    // TaintFox: remove taint here.
+    // Caller is responsible to propagate taint in this case.
     this->mTaint.clear();
 
     if (aLength == size_type(-1)) {
@@ -795,6 +801,9 @@ bool nsTSubstring<T>::Append(char_type aChar, const fallible_t& aFallible) {
   }
   this->mData[oldLen] = aChar;
   FinishBulkWriteImpl(newLen);
+
+  // Taintfox: single chars aren't tainted, so might loose taint info here
+
   return true;
 }
 
@@ -835,6 +844,9 @@ bool nsTSubstring<T>::Append(const char_type* aData, size_type aLength,
   }
   char_traits::copy(this->mData + oldLen, aData, aLength);
   FinishBulkWriteImpl(newLen.value());
+
+  // Taintfox: might loose taint info here
+
   return true;
 }
 
