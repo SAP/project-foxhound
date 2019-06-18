@@ -7,6 +7,13 @@ interface nsIDocShell;
 
 [Exposed=Window, ChromeOnly]
 interface BrowsingContext {
+  static BrowsingContext? get(unsigned long long aId);
+
+  BrowsingContext? findChildWithName(DOMString name);
+  BrowsingContext? findWithName(DOMString name);
+
+  readonly attribute DOMString name;
+
   readonly attribute BrowsingContext? parent;
 
   sequence<BrowsingContext> getChildren();
@@ -16,11 +23,18 @@ interface BrowsingContext {
   readonly attribute unsigned long long id;
 
   readonly attribute BrowsingContext? opener;
+
+  readonly attribute BrowsingContextGroup group;
 };
 
 [Exposed=Window, ChromeOnly]
-interface ChromeBrowsingContext : BrowsingContext {
+interface CanonicalBrowsingContext : BrowsingContext {
   sequence<WindowGlobalParent> getWindowGlobals();
 
   readonly attribute WindowGlobalParent? currentWindowGlobal;
+};
+
+[Exposed=Window, ChromeOnly]
+interface BrowsingContextGroup {
+  sequence<BrowsingContext> getToplevels();
 };

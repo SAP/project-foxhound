@@ -109,7 +109,7 @@
                      hidden="true">
     <popupnotificationcontent id="update-available-notification-content" orient="vertical">
       <description id="update-available-description">&updateAvailable.message;</description>
-      <label id="update-available-whats-new" class="text-link" value="&updateAvailable.whatsnew.label;" />
+      <label id="update-available-whats-new" is="text-link" value="&updateAvailable.whatsnew.label;" />
     </popupnotificationcontent>
   </popupnotification>
 
@@ -127,7 +127,7 @@
                      hidden="true">
     <popupnotificationcontent id="update-manual-notification-content" orient="vertical">
       <description id="update-manual-description">&updateManual.message;</description>
-      <label id="update-manual-whats-new" class="text-link" value="&updateManual.whatsnew.label;" />
+      <label id="update-manual-whats-new" is="text-link" value="&updateManual.whatsnew.label;" />
     </popupnotificationcontent>
   </popupnotification>
 
@@ -152,12 +152,37 @@
                      popupid="addon-installed"
                      closebuttonhidden="true"
                      secondarybuttonhidden="true"
+                     buttonlabel="&addonPrivateBrowsing.okButton.label;"
+                     buttonaccesskey="&addonPrivateBrowsing.okButton.accesskey;"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent class="addon-installed-notification-content" orient="vertical">
       <description>&addonPostInstallMessage.label;</description>
+      <checkbox id="addon-incognito-checkbox"
+                label="&addonPostInstall.incognito.checkbox.label;"
+                accesskey="&addonPostInstall.incognito.checkbox.accesskey;"/>
+    </popupnotificationcontent>
+  </popupnotification>
+
+  <popupnotification id="appMenu-addon-private-browsing-notification"
+                     popupid="addon-private-browsing"
+                     label="&addonPrivateBrowsing.header2.label;"
+                     closebuttonhidden="true"
+                     secondarybuttonhidden="false"
+                     buttonlabel="&addonPrivateBrowsing.manageButton.label;"
+                     buttonaccesskey="&addonPrivateBrowsing.manageButton.accesskey;"
+                     secondarybuttonlabel="&addonPrivateBrowsing.okButton.label;"
+                     secondarybuttonaccesskey="&addonPrivateBrowsing.okButton.accesskey;"
+                     dropmarkerhidden="true"
+                     checkboxhidden="true"
+                     buttonhighlight="true"
+                     hidden="true">
+    <popupnotificationcontent class="addon-private-browsing-notification-content" orient="vertical">
+      <description>&addonPrivateBrowsing.body2.label;</description>
+      <label id="addon-private-browsing-learn-more"
+             class="text-link" is="text-link">&addonPrivateBrowsing.learnMore.label;</label>
     </popupnotificationcontent>
   </popupnotification>
 </panel>
@@ -302,6 +327,11 @@
                        label="&places.library.title;"
                        closemenu="none"
                        oncommand="PanelUI.showSubView('appMenu-libraryView', this)"/>
+        <toolbarbutton id="appMenu-logins-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&logins.label;"
+                       oncommand="LoginHelper.openPasswordManager(window)"
+                       />
         <toolbarbutton id="appMenu-addons-button"
                        class="subviewbutton subviewbutton-iconic"
                        label="&addons.label;"
@@ -391,7 +421,9 @@
                        type="checkbox"
                        class="subviewbutton subviewbutton-iconic"
                        key="key_gotoHistory"
-                       oncommand="SidebarUI.toggle('viewHistorySidebar');"/>
+                       oncommand="SidebarUI.toggle('viewHistorySidebar');">
+                       <observes element="sidebar-box" attribute="positionend"/>
+        </toolbarbutton>
         <toolbarbutton id="appMenuClearRecentHistory"
                        label="&appMenuHistory.clearRecent.label;"
                        class="subviewbutton subviewbutton-iconic"
@@ -441,7 +473,9 @@
             <toolbarbutton id="PanelUI-remotetabs-view-managedevices"
                            class="subviewbutton subviewbutton-iconic"
                            label="&appMenuRemoteTabs.managedevices.label;"
-                           oncommand="gSync.openDevicesManagementPage('syncedtabs-menupanel');"/>
+                           oncommand="gSync.openDevicesManagementPage('syncedtabs-menupanel');">
+                           <observes element="sidebar-box" attribute="positionend"/>
+            </toolbarbutton>
             <toolbarbutton id="PanelUI-remotetabs-syncnow"
                            onmouseover="gSync.refreshSyncButtonsTooltip();"
                            class="subviewbutton subviewbutton-iconic"
@@ -688,6 +722,67 @@
       </vbox>
     </panelview>
 
+    <panelview id="PanelUI-fxa" class="PanelUI-subView" descriptionheightworkaround="true">
+      <vbox class="panel-subview-body">
+        <vbox id="PanelUI-fxa-signin">
+          <image class="fxaChooseWhatToSyncDevices"/>
+          <label class="PanelUI-fxa-signin-instruction-callout">&fxa.signin.callout.label;</label>
+          <label class="PanelUI-fxa-signin-instruction-label">&fxa.signin.description.label;</label>
+          <toolbarbutton class="PanelUI-fxa-signin-button" label="&fxa.signin.button.label;" oncommand="gSync.openFxAEmailFirstPage('fxa_discoverability_native');"/>
+        </vbox>
+        <vbox id="PanelUI-fxa-unverified" class="PanelUI-fxa-unverified-instruction-box">
+          <image class="fxaGraphicMail"/>
+          <label class="PanelUI-fxa-signin-instruction-callout">&fxa.unverified.callout.label;</label>
+          <label class="PanelUI-fxa-signin-instruction-label">&fxa.unverified.description.label;</label>
+          <toolbarbutton class="PanelUI-fxa-signin-button" label="&fxa.unverified.button.label;" oncommand="gSync.openPrefs('fxa_discoverability_native');"/>
+        </vbox>
+        <vbox id="PanelUI-fxa-menu">
+          <hbox flex="1" align="center" class="fxa-avatar-subpanel">
+            <image role="presentation" id="fxa-menu-avatar"/>
+            <vbox flex="1">
+              <label class="fxa-avatar-subpanel-description" >&fxa.menu.signedInAs.label;</label>
+              <label id="fxa-menu-email"></label>
+            </vbox>
+          </hbox>
+          <toolbarseparator/>
+          <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
+                         class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                         closemenu="none"
+                         oncommand="gSync.showSendToDeviceView(this);"/>
+          <toolbarbutton id="PanelUI-fxa-menu-remotetabs-button"
+                         class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                         label="&appMenuRemoteTabs.label;"
+                         closemenu="none"
+                         oncommand="PanelUI.showSubView('PanelUI-remotetabs', this)"/>
+          <toolbarbutton id="PanelUI-fxa-menu-view-sidebar"
+                         class="subviewbutton subviewbutton-iconic"
+                         label="&appMenuRemoteTabs.sidebar.label;"
+                         oncommand="SidebarUI.toggle('viewTabsSidebar');">
+            <observes element="sidebar-box" attribute="positionend"/>
+          </toolbarbutton>
+          <toolbarseparator/>
+          <toolbarbutton class="subviewbutton" label="&fxa.menu.connectAnotherDevice.label;" oncommand="gSync.openConnectAnotherDevice('fxa_discoverability_native');"/>
+          <toolbarbutton class="subviewbutton" label="&fxa.menu.manageAccount.label;" oncommand="gSync.openFxAManagePage('fxa_discoverability_native');"/>
+          <toolbarbutton class="subviewbutton" label="&fxa.menu.syncSettings.label;" oncommand="gSync.openPrefs('fxa_discoverability_native');"/>
+          <toolbarseparator/>
+          <toolbarbutton id="PanelUI-fxa-menu-syncnow-button"
+                         label="&syncSyncNowItem.label;"
+                         syncinglabel="&syncSyncNowItemSyncing.label;"
+                         class="subviewbutton subviewbutton-iconic"
+                         oncommand="gSync.doSync();"
+                         closemenu="none"/>
+        </vbox>
+      </vbox>
+    </panelview>
+    <!-- This panelview is used to contain the dynamically created buttons for send tab to devices -->
+    <panelview id="PanelUI-sendTabToDevice" flex="1" class="PanelUI-subView">
+      <vbox class="panel-subview-body">
+        <toolbarbutton id="PanelUI-sendTabToDevice-syncingDevices" class="subviewbutton subviewbutton-iconic pageAction-sendToDevice-notReady"
+                       label="&sendToDevice.syncNotReady.label;"
+                       disabled="true"/>
+      </vbox>
+    </panelview>
+
     <panelview id="PanelUI-bookmarkingTools" class="PanelUI-subView">
       <vbox class="panel-subview-body">
         <toolbarbutton id="panelMenu_toggleBookmarksMenu"
@@ -700,7 +795,9 @@
                        label-show="&viewBookmarksSidebar2.label;"
                        label-hide="&hideBookmarksSidebar.label;"
                        key="viewBookmarksSidebarKb"
-                       oncommand="SidebarUI.toggle('viewBookmarksSidebar', this);"/>
+                       oncommand="SidebarUI.toggle('viewBookmarksSidebar', this);">
+                       <observes element="sidebar-box" attribute="positionend"/>
+        </toolbarbutton>
         <toolbarbutton id="panelMenu_viewBookmarksToolbar"
                        class="subviewbutton subviewbutton-iconic"
                        label-show="&viewBookmarksToolbar.label;"

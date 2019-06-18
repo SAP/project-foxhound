@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import { getSymbols } from "../../../reducers/ast";
 import {
   actions,
@@ -26,6 +28,10 @@ import { sourceThreadClient } from "../../tests/helpers/threadClient.js";
 
 process.on("unhandledRejection", (reason, p) => {});
 
+function initialLocation(sourceId) {
+  return { sourceId, line: 1 };
+}
+
 describe("sources", () => {
   it("should select a source", async () => {
     // Note that we pass an empty client in because the action checks
@@ -33,12 +39,15 @@ describe("sources", () => {
     const store = createStore(sourceThreadClient);
     const { dispatch, getState } = store;
 
+    const frame = makeFrame({ id: "1", sourceId: "foo1" });
+
     await dispatch(actions.newSource(makeSource("foo1")));
     await dispatch(
       actions.paused({
         thread: "FakeThread",
         why: { type: "debuggerStatement" },
-        frames: [makeFrame({ id: "1", sourceId: "foo1" })]
+        frame,
+        frames: [frame]
       })
     );
 
@@ -47,9 +56,15 @@ describe("sources", () => {
     );
 
     const selectedSource = getSelectedSource(getState());
+    if (!selectedSource) {
+      throw new Error("bad selectedSource");
+    }
     expect(selectedSource.id).toEqual("foo1");
 
     const source = getSource(getState(), selectedSource.id);
+    if (!source) {
+      throw new Error("bad source");
+    }
     expect(source.id).toEqual("foo1");
 
     await waitForState(
@@ -71,28 +86,29 @@ describe("sources", () => {
     await dispatch(actions.newSource(makeSource("baz.js")));
 
     // 3rd tab
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation(initialLocation("foo.js")));
 
     // 2nd tab
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
+    await dispatch(actions.selectLocation(initialLocation("bar.js")));
 
     // 1st tab
-    await dispatch(actions.selectLocation({ sourceId: "baz.js" }));
+    await dispatch(actions.selectLocation(initialLocation("baz.js")));
 
     // 3rd tab is reselected
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation(initialLocation("foo.js")));
 
     // closes the 1st tab, which should have no previous tab
     await dispatch(actions.closeTab(fooSource));
 
-    expect(getSelectedSource(getState()).id).toBe("bar.js");
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("bar.js");
     expect(getSourceTabs(getState())).toHaveLength(2);
   });
 
   it("should open a tab for the source", async () => {
     const { dispatch, getState } = createStore(sourceThreadClient);
     await dispatch(actions.newSource(makeSource("foo.js")));
-    dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    dispatch(actions.selectLocation(initialLocation("foo.js")));
 
     const tabs = getSourceTabs(getState());
     expect(tabs).toHaveLength(1);
@@ -107,11 +123,13 @@ describe("sources", () => {
     const bazSource = makeSource("baz.js");
     await dispatch(actions.newSource(bazSource));
 
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "baz.js" }));
+    await dispatch(actions.selectLocation(initialLocation("foo.js")));
+    await dispatch(actions.selectLocation(initialLocation("bar.js")));
+    await dispatch(actions.selectLocation(initialLocation("baz.js")));
     await dispatch(actions.closeTab(bazSource));
-    expect(getSelectedSource(getState()).id).toBe("bar.js");
+
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("bar.js");
     expect(getSourceTabs(getState())).toHaveLength(2);
   });
 
@@ -125,24 +143,29 @@ describe("sources", () => {
     await dispatch(actions.newSource(bazSource));
 
     // 3rd tab
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation(initialLocation("foo.js")));
 
     // 2nd tab
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
+    await dispatch(actions.selectLocation(initialLocation("bar.js")));
 
     // 1st tab
-    await dispatch(actions.selectLocation({ sourceId: "baz.js" }));
+    await dispatch(actions.selectLocation(initialLocation("baz.js")));
 
     // 3rd tab is reselected
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation(initialLocation("foo.js")));
     await dispatch(actions.closeTab(bazSource));
-    expect(getSelectedSource(getState()).id).toBe("foo.js");
+
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("foo.js");
     expect(getSourceTabs(getState())).toHaveLength(2);
   });
 
   it("should not select new sources that lack a URL", async () => {
     const { dispatch, getState } = createStore(sourceThreadClient);
-    await dispatch(actions.newSource({ id: "foo" }));
+
+    const source = makeSource("foo");
+    source.url = "";
+    await dispatch(actions.newSource(source));
 
     expect(getSourceCount(getState())).toEqual(1);
     const selectedLocation = getSelectedLocation(getState());
@@ -151,8 +174,8 @@ describe("sources", () => {
 
   it("sets and clears selected location correctly", () => {
     const { dispatch, getState } = createStore(sourceThreadClient);
-    const source = { id: "testSource" };
-    const location = { test: "testLocation" };
+    const source = makeSource("testSource");
+    const location = ({ test: "testLocation" }: any);
 
     // set value
     dispatch(actions.setSelectedLocation(source, location));
@@ -195,7 +218,8 @@ describe("sources", () => {
       actions.selectLocation({ sourceId: baseSource.id, line: 1 })
     );
 
-    expect(getSelectedSource(getState()).id).toBe(baseSource.id);
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe(baseSource.id);
     await waitForState(store, state => getSymbols(state, baseSource));
   });
 
@@ -205,8 +229,10 @@ describe("sources", () => {
       {},
       {
         getOriginalLocation: async location => ({ ...location, line: 12 }),
+        getOriginalLocations: async items => items,
         getGeneratedLocation: async location => ({ ...location, line: 12 }),
-        getOriginalSourceText: async () => ({ source: "" })
+        getOriginalSourceText: async () => ({ source: "" }),
+        getGeneratedRangesForOriginal: async () => []
       }
     );
 
@@ -222,24 +248,37 @@ describe("sources", () => {
     await dispatch(actions.newSource(fooSource));
     await dispatch(actions.selectLocation({ sourceId: fooSource.id, line: 1 }));
 
-    expect(getSelectedLocation(getState()).line).toBe(12);
+    const selected = getSelectedLocation(getState());
+    expect(selected && selected.line).toBe(12);
   });
 
   it("should change the original the viewing context", async () => {
     const { dispatch, getState } = createStore(
       sourceThreadClient,
       {},
-      { getOriginalLocation: async location => ({ ...location, line: 12 }) }
+      {
+        getOriginalLocation: async location => ({ ...location, line: 12 }),
+        getOriginalLocations: async items => items,
+        getGeneratedRangesForOriginal: async () => [],
+        getOriginalSourceText: async () => ({ source: "" })
+      }
     );
 
+    await dispatch(actions.newSource(makeSource("base.js")));
     const baseSource = makeOriginalSource("base.js");
+
     await dispatch(actions.newSource(baseSource));
     await dispatch(actions.selectSource(baseSource.id));
 
     await dispatch(
-      actions.selectSpecificLocation({ sourceId: baseSource.id, line: 1 })
+      actions.selectSpecificLocation({
+        sourceId: baseSource.id,
+        line: 1
+      })
     );
-    expect(getSelectedLocation(getState()).line).toBe(1);
+
+    const selected = getSelectedLocation(getState());
+    expect(selected && selected.line).toBe(1);
   });
 
   describe("selectSourceURL", () => {
@@ -250,7 +289,9 @@ describe("sources", () => {
 
       expect(getSelectedSource(getState())).toBe(undefined);
       await dispatch(actions.newSource(baseSource));
-      expect(getSelectedSource(getState()).url).toBe(baseSource.url);
+
+      const selected = getSelectedSource(getState());
+      expect(selected && selected.url).toBe(baseSource.url);
     });
   });
 });

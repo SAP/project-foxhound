@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewMedia"];
 
-ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
+const {GeckoViewModule} = ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
 
 class GeckoViewMedia extends GeckoViewModule {
   onEnable() {
@@ -31,3 +31,5 @@ class GeckoViewMedia extends GeckoViewModule {
     this.messageManager.sendAsyncMessage(aEvent, aData);
   }
 }
+
+const {debug, warn} = GeckoViewMedia.initLogging("GeckoViewMedia"); // eslint-disable-line no-unused-vars

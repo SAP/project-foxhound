@@ -2,8 +2,8 @@
 // Private channel test
 //
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var testpath = "/simple";
@@ -25,7 +25,7 @@ function run_test() {
   channel.QueryInterface(Ci.nsIPrivateBrowsingChannel);
   channel.setPrivate(true);
 
-  channel.asyncOpen2(new ChannelListener(checkRequest, channel));
+  channel.asyncOpen(new ChannelListener(checkRequest, channel));
 
   do_test_pending();
 }

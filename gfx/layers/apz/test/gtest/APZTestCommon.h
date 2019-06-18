@@ -22,6 +22,7 @@
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/LayerMetricsWrapper.h"
 #include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "apz/src/APZCTreeManager.h"
@@ -48,17 +49,27 @@ typedef mozilla::layers::GeckoContentController::TapType TapType;
 // passed either to an APZC (which expects an transformed point), or to an APZTM
 // (which expects an untransformed point). We handle both cases by setting both
 // the transformed and untransformed fields to the same value.
-SingleTouchData CreateSingleTouchData(int32_t aIdentifier,
-                                      const ScreenIntPoint& aPoint) {
+inline SingleTouchData CreateSingleTouchData(int32_t aIdentifier,
+                                             const ScreenIntPoint& aPoint) {
   SingleTouchData touch(aIdentifier, aPoint, ScreenSize(0, 0), 0, 0);
   touch.mLocalScreenPoint = ParentLayerPoint(aPoint.x, aPoint.y);
   return touch;
 }
 
 // Convenience wrapper for CreateSingleTouchData() that takes loose coordinates.
-SingleTouchData CreateSingleTouchData(int32_t aIdentifier, ScreenIntCoord aX,
-                                      ScreenIntCoord aY) {
+inline SingleTouchData CreateSingleTouchData(int32_t aIdentifier,
+                                             ScreenIntCoord aX,
+                                             ScreenIntCoord aY) {
   return CreateSingleTouchData(aIdentifier, ScreenIntPoint(aX, aY));
+}
+
+inline PinchGestureInput CreatePinchGestureInput(
+    PinchGestureInput::PinchGestureType aType, const ScreenPoint& aFocus,
+    float aCurrentSpan, float aPreviousSpan, TimeStamp timestamp) {
+  ParentLayerPoint localFocus(aFocus.x, aFocus.y);
+  PinchGestureInput result(aType, 0, timestamp, ExternalPoint(0, 0), aFocus,
+                           aCurrentSpan, aPreviousSpan, 0);
+  return result;
 }
 
 template <class SetArg, class Storage>
@@ -93,6 +104,7 @@ static TimeStamp GetStartupTime() {
 
 class MockContentController : public GeckoContentController {
  public:
+  MOCK_METHOD1(NotifyLayerTransforms, void(const nsTArray<MatrixMessage>&));
   MOCK_METHOD1(RequestContentRepaint, void(const RepaintRequest&));
   MOCK_METHOD2(RequestFlingSnap,
                void(const ScrollableLayerGuid::ViewID& aScrollId,
@@ -449,6 +461,18 @@ class APZCTesterBase : public ::testing::Test {
       float aScale, int& inputId, bool aShouldTriggerPinch,
       nsTArray<uint32_t>* aAllowedTouchBehaviors);
 
+  template <class InputReceiver>
+  void PinchWithPinchInput(const RefPtr<InputReceiver>& aTarget,
+                           const ScreenIntPoint& aFocus,
+                           const ScreenIntPoint& aSecondFocus, float aScale,
+                           nsEventStatus (*aOutEventStatuses)[3] = nullptr);
+
+  template <class InputReceiver>
+  void PinchWithPinchInputAndCheckStatus(const RefPtr<InputReceiver>& aTarget,
+                                         const ScreenIntPoint& aFocus,
+                                         float aScale,
+                                         bool aShouldTriggerPinch);
+
  protected:
   RefPtr<MockContentControllerDelayed> mcc;
 };
@@ -797,6 +821,57 @@ void APZCTesterBase::PinchWithTouchInputAndCheckStatus(
   EXPECT_EQ(expectedMoveStatus, statuses[2]);
 }
 
+template <class InputReceiver>
+void APZCTesterBase::PinchWithPinchInput(
+    const RefPtr<InputReceiver>& aTarget, const ScreenIntPoint& aFocus,
+    const ScreenIntPoint& aSecondFocus, float aScale,
+    nsEventStatus (*aOutEventStatuses)[3]) {
+  const TimeDuration TIME_BETWEEN_PINCH_INPUT =
+      TimeDuration::FromMilliseconds(50);
+
+  nsEventStatus actualStatus = aTarget->ReceiveInputEvent(
+      CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_START, aFocus,
+                              10.0, 10.0, mcc->Time()),
+      nullptr);
+  if (aOutEventStatuses) {
+    (*aOutEventStatuses)[0] = actualStatus;
+  }
+  mcc->AdvanceBy(TIME_BETWEEN_PINCH_INPUT);
+
+  actualStatus = aTarget->ReceiveInputEvent(
+      CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_SCALE,
+                              aSecondFocus, 10.0 * aScale, 10.0, mcc->Time()),
+      nullptr);
+  if (aOutEventStatuses) {
+    (*aOutEventStatuses)[1] = actualStatus;
+  }
+  mcc->AdvanceBy(TIME_BETWEEN_PINCH_INPUT);
+
+  actualStatus = aTarget->ReceiveInputEvent(
+      CreatePinchGestureInput(
+          PinchGestureInput::PINCHGESTURE_END,
+          PinchGestureInput::BothFingersLifted<ScreenPixel>(), 10.0 * aScale,
+          10.0 * aScale, mcc->Time()),
+      nullptr);
+  if (aOutEventStatuses) {
+    (*aOutEventStatuses)[2] = actualStatus;
+  }
+}
+
+template <class InputReceiver>
+void APZCTesterBase::PinchWithPinchInputAndCheckStatus(
+    const RefPtr<InputReceiver>& aTarget, const ScreenIntPoint& aFocus,
+    float aScale, bool aShouldTriggerPinch) {
+  nsEventStatus statuses[3];  // scalebegin, scale, scaleend
+  PinchWithPinchInput(aTarget, aFocus, aFocus, aScale, &statuses);
+
+  nsEventStatus expectedStatus = aShouldTriggerPinch
+                                     ? nsEventStatus_eConsumeNoDefault
+                                     : nsEventStatus_eIgnore;
+  EXPECT_EQ(expectedStatus, statuses[0]);
+  EXPECT_EQ(expectedStatus, statuses[1]);
+}
+
 AsyncPanZoomController* TestAPZCTreeManager::NewAPZCInstance(
     LayersId aLayersId, GeckoContentController* aController) {
   MockContentControllerDelayed* mcc =
@@ -805,7 +880,7 @@ AsyncPanZoomController* TestAPZCTreeManager::NewAPZCInstance(
       aLayersId, mcc, this, AsyncPanZoomController::USE_GESTURE_DETECTOR);
 }
 
-FrameMetrics TestFrameMetrics() {
+inline FrameMetrics TestFrameMetrics() {
   FrameMetrics fm;
 
   fm.SetDisplayPort(CSSRect(0, 0, 10, 10));
@@ -816,7 +891,7 @@ FrameMetrics TestFrameMetrics() {
   return fm;
 }
 
-uint32_t MillisecondsSinceStartup(TimeStamp aTime) {
+inline uint32_t MillisecondsSinceStartup(TimeStamp aTime) {
   return (aTime - GetStartupTime()).ToMilliseconds();
 }
 

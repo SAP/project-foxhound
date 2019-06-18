@@ -196,13 +196,14 @@ nsSplitterFrameInner::State nsSplitterFrameInner::GetState() {
 // Creates a new Toolbar frame and returns it
 //
 nsIFrame* NS_NewSplitterFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsSplitterFrame(aStyle);
+  return new (aPresShell) nsSplitterFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSplitterFrame)
 
-nsSplitterFrame::nsSplitterFrame(ComputedStyle* aStyle)
-    : nsBoxFrame(aStyle, kClassID), mInner(0) {}
+nsSplitterFrame::nsSplitterFrame(ComputedStyle* aStyle,
+                                 nsPresContext* aPresContext)
+    : nsBoxFrame(aStyle, aPresContext, kClassID), mInner(0) {}
 
 void nsSplitterFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                   PostDestroyData& aPostDestroyData) {
@@ -213,20 +214,6 @@ void nsSplitterFrame::DestroyFrom(nsIFrame* aDestructRoot,
     mInner = nullptr;
   }
   nsBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
-}
-
-nsresult nsSplitterFrame::GetCursor(const nsPoint& aPoint,
-                                    nsIFrame::Cursor& aCursor) {
-  return nsBoxFrame::GetCursor(aPoint, aCursor);
-
-  /*
-    if (IsXULHorizontal())
-      aCursor = NS_STYLE_CURSOR_N_RESIZE;
-    else
-      aCursor = NS_STYLE_CURSOR_W_RESIZE;
-
-    return NS_OK;
-  */
 }
 
 nsresult nsSplitterFrame::AttributeChanged(int32_t aNameSpaceID,
@@ -588,14 +575,11 @@ nsresult nsSplitterFrameInner::MouseDown(Event* aMouseEvent) {
 
   nsIFrame* childBox = nsBox::GetChildXULBox(mParentBox);
 
-  while (nullptr != childBox) {
+  while (childBox) {
     nsIContent* content = childBox->GetContent();
-    int32_t dummy;
-    nsAtom* atom =
-        content->OwnerDoc()->BindingManager()->ResolveTag(content, &dummy);
 
     // skip over any splitters
-    if (atom != nsGkAtoms::splitter) {
+    if (content->NodeInfo()->NameAtom() != nsGkAtoms::splitter) {
       nsSize prefSize = childBox->GetXULPrefSize(state);
       nsSize minSize = childBox->GetXULMinSize(state);
       nsSize maxSize =

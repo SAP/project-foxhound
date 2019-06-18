@@ -9,9 +9,9 @@
 'use strict';
 
 /* globals NetUtil*/
-ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
+const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
 /* globals HttpServer */
-ChromeUtils.import('resource://testing-common/httpd.js');
+const {HttpServer} = ChromeUtils.import('resource://testing-common/httpd.js');
 
 let httpserver;
 let port;
@@ -44,7 +44,7 @@ function makeRequest(uri) {
   let requestChannel = NetUtil.newChannel({uri, loadUsingSystemPrincipal: true});
   requestChannel.QueryInterface(Ci.nsISupportsPriority);
   requestChannel.priority = Ci.nsISupportsPriority.PRIORITY_HIGHEST;
-  requestChannel.asyncOpen2(new ChannelListener(checkResponse, requestChannel));
+  requestChannel.asyncOpen(new ChannelListener(checkResponse, requestChannel));
 }
 
 function checkResponse(request, buffer, requestChannel) {

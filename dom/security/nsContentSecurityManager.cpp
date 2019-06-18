@@ -16,7 +16,6 @@
 #include "nsContentUtils.h"
 #include "nsCORSListenerProxy.h"
 #include "nsIStreamListener.h"
-#include "nsCDefaultURIFixup.h"
 #include "nsIURIFixup.h"
 #include "nsIImageLoadingContent.h"
 #include "nsIRedirectHistoryEntry.h"
@@ -25,6 +24,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 
 NS_IMPL_ISUPPORTS(nsContentSecurityManager, nsIContentSecurityManager,
@@ -32,7 +32,8 @@ NS_IMPL_ISUPPORTS(nsContentSecurityManager, nsIContentSecurityManager,
 
 static mozilla::LazyLogModule sCSMLog("CSMLog");
 
-/* static */ bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
+/* static */
+bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
     nsIChannel* aChannel) {
   // Let's block all toplevel document navigations to a data: URI.
   // In all cases where the toplevel document is navigated to a
@@ -45,10 +46,7 @@ static mozilla::LazyLogModule sCSMLog("CSMLog");
   if (!mozilla::net::nsIOService::BlockToplevelDataUriNavigations()) {
     return true;
   }
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-  if (!loadInfo) {
-    return true;
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (loadInfo->GetExternalContentPolicyType() !=
       nsIContentPolicy::TYPE_DOCUMENT) {
     return true;
@@ -113,12 +111,10 @@ static mozilla::LazyLogModule sCSMLog("CSMLog");
   return false;
 }
 
-/* static */ bool nsContentSecurityManager::AllowInsecureRedirectToDataURI(
+/* static */
+bool nsContentSecurityManager::AllowInsecureRedirectToDataURI(
     nsIChannel* aNewChannel) {
-  nsCOMPtr<nsILoadInfo> loadInfo = aNewChannel->GetLoadInfo();
-  if (!loadInfo) {
-    return true;
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = aNewChannel->LoadInfo();
   if (loadInfo->GetExternalContentPolicyType() !=
       nsIContentPolicy::TYPE_SCRIPT) {
     return true;
@@ -161,7 +157,8 @@ static mozilla::LazyLogModule sCSMLog("CSMLog");
   return false;
 }
 
-/* static */ nsresult nsContentSecurityManager::CheckFTPSubresourceLoad(
+/* static */
+nsresult nsContentSecurityManager::CheckFTPSubresourceLoad(
     nsIChannel* aChannel) {
   // We dissallow using FTP resources as a subresource almost everywhere.
   // The only valid way to use FTP resources is loading it as
@@ -170,11 +167,7 @@ static mozilla::LazyLogModule sCSMLog("CSMLog");
     return NS_OK;
   }
 
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-  if (!loadInfo) {
-    return NS_OK;
-  }
-
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsContentPolicyType type = loadInfo->GetExternalContentPolicyType();
 
   // Allow top-level FTP documents and save-as download of FTP files on
@@ -374,21 +367,6 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
-
-  if (contentPolicyType == nsIContentPolicy::TYPE_DOCUMENT ||
-      contentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT) {
-    // TYPE_DOCUMENT and TYPE_SUBDOCUMENT loads might potentially
-    // be wyciwyg:// channels. Let's fix up the URI so we can
-    // perform proper security checks.
-    nsCOMPtr<nsIURIFixup> urifixup(do_GetService(NS_URIFIXUP_CONTRACTID, &rv));
-    if (NS_SUCCEEDED(rv) && urifixup) {
-      nsCOMPtr<nsIURI> fixedURI;
-      rv = urifixup->CreateExposableURI(uri, getter_AddRefs(fixedURI));
-      if (NS_SUCCEEDED(rv)) {
-        uri = fixedURI;
-      }
-    }
-  }
 
   switch (contentPolicyType) {
     case nsIContentPolicy::TYPE_OTHER: {
@@ -749,9 +727,6 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
     MOZ_LOG(sCSMLog, LogLevel::Debug,
             ("  initalSecurityChecksDone: %s\n",
              aLoadInfo->GetInitialSecurityCheckDone() ? "true" : "false"));
-    MOZ_LOG(sCSMLog, LogLevel::Debug,
-            ("  enforceSecurity: %s\n",
-             aLoadInfo->GetEnforceSecurity() ? "true" : "false"));
 
     // Log CSPrequestPrincipal
     nsCOMPtr<nsIContentSecurityPolicy> csp;
@@ -789,21 +764,14 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
  * @param aChannel
  *    The channel to perform the security checks on.
  * @param aInAndOutListener
- *    The streamListener that is passed to channel->AsyncOpen2() that is now
+ *    The streamListener that is passed to channel->AsyncOpen() that is now
  * potentially wrappend within nsCORSListenerProxy() and becomes the
  * corsListener that now needs to be set as new streamListener on the channel.
  */
 nsresult nsContentSecurityManager::doContentSecurityCheck(
     nsIChannel* aChannel, nsCOMPtr<nsIStreamListener>& aInAndOutListener) {
   NS_ENSURE_ARG(aChannel);
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-
-  if (!loadInfo) {
-    MOZ_ASSERT(false,
-               "channel needs to have loadInfo to perform security checks");
-    return NS_ERROR_UNEXPECTED;
-  }
-
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (MOZ_UNLIKELY(MOZ_LOG_TEST(sCSMLog, LogLevel::Debug))) {
     DebugDoContentSecurityCheck(aChannel, loadInfo);
   }
@@ -818,13 +786,6 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
   // e.g. do not require same origin and allow cross origin at the same time
   nsresult rv = ValidateSecurityFlags(loadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  // since aChannel was openend using asyncOpen2() we have to make sure
-  // that redirects of that channel also get openend using asyncOpen2()
-  // please note that some implementations of ::AsyncOpen2 might already
-  // have set that flag to true (e.g. nsViewSourceChannel) in which case
-  // we just set the flag again.
-  loadInfo->SetEnforceSecurity(true);
 
   if (loadInfo->GetSecurityMode() ==
       nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
@@ -854,17 +815,14 @@ NS_IMETHODIMP
 nsContentSecurityManager::AsyncOnChannelRedirect(
     nsIChannel* aOldChannel, nsIChannel* aNewChannel, uint32_t aRedirFlags,
     nsIAsyncVerifyRedirectCallback* aCb) {
-  nsCOMPtr<nsILoadInfo> loadInfo = aOldChannel->GetLoadInfo();
-  // Are we enforcing security using LoadInfo?
-  if (loadInfo && loadInfo->GetEnforceSecurity()) {
-    nsresult rv = CheckChannel(aNewChannel);
-    if (NS_SUCCEEDED(rv)) {
-      rv = CheckFTPSubresourceLoad(aNewChannel);
-    }
-    if (NS_FAILED(rv)) {
-      aOldChannel->Cancel(rv);
-      return rv;
-    }
+  nsCOMPtr<nsILoadInfo> loadInfo = aOldChannel->LoadInfo();
+  nsresult rv = CheckChannel(aNewChannel);
+  if (NS_SUCCEEDED(rv)) {
+    rv = CheckFTPSubresourceLoad(aNewChannel);
+  }
+  if (NS_FAILED(rv)) {
+    aOldChannel->Cancel(rv);
+    return rv;
   }
 
   // Also verify that the redirecting server is allowed to redirect to the
@@ -887,7 +845,7 @@ nsContentSecurityManager::AsyncOnChannelRedirect(
   const uint32_t flags =
       nsIScriptSecurityManager::LOAD_IS_AUTOMATIC_DOCUMENT_REPLACEMENT |
       nsIScriptSecurityManager::DISALLOW_SCRIPT;
-  nsresult rv = nsContentUtils::GetSecurityManager()->CheckLoadURIWithPrincipal(
+  rv = nsContentUtils::GetSecurityManager()->CheckLoadURIWithPrincipal(
       oldPrincipal, newURI, flags);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -907,30 +865,10 @@ static void AddLoadFlags(nsIRequest* aRequest, nsLoadFlags aNewFlags) {
  * if this requesst should not be permitted.
  */
 nsresult nsContentSecurityManager::CheckChannel(nsIChannel* aChannel) {
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-  MOZ_ASSERT(loadInfo);
-
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
-
-  nsContentPolicyType contentPolicyType =
-      loadInfo->GetExternalContentPolicyType();
-
-  if (contentPolicyType == nsIContentPolicy::TYPE_DOCUMENT ||
-      contentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT) {
-    // TYPE_DOCUMENT and TYPE_SUBDOCUMENT loads might potentially
-    // be wyciwyg:// channels. Let's fix up the URI so we can
-    // perform proper security checks.
-    nsCOMPtr<nsIURIFixup> urifixup(do_GetService(NS_URIFIXUP_CONTRACTID, &rv));
-    if (NS_SUCCEEDED(rv) && urifixup) {
-      nsCOMPtr<nsIURI> fixedURI;
-      rv = urifixup->CreateExposableURI(uri, getter_AddRefs(fixedURI));
-      if (NS_SUCCEEDED(rv)) {
-        uri = fixedURI;
-      }
-    }
-  }
 
   // Handle cookie policies
   uint32_t cookiePolicy = loadInfo->GetCookiePolicy();
@@ -1036,10 +974,13 @@ nsContentSecurityManager::IsOriginPotentiallyTrustworthy(
              "Nobody is expected to call us with an nsIExpandedPrincipal");
 
   nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
+  nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
 
   nsAutoCString scheme;
-  nsresult rv = uri->GetScheme(scheme);
+  rv = uri->GetScheme(scheme);
   if (NS_FAILED(rv)) {
     return NS_OK;
   }

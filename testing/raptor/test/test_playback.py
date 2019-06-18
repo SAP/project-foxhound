@@ -9,12 +9,13 @@ from mozlog.structuredlog import set_default_logger, StructuredLogger
 
 set_default_logger(StructuredLogger('test_playback'))
 
-from raptor.playback import get_playback, MitmproxyDesktop
+from mozproxy import get_playback
+from mozproxy.backends.mitm import MitmproxyDesktop
 
 config = {}
 
 run_local = True
-if os.environ.get('TOOLTOOLCACHE', None) is None:
+if os.environ.get('TOOLTOOLCACHE') is None:
     run_local = False
 
 
@@ -27,13 +28,16 @@ def test_get_playback(get_binary):
     config['obj_path'] = os.path.dirname(get_binary('firefox'))
     config['playback_tool'] = 'mitmproxy'
     config['playback_binary_manifest'] = 'mitmproxy-rel-bin-osx.manifest'
-    config['playback_pageset_manifest'] = 'mitmproxy-playback-set.manifest'
-    config['playback_recordings'] = 'mitmproxy-recording-amazon.mp'
+    config['playback_pageset_manifest'] = 'mitmproxy-recordings-raptor-tp6-1.manifest'
+    config['playback_recordings'] = 'amazon.mp'
     config['binary'] = get_binary('firefox')
     config['run_local'] = run_local
+    config['app'] = 'firefox'
+    config['host'] = 'example.com'
 
     playback = get_playback(config)
     assert isinstance(playback, MitmproxyDesktop)
+    playback.start()
     playback.stop()
 
 

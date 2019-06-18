@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["LightweightThemeChild"];
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * LightweightThemeChild forwards theme data to in-content pages.
@@ -53,8 +53,6 @@ class LightweightThemeChild extends ActorChild {
    * event for the page we're attached to.
    */
   cleanup() {
-    super.cleanup();
-
     Services.cpmm.sharedData.removeEventListener("change", this);
   }
 

@@ -10,6 +10,7 @@
 #include "imgLoader.h"
 #include "Image.h"
 #include "ImageOps.h"
+#include "ImageTypes.h"
 #include "nsError.h"
 #include "nsCRTGlue.h"
 #include "imgINotificationObserver.h"
@@ -283,11 +284,12 @@ nsresult imgRequestProxy::DispatchWithTargetIfAvailable(
   // rather we need to (e.g. we are in the wrong scheduler group context).
   // As such, we do not set mHadDispatch for telemetry purposes.
   if (mEventTarget) {
-    mEventTarget->Dispatch(std::move(aEvent), NS_DISPATCH_NORMAL);
+    mEventTarget->Dispatch(CreateMediumHighRunnable(std::move(aEvent)),
+                           NS_DISPATCH_NORMAL);
     return NS_OK;
   }
 
-  return NS_DispatchToMainThread(std::move(aEvent));
+  return NS_DispatchToMainThread(CreateMediumHighRunnable(std::move(aEvent)));
 }
 
 void imgRequestProxy::DispatchWithTarget(already_AddRefed<nsIRunnable> aEvent) {
@@ -297,7 +299,8 @@ void imgRequestProxy::DispatchWithTarget(already_AddRefed<nsIRunnable> aEvent) {
   MOZ_ASSERT(mEventTarget);
 
   mHadDispatch = true;
-  mEventTarget->Dispatch(std::move(aEvent), NS_DISPATCH_NORMAL);
+  mEventTarget->Dispatch(CreateMediumHighRunnable(std::move(aEvent)),
+                         NS_DISPATCH_NORMAL);
 }
 
 void imgRequestProxy::AddToOwner(Document* aLoadingDocument) {
@@ -658,6 +661,21 @@ imgRequestProxy::GetImage(imgIContainer** aImage) {
   }
 
   imageToReturn.swap(*aImage);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+imgRequestProxy::GetProducerId(uint32_t* aId) {
+  NS_ENSURE_TRUE(aId, NS_ERROR_NULL_POINTER);
+
+  nsCOMPtr<imgIContainer> image;
+  nsresult rv = GetImage(getter_AddRefs(image));
+  if (NS_SUCCEEDED(rv)) {
+    *aId = image->GetProducerId();
+  } else {
+    *aId = layers::kContainerProducerID_Invalid;
+  }
 
   return NS_OK;
 }

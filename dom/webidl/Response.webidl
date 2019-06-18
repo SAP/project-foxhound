@@ -29,6 +29,9 @@ interface Response {
    NewObject] Response clone();
 
   [ChromeOnly, NewObject, Throws] Response cloneUnfiltered();
+
+  // For testing only.
+  [ChromeOnly] readonly attribute boolean hasCacheInfoChannel;
 };
 Response implements Body;
 
@@ -41,7 +44,7 @@ partial interface Response {
 
 dictionary ResponseInit {
   unsigned short status = 200;
-  ByteString statusText = "OK";
+  ByteString statusText = "";
   HeadersInit headers;
 };
 

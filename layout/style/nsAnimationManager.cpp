@@ -529,7 +529,7 @@ static nsAnimationManager::OwningCSSAnimationPtrArray BuildAnimations(
 }
 
 void nsAnimationManager::UpdateAnimations(dom::Element* aElement,
-                                          CSSPseudoElementType aPseudoType,
+                                          PseudoStyleType aPseudoType,
                                           const ComputedStyle* aComputedStyle) {
   MOZ_ASSERT(mPresContext->IsDynamic(),
              "Should not update animations for print or print preview");
@@ -538,8 +538,7 @@ void nsAnimationManager::UpdateAnimations(dom::Element* aElement,
              "document tree");
 
   const nsStyleDisplay* disp =
-      aComputedStyle ? aComputedStyle->ComputedData()->GetStyleDisplay()
-                     : nullptr;
+      aComputedStyle ? aComputedStyle->StyleDisplay() : nullptr;
 
   if (!disp || disp->mDisplay == StyleDisplay::None) {
     // If we are in a display:none subtree we will have no computed values.

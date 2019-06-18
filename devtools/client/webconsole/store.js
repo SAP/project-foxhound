@@ -38,8 +38,8 @@ const enableMessagesCacheClearing = require("./enhancers/message-cache-clearing"
  * Create and configure store for the Console panel. This is the place
  * where various enhancers and middleware can be registered.
  */
-function configureStore(hud, options = {}) {
-  const prefsService = getPrefsService(hud);
+function configureStore(webConsoleUI, options = {}) {
+  const prefsService = getPrefsService(webConsoleUI);
   const {
     getBoolPref,
     getIntPref,
@@ -69,9 +69,9 @@ function configureStore(hud, options = {}) {
       netxhr: getBoolPref(PREFS.FILTER.NETXHR),
     }),
     ui: UiState({
-      filterBarVisible: getBoolPref(PREFS.UI.FILTER_BAR),
       networkMessageActiveTabId: "headers",
       persistLogs: getBoolPref(PREFS.UI.PERSIST),
+      editor: getBoolPref(PREFS.UI.EDITOR),
     }),
   };
 
@@ -98,11 +98,11 @@ function configureStore(hud, options = {}) {
     initialState,
     compose(
       middleware,
-      enableActorReleaser(hud),
+      enableActorReleaser(webConsoleUI),
       enableBatching(),
-      enableNetProvider(hud),
-      enableMessagesCacheClearing(hud),
-      ensureCSSErrorReportingEnabled(hud),
+      enableNetProvider(webConsoleUI),
+      enableMessagesCacheClearing(webConsoleUI),
+      ensureCSSErrorReportingEnabled(webConsoleUI),
     )
   );
 }

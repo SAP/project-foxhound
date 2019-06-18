@@ -1,12 +1,11 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js", {});
-const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
-const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js", {});
+const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js");
+const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js");
+const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js");
 
 const IS_ANDROID = AppConstants.platform == "android";
 
@@ -40,9 +39,11 @@ function serveChangesEntries(serverTime, entries) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date(serverTime)).toUTCString());
     if (entries.length) {
-      response.setHeader("ETag", `"${entries[0].last_modified}"`);
+      const latest = entries[0].last_modified;
+      response.setHeader("ETag", `"${latest}"`);
+      response.setHeader("Last-Modified", (new Date(latest)).toGMTString());
     }
-    response.write(JSON.stringify({"data": entries}));
+    response.write(JSON.stringify({ "data": entries }));
   };
 }
 
@@ -64,6 +65,7 @@ add_task(clear_state);
 add_task(async function test_an_event_is_sent_on_start() {
   server.registerPathHandler(CHANGES_PATH, (request, response) => {
     response.write(JSON.stringify({ data: [] }));
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("ETag", '"42"');
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
@@ -236,6 +238,7 @@ add_task(async function test_expected_timestamp() {
         data: entries,
       }));
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("ETag", '"1100"');
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
@@ -264,6 +267,7 @@ add_task(async function test_client_last_check_is_saved() {
         collection: "models-recipes",
       }],
     }));
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("ETag", '"42"');
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
@@ -278,6 +282,29 @@ add_task(async function test_client_last_check_is_saved() {
   await RemoteSettings.pollChanges({ expectedTimestamp: '"42"' });
 
   notEqual(Services.prefs.getIntPref(c.lastCheckTimePref), 0);
+});
+add_task(clear_state);
+
+
+add_task(async function test_age_of_data_is_reported_in_uptake_status() {
+  const serverTime = 1552323900000;
+  server.registerPathHandler(CHANGES_PATH, serveChangesEntries(serverTime, [{
+    id: "b6ba7fab-a40a-4d03-a4af-6b627f3c5b36",
+    last_modified: serverTime - 3600 * 1000,
+    host: "localhost",
+    bucket: "main",
+    collection: "some-entry",
+  }]));
+  const backup = UptakeTelemetry.report;
+  let reportedAge;
+  UptakeTelemetry.report = (component, status, { age }) => {
+    reportedAge = age;
+  };
+
+  await RemoteSettings.pollChanges();
+
+  Assert.equal(reportedAge, 3600);
+  UptakeTelemetry.report = backup;
 });
 add_task(clear_state);
 
@@ -308,6 +335,7 @@ add_task(async function test_success_with_partial_list() {
       }));
       response.setHeader("ETag", '"42"');
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
   }
@@ -328,6 +356,8 @@ add_task(clear_state);
 
 
 add_task(async function test_server_bad_json() {
+  const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
   function simulateBadJSON(request, response) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.write("<html></html>");
@@ -342,6 +372,39 @@ add_task(async function test_server_bad_json() {
     error = e;
   }
   Assert.ok(/JSON.parse: unexpected character/.test(error.message));
+
+  const endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  const expectedIncrements = {
+    [UptakeTelemetry.STATUS.PARSE_ERROR]: 1,
+  };
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
+});
+add_task(clear_state);
+
+
+add_task(async function test_server_bad_content_type() {
+  const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
+  function simulateBadContentType(request, response) {
+    response.setHeader("Content-Type", "text/html");
+    response.write("<html></html>");
+    response.setStatusLine(null, 200, "OK");
+  }
+  server.registerPathHandler(CHANGES_PATH, simulateBadContentType);
+
+  let error;
+  try {
+    await RemoteSettings.pollChanges();
+  } catch (e) {
+    error = e;
+  }
+  Assert.ok(/Unexpected content-type/.test(error.message));
+
+  const endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  const expectedIncrements = {
+    [UptakeTelemetry.STATUS.CONTENT_ERROR]: 1,
+  };
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
 });
 add_task(clear_state);
 
@@ -641,6 +704,7 @@ add_task(async function test_adding_client_resets_last_etag() {
       response.setHeader("ETag", '"42"');
       response.setStatusLine(null, 200, "OK");
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date()).toUTCString());
   }
   server.registerPathHandler(CHANGES_PATH, serve200or304);

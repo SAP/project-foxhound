@@ -1,5 +1,5 @@
 const URL = "ftp://localhost/bug515583/";
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const tests = [
   ["[RWCEM1 4 1-MAR-1993 18:09:01.12\r\n" +
@@ -51,7 +51,7 @@ function storeData(status, entry) {
   };
 
   converter.onStartRequest(channel, null);
-  converter.onDataAvailable(channel, null, stream, 0, 0);
+  converter.onDataAvailable(channel, stream, 0, 0);
   channel.pending = false;
   converter.onStopRequest(channel, null, Cr.NS_OK);
 }

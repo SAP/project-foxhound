@@ -20,7 +20,8 @@ namespace layers {
 
 using namespace mozilla::gfx;
 
-/* static */ UserDataKey SharedSurfacesChild::sSharedKey;
+/* static */
+UserDataKey SharedSurfacesChild::sSharedKey;
 
 SharedSurfacesChild::ImageKeyData::ImageKeyData(
     RenderRootStateManager* aManager, const wr::ImageKey& aImageKey)
@@ -146,8 +147,9 @@ wr::ImageKey SharedSurfacesChild::SharedUserData::UpdateKey(
   return key;
 }
 
-/* static */ SourceSurfaceSharedData*
-SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
+/* static */
+SourceSurfaceSharedData* SharedSurfacesChild::AsSourceSurfaceSharedData(
+    SourceSurface* aSurface) {
   MOZ_ASSERT(aSurface);
   switch (aSurface->GetType()) {
     case SurfaceType::DATA_SHARED:
@@ -163,14 +165,16 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   }
 }
 
-/* static */ void SharedSurfacesChild::DestroySharedUserData(void* aClosure) {
+/* static */
+void SharedSurfacesChild::DestroySharedUserData(void* aClosure) {
   MOZ_ASSERT(aClosure);
   auto data = static_cast<SharedUserData*>(aClosure);
   delete data;
 }
 
-/* static */ nsresult SharedSurfacesChild::ShareInternal(
-    SourceSurfaceSharedData* aSurface, SharedUserData** aUserData) {
+/* static */
+nsresult SharedSurfacesChild::ShareInternal(SourceSurfaceSharedData* aSurface,
+                                            SharedUserData** aUserData) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSurface);
   MOZ_ASSERT(aUserData);
@@ -253,8 +257,8 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return NS_OK;
 }
 
-/* static */ void SharedSurfacesChild::Share(
-    SourceSurfaceSharedData* aSurface) {
+/* static */
+void SharedSurfacesChild::Share(SourceSurfaceSharedData* aSurface) {
   MOZ_ASSERT(aSurface);
 
   // The IPDL actor to do sharing can only be accessed on the main thread so we
@@ -286,9 +290,11 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   SharedSurfacesChild::ShareInternal(aSurface, &unused);
 }
 
-/* static */ nsresult SharedSurfacesChild::Share(
-    SourceSurfaceSharedData* aSurface, RenderRootStateManager* aManager,
-    wr::IpcResourceUpdateQueue& aResources, wr::ImageKey& aKey) {
+/* static */
+nsresult SharedSurfacesChild::Share(SourceSurfaceSharedData* aSurface,
+                                    RenderRootStateManager* aManager,
+                                    wr::IpcResourceUpdateQueue& aResources,
+                                    wr::ImageKey& aKey) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSurface);
   MOZ_ASSERT(aManager);
@@ -308,9 +314,11 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return rv;
 }
 
-/* static */ nsresult SharedSurfacesChild::Share(
-    SourceSurface* aSurface, RenderRootStateManager* aManager,
-    wr::IpcResourceUpdateQueue& aResources, wr::ImageKey& aKey) {
+/* static */
+nsresult SharedSurfacesChild::Share(SourceSurface* aSurface,
+                                    RenderRootStateManager* aManager,
+                                    wr::IpcResourceUpdateQueue& aResources,
+                                    wr::ImageKey& aKey) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSurface);
   MOZ_ASSERT(aManager);
@@ -323,9 +331,12 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return Share(sharedSurface, aManager, aResources, aKey);
 }
 
-/* static */ nsresult SharedSurfacesChild::Share(
-    ImageContainer* aContainer, RenderRootStateManager* aManager,
-    wr::IpcResourceUpdateQueue& aResources, wr::ImageKey& aKey) {
+/* static */
+nsresult SharedSurfacesChild::Share(ImageContainer* aContainer,
+                                    RenderRootStateManager* aManager,
+                                    wr::IpcResourceUpdateQueue& aResources,
+                                    wr::ImageKey& aKey,
+                                    ContainerProducerID aProducerId) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aContainer);
   MOZ_ASSERT(aManager);
@@ -338,6 +349,15 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   aContainer->GetCurrentImages(&images);
   if (images.IsEmpty()) {
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (aProducerId != kContainerProducerID_Invalid &&
+      images[0].mProducerID != aProducerId) {
+    // If the producer ID of the surface in the container does not match the
+    // expected producer ID, then we do not want to proceed with sharing. This
+    // is useful for when callers are unsure if given container is for the same
+    // producer / underlying image request.
+    return NS_ERROR_FAILURE;
   }
 
   RefPtr<gfx::SourceSurface> surface = images[0].mImage->GetAsSourceSurface();
@@ -358,8 +378,9 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return Share(sharedSurface, aManager, aResources, aKey);
 }
 
-/* static */ nsresult SharedSurfacesChild::Share(SourceSurface* aSurface,
-                                                 wr::ExternalImageId& aId) {
+/* static */
+nsresult SharedSurfacesChild::Share(SourceSurface* aSurface,
+                                    wr::ExternalImageId& aId) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSurface);
 
@@ -381,9 +402,10 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return rv;
 }
 
-/* static */ void SharedSurfacesChild::Unshare(const wr::ExternalImageId& aId,
-                                               bool aReleaseId,
-                                               nsTArray<ImageKeyData>& aKeys) {
+/* static */
+void SharedSurfacesChild::Unshare(const wr::ExternalImageId& aId,
+                                  bool aReleaseId,
+                                  nsTArray<ImageKeyData>& aKeys) {
   MOZ_ASSERT(NS_IsMainThread());
 
   for (const auto& entry : aKeys) {
@@ -434,9 +456,10 @@ SharedSurfacesChild::AsSourceSurfaceSharedData(SourceSurface* aSurface) {
   return Some(data->Id());
 }
 
-/* static */ nsresult SharedSurfacesChild::UpdateAnimation(
-    ImageContainer* aContainer, SourceSurface* aSurface,
-    const IntRect& aDirtyRect) {
+/* static */
+nsresult SharedSurfacesChild::UpdateAnimation(ImageContainer* aContainer,
+                                              SourceSurface* aSurface,
+                                              const IntRect& aDirtyRect) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aContainer);
   MOZ_ASSERT(!aContainer->IsAsync());

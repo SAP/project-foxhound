@@ -6,7 +6,6 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
 
@@ -63,6 +62,13 @@ this.AppConstants = Object.freeze({
 
   MOZ_DEV_EDITION:
 #ifdef MOZ_DEV_EDITION
+  true,
+#else
+  false,
+#endif
+
+  MOZ_SERVICES_SYNC:
+#ifdef MOZ_SERVICES_SYNC
   true,
 #else
   false,
@@ -348,4 +354,6 @@ this.AppConstants = Object.freeze({
 #else
     false,
 #endif
+
+  TELEMETRY_PING_FORMAT_VERSION: @TELEMETRY_PING_FORMAT_VERSION@,
 });

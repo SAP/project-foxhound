@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import React from "react";
 import { shallow } from "enzyme";
 import { showMenu } from "devtools-contextmenu";
 
 import SourcesTreeItem from "../SourcesTreeItem";
-import { createSource } from "../../../reducers/sources";
+import { makeMockSource } from "../../../utils/test-mockup";
 import { copyToTheClipboard } from "../../../utils/clipboard";
 
 jest.mock("devtools-contextmenu", () => ({ showMenu: jest.fn() }));
@@ -17,7 +19,7 @@ jest.mock("../../../utils/clipboard", () => ({
 
 describe("SourceTreeItem", () => {
   afterEach(() => {
-    copyToTheClipboard.mockClear();
+    (copyToTheClipboard: any).mockClear();
     showMenu.mockClear();
   });
 
@@ -81,6 +83,13 @@ describe("SourceTreeItem", () => {
           disabled: false,
           id: "node-menu-copy-source",
           label: "Copy source URI"
+        },
+        {
+          accesskey: "B",
+          click: expect.any(Function),
+          disabled: true,
+          id: "node-menu-blackbox",
+          label: "Blackbox source"
         }
       ];
       const mockEvent = {
@@ -90,9 +99,9 @@ describe("SourceTreeItem", () => {
       const { props, instance } = render({
         projectRoot: "root/"
       });
-      const { item } = instance.props;
+      const { item, source } = instance.props;
 
-      await instance.onContextMenu(mockEvent, item);
+      await instance.onContextMenu(mockEvent, item, source);
 
       expect(showMenu).toHaveBeenCalledWith(mockEvent, menuOptions);
 
@@ -103,6 +112,45 @@ describe("SourceTreeItem", () => {
       expect(props.setProjectDirectoryRoot).not.toHaveBeenCalled();
       expect(props.clearProjectDirectoryRoot).not.toHaveBeenCalled();
       expect(copyToTheClipboard).toHaveBeenCalled();
+    });
+
+    it("shows context menu on file to blackbox source", async () => {
+      const menuOptions = [
+        {
+          accesskey: "u",
+          click: expect.any(Function),
+          disabled: false,
+          id: "node-menu-copy-source",
+          label: "Copy source URI"
+        },
+        {
+          accesskey: "B",
+          click: expect.any(Function),
+          disabled: true,
+          id: "node-menu-blackbox",
+          label: "Blackbox source"
+        }
+      ];
+      const mockEvent = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn()
+      };
+      const { props, instance } = render({
+        projectRoot: "root/"
+      });
+      const { item, source } = instance.props;
+
+      await instance.onContextMenu(mockEvent, item, source);
+
+      expect(showMenu).toHaveBeenCalledWith(mockEvent, menuOptions);
+
+      expect(mockEvent.preventDefault).toHaveBeenCalled();
+      expect(mockEvent.stopPropagation).toHaveBeenCalled();
+
+      showMenu.mock.calls[0][1][1].click();
+      expect(props.setProjectDirectoryRoot).not.toHaveBeenCalled();
+      expect(props.clearProjectDirectoryRoot).not.toHaveBeenCalled();
+      expect(props.toggleBlackBox).toHaveBeenCalled();
     });
 
     it("shows context menu on root to remove directory root", async () => {
@@ -252,7 +300,7 @@ describe("SourceTreeItem", () => {
     });
 
     it("should not show domain item when the projectRoot exists", async () => {
-      const { node } = render({
+      const node = render({
         projectRoot: "root/"
       });
       expect(node).toMatchSnapshot();
@@ -289,14 +337,25 @@ describe("SourceTreeItem", () => {
       component.simulate("click", { event: "click" });
       expect(props.selectItem).not.toHaveBeenCalled();
     });
+
+    it("should unescape escaped source URLs", async () => {
+      const item = createMockItem({
+        path: "mdn.com/external%20file",
+        name: "external%20file"
+      });
+
+      const node = render({ item });
+
+      expect(node).toMatchSnapshot();
+    });
   });
 });
 
 function generateDefaults(overrides) {
-  const source = createSource({
-    id: "server1.conn13.child1/39",
-    url: "http://mdn.com/one.js"
-  });
+  const source = makeMockSource(
+    "http://mdn.com/one.js",
+    "server1.conn13.child1/39"
+  );
 
   const item = {
     name: "one.js",
@@ -312,6 +371,7 @@ function generateDefaults(overrides) {
     projectRoot: "",
     clearProjectDirectoryRoot: jest.fn(),
     setProjectDirectoryRoot: jest.fn(),
+    toggleBlackBox: jest.fn(),
     selectItem: jest.fn(),
     focusItem: jest.fn(),
     setExpanded: jest.fn(),
@@ -321,6 +381,7 @@ function generateDefaults(overrides) {
 
 function render(overrides = {}) {
   const props = generateDefaults(overrides);
+  // $FlowIgnore
   const component = shallow(<SourcesTreeItem.WrappedComponent {...props} />);
   const defaultState = component.state();
   const instance = component.instance();
@@ -338,10 +399,13 @@ function createMockDirectory(path = "folder/", name = "folder", contents = []) {
 }
 
 function createMockItem(overrides = {}) {
-  overrides.contents = createSource({
-    id: "server1.conn13.child1/39",
-    ...(overrides.contents || {})
-  });
+  overrides = {
+    ...overrides,
+    contents: {
+      ...makeMockSource(undefined, "server1.conn13.child1/39"),
+      ...(overrides.contents || {})
+    }
+  };
 
   return {
     type: "source",

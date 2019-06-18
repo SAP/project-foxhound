@@ -83,7 +83,7 @@ add_task(async function test_local_cache_invalidation() {
 
 add_task(async function test_single_initialization() {
   // Grab access to this via the backstage pass to check if we're calling openConnection too often.
-  const {FirefoxAdapter} = ChromeUtils.import("resource://gre/modules/ExtensionStorageSync.jsm", {});
+  const {FirefoxAdapter} = ChromeUtils.import("resource://gre/modules/ExtensionStorageSync.jsm", null);
   const origOpenConnection = FirefoxAdapter.openConnection;
   let callCount = 0;
   FirefoxAdapter.openConnection = function(...args) {
@@ -273,6 +273,33 @@ async function test_background_page_storage(testAreaName) {
         data = await storage.get(["test-prop1", "test-prop2"]);
         browser.test.assertFalse("test-prop1" in data, "prop1 absent (remove array)");
         browser.test.assertFalse("test-prop2" in data, "prop2 absent (remove array)");
+
+        // Test that removing a falsey value fires the onChanged event.
+        await storage.set({
+          "test-falsey-value-bool": false,
+          "test-falsey-value-string": "",
+          "test-falsey-value-number": 0,
+        });
+        await checkChanges(
+          areaName,
+          {
+            "test-falsey-value-bool": {newValue: false},
+            "test-falsey-value-string": {newValue: ""},
+            "test-falsey-value-number": {newValue: 0},
+          },
+          "set falsey values");
+
+        await storage.remove([
+          "test-falsey-value-bool", "test-falsey-value-string", "test-falsey-value-number",
+        ]);
+        await checkChanges(
+          areaName,
+          {
+            "test-falsey-value-bool": {oldValue: false},
+            "test-falsey-value-string": {oldValue: ""},
+            "test-falsey-value-number": {oldValue: 0},
+          },
+          "remove falsey value");
 
         // test storage.clear
         await storage.set({"test-prop1": "value1", "test-prop2": "value2"});

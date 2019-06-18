@@ -6,9 +6,9 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
-const { ExtensionParent } = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm", {});
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+const { ExtensionParent } = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
 
 const {WebExtensionPolicy} = Cu.getGlobalForObject(Services);
 
@@ -408,9 +408,9 @@ var View = {
     this._fragment = document.createDocumentFragment();
   },
   displayEnergyImpact(elt, energyImpact) {
-    if (!energyImpact)
+    if (!energyImpact) {
       elt.textContent = "–";
-    else {
+    } else {
       let impact = "high";
       if (energyImpact < 1)
         impact = "low";
@@ -746,7 +746,6 @@ var Control = {
 };
 
 var go = async function() {
-
   Control.init();
 
   let addons = await AddonManager.getAddonsByTypes(["extension"]);

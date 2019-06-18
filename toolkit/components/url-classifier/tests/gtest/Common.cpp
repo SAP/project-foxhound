@@ -6,6 +6,8 @@
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "nsUrlClassifierUtils.h"
+#include "mozilla/Components.h"
+#include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::safebrowsing;
@@ -89,15 +91,10 @@ void ApplyUpdate(TableUpdateArray& updates) {
   RefPtr<Classifier> classifier = new Classifier();
   classifier->Open(*file);
 
-  {
-    // Force nsIUrlClassifierUtils loading on main thread
-    // because nsIUrlClassifierDBService will not run in advance
-    // in gtest.
-    nsresult rv;
-    nsCOMPtr<nsIUrlClassifierUtils> dummy =
-        do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID, &rv);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
-  }
+  // Force nsUrlClassifierUtils loading on main thread
+  // because nsIUrlClassifierDBService will not run in advance
+  // in gtest.
+  nsUrlClassifierUtils::GetInstance();
 
   SyncApplyUpdates(classifier, updates);
 }
@@ -148,6 +145,18 @@ nsCString GeneratePrefix(const nsCString& aFragment, uint8_t aLength) {
   nsCString hash;
   hash.Assign((const char*)complete.buf, aLength);
   return hash;
+}
+
+void CheckContent(LookupCacheV4* cache, PrefixStringMap& expected) {
+  PrefixStringMap vlPSetMap;
+  cache->GetPrefixes(vlPSetMap);
+
+  for (auto iter = vlPSetMap.Iter(); !iter.Done(); iter.Next()) {
+    nsCString* expectedPrefix = expected.Get(iter.Key());
+    nsCString* resultPrefix = iter.Data();
+
+    ASSERT_TRUE(resultPrefix->Equals(*expectedPrefix));
+  }
 }
 
 static nsresult BuildCache(LookupCacheV2* cache,

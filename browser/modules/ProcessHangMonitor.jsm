@@ -7,8 +7,8 @@
 
 var EXPORTED_SYMBOLS = ["ProcessHangMonitor"];
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * This JSM is responsible for observing content process hang reports
@@ -458,8 +458,7 @@ var ProcessHangMonitor = {
       let linkText = bundle.getString("processHang.add-on.learn-more.text");
       let linkURL = "https://support.mozilla.org/kb/warning-unresponsive-script#w_other-causes";
 
-      let link = doc.createXULElement("label");
-      link.setAttribute("class", "text-link");
+      let link = doc.createXULElement("label", {is: "text-link"});
       link.setAttribute("role", "link");
       link.setAttribute("onclick", `openTrustedLinkIn(${JSON.stringify(linkURL)}, "tab")`);
       link.setAttribute("value", linkText);

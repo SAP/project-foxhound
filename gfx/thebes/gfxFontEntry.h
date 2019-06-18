@@ -266,11 +266,7 @@ class gfxFontEntry {
     AutoTable(gfxFontEntry* aFontEntry, uint32_t aTag) {
       mBlob = aFontEntry->GetFontTable(aTag);
     }
-    ~AutoTable() {
-      if (mBlob) {
-        hb_blob_destroy(mBlob);
-      }
-    }
+    ~AutoTable() { hb_blob_destroy(mBlob); }
     operator hb_blob_t*() const { return mBlob; }
 
    private:

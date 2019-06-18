@@ -915,6 +915,37 @@ tls13_ServerHandleCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     return SECSuccess;
 }
 
+SECStatus
+tls13_ClientSendPostHandshakeAuthXtn(const sslSocket *ss,
+                                     TLSExtensionData *xtnData,
+                                     sslBuffer *buf, PRBool *added)
+{
+    SSL_TRC(3, ("%d: TLS13[%d]: send post_handshake_auth extension",
+                SSL_GETPID(), ss->fd));
+
+    *added = ss->opt.enablePostHandshakeAuth;
+    return SECSuccess;
+}
+
+SECStatus
+tls13_ServerHandlePostHandshakeAuthXtn(const sslSocket *ss,
+                                       TLSExtensionData *xtnData,
+                                       SECItem *data)
+{
+    SSL_TRC(3, ("%d: TLS13[%d]: handle post_handshake_auth extension",
+                SSL_GETPID(), ss->fd));
+
+    if (data->len) {
+        PORT_SetError(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
+        return SECFailure;
+    }
+
+    /* Keep track of negotiated extensions. */
+    xtnData->negotiated[xtnData->numNegotiated++] = ssl_tls13_post_handshake_auth_xtn;
+
+    return SECSuccess;
+}
+
 /*
  *     enum { psk_ke(0), psk_dhe_ke(1), (255) } PskKeyExchangeMode;
  *
@@ -1109,7 +1140,7 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     ssl3KeyMaterial keyMat;
     SSLAEADCipher aead;
     PRUint8 outBuf[1024];
-    int outLen;
+    unsigned int outLen;
     unsigned int sniStart;
     unsigned int sniLen;
     sslBuffer aadInput = SSL_BUFFER_EMPTY;
@@ -1263,7 +1294,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 {
     sslReadBuffer buf;
     PRUint8 *plainText = NULL;
-    int ptLen;
+    unsigned int ptLen;
     SECStatus rv;
 
     /* If we are doing < TLS 1.3, then ignore this. */

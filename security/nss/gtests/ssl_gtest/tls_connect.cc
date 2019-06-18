@@ -167,18 +167,8 @@ void TlsConnectTestBase::CheckShares(
 
 void TlsConnectTestBase::CheckEpochs(uint16_t client_epoch,
                                      uint16_t server_epoch) const {
-  uint16_t read_epoch = 0;
-  uint16_t write_epoch = 0;
-
-  EXPECT_EQ(SECSuccess,
-            SSLInt_GetEpochs(client_->ssl_fd(), &read_epoch, &write_epoch));
-  EXPECT_EQ(server_epoch, read_epoch) << "client read epoch";
-  EXPECT_EQ(client_epoch, write_epoch) << "client write epoch";
-
-  EXPECT_EQ(SECSuccess,
-            SSLInt_GetEpochs(server_->ssl_fd(), &read_epoch, &write_epoch));
-  EXPECT_EQ(client_epoch, read_epoch) << "server read epoch";
-  EXPECT_EQ(server_epoch, write_epoch) << "server write epoch";
+  client_->CheckEpochs(server_epoch, client_epoch);
+  server_->CheckEpochs(client_epoch, server_epoch);
 }
 
 void TlsConnectTestBase::ClearStats() {
@@ -193,12 +183,33 @@ void TlsConnectTestBase::ClearServerCache() {
   SSL_ConfigServerSessionIDCache(1024, 0, 0, g_working_dir_path.c_str());
 }
 
+void TlsConnectTestBase::SaveAlgorithmPolicy() {
+  saved_policies_.clear();
+  for (auto it = algorithms_.begin(); it != algorithms_.end(); ++it) {
+    uint32_t policy;
+    SECStatus rv = NSS_GetAlgorithmPolicy(*it, &policy);
+    ASSERT_EQ(SECSuccess, rv);
+    saved_policies_.push_back(std::make_tuple(*it, policy));
+  }
+}
+
+void TlsConnectTestBase::RestoreAlgorithmPolicy() {
+  for (auto it = saved_policies_.begin(); it != saved_policies_.end(); ++it) {
+    auto algorithm = std::get<0>(*it);
+    auto policy = std::get<1>(*it);
+    SECStatus rv = NSS_SetAlgorithmPolicy(
+        algorithm, policy, NSS_USE_POLICY_IN_SSL | NSS_USE_ALG_IN_SSL_KX);
+    ASSERT_EQ(SECSuccess, rv);
+  }
+}
+
 void TlsConnectTestBase::SetUp() {
   SSL_ConfigServerSessionIDCache(1024, 0, 0, g_working_dir_path.c_str());
   SSLInt_ClearSelfEncryptKey();
   SSLInt_SetTicketLifetime(30);
   SSL_SetupAntiReplay(1 * PR_USEC_PER_SEC, 1, 3);
   ClearStats();
+  SaveAlgorithmPolicy();
   Init();
 }
 
@@ -209,6 +220,7 @@ void TlsConnectTestBase::TearDown() {
   SSL_ClearSessionCache();
   SSLInt_ClearSelfEncryptKey();
   SSL_ShutdownServerSessionIDCache();
+  RestoreAlgorithmPolicy();
 }
 
 void TlsConnectTestBase::Init() {

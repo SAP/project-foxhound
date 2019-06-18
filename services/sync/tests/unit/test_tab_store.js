@@ -1,9 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://services-sync/engines/tabs.js");
-ChromeUtils.import("resource://services-sync/service.js");
-ChromeUtils.import("resource://services-sync/util.js");
+const {TabEngine, TabSetRecord} = ChromeUtils.import("resource://services-sync/engines/tabs.js");
+const {Service} = ChromeUtils.import("resource://services-sync/service.js");
 
 async function getMockStore() {
   let engine = new TabEngine(Service);
@@ -113,7 +112,7 @@ add_task(async function test_createRecord() {
   // actual max we can fit.
   equal(record.tabs.length, 2672);
 
-  let maxSizeStub = sinon.stub(Service, "getMemcacheMaxRecordPayloadSize", () => 512 * 1024);
+  let maxSizeStub = sinon.stub(Service, "getMemcacheMaxRecordPayloadSize").callsFake(() => 512 * 1024);
   try {
     numtabs = 5400;
     _("Modify the max record payload size and create a big record");

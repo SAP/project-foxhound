@@ -16,9 +16,7 @@
 #include "jsutil.h"
 
 #include "builtin/Array.h"
-#ifdef ENABLE_BIGINT
-#  include "builtin/BigInt.h"
-#endif
+#include "builtin/BigInt.h"
 #include "builtin/String.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
@@ -60,10 +58,13 @@ static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               RangedPtr<DstCharT> dstPtr) // dstPtr after post-incrementation
 {
   // TODO: probably not very efficient as we are adding character wise to the the taint ranges
-  if (auto flow = srcTaint.at(std::distance(srcBegin.get(), src.get())))
-    dstTaint.append(TaintRange(std::distance(dstBegin.get(), dstCharBegin.get()),
-                               std::distance(dstBegin.get(), dstPtr.get()),
-                               *flow));
+  if (const TaintFlow* flow = srcTaint.at(src - srcBegin)) {
+    if ((dstCharBegin >= dstBegin) && (dstPtr >= dstBegin)) {
+      dstTaint.append(TaintRange(dstCharBegin - dstBegin,
+                                 dstPtr - dstBegin,
+                                 *flow));
+    }
+  }
 }
 
 /* ES5 15.12.3 Quote.
@@ -97,6 +98,9 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
         0,   0,  '\\', // rest are all zeros
       // clang-format on
   };
+
+  // Clear any existing taint information
+  dstTaint.clear();
 
   /* Step 1. */
   *dstPtr++ = '"';
@@ -326,15 +330,16 @@ static bool PreprocessValue(JSContext* cx, HandleObject holder, KeyType key,
   RootedString keyStr(cx);
 
   // Step 2. Modified by BigInt spec 6.1 to check for a toJSON method on the
-  // BigInt prototype when the value is a BigInt.
-  if (vp.isObject() || IF_BIGINT(vp.isBigInt(), false)) {
+  // BigInt prototype when the value is a BigInt, and to pass the BigInt
+  // primitive value as receiver.
+  if (vp.isObject() || vp.isBigInt()) {
     RootedValue toJSON(cx);
     RootedObject obj(cx, JS::ToObject(cx, vp));
     if (!obj) {
       return false;
     }
 
-    if (!GetProperty(cx, obj, obj, cx->names().toJSON, &toJSON)) {
+    if (!GetProperty(cx, obj, vp, cx->names().toJSON, &toJSON)) {
       return false;
     }
 
@@ -395,14 +400,11 @@ static bool PreprocessValue(JSContext* cx, HandleObject holder, KeyType key,
       if (!Unbox(cx, obj, vp)) {
         return false;
       }
-    }
-#ifdef ENABLE_BIGINT
-    else if (cls == ESClass::BigInt) {
+    } else if (cls == ESClass::BigInt) {
       if (!Unbox(cx, obj, vp)) {
         return false;
       }
     }
-#endif
   }
 
   return true;
@@ -717,14 +719,12 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
     return NumberValueToStringBuffer(cx, v, scx->sb);
   }
 
-#ifdef ENABLE_BIGINT
   /* Step 10 in the BigInt proposal. */
   if (v.isBigInt()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_BIGINT_NOT_SERIALIZABLE);
     return false;
   }
-#endif
 
   /* Step 10. */
   MOZ_ASSERT(v.isObject());
@@ -1045,7 +1045,7 @@ template <typename CharT>
 bool js::ParseJSONWithReviver(JSContext* cx,
                               const mozilla::Range<const CharT> chars,
                               HandleValue reviver, MutableHandleValue vp,
-                              const StringTaint* taint) {
+                              const StringTaint& taint) {
   /* 15.12.2 steps 2-3. */
   Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, taint));
   if (!parser.parse(vp)) {
@@ -1061,11 +1061,11 @@ bool js::ParseJSONWithReviver(JSContext* cx,
 
 template bool js::ParseJSONWithReviver(
     JSContext* cx, const mozilla::Range<const Latin1Char> chars,
-    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+    HandleValue reviver, MutableHandleValue vp, const StringTaint& taint);
 
 template bool js::ParseJSONWithReviver(
     JSContext* cx, const mozilla::Range<const char16_t> chars,
-    HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
+    HandleValue reviver, MutableHandleValue vp, const StringTaint& taint);
 
 static bool json_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -1089,6 +1089,10 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  // Taintfox: save the taint in a local variable
+  // Calling linear->taint() later is not valid
+  StringTaint taint = linear->taint();
+
   AutoStableStringChars linearChars(cx);
   if (!linearChars.init(cx, linear)) {
     return false;
@@ -1097,10 +1101,10 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
   HandleValue reviver = args.get(1);
 
   /* Steps 2-5. */
-  // TaintFox
+  // TaintFox - pass the taint to the parser
   return linearChars.isLatin1()
-           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), &linear->taint())
-           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), &linear->taint());
+           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), taint)
+           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), taint);
 }
 
 /* ES6 24.3.2. */

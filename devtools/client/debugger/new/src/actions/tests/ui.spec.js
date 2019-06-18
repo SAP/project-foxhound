@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import {
   createStore,
   selectors,
@@ -15,8 +17,10 @@ const {
   getPaneCollapse,
   getHighlightedLineRange,
   getProjectDirectoryRoot,
-  getRelativeSources
+  getDisplayedSources
 } = selectors;
+
+import type { Source } from "../../types";
 
 describe("ui", () => {
   it("should toggle the visible state of project search", () => {
@@ -65,14 +69,14 @@ describe("ui", () => {
 
   it("should highlight lines", () => {
     const { dispatch, getState } = createStore();
-    const range = { start: 3, end: 5, sourceId: 2 };
+    const range = { start: 3, end: 5, sourceId: "2" };
     dispatch(actions.highlightLineRange(range));
     expect(getHighlightedLineRange(getState())).toEqual(range);
   });
 
   it("should clear highlight lines", () => {
     const { dispatch, getState } = createStore();
-    const range = { start: 3, end: 5, sourceId: 2 };
+    const range = { start: 3, end: 5, sourceId: "2" };
     dispatch(actions.highlightLineRange(range));
     dispatch(actions.clearHighlightLineRange());
     expect(getHighlightedLineRange(getState())).toEqual({});
@@ -115,9 +119,9 @@ describe("setProjectDirectoryRoot", () => {
 
     dispatch(actions.setProjectDirectoryRoot("localhost:8000/examples/js"));
 
-    const filteredSourcesByThread = getRelativeSources(getState());
+    const filteredSourcesByThread = getDisplayedSources(getState());
     const filteredSources = Object.values(filteredSourcesByThread)[0];
-    const firstSource = Object.values(filteredSources)[0];
+    const firstSource: Source = (Object.values(filteredSources)[0]: any);
 
     expect(firstSource.url).toEqual(
       "http://localhost:8000/examples/js/scopes.js"

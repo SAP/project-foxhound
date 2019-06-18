@@ -807,7 +807,8 @@ JSObject* StyleSheet::WrapObject(JSContext* aCx,
   return dom::CSSStyleSheet_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-/* static */ bool StyleSheet::RuleHasPendingChildSheet(css::Rule* aRule) {
+/* static */
+bool StyleSheet::RuleHasPendingChildSheet(css::Rule* aRule) {
   MOZ_ASSERT(aRule->Type() == dom::CSSRule_Binding::IMPORT_RULE);
   auto rule = static_cast<dom::CSSImportRule*>(aRule);
   if (StyleSheet* childSheet = rule->GetStyleSheet()) {
@@ -964,6 +965,13 @@ void StyleSheet::FinishParse() {
 nsresult StyleSheet::ReparseSheet(const nsAString& aInput) {
   if (!IsComplete()) {
     return NS_ERROR_DOM_INVALID_ACCESS_ERR;
+  }
+
+  // Allowing to modify UA sheets is dangerous (in the sense that C++ code
+  // relies on rules in those sheets), plus they're probably going to be shared
+  // across processes in which case this is directly a no-go.
+  if (GetOrigin() == OriginFlags::UserAgent) {
+    return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR;
   }
 
   // Hold strong ref to the CSSLoader in case the document update

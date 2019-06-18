@@ -445,10 +445,11 @@ static IntSize ComputeMinSizeForShadowShape(const RectCornerRadii* aCornerRadii,
   return minSize;
 }
 
-void CacheBlur(DrawTarget* aDT, const IntSize& aMinSize,
-               const IntSize& aBlurRadius, const RectCornerRadii* aCornerRadii,
-               const Color& aShadowColor, const IntMargin& aBlurMargin,
-               SourceSurface* aBoxShadow) {
+static void CacheBlur(DrawTarget* aDT, const IntSize& aMinSize,
+                      const IntSize& aBlurRadius,
+                      const RectCornerRadii* aCornerRadii,
+                      const Color& aShadowColor, const IntMargin& aBlurMargin,
+                      SourceSurface* aBoxShadow) {
   BlurCacheKey key(aMinSize, aBlurRadius, aCornerRadii, aShadowColor,
                    aDT->GetBackendType());
   BlurCacheData* data =
@@ -877,11 +878,14 @@ static void DrawMirroredMinBoxShadow(
  * the space between the corners.
  */
 
-/* static */ void gfxAlphaBoxBlur::BlurRectangle(
-    gfxContext* aDestinationCtx, const gfxRect& aRect,
-    const RectCornerRadii* aCornerRadii, const gfxPoint& aBlurStdDev,
-    const Color& aShadowColor, const gfxRect& aDirtyRect,
-    const gfxRect& aSkipRect) {
+/* static */
+void gfxAlphaBoxBlur::BlurRectangle(gfxContext* aDestinationCtx,
+                                    const gfxRect& aRect,
+                                    const RectCornerRadii* aCornerRadii,
+                                    const gfxPoint& aBlurStdDev,
+                                    const Color& aShadowColor,
+                                    const gfxRect& aDirtyRect,
+                                    const gfxRect& aSkipRect) {
   if (!RectIsInt32Safe(ToRect(aRect))) {
     return;
   }

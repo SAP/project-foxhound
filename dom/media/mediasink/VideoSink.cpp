@@ -10,8 +10,10 @@
 #  include "mmsystem.h"
 #endif
 
-#include "MediaQueue.h"
 #include "VideoSink.h"
+
+#include "GeckoProfiler.h"
+#include "MediaQueue.h"
 #include "VideoUtils.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
@@ -35,6 +37,17 @@ using namespace mozilla::layers;
 // duration of a 60-fps frame.
 static const int64_t MIN_UPDATE_INTERVAL_US = 1000000 / (60 * 2);
 
+static void SetImageToGreenPixel(PlanarYCbCrImage* aImage) {
+  static uint8_t greenPixel[] = {0x00, 0x00, 0x00};
+  PlanarYCbCrData data;
+  data.mYChannel = greenPixel;
+  data.mCbChannel = greenPixel + 1;
+  data.mCrChannel = greenPixel + 2;
+  data.mYStride = data.mCbCrStride = 1;
+  data.mPicSize = data.mYSize = data.mCbCrSize = gfx::IntSize(1, 1);
+  aImage->CopyData(data);
+}
+
 VideoSink::VideoSink(AbstractThread* aThread, MediaSink* aAudioSink,
                      MediaQueue<VideoData>& aVideoQueue,
                      VideoFrameContainer* aContainer,
@@ -57,9 +70,14 @@ VideoSink::VideoSink(AbstractThread* aThread, MediaSink* aAudioSink,
       ,
       mHiResTimersRequested(false)
 #endif
-
 {
   MOZ_ASSERT(mAudioSink, "AudioSink should exist.");
+
+  if (StaticPrefs::browser_measurement_render_anims_and_video_solid() &&
+      mContainer) {
+    InitializeBlankImage();
+    MOZ_ASSERT(mBlankImage, "Blank image should exist.");
+  }
 }
 
 VideoSink::~VideoSink() {
@@ -168,6 +186,9 @@ void VideoSink::SetPlaying(bool aPlaying) {
     RenderVideoFrames(1);
     if (mContainer) {
       mContainer->ClearCachedResources();
+    }
+    if (mSecondaryContainer) {
+      mSecondaryContainer->ClearCachedResources();
     }
   }
 
@@ -296,20 +317,32 @@ void VideoSink::Redraw(const VideoInfo& aInfo) {
     return;
   }
 
+  auto now = TimeStamp::Now();
+
   RefPtr<VideoData> video = VideoQueue().PeekFront();
   if (video) {
+    if (mBlankImage) {
+      video->mImage = mBlankImage;
+    }
     video->MarkSentToCompositor();
-    mContainer->SetCurrentFrame(video->mDisplay, video->mImage,
-                                TimeStamp::Now());
+    mContainer->SetCurrentFrame(video->mDisplay, video->mImage, now);
+    if (mSecondaryContainer) {
+      mSecondaryContainer->SetCurrentFrame(video->mDisplay, video->mImage, now);
+    }
     return;
   }
 
   // When we reach here, it means there are no frames in this video track.
   // Draw a blank frame to ensure there is something in the image container
   // to fire 'loadeddata'.
+
   RefPtr<Image> blank =
       mContainer->GetImageContainer()->CreatePlanarYCbCrImage();
-  mContainer->SetCurrentFrame(aInfo.mDisplay, blank, TimeStamp::Now());
+  mContainer->SetCurrentFrame(aInfo.mDisplay, blank, now);
+
+  if (mSecondaryContainer) {
+    mSecondaryContainer->SetCurrentFrame(aInfo.mDisplay, blank, now);
+  }
 }
 
 void VideoSink::TryUpdateRenderedVideoFrames() {
@@ -410,6 +443,9 @@ void VideoSink::RenderVideoFrames(int32_t aMaxFrames, int64_t aClockTime,
     ImageContainer::NonOwningImage* img = images.AppendElement();
     img->mTimeStamp = t;
     img->mImage = frame->mImage;
+    if (mBlankImage) {
+      img->mImage = mBlankImage;
+    }
     img->mFrameID = frame->mFrameID;
     img->mProducerID = mProducerID;
 
@@ -420,6 +456,10 @@ void VideoSink::RenderVideoFrames(int32_t aMaxFrames, int64_t aClockTime,
 
   if (images.Length() > 0) {
     mContainer->SetCurrentFrames(frames[0]->mDisplay, images);
+
+    if (mSecondaryContainer) {
+      mSecondaryContainer->SetCurrentFrames(frames[0]->mDisplay, images);
+    }
   }
 }
 
@@ -449,6 +489,10 @@ void VideoSink::UpdateRenderedVideoFrames() {
                   " clock_time=%" PRId64,
                   frame->mTime.ToMicroseconds(), clockTime.ToMicroseconds());
     }
+  }
+
+  if (droppedCount > 0) {
+    PROFILER_ADD_MARKER("DroppedUncompositedVideoFrames", GRAPHICS);
   }
 
   if (droppedCount || sentToCompositorCount) {
@@ -524,6 +568,21 @@ void VideoSink::MaybeResolveEndPromise() {
   }
 }
 
+void VideoSink::SetSecondaryVideoContainer(VideoFrameContainer* aSecondary) {
+  AssertOwnerThread();
+  mSecondaryContainer = aSecondary;
+  if (!IsPlaying()) {
+    // If we're paused, try to send the current frame that we're
+    // paused at to the secondary container.
+    RenderVideoFrames(1);
+  }
+}
+
+void VideoSink::ClearSecondaryVideoContainer() {
+  AssertOwnerThread();
+  mSecondaryContainer = nullptr;
+}
+
 nsCString VideoSink::GetDebugInfo() {
   AssertOwnerThread();
   auto str = nsPrintfCString(
@@ -538,4 +597,12 @@ nsCString VideoSink::GetDebugInfo() {
   return std::move(str);
 }
 
+bool VideoSink::InitializeBlankImage() {
+  mBlankImage = mContainer->GetImageContainer()->CreatePlanarYCbCrImage();
+  if (mBlankImage == nullptr) {
+    return false;
+  }
+  SetImageToGreenPixel(mBlankImage->AsPlanarYCbCrImage());
+  return true;
+}
 }  // namespace mozilla

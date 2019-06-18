@@ -10,16 +10,17 @@
 // is used (from service.js).
 /* global Service */
 
-ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
-ChromeUtils.import("resource://services-common/async.js");
-ChromeUtils.import("resource://services-common/utils.js");
-ChromeUtils.import("resource://testing-common/PlacesTestUtils.jsm");
-ChromeUtils.import("resource://services-sync/util.js");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
-ChromeUtils.import("resource://gre/modules/PlacesSyncUtils.jsm");
-ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
-ChromeUtils.import("resource://testing-common/services/sync/utils.js");
+var {AddonTestUtils, MockAsyncShutdown} = ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+var {Async} = ChromeUtils.import("resource://services-common/async.js");
+var {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
+var {PlacesTestUtils} = ChromeUtils.import("resource://testing-common/PlacesTestUtils.jsm");
+var {sinon} = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+var {SerializableSet, Svc, Utils, getChromeWindow} = ChromeUtils.import("resource://services-sync/util.js");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {PlacesUtils} = ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+var {PlacesSyncUtils} = ChromeUtils.import("resource://gre/modules/PlacesSyncUtils.jsm");
+var {ObjectUtils} = ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
+var {AccountState, MockFxaStorageManager, SyncTestingInfrastructure, configureFxAccountIdentity, configureIdentity, encryptPayload, getLoginTelemetryScalar, makeFxAccountsInternalMock, makeIdentityConfig, promiseNamedTimer, promiseZeroTimer, sumHistogram, syncTestLogging, waitForZeroTimer} = ChromeUtils.import("resource://testing-common/services/sync/utils.js");
 ChromeUtils.defineModuleGetter(this, "AddonManager",
                                "resource://gre/modules/AddonManager.jsm");
 
@@ -28,18 +29,10 @@ add_task(async function head_setup() {
   // so it's also called as part of SyncTestingInfrastructure().
   syncTestLogging();
   // If a test imports Service, make sure it is initialized first.
-  if (this.Service) {
-    await this.Service.promiseInitialized;
+  if (typeof Service !== "undefined") {
+    await Service.promiseInitialized;
   }
 });
-
-// ================================================
-// Load mocking/stubbing library, sinon
-// docs: http://sinonjs.org/releases/v2.3.2/
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js", this);
-/* globals sinon */
-// ================================================
 
 XPCOMUtils.defineLazyGetter(this, "SyncPingSchema", function() {
   let ns = {};
@@ -465,7 +458,7 @@ Utils.getDefaultDeviceName = function() {
 
 async function registerRotaryEngine() {
   let {RotaryEngine} =
-    ChromeUtils.import("resource://testing-common/services/sync/rotaryengine.js", {});
+    ChromeUtils.import("resource://testing-common/services/sync/rotaryengine.js");
   await Service.engineManager.clear();
 
   await Service.engineManager.register(RotaryEngine);

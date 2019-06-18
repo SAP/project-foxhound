@@ -1,5 +1,5 @@
 // Tests bug 304414
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const PR_RDONLY = 0x1;  // see prio.h
 
@@ -72,7 +72,7 @@ function stream_from_channel(file) {
   return NetUtil.newChannel({
     uri: uri,
     loadUsingSystemPrincipal: true
-  }).open2();
+  }).open();
 }
 
 function run_test() {

@@ -57,13 +57,40 @@ async function openAboutDebugging({ enableWorkerUpdates } = {}) {
   const browser = tab.linkedBrowser;
   const document = browser.contentDocument;
   const window = browser.contentWindow;
-  info("wait for the initial about:debugging requests to be successful");
-  await waitForRequestsSuccess(window);
+
+  info("Wait until Connect page is displayed");
+  await waitUntil(() => document.querySelector(".js-connect-page"));
 
   return { tab, document, window };
 }
 
-async function closeAboutDevtoolsToolbox(devtoolsTab, win) {
+async function openAboutDevtoolsToolbox(doc, tab, win) {
+  info("Open about:devtools-toolbox page");
+  const target = findDebugTargetByText("about:debugging", doc);
+  ok(target, "about:debugging tab target appeared");
+  const inspectButton = target.querySelector(".js-debug-target-inspect-button");
+  ok(inspectButton, "Inspect button for about:debugging appeared");
+  inspectButton.click();
+  await Promise.all([
+    waitUntil(() => tab.nextElementSibling),
+    waitForRequestsToSettle(win.AboutDebugging.store),
+    gDevTools.once("toolbox-ready"),
+  ]);
+
+  info("Wait for about:devtools-toolbox tab will be selected");
+  const devtoolsTab = tab.nextElementSibling;
+  await waitUntil(() => gBrowser.selectedTab === devtoolsTab);
+  const devtoolsBrowser = gBrowser.selectedBrowser;
+
+  return {
+    devtoolsBrowser,
+    devtoolsDocument: devtoolsBrowser.contentDocument,
+    devtoolsTab,
+    devtoolsWindow: devtoolsBrowser.contentWindow,
+  };
+}
+
+async function closeAboutDevtoolsToolbox(aboutDebuggingDocument, devtoolsTab, win) {
   info("Close about:devtools-toolbox page");
   const onToolboxDestroyed = gDevTools.once("toolbox-destroyed");
   await removeTab(devtoolsTab);
@@ -71,6 +98,11 @@ async function closeAboutDevtoolsToolbox(devtoolsTab, win) {
   // Changing the tab will also trigger a request to list tabs, so wait until the selected
   // tab has changed to wait for requests to settle.
   await waitUntil(() => gBrowser.selectedTab !== devtoolsTab);
+
+  // Wait for removing about:devtools-toolbox tab info from about:debugging.
+  await waitUntil(() =>
+    !findDebugTargetByText("about:devtools-toolbox?", aboutDebuggingDocument));
+
   await waitForRequestsToSettle(win.AboutDebugging.store);
 }
 
@@ -82,7 +114,7 @@ async function reloadAboutDebugging(tab) {
   const document = browser.contentDocument;
   const window = browser.contentWindow;
   info("wait for the initial about:debugging requests to be successful");
-  await waitForRequestsSuccess(window);
+  await waitForRequestsSuccess(window.AboutDebugging.store);
 
   return document;
 }
@@ -90,12 +122,11 @@ async function reloadAboutDebugging(tab) {
 // Wait for all about:debugging target request actions to succeed.
 // They will typically be triggered after watching a new runtime or loading
 // about:debugging.
-function waitForRequestsSuccess(win) {
-  const { AboutDebugging } = win;
+function waitForRequestsSuccess(store) {
   return Promise.all([
-    waitForDispatch(AboutDebugging.store, "REQUEST_EXTENSIONS_SUCCESS"),
-    waitForDispatch(AboutDebugging.store, "REQUEST_TABS_SUCCESS"),
-    waitForDispatch(AboutDebugging.store, "REQUEST_WORKERS_SUCCESS"),
+    waitForDispatch(store, "REQUEST_EXTENSIONS_SUCCESS"),
+    waitForDispatch(store, "REQUEST_TABS_SUCCESS"),
+    waitForDispatch(store, "REQUEST_WORKERS_SUCCESS"),
   ]);
 }
 
@@ -152,9 +183,10 @@ function waitForDispatch(store, type) {
  */
 async function selectThisFirefoxPage(doc, store) {
   info("Select This Firefox page");
+  const onRequestSuccess = waitForRequestsSuccess(store);
   doc.location.hash = "#/runtime/this-firefox";
-  info("Wait for requests to settle");
-  await waitForRequestsToSettle(store);
+  info("Wait for requests to be complete");
+  await onRequestSuccess;
   info("Wait for runtime page to be rendered");
   await waitUntil(() => doc.querySelector(".js-runtime-page"));
 }
@@ -232,7 +264,28 @@ async function selectRuntime(deviceName, name, document) {
   sidebarItem.querySelector(".js-sidebar-link").click();
 
   await waitUntil(() => {
-    const runtimeInfo = document.querySelector(".js-runtime-info");
+    const runtimeInfo = document.querySelector(".js-runtime-name");
     return runtimeInfo && runtimeInfo.textContent.includes(name);
   });
+}
+
+function getToolbox(win) {
+  return gDevTools.getToolboxes().find(toolbox => toolbox.win === win);
+}
+
+/**
+ * Open the performance profiler dialog. Assumes the client is a mocked remote runtime
+ * client.
+ */
+async function openProfilerDialog(client, doc) {
+  const onProfilerLoaded = new Promise(r => {
+    client.loadPerformanceProfiler = r;
+  });
+
+  info("Click on the Profile Runtime button");
+  const profileButton = doc.querySelector(".js-profile-runtime-button");
+  profileButton.click();
+
+  info("Wait for the loadPerformanceProfiler callback to be executed on client-wrapper");
+  return onProfilerLoaded;
 }

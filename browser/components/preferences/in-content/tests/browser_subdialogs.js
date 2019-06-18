@@ -23,10 +23,16 @@ function open_subdialog_and_test_generic_start_state(browser, domcontentloadedFn
     info("waiting for subdialog DOMFrameContentLoaded");
     let dialogOpenPromise;
     await new Promise(resolve => {
-      win.addEventListener("DOMFrameContentLoaded", () => {
+      win.addEventListener("DOMFrameContentLoaded", function frameContentLoaded(ev) {
+        // We can get events for loads in other frames, so we have to filter
+        // those out.
+        if (ev.target != subdialog._frame) {
+          return;
+        }
+        win.removeEventListener("DOMFrameContentLoaded", frameContentLoaded);
         dialogOpenPromise = ContentTaskUtils.waitForEvent(subdialog._overlay, "dialogopen");
         resolve();
-      }, { once: true, capture: true });
+      }, { capture: true });
     });
     let result;
     if (args.domcontentloadedFnStr) {
@@ -193,7 +199,6 @@ add_task(async function check_opening_while_closing() {
   await close_subdialog_and_test_generic_end_state(tab.linkedBrowser,
     function() { content.window.gSubDialog._topDialog._frame.contentDocument.documentElement.acceptDialog(); },
     "accept", 1);
-
 });
 
 add_task(async function window_close_on_dialog() {

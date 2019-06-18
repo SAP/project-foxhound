@@ -14,7 +14,9 @@ XPIDL_MODULE = 'necko_res'
 
 EXPORTS.mozilla.net += [
     'ExtensionProtocolHandler.h',
+    'SubstitutingJARURI.h',
     'SubstitutingProtocolHandler.h',
+    'SubstitutingURL.h',
 ]
 
 UNIFIED_SOURCES += [

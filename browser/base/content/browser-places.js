@@ -453,7 +453,7 @@ var PlacesCommandHook = {
     });
     PlacesUIUtils.showBookmarkDialog({ action: "add",
                                        type: "bookmark",
-                                       uri: makeURI(url),
+                                       uri: Services.io.newURI(url),
                                        title,
                                        defaultInsertionPoint,
                                        hiddenRows: [ "location", "keyword" ],
@@ -542,7 +542,7 @@ var PlacesCommandHook = {
   },
 
   searchBookmarks() {
-    gURLBar.typeRestrictToken(UrlbarTokenizer.RESTRICT.BOOKMARK);
+    gURLBar.search(UrlbarTokenizer.RESTRICT.BOOKMARK);
   },
 };
 
@@ -572,12 +572,12 @@ HistoryMenu.prototype = {
   },
 
   _getClosedTabCount() {
-    // SessionStore doesn't track the hidden window, so just return zero then.
-    if (window == Services.appShell.hiddenDOMWindow) {
+    try {
+      return SessionStore.getClosedTabCount(window);
+    } catch (ex) {
+      // SessionStore doesn't track the hidden window, so just return zero then.
       return 0;
     }
-
-    return SessionStore.getClosedTabCount(window);
   },
 
   toggleHiddenTabs() {
@@ -683,6 +683,7 @@ HistoryMenu.prototype = {
   },
 
   _onCommand: function HM__onCommand(aEvent) {
+    aEvent = getRootEvent(aEvent);
     let placesNode = aEvent.target._placesNode;
     if (placesNode) {
       if (!PrivateBrowsingUtils.isWindowPrivate(window))
@@ -794,9 +795,9 @@ var BookmarksEventHandler = {
       // Check whether the tooltipNode is a Places node.
       // In such a case use it, otherwise check for targetURI attribute.
       var tooltipNode = aDocument.tooltipNode;
-      if (tooltipNode._placesNode)
+      if (tooltipNode._placesNode) {
         node = tooltipNode._placesNode;
-      else {
+      } else {
         // This is a static non-Places node.
         targetURI = tooltipNode.getAttribute("targetURI");
       }

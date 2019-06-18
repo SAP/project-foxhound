@@ -9,23 +9,34 @@ import AccessibleImage from "../AccessibleImage";
 import { CommandBarButton } from "./";
 import "./styles/PaneToggleButton.css";
 
+type Position = "start" | "end";
+
 type Props = {
   collapsed: boolean,
-  handleClick: (string, boolean) => void,
+  handleClick: (Position, boolean) => void,
   horizontal: boolean,
-  position: string
+  position: Position
 };
 
 class PaneToggleButton extends PureComponent<Props> {
   static defaultProps = {
-    horizontal: false
+    horizontal: false,
+    position: "start"
   };
+
+  label(position: Position, collapsed: boolean) {
+    switch (position) {
+      case "start":
+        return L10N.getStr(collapsed ? "expandSources" : "collapseSources");
+      case "end":
+        return L10N.getStr(
+          collapsed ? "expandBreakpoints" : "collapseBreakpoints"
+        );
+    }
+  }
 
   render() {
     const { position, collapsed, horizontal, handleClick } = this.props;
-    const title = !collapsed
-      ? L10N.getStr("expandPanes")
-      : L10N.getStr("collapsePanes");
 
     return (
       <CommandBarButton
@@ -33,10 +44,12 @@ class PaneToggleButton extends PureComponent<Props> {
           collapsed,
           vertical: !horizontal
         })}
-        onClick={() => handleClick(position, collapsed)}
-        title={title}
+        onClick={() => handleClick(position, !collapsed)}
+        title={this.label(position, collapsed)}
       >
-        <AccessibleImage className="toggle-panes" />
+        <AccessibleImage
+          className={collapsed ? "pane-expand" : "pane-collapse"}
+        />
       </CommandBarButton>
     );
   }

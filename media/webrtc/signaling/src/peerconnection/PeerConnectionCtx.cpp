@@ -194,7 +194,7 @@ static auto FindId(const Sequence<RTCInboundRTPStreamStats>& aArray,
 void PeerConnectionCtx::DeliverStats(RTCStatsQuery& aQuery) {
   using namespace Telemetry;
 
-  std::unique_ptr<dom::RTCStatsReportInternal> report(aQuery.report.forget());
+  std::unique_ptr<dom::RTCStatsReportInternal> report(std::move(aQuery.report));
   // First, get reports from a second ago, if any, for calculations below
   std::unique_ptr<dom::RTCStatsReportInternal> lastReport;
   {
@@ -239,7 +239,7 @@ void PeerConnectionCtx::DeliverStats(RTCStatsQuery& aQuery) {
         MOZ_ASSERT(isRemote);
         HistogramID id = isAudio ? WEBRTC_AUDIO_QUALITY_OUTBOUND_RTT
                                  : WEBRTC_VIDEO_QUALITY_OUTBOUND_RTT;
-        Accumulate(id, s.mRoundTripTime.Value());
+        Accumulate(id, s.mRoundTripTime.Value() * 1000);
       }
       if (lastReport && lastReport->mInboundRTPStreamStats.WasPassed() &&
           s.mBytesReceived.WasPassed()) {
@@ -363,6 +363,7 @@ nsresult PeerConnectionCtx::Cleanup() {
 
   mQueuedJSEPOperations.Clear();
   mGMPService = nullptr;
+  mTransportHandler->Destroy();
   return NS_OK;
 }
 

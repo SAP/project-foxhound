@@ -40,8 +40,7 @@ USE_LIBS += [
     'updatecommon',
 ]
 
-for var in ('MOZ_APP_NAME', 'MOZ_APP_BASENAME', 'MOZ_APP_DISPLAYNAME',
-            'MOZ_APP_VENDOR', 'BIN_SUFFIX', 'MOZ_DEBUG'):
+for var in ('MOZ_APP_VENDOR', 'MOZ_APP_BASENAME'):
     DEFINES[var] = CONFIG[var]
 
 DEFINES['NS_NO_XPCOM'] = True
@@ -54,6 +53,9 @@ if CONFIG['MOZ_MAINTENANCE_SERVICE']:
 # For debugging purposes only
 #DEFINES['DISABLE_UPDATER_AUTHENTICODE_CHECK'] = True
 
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
+
 if CONFIG['OS_ARCH'] == 'WINNT':
     DEFINES['UNICODE'] = True
     DEFINES['_UNICODE'] = True
@@ -62,14 +64,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         WIN32_EXE_LDFLAGS += ['-municode']
 
 TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.mozapps.update.tests.browser += [
-    'data/shared.js',
-    'data/sharedUpdateXML.js',
     'data/simple.mar',
 ]
 
 TEST_HARNESS_FILES.testing.mochitest.chrome.toolkit.mozapps.update.tests.chrome += [
-    'data/shared.js',
-    'data/sharedUpdateXML.js',
     'data/simple.mar',
 ]
 
@@ -100,11 +98,7 @@ FINAL_TARGET_FILES += [
     'data/partial_removed-files_mac',
     'data/partial_update_manifest',
     'data/replace_log_success',
-    'data/shared.js',
-    'data/sharedUpdateXML.js',
     'data/simple.mar',
-    'data/wrong_product_channel.mar',
-    'data/xpcshellUtilsAUS.js',
     'TestAUSReadStrings1.ini',
     'TestAUSReadStrings2.ini',
     'TestAUSReadStrings3.ini',
@@ -116,7 +110,3 @@ FINAL_TARGET_PP_FILES += [
 
 with Files("browser/browser_TelemetryUpdatePing.js"):
     BUG_COMPONENT = ("Toolkit", "Telemetry")
-
-if CONFIG['CC_TYPE'] == 'gcc':
-    CXXFLAGS += ['-Wno-format-truncation']
-

@@ -24,21 +24,6 @@
         <parameter name="firstTime"/>
         <body>
           <![CDATA[
-            var control = this.labeledControlElement;
-            if (!control) {
-              var bindingParent = document.getBindingParent(this);
-              if ("accessKey" in bindingParent) {
-                control = bindingParent; // For controls that make the <label> an anon child
-              }
-            }
-            if (control) {
-              control.labelElement = this;
-              var controlAccessKey = control.getAttribute("accesskey");
-              if (controlAccessKey) {
-                this.setAttribute("accesskey", controlAccessKey);
-              }
-            }
-
             var accessKey = this.accessKey;
             // No need to remove existing formatting the first time.
             if (firstTime && !accessKey)
@@ -88,7 +73,7 @@
             }
 
             var labelText = this.textContent;
-            if (!accessKey || !labelText || !control) {
+            if (!accessKey || !labelText) {
               return;
             }
             var accessKeyIndex = -1;
@@ -195,16 +180,12 @@
       <property name="accessKey">
         <getter>
           <![CDATA[
-            var accessKey = this.getAttribute("accesskey");
-            return accessKey ? accessKey[0] : null;
+            return this.getAttribute("accesskey");
           ]]>
         </getter>
         <setter>
           <![CDATA[
-            // If this label already has an accesskey attribute store it here as well
-            if (this.hasAttribute("accesskey")) {
-              this.setAttribute("accesskey", val);
-            }
+            this.setAttribute("accesskey", val);
             var control = this.labeledControlElement;
             if (control) {
               control.setAttribute("accesskey", val);
@@ -221,12 +202,7 @@
       <property name="control" onget="return this.getAttribute('control');">
         <setter>
           <![CDATA[
-            var control = this.labeledControlElement;
-            if (control) {
-              control.labelElement = null; // No longer pointed to be this label
-            }
             this.setAttribute("control", val);
-            this.formatAccessKey(false);
             return val;
           ]]>
         </setter>
@@ -256,97 +232,4 @@
       ]]></handler>
     </handlers>
   </binding>
-
-  <binding id="text-link">
-    <implementation>
-      <property name="href" onget="return this.getAttribute('href');"
-                            onset="this.setAttribute('href', val); return val;" />
-      <method name="open">
-        <parameter name="aEvent"/>
-        <body>
-        <![CDATA[
-          var href = this.href;
-          if (!href || this.disabled || aEvent.defaultPrevented)
-            return;
-
-          var uri = null;
-          try {
-            const nsISSM = Ci.nsIScriptSecurityManager;
-            const secMan =
-                     Cc["@mozilla.org/scriptsecuritymanager;1"]
-                       .getService(nsISSM);
-
-            const ioService =
-                     Cc["@mozilla.org/network/io-service;1"]
-                       .getService(Ci.nsIIOService);
-
-            uri = ioService.newURI(href);
-
-            let principal;
-            if (this.getAttribute("useoriginprincipal") == "true") {
-              principal = this.nodePrincipal;
-            } else {
-              principal = secMan.createNullPrincipal({});
-            }
-            try {
-              secMan.checkLoadURIWithPrincipal(principal, uri,
-                                               nsISSM.DISALLOW_INHERIT_PRINCIPAL);
-            } catch (ex) {
-              var msg = "Error: Cannot open a " + uri.scheme + ": link using \
-                         the text-link binding.";
-              Cu.reportError(msg);
-              return;
-            }
-
-            const cID = "@mozilla.org/uriloader/external-protocol-service;1";
-            const nsIEPS = Ci.nsIExternalProtocolService;
-            var protocolSvc = Cc[cID].getService(nsIEPS);
-
-            // if the scheme is not an exposed protocol, then opening this link
-            // should be deferred to the system's external protocol handler
-            if (!protocolSvc.isExposedProtocol(uri.scheme)) {
-              protocolSvc.loadURI(uri);
-              aEvent.preventDefault();
-              return;
-            }
-
-          } catch (ex) {
-            Cu.reportError(ex);
-          }
-
-          aEvent.preventDefault();
-          href = uri ? uri.spec : href;
-
-          // Try handing off the link to the host application, e.g. for
-          // opening it in a tabbed browser.
-          var linkHandled = Cc["@mozilla.org/supports-PRBool;1"]
-                              .createInstance(Ci.nsISupportsPRBool);
-          linkHandled.data = false;
-          let {shiftKey, ctrlKey, metaKey, altKey, button} = aEvent;
-          let data = {shiftKey, ctrlKey, metaKey, altKey, button, href};
-          Cc["@mozilla.org/observer-service;1"]
-            .getService(Ci.nsIObserverService)
-            .notifyObservers(linkHandled, "handle-xul-text-link", JSON.stringify(data));
-          if (linkHandled.data)
-            return;
-
-          // otherwise, fall back to opening the anchor directly
-          var win = window;
-          if (window.isChromeWindow) {
-            while (win.opener && !win.opener.closed)
-              win = win.opener;
-          }
-          win.open(href);
-        ]]>
-        </body>
-      </method>
-    </implementation>
-
-    <handlers>
-      <handler event="click" phase="capturing" button="0" action="this.open(event)"/>
-      <handler event="click" phase="capturing" button="1" action="this.open(event)"/>
-      <handler event="keypress" preventdefault="true" keycode="VK_RETURN" action="this.click()" />
-    </handlers>
-  </binding>
-
 </bindings>

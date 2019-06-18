@@ -231,6 +231,11 @@ function _do_quit() {
   _quit = true;
 }
 
+// This is useless, except to the extent that it has the side-effect of
+// initializing the widget module, which some tests unfortunately
+// accidentally rely on.
+void Cc["@mozilla.org/widget/transferable;1"].createInstance();
+
 /**
  * Overrides idleService with a mock.  Idle is commonly used for maintenance
  * tasks, thus if a test uses a service that requires the idle service, it will
@@ -248,18 +253,11 @@ var _fakeIdleService = {
       Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   },
   contractID: "@mozilla.org/widget/idleservice;1",
-  get CID() {
-    return this.registrar.contractIDToCID(this.contractID);
-  },
+  CID: Components.ID("{9163a4ae-70c2-446c-9ac1-bbe4ab93004e}"),
 
   activate: function FIS_activate() {
-    if (!this.originalFactory) {
-      // Save original factory.
-      this.originalFactory =
-        Components.manager.getClassObject(Cc[this.contractID],
-                                          Ci.nsIFactory);
-      // Unregister original factory.
-      this.registrar.unregisterFactory(this.CID, this.originalFactory);
+    if (!this.originalCID) {
+      this.originalCID = this.registrar.contractIDToCID(this.contractID);
       // Replace with the mock.
       this.registrar.registerFactory(this.CID, "Fake Idle Service",
                                      this.contractID, this.factory
@@ -268,13 +266,13 @@ var _fakeIdleService = {
   },
 
   deactivate: function FIS_deactivate() {
-    if (this.originalFactory) {
+    if (this.originalCID) {
       // Unregister the mock.
       this.registrar.unregisterFactory(this.CID, this.factory);
       // Restore original factory.
-      this.registrar.registerFactory(this.CID, "Idle Service",
-                                     this.contractID, this.originalFactory);
-      delete this.originalFactory;
+      this.registrar.registerFactory(this.originalCID, "Idle Service",
+                                     this.contractID, null);
+      delete this.originalCID;
     }
   },
 
@@ -384,7 +382,7 @@ function _setupDebuggerServer(breakpointFiles, callback) {
 
   let require;
   try {
-    ({ require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {}));
+    ({ require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm"));
   } catch (e) {
     throw new Error("resource://devtools appears to be inaccessible from the " +
                     "xpcshell environment.\n" +
@@ -507,7 +505,7 @@ function _execute_test() {
     this[func] = Assert[func].bind(Assert);
   }
 
-  const {PerTestCoverageUtils} = ChromeUtils.import("resource://testing-common/PerTestCoverageUtils.jsm", {});
+  const {PerTestCoverageUtils} = ChromeUtils.import("resource://testing-common/PerTestCoverageUtils.jsm");
 
   if (runningInParent) {
     PerTestCoverageUtils.beforeTestSync();

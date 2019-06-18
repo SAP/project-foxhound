@@ -14,9 +14,8 @@ loader.lazyRequireGetter(this, "Debugger", "Debugger");
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(this, "AutocompletePopup", "devtools/client/shared/autocomplete-popup");
 loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
-loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "KeyCodes", "devtools/client/shared/keycodes", true);
-loader.lazyRequireGetter(this, "Editor", "devtools/client/sourceeditor/editor");
+loader.lazyRequireGetter(this, "Editor", "devtools/client/shared/sourceeditor/editor");
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
 loader.lazyRequireGetter(this, "saveScreenshot", "devtools/shared/screenshot/save");
 loader.lazyRequireGetter(this, "focusableSelector", "devtools/client/shared/focus", true);
@@ -54,10 +53,6 @@ const {
  * Create a JSTerminal (a JavaScript command line). This is attached to an
  * existing HeadsUpDisplay (a Web Console instance). This code is responsible
  * with handling command line input and code evaluation.
- *
- * @constructor
- * @param object webConsoleFrame
- *        The WebConsoleFrame object that owns this JSTerm instance.
  */
 class JSTerm extends Component {
   static get propTypes() {
@@ -72,7 +67,7 @@ class JSTerm extends Component {
       // History of executed expression (state).
       history: PropTypes.object.isRequired,
       // Console object.
-      hud: PropTypes.object.isRequired,
+      webConsoleUI: PropTypes.object.isRequired,
       // Needed for opening context menu
       serviceContainer: PropTypes.object.isRequired,
       // Handler for clipboard 'paste' event (also used for 'drop' event, callback).
@@ -84,6 +79,8 @@ class JSTerm extends Component {
       autocompleteUpdate: PropTypes.func.isRequired,
       // Data to be displayed in the autocomplete popup.
       autocompleteData: PropTypes.object.isRequired,
+      // Is the input in editor mode.
+      editorMode: PropTypes.bool,
     };
   }
 
@@ -91,11 +88,11 @@ class JSTerm extends Component {
     super(props);
 
     const {
-      hud,
+      webConsoleUI,
     } = props;
 
-    this.hud = hud;
-    this.hudId = this.hud.hudId;
+    this.webConsoleUI = webConsoleUI;
+    this.hudId = this.webConsoleUI.hudId;
 
     this._keyPress = this._keyPress.bind(this);
     this._inputEventHandler = this._inputEventHandler.bind(this);
@@ -116,7 +113,7 @@ class JSTerm extends Component {
     this._telemetry = new Telemetry();
 
     EventEmitter.decorate(this);
-    hud.jsterm = this;
+    webConsoleUI.jsterm = this;
   }
 
   componentDidMount() {
@@ -128,8 +125,8 @@ class JSTerm extends Component {
       autoSelect: true,
     };
 
-    const doc = this.hud.document;
-    const toolbox = gDevTools.getToolbox(this.hud.owner.target);
+    const doc = this.webConsoleUI.document;
+    const toolbox = this.webConsoleUI.wrapper.toolbox;
     const tooltipDoc = toolbox ? toolbox.doc : doc;
     // The popup will be attached to the toolbox document or HUD document in the case
     // such as the browser console which doesn't have a toolbox.
@@ -206,7 +203,7 @@ class JSTerm extends Component {
               // No need to handle shift + Enter as it's natively handled by CodeMirror.
 
               const hasSuggestion = this.hasAutocompletionSuggestion();
-              if (!hasSuggestion && !Debugger.isCompilableUnit(this.getInputValue())) {
+              if (!hasSuggestion && !Debugger.isCompilableUnit(this._getValue())) {
                 // incomplete statement
                 return "CodeMirror.Pass";
               }
@@ -307,10 +304,9 @@ class JSTerm extends Component {
               if (this.autocompletePopup.isOpen) {
                 this.autocompletePopup.selectPreviousPageItem();
               } else {
-                this.hud.outputScroller.scrollTop = Math.max(
-                  0,
-                  this.hud.outputScroller.scrollTop - this.hud.outputScroller.clientHeight
-                );
+                const {outputScroller} = this.webConsoleUI;
+                const {scrollTop, clientHeight} = outputScroller;
+                outputScroller.scrollTop = Math.max(0, scrollTop - clientHeight);
               }
 
               return null;
@@ -320,10 +316,10 @@ class JSTerm extends Component {
               if (this.autocompletePopup.isOpen) {
                 this.autocompletePopup.selectNextPageItem();
               } else {
-                this.hud.outputScroller.scrollTop = Math.min(
-                  this.hud.outputScroller.scrollHeight,
-                  this.hud.outputScroller.scrollTop + this.hud.outputScroller.clientHeight
-                );
+                const {outputScroller} = this.webConsoleUI;
+                const {scrollTop, scrollHeight, clientHeight} = outputScroller;
+                outputScroller.scrollTop =
+                  Math.min(scrollHeight, scrollTop + clientHeight);
               }
 
               return null;
@@ -335,8 +331,8 @@ class JSTerm extends Component {
                 return null;
               }
 
-              if (!this.getInputValue()) {
-                this.hud.outputScroller.scrollTop = 0;
+              if (!this._getValue()) {
+                this.webConsoleUI.outputScroller.scrollTop = 0;
                 return null;
               }
 
@@ -354,8 +350,9 @@ class JSTerm extends Component {
                 return null;
               }
 
-              if (!this.getInputValue()) {
-                this.hud.outputScroller.scrollTop = this.hud.outputScroller.scrollHeight;
+              if (!this._getValue()) {
+                const {outputScroller} = this.webConsoleUI;
+                outputScroller.scrollTop = outputScroller.scrollHeight;
                 return null;
               }
 
@@ -411,8 +408,8 @@ class JSTerm extends Component {
     this._inputCharWidth = this._getInputCharWidth();
     this._paddingInlineStart = this.editor ? null : this._getInputPaddingInlineStart();
 
-    this.hud.window.addEventListener("blur", this._blurEventHandler);
-    this.lastInputValue && this.setInputValue(this.lastInputValue);
+    this.webConsoleUI.window.addEventListener("blur", this._blurEventHandler);
+    this.lastInputValue && this._setValue(this.lastInputValue);
   }
 
   componentWillReceiveProps(nextProps) {
@@ -446,7 +443,7 @@ class JSTerm extends Component {
    * @type Element
    */
   get outputNode() {
-    return this.hud.outputNode;
+    return this.webConsoleUI.outputNode;
   }
 
   /**
@@ -454,7 +451,7 @@ class JSTerm extends Component {
    * @type object
    */
   get webConsoleClient() {
-    return this.hud.webConsoleClient;
+    return this.webConsoleUI.webConsoleClient;
   }
 
   focus() {
@@ -500,7 +497,7 @@ class JSTerm extends Component {
    *        The message received from the server.
    */
   async _executeResultCallback(response) {
-    if (!this.hud) {
+    if (!this.webConsoleUI) {
       return null;
     }
 
@@ -528,13 +525,13 @@ class JSTerm extends Component {
     if (helperResult && helperResult.type) {
       switch (helperResult.type) {
         case "clearOutput":
-          this.hud.clearOutput();
+          this.webConsoleUI.clearOutput();
           break;
         case "clearHistory":
           this.props.clearHistory();
           break;
         case "inspectObject":
-          this.hud.inspectObjectActor(helperResult.object);
+          this.webConsoleUI.inspectObjectActor(helperResult.object);
           break;
         case "error":
           try {
@@ -544,14 +541,14 @@ class JSTerm extends Component {
           }
           break;
         case "help":
-          this.hud.owner.openLink(HELP_URL);
+          this.webConsoleUI.hud.openLink(HELP_URL);
           break;
         case "copyValueToClipboard":
           clipboardHelper.copyString(helperResult.value);
           break;
         case "screenshotOutput":
           const { args, value } = helperResult;
-          const results = await saveScreenshot(this.hud.window, args, value);
+          const results = await saveScreenshot(this.webConsoleUI.window, args, value);
           this.screenshotNotify(results);
           // early return as screenshot notify has dispatched all necessary messages
           return null;
@@ -565,8 +562,8 @@ class JSTerm extends Component {
       return null;
     }
 
-    if (this.hud.consoleOutput) {
-      return this.hud.consoleOutput.dispatchMessageAdd(response, true);
+    if (this.webConsoleUI.wrapper) {
+      return this.webConsoleUI.wrapper.dispatchMessageAdd(response, true);
     }
 
     return null;
@@ -574,7 +571,7 @@ class JSTerm extends Component {
 
   screenshotNotify(results) {
     const wrappedResults = results.map(message => ({ message, type: "logMessage" }));
-    this.hud.consoleOutput.dispatchMessagesAdd(wrappedResults);
+    this.webConsoleUI.wrapper.dispatchMessagesAdd(wrappedResults);
   }
 
   /**
@@ -582,13 +579,13 @@ class JSTerm extends Component {
    *
    * @param {String} executeString
    *        The string you want to execute. If this is not provided, the current
-   *        user input is used - taken from |this.getInputValue()|.
+   *        user input is used - taken from |this._getValue()|.
    * @returns {Promise}
    *          Resolves with the message once the result is displayed.
    */
   async execute(executeString) {
     // attempt to execute the content of the inputNode
-    executeString = executeString || this.getInputValue();
+    executeString = executeString || this._getValue();
     if (!executeString) {
       return null;
     }
@@ -597,11 +594,15 @@ class JSTerm extends Component {
     this.props.appendToHistory(executeString);
 
     WebConsoleUtils.usageCount++;
-    this.setInputValue("");
+
+    if (!this.props.editorMode) {
+      this._setValue("");
+    }
+
     this.clearCompletion();
 
     let selectedNodeActor = null;
-    const inspectorSelection = this.hud.owner.getInspectorSelection();
+    const inspectorSelection = this.webConsoleUI.hud.getInspectorSelection();
     if (inspectorSelection && inspectorSelection.nodeFront) {
       selectedNodeActor = inspectorSelection.nodeFront.actorID;
     }
@@ -611,11 +612,12 @@ class JSTerm extends Component {
       messageText: executeString,
       timeStamp: Date.now(),
     });
-    this.hud.proxy.dispatchMessageAdd(cmdMessage);
+    this.webConsoleUI.proxy.dispatchMessageAdd(cmdMessage);
 
     let mappedExpressionRes = null;
     try {
-      mappedExpressionRes = await this.hud.owner.getMappedExpression(executeString);
+      mappedExpressionRes =
+        await this.webConsoleUI.hud.getMappedExpression(executeString);
     } catch (e) {
       console.warn("Error when calling getMappedExpression", e);
     }
@@ -721,7 +723,7 @@ class JSTerm extends Component {
    *        The new value to set.
    * @returns void
    */
-  setInputValue(newValue) {
+  _setValue(newValue) {
     newValue = newValue || "";
     this.lastInputValue = newValue;
 
@@ -760,7 +762,7 @@ class JSTerm extends Component {
    * Gets the value from the input field
    * @returns string
    */
-  getInputValue() {
+  _getValue() {
     if (this.props.codeMirrorEnabled) {
       return this.editor ? this.editor.getText() || "" : "";
     }
@@ -799,7 +801,7 @@ class JSTerm extends Component {
    * @private
    */
   _inputEventHandler() {
-    const value = this.getInputValue();
+    const value = this._getValue();
     if (this.lastInputValue !== value) {
       this.resizeInput();
       this.props.autocompleteUpdate();
@@ -826,7 +828,7 @@ class JSTerm extends Component {
    */
   _keyPress(event) {
     const inputNode = this.inputNode;
-    const inputValue = this.getInputValue();
+    const inputValue = this._getValue();
     let inputUpdated = false;
 
     if (event.ctrlKey) {
@@ -911,7 +913,7 @@ class JSTerm extends Component {
       return;
     } else if (event.keyCode == KeyCodes.DOM_VK_RETURN) {
       if (!this.autocompletePopup.isOpen && (
-        event.shiftKey || !Debugger.isCompilableUnit(this.getInputValue())
+        event.shiftKey || !Debugger.isCompilableUnit(this._getValue())
       )) {
         // shift return or incomplete statement
         return;
@@ -964,10 +966,10 @@ class JSTerm extends Component {
         if (this.autocompletePopup.isOpen) {
           this.autocompletePopup.selectPreviousPageItem();
         } else {
-          this.hud.outputScroller.scrollTop =
+          this.webConsoleUI.outputScroller.scrollTop =
             Math.max(0,
-              this.hud.outputScroller.scrollTop -
-              this.hud.outputScroller.clientHeight
+              this.webConsoleUI.outputScroller.scrollTop -
+              this.webConsoleUI.outputScroller.clientHeight
             );
         }
         event.preventDefault();
@@ -977,10 +979,10 @@ class JSTerm extends Component {
         if (this.autocompletePopup.isOpen) {
           this.autocompletePopup.selectNextPageItem();
         } else {
-          this.hud.outputScroller.scrollTop =
-            Math.min(this.hud.outputScroller.scrollHeight,
-              this.hud.outputScroller.scrollTop +
-              this.hud.outputScroller.clientHeight
+          this.webConsoleUI.outputScroller.scrollTop =
+            Math.min(this.webConsoleUI.outputScroller.scrollHeight,
+              this.webConsoleUI.outputScroller.scrollTop +
+              this.webConsoleUI.outputScroller.clientHeight
             );
         }
         event.preventDefault();
@@ -993,7 +995,7 @@ class JSTerm extends Component {
         } else if (this.getAutoCompletionText()) {
           this.clearCompletion();
         } else if (inputValue.length <= 0) {
-          this.hud.outputScroller.scrollTop = 0;
+          this.webConsoleUI.outputScroller.scrollTop = 0;
           event.preventDefault();
         }
         break;
@@ -1005,7 +1007,8 @@ class JSTerm extends Component {
         } else if (this.getAutoCompletionText()) {
           this.clearCompletion();
         } else if (inputValue.length <= 0) {
-          this.hud.outputScroller.scrollTop = this.hud.outputScroller.scrollHeight;
+          const {outputScroller} = this.webConsoleUI;
+          outputScroller.scrollTop = outputScroller.scrollHeight;
           event.preventDefault();
         }
         break;
@@ -1064,11 +1067,11 @@ class JSTerm extends Component {
     }
 
     const newInputValue = getValueFromHistory(direction);
-    const expression = this.getInputValue();
+    const expression = this._getValue();
     updateHistoryPosition(direction, expression);
 
     if (newInputValue != null) {
-      this.setInputValue(newInputValue);
+      this._setValue(newInputValue);
       return true;
     }
 
@@ -1081,7 +1084,7 @@ class JSTerm extends Component {
    * @return boolean
    */
   hasEmptyInput() {
-    return this.getInputValue() === "";
+    return this._getValue() === "";
   }
 
   /**
@@ -1091,7 +1094,7 @@ class JSTerm extends Component {
    *         True if CR or LF found in node value; else false.
    */
   hasMultilineInput() {
-    return /[\r\n]/.test(this.getInputValue());
+    return /[\r\n]/.test(this._getValue());
   }
 
   /**
@@ -1104,7 +1107,7 @@ class JSTerm extends Component {
    *         otherwise false.
    */
   canCaretGoPrevious() {
-    const inputValue = this.getInputValue();
+    const inputValue = this._getValue();
 
     if (this.editor) {
       const {line, ch} = this.editor.getCursor();
@@ -1131,7 +1134,7 @@ class JSTerm extends Component {
    *         false.
    */
   canCaretGoNext() {
-    const inputValue = this.getInputValue();
+    const inputValue = this._getValue();
     const multiline = /[\r\n]/.test(inputValue);
 
     if (this.editor) {
@@ -1194,7 +1197,7 @@ class JSTerm extends Component {
         if (!matchProp) {
           suffix = label;
         }
-        const inputAfterCursor = this.getInputValue().substring(inputUntilCursor.length);
+        const inputAfterCursor = this._getValue().substring(inputUntilCursor.length);
         // If there's not a bracket after the cursor, add it to the completionText.
         if (!inputAfterCursor.trimLeft().startsWith("]")) {
           suffix = suffix + "]";
@@ -1267,7 +1270,7 @@ class JSTerm extends Component {
           suffix = label;
         }
 
-        const inputAfterCursor = this.getInputValue().substring(inputBeforeCursor.length);
+        const inputAfterCursor = this._getValue().substring(inputBeforeCursor.length);
         // If there's no closing bracket after the cursor, add it to the completionText.
         if (!inputAfterCursor.trimLeft().startsWith("]")) {
           suffix = suffix + "]";
@@ -1330,7 +1333,7 @@ class JSTerm extends Component {
             inputBeforeCursor.substring(lastOpeningBracketIndex + 1).length;
         }
 
-        const inputAfterCursor = this.getInputValue().substring(inputBeforeCursor.length);
+        const inputAfterCursor = this._getValue().substring(inputBeforeCursor.length);
         // If there's not a bracket after the cursor, add it.
         if (!inputAfterCursor.trimLeft().startsWith("]")) {
           completionText = completionText + "]";
@@ -1352,7 +1355,7 @@ class JSTerm extends Component {
 
     if (this.inputNode) {
       const cursor = this.inputNode.selectionStart;
-      return this.getInputValue().substring(0, cursor);
+      return this._getValue().substring(0, cursor);
     }
 
     return null;
@@ -1366,7 +1369,7 @@ class JSTerm extends Component {
    * @param {int} numberOfCharsToReplaceCharsBeforeCursor - defaults to 0
    */
   insertStringAtCursor(str, numberOfCharsToReplaceCharsBeforeCursor = 0) {
-    const value = this.getInputValue();
+    const value = this._getValue();
     let prefix = this.getInputValueBeforeCursor();
     const suffix = value.replace(prefix, "");
 
@@ -1380,7 +1383,7 @@ class JSTerm extends Component {
 
     const scrollPosition = this.inputNode ? this.inputNode.parentElement.scrollTop : null;
 
-    this.setInputValue(prefix + str + suffix);
+    this._setValue(prefix + str + suffix);
 
     if (this.inputNode) {
       const newCursor = prefix.length + str.length;
@@ -1459,7 +1462,7 @@ class JSTerm extends Component {
     }
 
     if (this.inputNode) {
-      const value = this.getInputValue();
+      const value = this._getValue();
       const textAfterCursor = value.substring(this.inputNode.selectionStart);
       return textAfterCursor.split("\n")[0] === "";
     }
@@ -1482,7 +1485,7 @@ class JSTerm extends Component {
       return this.editor.defaultCharWidth();
     }
 
-    const doc = this.hud.document;
+    const doc = this.webConsoleUI.document;
     const tempLabel = doc.createElement("span");
     const style = tempLabel.style;
     style.position = "fixed";
@@ -1509,7 +1512,7 @@ class JSTerm extends Component {
       return null;
     }
    // Calculate the width of the chevron placed at the beginning of the input box.
-    const doc = this.hud.document;
+    const doc = this.webConsoleUI.document;
 
     return new Number(doc.defaultView
       .getComputedStyle(this.inputNode)
@@ -1522,10 +1525,10 @@ class JSTerm extends Component {
 
   destroy() {
     this.webConsoleClient.clearNetworkRequests();
-    if (this.hud.outputNode) {
+    if (this.webConsoleUI.outputNode) {
       // We do this because it's much faster than letting React handle the ConsoleOutput
       // unmounting.
-      this.hud.outputNode.innerHTML = "";
+      this.webConsoleUI.outputNode.innerHTML = "";
     }
 
     if (this.autocompletePopup) {
@@ -1537,7 +1540,7 @@ class JSTerm extends Component {
       this.inputNode.removeEventListener("keypress", this._keyPress);
       this.inputNode.removeEventListener("input", this._inputEventHandler);
       this.inputNode.removeEventListener("keyup", this._inputEventHandler);
-      this.hud.window.removeEventListener("blur", this._blurEventHandler);
+      this.webConsoleUI.window.removeEventListener("blur", this._blurEventHandler);
     }
 
     if (this.editor) {
@@ -1545,18 +1548,18 @@ class JSTerm extends Component {
       this.editor = null;
     }
 
-    this.hud = null;
+    this.webConsoleUI = null;
   }
 
   render() {
-    if (this.props.hud.isBrowserConsole &&
+    if (this.props.webConsoleUI.isBrowserConsole &&
         !Services.prefs.getBoolPref("devtools.chrome.enabled")) {
       return null;
     }
 
     if (this.props.codeMirrorEnabled) {
       return dom.div({
-        className: "jsterm-input-container devtools-monospace",
+        className: "jsterm-input-container devtools-input devtools-monospace",
         key: "jsterm-container",
         style: {direction: "ltr"},
         "aria-live": "off",

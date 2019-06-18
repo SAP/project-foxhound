@@ -11,7 +11,6 @@ load 308120-1.xul
 load 325730-1.html
 load 326618-1.html
 load 326646-1.html
-load 326778-1.xul
 load 326865-1.html
 load 327571-1.html
 load 327694.html
@@ -246,6 +245,7 @@ load 1505875.html
 load 1508845.html
 load 1516289.html
 load 1516560.html
+load 1528675.html
 load structured_clone_container_throws.html
 load xhr_empty_datauri.html
 load xhr_html_nullresponse.html

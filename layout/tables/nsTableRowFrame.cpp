@@ -117,8 +117,9 @@ NS_QUERYFRAME_HEAD(nsTableRowFrame)
   NS_QUERYFRAME_ENTRY(nsTableRowFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
-nsTableRowFrame::nsTableRowFrame(ComputedStyle* aStyle, ClassID aID)
-    : nsContainerFrame(aStyle, aID),
+nsTableRowFrame::nsTableRowFrame(ComputedStyle* aStyle,
+                                 nsPresContext* aPresContext, ClassID aID)
+    : nsContainerFrame(aStyle, aPresContext, aID),
       mContentBSize(0),
       mStylePctBSize(0),
       mStyleFixedBSize(0),
@@ -165,8 +166,8 @@ void nsTableRowFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-/* virtual */ void nsTableRowFrame::DidSetComputedStyle(
-    ComputedStyle* aOldComputedStyle) {
+/* virtual */
+void nsTableRowFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   nsContainerFrame::DidSetComputedStyle(aOldComputedStyle);
 
   if (!aOldComputedStyle)  // avoid this on init
@@ -266,15 +267,14 @@ void nsTableRowFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   tableFrame->SetGeometryDirty();
 }
 
-/* virtual */ nsMargin nsTableRowFrame::GetUsedMargin() const {
-  return nsMargin(0, 0, 0, 0);
-}
+/* virtual */
+nsMargin nsTableRowFrame::GetUsedMargin() const { return nsMargin(0, 0, 0, 0); }
 
-/* virtual */ nsMargin nsTableRowFrame::GetUsedBorder() const {
-  return nsMargin(0, 0, 0, 0);
-}
+/* virtual */
+nsMargin nsTableRowFrame::GetUsedBorder() const { return nsMargin(0, 0, 0, 0); }
 
-/* virtual */ nsMargin nsTableRowFrame::GetUsedPadding() const {
+/* virtual */
+nsMargin nsTableRowFrame::GetUsedPadding() const {
   return nsMargin(0, 0, 0, 0);
 }
 
@@ -500,11 +500,11 @@ nscoord nsTableRowFrame::CalcBSize(const ReflowInput& aReflowInput) {
 
   WritingMode wm = aReflowInput.GetWritingMode();
   const nsStylePosition* position = StylePosition();
-  const nsStyleCoord& bsizeStyleCoord = position->BSize(wm);
+  const auto& bsizeStyleCoord = position->BSize(wm);
   if (bsizeStyleCoord.ConvertsToLength()) {
-    SetFixedBSize(bsizeStyleCoord.ComputeCoordPercentCalc(0));
-  } else if (bsizeStyleCoord.ConvertsToPercent()) {
-    SetPctBSize(bsizeStyleCoord.ToPercent());
+    SetFixedBSize(bsizeStyleCoord.ToLength());
+  } else if (bsizeStyleCoord.ConvertsToPercentage()) {
+    SetPctBSize(bsizeStyleCoord.ToPercentage());
   }
 
   for (nsIFrame* kidFrame : mFrames) {
@@ -567,7 +567,7 @@ nsresult nsTableRowFrame::CalculateCellActualBSize(nsTableCellFrame* aCellFrame,
 
   int32_t rowSpan = GetTableFrame()->GetEffectiveRowSpan(*aCellFrame);
 
-  const nsStyleCoord& bsizeStyleCoord = position->BSize(aWM);
+  const auto& bsizeStyleCoord = position->BSize(aWM);
   if (bsizeStyleCoord.ConvertsToLength()) {
     // In quirks mode, table cell isize should be content-box, but bsize
     // should be border-box.
@@ -584,9 +584,9 @@ nsresult nsTableRowFrame::CalculateCellActualBSize(nsTableCellFrame* aCellFrame,
     if (1 == rowSpan) {
       SetFixedBSize(specifiedBSize);
     }
-  } else if (bsizeStyleCoord.ConvertsToPercent()) {
+  } else if (bsizeStyleCoord.ConvertsToPercentage()) {
     if (1 == rowSpan) {
-      SetPctBSize(bsizeStyleCoord.ToPercent());
+      SetPctBSize(bsizeStyleCoord.ToPercentage());
     }
   }
 
@@ -1335,11 +1335,11 @@ void nsTableRowFrame::InitHasCellWithStyleBSize(nsTableFrame* aTableFrame) {
       continue;
     }
     // Ignore row-spanning cells
-    const nsStyleCoord& cellBSize = cellFrame->StylePosition()->BSize(wm);
+    const auto& cellBSize = cellFrame->StylePosition()->BSize(wm);
     if (aTableFrame->GetEffectiveRowSpan(*cellFrame) == 1 &&
-        cellBSize.GetUnit() != eStyleUnit_Auto &&
+        !cellBSize.IsAuto() &&
         /* calc() with both percentages and lengths treated like 'auto' */
-        (cellBSize.ConvertsToLength() || cellBSize.ConvertsToPercent())) {
+        (cellBSize.ConvertsToLength() || cellBSize.ConvertsToPercentage())) {
       AddStateBits(NS_ROW_HAS_CELL_WITH_STYLE_BSIZE);
       return;
     }
@@ -1372,7 +1372,7 @@ void nsTableRowFrame::InvalidateFrameWithRect(const nsRect& aRect,
 
 nsTableRowFrame* NS_NewTableRowFrame(nsIPresShell* aPresShell,
                                      ComputedStyle* aStyle) {
-  return new (aPresShell) nsTableRowFrame(aStyle);
+  return new (aPresShell) nsTableRowFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableRowFrame)

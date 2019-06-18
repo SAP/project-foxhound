@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var pass = 0;
@@ -28,12 +28,12 @@ Listener.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, ctx) {
+  onStartRequest: function(request) {
     Assert.equal(request.status, Cr.NS_OK);
     this._buffer = "";
   },
 
-  onDataAvailable: function(request, cx, stream, offset, cnt) {
+  onDataAvailable: function(request, stream, offset, cnt) {
     if (pass == 0) {
       this._buffer = this._buffer.concat(read_stream(stream, cnt));
     } else {
@@ -46,14 +46,14 @@ Listener.prototype = {
     }
   },
 
-  onStopRequest: function(request, ctx, status) {
+  onStopRequest: function(request, status) {
     if (pass == 0) {
       Assert.equal(this._buffer.length, responseLen);
       pass++;
 
       var channel = setupChannel();
       channel.loadFlags = Ci.nsIRequest.VALIDATE_NEVER;
-      channel.asyncOpen2(new Listener());
+      channel.asyncOpen(new Listener());
     } else {
       httpserver.stop(do_test_finished);
       prefs.setCharPref("network.http.accept-encoding", cePref);
@@ -77,7 +77,7 @@ function run_test() {
   httpserver.start(-1);
 
   var channel = setupChannel();
-  channel.asyncOpen2(new Listener());
+  channel.asyncOpen(new Listener());
 
   do_test_pending();
 }

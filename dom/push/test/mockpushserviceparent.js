@@ -1,7 +1,5 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 /**
  * Defers one or more callbacks until the next turn of the event loop. Multiple
  * callbacks are executed in order.
@@ -148,14 +146,32 @@ var MockService = {
       reason: reason,
     });
   },
+
+  uninit() {
+    return Promise.resolve();
+  },
 };
 
-addMessageListener("service-replace", function () {
-  pushService.service = MockService;
+async function replaceService(service) {
+  await pushService.service.uninit();
+  pushService.service = service;
+  await pushService.service.init();
+}
+
+addMessageListener("service-replace", function() {
+  replaceService(MockService).then(_ => {
+    sendAsyncMessage("service-replaced");
+  }).catch(error => {
+    Cu.reportError(`Error replacing service: ${error}`);
+  });
 });
 
-addMessageListener("service-restore", function () {
-  pushService.service = null;
+addMessageListener("service-restore", function() {
+  replaceService(null).then(_ => {
+    sendAsyncMessage("service-restored");
+  }).catch(error => {
+    Cu.reportError(`Error restoring service: ${error}`);
+  });
 });
 
 addMessageListener("service-response", function (response) {

@@ -163,7 +163,7 @@ class BackgroundChildImpl : public PBackgroundChild {
   virtual bool DeallocPVsyncChild(PVsyncChild* aActor) override;
 
   virtual PUDPSocketChild* AllocPUDPSocketChild(
-      const OptionalPrincipalInfo& aPrincipalInfo,
+      const Maybe<PrincipalInfo>& aPrincipalInfo,
       const nsCString& aFilter) override;
   virtual bool DeallocPUDPSocketChild(PUDPSocketChild* aActor) override;
 
@@ -260,9 +260,6 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPHttpBackgroundChannelChild(
       PHttpBackgroundChannelChild* aActor) override;
-
-  bool GetMessageSchedulerGroups(const Message& aMsg,
-                                 SchedulerGroupSet& aGroups) override;
 
   virtual PMIDIPortChild* AllocPMIDIPortChild(
       const MIDIPortInfo& aPortInfo, const bool& aSysexEnabled) override;

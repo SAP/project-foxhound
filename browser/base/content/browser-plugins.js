@@ -82,7 +82,7 @@ var gPluginHandler = {
   // Callback for user clicking on the link in a click-to-play plugin
   // (where the plugin has an update)
   async openPluginUpdatePage(pluginTag) {
-    let { Blocklist } = ChromeUtils.import("resource://gre/modules/Blocklist.jsm", {});
+    let { Blocklist } = ChromeUtils.import("resource://gre/modules/Blocklist.jsm");
     let url = await Blocklist.getPluginBlockURL(pluginTag);
     openTrustedLinkIn(url, "tab");
   },
@@ -280,7 +280,7 @@ var gPluginHandler = {
 
       let options = {
         dismissed: !showNow,
-        hideClose: !Services.prefs.getBoolPref("privacy.permissionPrompts.showCloseButton"),
+        hideClose: true,
         persistent: showNow,
         eventCallback: this._clickToPlayNotificationEventCallback,
         primaryPlugin: primaryPluginPermission,
@@ -474,8 +474,7 @@ var gPluginHandler = {
                                                       iconURL, priority, buttons);
 
     // Add the "learn more" link.
-    let link = notification.ownerDocument.createXULElement("label");
-    link.className = "text-link";
+    let link = notification.ownerDocument.createXULElement("label", {is: "text-link"});
     link.setAttribute("value", gNavigatorBundle.getString("crashedpluginsMessage.learnMore"));
     let crashurl = formatURL("app.support.baseURL", true);
     crashurl += "plugin-crashed-notificationbar";

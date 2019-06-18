@@ -9,7 +9,6 @@
 #include "js/Date.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "nsDateTimeControlFrame.h"
 #include "nsDOMTokenList.h"
 
 const double DateTimeInputTypeBase::kMinimumYear = 1;
@@ -21,7 +20,8 @@ const double DateTimeInputTypeBase::kMsPerDay = 24 * 60 * 60 * 1000;
 using namespace mozilla;
 using namespace mozilla::dom;
 
-/* static */ bool DateTimeInputTypeBase::IsInputDateTimeEnabled() {
+/* static */
+bool DateTimeInputTypeBase::IsInputDateTimeEnabled() {
   static bool sDateTimeEnabled = false;
   static bool sDateTimePrefCached = false;
   if (!sDateTimePrefCached) {
@@ -100,19 +100,13 @@ bool DateTimeInputTypeBase::HasStepMismatch(bool aUseZeroIfValueNaN) const {
 }
 
 bool DateTimeInputTypeBase::HasBadInput() const {
-  Element* editWrapperElement = nullptr;
-  nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-  if (frame && frame->GetInputAreaContent()) {
-    // edit-wrapper is inside an XBL binding
-    editWrapperElement =
-        mInputElement->GetComposedDoc()->GetAnonymousElementByAttribute(
-            frame->GetInputAreaContent(), nsGkAtoms::anonid,
-            NS_LITERAL_STRING("edit-wrapper"));
-  } else if (mInputElement->GetShadowRoot()) {
-    // edit-wrapper is inside an UA Widget Shadow DOM
-    editWrapperElement = mInputElement->GetShadowRoot()->GetElementById(
-        NS_LITERAL_STRING("edit-wrapper"));
+  if (!mInputElement->GetShadowRoot()) {
+    return false;
   }
+
+  Element* editWrapperElement = mInputElement->GetShadowRoot()->GetElementById(
+      NS_LITERAL_STRING("edit-wrapper"));
+
   if (!editWrapperElement) {
     return false;
   }
@@ -159,17 +153,11 @@ nsresult DateTimeInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
 }
 
 nsresult DateTimeInputTypeBase::MinMaxStepAttrChanged() {
-  if (Element* dateTimeBoxElement =
-          mInputElement->GetDateTimeBoxElementInUAWidget()) {
+  if (Element* dateTimeBoxElement = mInputElement->GetDateTimeBoxElement()) {
     AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
         dateTimeBoxElement, NS_LITERAL_STRING("MozNotifyMinMaxStepAttrChanged"),
         CanBubble::eNo, ChromeOnlyDispatch::eNo);
     dispatcher->RunDOMEventWhenSafe();
-  } else {
-    nsDateTimeControlFrame* frame = do_QueryFrame(GetPrimaryFrame());
-    if (frame) {
-      frame->OnMinMaxStepAttrChanged();
-    }
   }
 
   return NS_OK;

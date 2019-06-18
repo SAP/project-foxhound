@@ -5,20 +5,29 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionsUI"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/EventEmitter.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {EventEmitter} = ChromeUtils.import("resource://gre/modules/EventEmitter.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry:  "resource://gre/modules/AddonManager.jsm",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
+  ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(this, "WEBEXT_PERMISSION_PROMPTS",
                                       "extensions.webextPermissionPrompts", false);
+XPCOMUtils.defineLazyPreferenceGetter(this, "allowPrivateBrowsingByDefault",
+                                      "extensions.allowPrivateBrowsingByDefault", true);
+XPCOMUtils.defineLazyPreferenceGetter(this, "privateNotificationShown",
+                                      "extensions.privatebrowsing.notification", false);
+XPCOMUtils.defineLazyPreferenceGetter(this, "SUPPORT_URL", "app.support.baseURL",
+                                      "", null, val => Services.urlFormatter.formatURL(val));
 
 const DEFAULT_EXTENSION_ICON = "chrome://mozapps/skin/extensions/extensionGeneric.svg";
 
@@ -77,7 +86,7 @@ var ExtensionsUI = {
             }
 
             this.sideloaded.delete(addon);
-              this._updateNotifications();
+            this._updateNotifications();
 
             if (this.sideloaded.size == 0) {
               AddonManager.removeAddonListener(this.sideloadListener);
@@ -124,22 +133,33 @@ var ExtensionsUI = {
     });
 
     AMTelemetry.recordManageEvent(addon, "sideload_prompt", {
-      num_perms: addon.userPermissions && addon.userPermissions.permissions ?
-        addon.userPermissions.permissions.length : 0,
-      num_origins: addon.userPermissions && addon.userPermissions.origins ?
-        addon.userPermissions.origins.length : 0,
+      num_strings: strings.msgs.length,
     });
 
     this.showAddonsManager(browser, strings, addon.iconURL, "sideload")
         .then(async answer => {
           if (answer) {
             await addon.enable();
+
+            this._updateNotifications();
+
+            // The user has just enabled a sideloaded extension, if the permission
+            // can be changed for the extension, show the post-install panel to
+            // give the user that opportunity.
+            if (addon.permissions & AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS) {
+              this.showInstallNotification(browser, addon);
+            }
           }
           this.emit("sideload-response");
         });
   },
 
   showUpdate(browser, info) {
+    AMTelemetry.recordInstallEvent(info.install, {
+      step: "permissions_prompt",
+      num_strings: info.strings.msgs.length,
+    });
+
     this.showAddonsManager(browser, info.strings, info.addon.iconURL, "update")
         .then(answer => {
           if (answer) {
@@ -197,6 +217,17 @@ var ExtensionsUI = {
         histkey = "installWeb";
       }
 
+      if (info.type == "sideload") {
+        AMTelemetry.recordManageEvent(info.addon, "sideload_prompt", {
+          num_strings: strings.msgs.length,
+        });
+      } else {
+        AMTelemetry.recordInstallEvent(info.install, {
+          step: "permissions_prompt",
+          num_strings: strings.msgs.length,
+        });
+      }
+
       this.showPermissionsPrompt(browser, strings, icon, histkey)
           .then(answer => {
             if (answer) {
@@ -218,6 +249,8 @@ var ExtensionsUI = {
 
       let update = {
         strings,
+        permissions: info.permissions,
+        install: info.install,
         addon: info.addon,
         resolve: info.resolve,
         reject: info.reject,
@@ -273,6 +306,7 @@ var ExtensionsUI = {
 
     let strings = ExtensionData.formatPermissionStrings(info2, bundle);
     strings.addonName = info.addon.name;
+    strings.learnMore = bundle.GetStringFromName("webextPerms.learnMore");
     return strings;
   },
 
@@ -297,6 +331,11 @@ var ExtensionsUI = {
           let listIntroEl = doc.getElementById("addon-webext-perm-intro");
           listIntroEl.textContent = strings.listIntro;
           listIntroEl.hidden = (strings.msgs.length == 0);
+
+          let listInfoEl = doc.getElementById("addon-webext-perm-info");
+          listInfoEl.textContent = strings.learnMore;
+          listInfoEl.href = Services.urlFormatter.formatURLPref("app.support.baseURL") + "extension-permissions";
+          listInfoEl.hidden = (strings.msgs.length == 0);
 
           let list = doc.getElementById("addon-webext-perm-list");
           while (list.firstChild) {
@@ -411,10 +450,39 @@ var ExtensionsUI = {
     let message = bundle.getFormattedString("addonPostInstall.message1",
                                             ["<>", appName]);
     return new Promise(resolve => {
+      // Show or hide private permission ui based on the pref.
+      function setCheckbox(win) {
+        let checkbox = win.document.getElementById("addon-incognito-checkbox");
+        checkbox.checked = false;
+        checkbox.hidden = !(addon.permissions & AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS);
+      }
+      setCheckbox(window);
+
+      async function actionResolve(win) {
+        let checkbox = win.document.getElementById("addon-incognito-checkbox");
+        if (checkbox.checked) {
+          let perms = {permissions: ["internal:privateBrowsingAllowed"], origins: []};
+          await ExtensionPermissions.add(addon.id, perms);
+          AMTelemetry.recordActionEvent({
+            addon,
+            object: "doorhanger",
+            action: "privateBrowsingAllowed",
+            view: "postInstall",
+            value: "on",
+          });
+
+          // Reload the extension if it is already enabled.  This ensures any change
+          // on the private browsing permission is properly handled.
+          if (addon.isActive) {
+            await addon.reload();
+          }
+        }
+
+        resolve();
+      }
+
       let action = {
-        label: bundle.getString("addonPostInstall.okay.label"),
-        accessKey: bundle.getString("addonPostInstall.okay.key"),
-        callback: resolve,
+        callback: actionResolve,
       };
 
       let icon = addon.isWebExtension ?
@@ -424,14 +492,67 @@ var ExtensionsUI = {
         name: addon.name,
         message,
         popupIconURL: icon,
-        onDismissed: () => {
+        onRefresh: setCheckbox,
+        onDismissed: (win) => {
           AppMenuNotifications.removeNotification("addon-installed");
+          actionResolve(win);
+        },
+      };
+      AppMenuNotifications.showNotification("addon-installed", action, null, options);
+    });
+  },
+
+  promisePrivateBrowsingNotification(window) {
+    return new Promise(resolve => {
+      let action = {
+        callback: () => {
+          resolve();
+          AMTelemetry.recordActionEvent({
+            object: "doorhanger",
+            action: "dismiss",
+            view: "privateBrowsing",
+          });
+        },
+        dismiss: false,
+      };
+      let manage = {
+        callback: () => {
+          AMTelemetry.recordActionEvent({
+            object: "doorhanger",
+            action: "manage",
+            view: "privateBrowsing",
+          });
+          // Callback may happen in a different window, use the top window
+          // for the new tab.
+          let win = BrowserWindowTracker.getTopWindow();
+          win.BrowserOpenAddonsMgr("addons://list/extension");
+          resolve();
+        },
+        dismiss: false,
+      };
+
+      let options = {
+        popupIconURL: "chrome://browser/skin/addons/addon-private-browsing.svg",
+        onDismissed: () => {
+          AppMenuNotifications.removeNotification("addon-private-browsing");
           resolve();
         },
       };
-
-      AppMenuNotifications.showNotification("addon-installed", action, null, options);
+      window.document.getElementById("addon-private-browsing-learn-more")
+                     .setAttribute("href", SUPPORT_URL + "extensions-pb");
+      AppMenuNotifications.showNotification("addon-private-browsing", manage, action, options);
     });
+  },
+
+  showPrivateBrowsingNotification(window) {
+    // Show the addons private browsing panel the first time a private window
+    // is opened.
+    if (!allowPrivateBrowsingByDefault && !privateNotificationShown &&
+        PrivateBrowsingUtils.isWindowPrivate(window)) {
+      ExtensionsUI.promisePrivateBrowsingNotification(window).then(() => {
+        Services.prefs.setBoolPref("extensions.privatebrowsing.notification", true);
+      });
+    }
   },
 };
 

@@ -8,6 +8,7 @@
 
 #include "nsICookieService.h"
 #include "nsICookieManager.h"
+#include "nsICookiePermission.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 
@@ -38,6 +39,7 @@
 using mozilla::OriginAttributes;
 
 class nsICookiePermission;
+class nsICookieSettings;
 class nsIEffectiveTLDService;
 class nsIIDNService;
 class nsIPrefBranch;
@@ -255,17 +257,19 @@ class nsCookieService final : public nsICookieService,
                            bool aRequireHostMatch, CookieStatus aStatus,
                            nsDependentCString &aCookieHeader,
                            int64_t aServerTime, bool aFromHttp,
-                           nsIChannel *aChannel, bool aLeaveSercureAlone,
-                           bool &aSetCookie,
+                           nsIChannel *aChannel, bool &aSetCookie,
                            mozIThirdPartyUtil *aThirdPartyUtil);
   static CookieStatus CheckPrefs(
-      nsICookiePermission *aPermissionServices, uint8_t aCookieBehavior,
-      bool aThirdPartySession, bool aThirdPartyNonsecureSession,
-      nsIURI *aHostURI, bool aIsForeign, bool aIsTrackingResource,
-      bool aIsFirstPartyStorageAccessGranted, const char *aCookieHeader,
-      const int aNumOfCookies, const OriginAttributes &aOriginAttrs,
-      uint32_t *aRejectedReason);
+      nsICookieSettings *aCookieSettings, bool aThirdPartySession,
+      bool aThirdPartyNonsecureSession, nsIURI *aHostURI, bool aIsForeign,
+      bool aIsTrackingResource, bool aIsFirstPartyStorageAccessGranted,
+      const char *aCookieHeader, const int aNumOfCookies,
+      const OriginAttributes &aOriginAttrs, uint32_t *aRejectedReason);
   static int64_t ParseServerTime(const nsCString &aServerTime);
+
+  static already_AddRefed<nsICookieSettings> GetCookieSettings(
+      nsIChannel *aChannel);
+
   void GetCookiesForURI(nsIURI *aHostURI, nsIChannel *aChannel, bool aIsForeign,
                         bool aIsTrackingResource,
                         bool aFirstPartyStorageAccessGranted,
@@ -345,7 +349,7 @@ class nsCookieService final : public nsICookieService,
   static bool CheckPath(nsCookieAttributes &aCookie, nsIURI *aHostURI);
   static bool CheckPrefixes(nsCookieAttributes &aCookie, bool aSecureRequest);
   static bool GetExpiry(nsCookieAttributes &aCookie, int64_t aServerTime,
-                        int64_t aCurrentTime);
+                        int64_t aCurrentTime, bool aFromHttp);
   void RemoveAllFromMemory();
   already_AddRefed<nsIArray> PurgeCookies(int64_t aCurrentTimeInUsec);
   bool FindCookie(const nsCookieKey &aKey, const nsCString &aHost,
@@ -353,10 +357,8 @@ class nsCookieService final : public nsICookieService,
                   nsListIter &aIter);
   bool FindSecureCookie(const nsCookieKey &aKey, nsCookie *aCookie);
   void FindStaleCookies(nsCookieEntry *aEntry, int64_t aCurrentTime,
-                        const mozilla::Maybe<bool> &aIsSecure,
-                        nsTArray<nsListIter> &aOutput, uint32_t aLimit);
-  void TelemetryForEvictingStaleCookie(nsCookie *aEvicted,
-                                       int64_t oldestCookieTime);
+                        bool aIsSecure, nsTArray<nsListIter> &aOutput,
+                        uint32_t aLimit);
   void NotifyAccepted(nsIChannel *aChannel);
   void NotifyRejected(nsIURI *aHostURI, nsIChannel *aChannel,
                       uint32_t aRejectedReason, CookieOperation aOperation);
@@ -401,12 +403,8 @@ class nsCookieService final : public nsICookieService,
   RefPtr<DBState> mDefaultDBState;
   RefPtr<DBState> mPrivateDBState;
 
-  // cached prefs
-  uint8_t mCookieBehavior;  // BEHAVIOR_{ACCEPT, REJECTFOREIGN, REJECT,
-                            // LIMITFOREIGN}
   bool mThirdPartySession;
   bool mThirdPartyNonsecureSession;
-  bool mLeaveSecureAlone;
   uint16_t mMaxNumberOfCookies;
   uint16_t mMaxCookiesPerHost;
   uint16_t mCookieQuotaPerHost;

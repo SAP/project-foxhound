@@ -4,6 +4,10 @@
 
 %include ../../../shared/in-content/common.inc.css
 
+:root {
+  --panel-border-radius: 0;
+}
+
 xul|*.menulist-dropmarker {
   margin-top: 1px;
   margin-bottom: 1px;
@@ -15,7 +19,7 @@ xul|radio {
 }
 
 @media (-moz-windows-default-theme: 0) {
-  xul|*.checkbox-check[checked],
+  xul|checkbox[checked] > xul|*.checkbox-check,
   xul|*.radio-check[selected] {
     fill: -moz-fieldText;
     background-color: -moz-field;

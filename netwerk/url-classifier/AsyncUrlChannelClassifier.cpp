@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Classifier.h"
+#include "mozilla/Components.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/net/AsyncUrlChannelClassifier.h"
 #include "mozilla/net/UrlClassifierCommon.h"
@@ -15,13 +16,13 @@
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIURIClassifier.h"
-#include "nsIUrlClassifierUtils.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUrlClassifierDBService.h"
+#include "nsUrlClassifierUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -82,8 +83,8 @@ class URIData {
   nsTArray<nsCString> mFragments;
 };
 
-/* static */ nsresult URIData::Create(nsIURI* aURI, nsIURI* aInnermostURI,
-                                      URIData** aData) {
+/* static */
+nsresult URIData::Create(nsIURI* aURI, nsIURI* aInnermostURI, URIData** aData) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(aInnermostURI);
@@ -91,8 +92,7 @@ class URIData {
   RefPtr<URIData> data = new URIData();
   data->mURI = aURI;
 
-  nsCOMPtr<nsIUrlClassifierUtils> utilsService =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID);
+  nsUrlClassifierUtils* utilsService = nsUrlClassifierUtils::GetInstance();
   if (NS_WARN_IF(!utilsService)) {
     return NS_ERROR_FAILURE;
   }
@@ -336,9 +336,13 @@ void FeatureData::DoLookup(nsUrlClassifierDBServiceWorker* aWorkerClassifier) {
           isBlacklisted));
 
   if (isBlacklisted == false) {
+    // If one of the blacklist table matches the URI, we don't need to continue
+    // with the others: the feature is blacklisted (but maybe also
+    // whitelisted).
     for (TableData* tableData : mBlacklistTables) {
       if (tableData->DoLookup(aWorkerClassifier)) {
         isBlacklisted = true;
+        break;
       }
     }
   }
@@ -412,7 +416,8 @@ bool FeatureData::MaybeCompleteClassification(nsIChannel* aChannel) {
     return true;
   }
 
-  if (nsContentUtils::IsURIInList(mBlacklistTables[0]->URI(), skipList)) {
+  if (!mBlacklistTables.IsEmpty() &&
+      nsContentUtils::IsURIInList(mBlacklistTables[0]->URI(), skipList)) {
     UC_LOG(
         ("FeatureData::MaybeCompleteClassification[%p] - uri found in skiplist",
          this));
@@ -507,9 +512,10 @@ class FeatureTask {
 // tracking-annotation feature uses the top-level URI to whitelist the current
 // channel's URI; flash feature always uses the channel's URI.  Because of
 // this, this function aggregates feature per URI and tables.
-/* static */ nsresult FeatureTask::Create(nsIChannel* aChannel,
-                                          std::function<void()>&& aCallback,
-                                          FeatureTask** aTask) {
+/* static */
+nsresult FeatureTask::Create(nsIChannel* aChannel,
+                             std::function<void()>&& aCallback,
+                             FeatureTask** aTask) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aChannel);
   MOZ_ASSERT(aTask);
@@ -731,7 +737,8 @@ nsresult FeatureData::InitializeList(
 
 }  // namespace
 
-/* static */ nsresult AsyncUrlChannelClassifier::CheckChannel(
+/* static */
+nsresult AsyncUrlChannelClassifier::CheckChannel(
     nsIChannel* aChannel, std::function<void()>&& aCallback) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aChannel);

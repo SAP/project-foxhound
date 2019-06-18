@@ -44,7 +44,6 @@ use crate::gecko_bindings::bindings::{Gecko_ElementState, Gecko_GetDocumentLWThe
 use crate::gecko_bindings::bindings::{Gecko_SetNodeFlags, Gecko_UnsetNodeFlags};
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::nsChangeHint;
-use crate::gecko_bindings::structs::nsRestyleHint;
 use crate::gecko_bindings::structs::Document_DocumentTheme as DocumentTheme;
 use crate::gecko_bindings::structs::EffectCompositor_CascadeLevel as CascadeLevel;
 use crate::gecko_bindings::structs::ELEMENT_HANDLED_SNAPSHOT;
@@ -58,6 +57,7 @@ use crate::gecko_bindings::structs::{RawGeckoElement, RawGeckoNode, RawGeckoXBLB
 use crate::gecko_bindings::sugar::ownership::{HasArcFFI, HasSimpleFFI};
 use crate::global_style_data::GLOBAL_STYLE_DATA;
 use crate::hash::FxHashMap;
+use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::logical_geometry::WritingMode;
 use crate::media_queries::Device;
 use crate::properties::animated_properties::{AnimationValue, AnimationValueMap};
@@ -802,11 +802,10 @@ impl<'le> GeckoElement<'le> {
     /// Also this function schedules style flush.
     pub unsafe fn note_explicit_hints(
         &self,
-        restyle_hint: nsRestyleHint,
+        restyle_hint: RestyleHint,
         change_hint: nsChangeHint,
     ) {
         use crate::gecko::restyle_damage::GeckoRestyleDamage;
-        use crate::invalidation::element::restyle_hints::RestyleHint;
 
         let damage = GeckoRestyleDamage::new(change_hint);
         debug!(
@@ -814,7 +813,6 @@ impl<'le> GeckoElement<'le> {
             self, restyle_hint, change_hint
         );
 
-        let restyle_hint: RestyleHint = restyle_hint.into();
         debug_assert!(
             !(restyle_hint.has_animation_hint() && restyle_hint.has_non_animation_hint()),
             "Animation restyle hints should not appear with non-animation restyle hints"
@@ -1044,9 +1042,13 @@ impl FontMetricsProvider for GeckoFontMetricsProvider {
         device: &Device,
     ) -> FontMetricsQueryResult {
         use crate::gecko_bindings::bindings::Gecko_GetFontMetrics;
+        let pc = match device.pres_context() {
+            Some(pc) => pc,
+            None => return FontMetricsQueryResult::NotAvailable,
+        };
         let gecko_metrics = unsafe {
             Gecko_GetFontMetrics(
-                device.pres_context(),
+                pc,
                 wm.is_vertical() && !wm.is_sideways(),
                 font.gecko(),
                 font_size.0,
@@ -1242,8 +1244,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     fn owner_doc_matches_for_testing(&self, device: &Device) -> bool {
-        self.as_node().owner_doc().0 as *const structs::Document ==
-            device.pres_context().mDocument.mRawPtr
+        self.as_node().owner_doc().0 as *const structs::Document == device.document() as *const _
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
@@ -1513,7 +1514,7 @@ impl<'le> TElement for GeckoElement<'le> {
             );
             unsafe {
                 self.note_explicit_hints(
-                    nsRestyleHint::eRestyle_Subtree,
+                    RestyleHint::restyle_subtree(),
                     nsChangeHint::nsChangeHint_Empty,
                 );
             }

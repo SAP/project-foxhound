@@ -6,6 +6,7 @@
 
 #include "PDMFactory.h"
 #include "AgnosticDecoderModule.h"
+#include "AudioTrimmer.h"
 #include "DecoderDoctorDiagnostics.h"
 #include "EMEDecoderModule.h"
 #include "GMPDecoderModule.h"
@@ -192,44 +193,51 @@ void PDMFactory::EnsureInit() {
 
 already_AddRefed<MediaDataDecoder> PDMFactory::CreateDecoder(
     const CreateDecoderParams& aParams) {
+  RefPtr<MediaDataDecoder> decoder;
+  const TrackInfo& config = aParams.mConfig;
   if (aParams.mUseNullDecoder.mUse) {
     MOZ_ASSERT(mNullPDM);
-    return CreateDecoderWithPDM(mNullPDM, aParams);
-  }
+    decoder = CreateDecoderWithPDM(mNullPDM, aParams);
+  } else {
+    bool isEncrypted = mEMEPDM && config.mCrypto.IsEncrypted();
 
-  const TrackInfo& config = aParams.mConfig;
-  bool isEncrypted = mEMEPDM && config.mCrypto.IsEncrypted();
+    if (isEncrypted) {
+      decoder = CreateDecoderWithPDM(mEMEPDM, aParams);
+    } else {
+      DecoderDoctorDiagnostics* diagnostics = aParams.mDiagnostics;
+      if (diagnostics) {
+        // If libraries failed to load, the following loop over mCurrentPDMs
+        // will not even try to use them. So we record failures now.
+        if (mWMFFailedToLoad) {
+          diagnostics->SetWMFFailedToLoad();
+        }
+        if (mFFmpegFailedToLoad) {
+          diagnostics->SetFFmpegFailedToLoad();
+        }
+        if (mGMPPDMFailedToStartup) {
+          diagnostics->SetGMPPDMFailedToStartup();
+        }
+      }
 
-  if (isEncrypted) {
-    return CreateDecoderWithPDM(mEMEPDM, aParams);
-  }
-
-  DecoderDoctorDiagnostics* diagnostics = aParams.mDiagnostics;
-  if (diagnostics) {
-    // If libraries failed to load, the following loop over mCurrentPDMs
-    // will not even try to use them. So we record failures now.
-    if (mWMFFailedToLoad) {
-      diagnostics->SetWMFFailedToLoad();
-    }
-    if (mFFmpegFailedToLoad) {
-      diagnostics->SetFFmpegFailedToLoad();
-    }
-    if (mGMPPDMFailedToStartup) {
-      diagnostics->SetGMPPDMFailedToStartup();
-    }
-  }
-
-  for (auto& current : mCurrentPDMs) {
-    if (!current->Supports(config, diagnostics)) {
-      continue;
-    }
-    RefPtr<MediaDataDecoder> m = CreateDecoderWithPDM(current, aParams);
-    if (m) {
-      return m.forget();
+      for (auto& current : mCurrentPDMs) {
+        if (!current->Supports(config, diagnostics)) {
+          continue;
+        }
+        decoder = CreateDecoderWithPDM(current, aParams);
+        if (decoder) {
+          break;
+        }
+      }
     }
   }
-  NS_WARNING("Unable to create a decoder, no platform found.");
-  return nullptr;
+  if (!decoder) {
+    NS_WARNING("Unable to create a decoder, no platform found.");
+    return nullptr;
+  }
+  if (config.IsAudio()) {
+    decoder = new AudioTrimmer(decoder.forget(), aParams);
+  }
+  return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> PDMFactory::CreateDecoderWithPDM(
@@ -311,6 +319,14 @@ bool PDMFactory::Supports(const TrackInfo& aTrackInfo,
                           DecoderDoctorDiagnostics* aDiagnostics) const {
   if (mEMEPDM) {
     return mEMEPDM->Supports(aTrackInfo, aDiagnostics);
+  }
+  if (VPXDecoder::IsVPX(aTrackInfo.mMimeType,
+                        VPXDecoder::VP8 | VPXDecoder::VP9)) {
+    // Work around bug 1521370, where trying to instantiate an external decoder
+    // could cause a crash.
+    // We always ship a VP8/VP9 decoder (libvpx) and optionally we have ffvpx.
+    // So we can speed up the test by assuming that this codec is supported.
+    return true;
   }
   RefPtr<PlatformDecoderModule> current = GetDecoder(aTrackInfo, aDiagnostics);
   return !!current;

@@ -23,13 +23,10 @@ interface ShadowRoot : DocumentFragment
   readonly attribute ShadowRootMode mode;
   readonly attribute Element host;
 
-  // [deprecated] Shadow DOM v0
   Element? getElementById(DOMString elementId);
-  HTMLCollection getElementsByTagName(DOMString localName);
-  HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
-  HTMLCollection getElementsByClassName(DOMString classNames);
-  [CEReactions, SetterThrows, TreatNullAs=EmptyString]
-  attribute DOMString innerHTML;
+
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString innerHTML;
 
   // When JS invokes importNode or createElement, the binding code needs to
   // create a reflector, and so invoking those methods directly on the content

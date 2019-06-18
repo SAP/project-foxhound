@@ -12,12 +12,14 @@
 #include "nsIPrincipal.h"
 #include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
 #include "nsIURI.h"
+#include "nsString.h"
 #include "nsTArray.h"
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 
+class nsICookieSettings;
 class nsINode;
 class nsPIDOMWindowOuter;
 
@@ -29,13 +31,13 @@ class XMLHttpRequestMainThread;
 }  // namespace dom
 
 namespace net {
-class OptionalLoadInfoArgs;
+class LoadInfoArgs;
 }  // namespace net
 
 namespace ipc {
 // we have to forward declare that function so we can use it as a friend.
 nsresult LoadInfoArgsToLoadInfo(
-    const mozilla::net::OptionalLoadInfoArgs& aLoadInfoArgs,
+    const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
     nsILoadInfo** outLoadInfo);
 }  // namespace ipc
 
@@ -69,6 +71,7 @@ class LoadInfo final : public nsILoadInfo {
 
   // create an exact copy of the loadinfo
   already_AddRefed<nsILoadInfo> Clone() const;
+
   // hands off!!! don't use CloneWithNewSecFlags unless you know
   // exactly what you are doing - it should only be used within
   // nsBaseChannel::Redirect()
@@ -95,7 +98,7 @@ class LoadInfo final : public nsILoadInfo {
            nsIPrincipal* aSandboxedLoadingPrincipal,
            nsIPrincipal* aTopLevelPrincipal,
            nsIPrincipal* aTopLevelStorageAreaPrincipal,
-           nsIURI* aResultPrincipalURI,
+           nsIURI* aResultPrincipalURI, nsICookieSettings* aCookieSettings,
            const Maybe<mozilla::dom::ClientInfo>& aClientInfo,
            const Maybe<mozilla::dom::ClientInfo>& aReservedClientInfo,
            const Maybe<mozilla::dom::ClientInfo>& aInitialClientInfo,
@@ -110,7 +113,7 @@ class LoadInfo final : public nsILoadInfo {
            bool aForceInheritPrincipalDropped, uint64_t aInnerWindowID,
            uint64_t aOuterWindowID, uint64_t aParentOuterWindowID,
            uint64_t aTopOuterWindowID, uint64_t aFrameOuterWindowID,
-           uint64_t aBrowsingContextID, bool aEnforceSecurity,
+           uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
            bool aInitialSecurityCheckDone, bool aIsThirdPartyRequest,
            bool aIsDocshellReload, bool aSendCSPViolationEvents,
            const OriginAttributes& aOriginAttributes,
@@ -121,7 +124,8 @@ class LoadInfo final : public nsILoadInfo {
            const nsTArray<nsCString>& aUnsafeHeaders, bool aForcePreflight,
            bool aIsPreflight, bool aLoadTriggeredFromExternal,
            bool aServiceWorkerTaintingSynthesized,
-           bool aDocumentHasUserInteracted, bool aDocumentHasLoaded);
+           bool aDocumentHasUserInteracted, bool aDocumentHasLoaded,
+           const nsAString& aCspNonce);
   LoadInfo(const LoadInfo& rhs);
 
   NS_IMETHOD GetRedirects(JSContext* aCx,
@@ -129,7 +133,7 @@ class LoadInfo final : public nsILoadInfo {
                           const RedirectHistoryArray& aArra);
 
   friend nsresult mozilla::ipc::LoadInfoArgsToLoadInfo(
-      const mozilla::net::OptionalLoadInfoArgs& aLoadInfoArgs,
+      const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
       nsILoadInfo** outLoadInfo);
 
   ~LoadInfo() = default;
@@ -153,6 +157,7 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIPrincipal> mTopLevelStorageAreaPrincipal;
   nsCOMPtr<nsIURI> mResultPrincipalURI;
   nsCOMPtr<nsICSPEventListener> mCSPEventListener;
+  nsCOMPtr<nsICookieSettings> mCookieSettings;
 
   Maybe<mozilla::dom::ClientInfo> mClientInfo;
   UniquePtr<mozilla::dom::ClientSource> mReservedClientSource;
@@ -182,7 +187,7 @@ class LoadInfo final : public nsILoadInfo {
   uint64_t mTopOuterWindowID;
   uint64_t mFrameOuterWindowID;
   uint64_t mBrowsingContextID;
-  bool mEnforceSecurity;
+  uint64_t mFrameBrowsingContextID;
   bool mInitialSecurityCheckDone;
   bool mIsThirdPartyContext;
   bool mIsDocshellReload;
@@ -199,11 +204,14 @@ class LoadInfo final : public nsILoadInfo {
   bool mServiceWorkerTaintingSynthesized;
   bool mDocumentHasUserInteracted;
   bool mDocumentHasLoaded;
+  nsString mCspNonce;
 
   // Is true if this load was triggered by processing the attributes of the
   // browsing context container.
   // See nsILoadInfo.isFromProcessingFrameAttributes
   bool mIsFromProcessingFrameAttributes;
+
+  nsILoadInfo::CrossOriginOpenerPolicy mOpenerPolicy;
 };
 
 }  // namespace net

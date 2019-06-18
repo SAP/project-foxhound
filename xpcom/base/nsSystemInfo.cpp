@@ -53,14 +53,9 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "AndroidBridge.h"
-#  include "mozilla/dom/ContentChild.h"
-#endif
-
-#ifdef ANDROID
-extern "C" {
-NS_EXPORT int android_sdk_version;
-}
+#  include "AndroidBuild.h"
+#  include "GeneratedJNIWrappers.h"
+#  include "mozilla/jni/Utils.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -71,7 +66,7 @@ NS_EXPORT int android_sdk_version;
 #  include "mozilla/SandboxInfo.h"
 #endif
 
-// Slot for NS_InitXPCOM2 to pass information to nsSystemInfo::Init.
+// Slot for NS_InitXPCOM to pass information to nsSystemInfo::Init.
 // Only set to nonzero (potentially) if XP_UNIX.  On such systems, the
 // system call to discover the appropriate value is not thread-safe,
 // so we must call it before going multithreaded, but nsSystemInfo::Init
@@ -736,11 +731,40 @@ nsresult nsSystemInfo::Init() {
   }
 
 #ifdef XP_WIN
-  BOOL isWow64;
-  BOOL gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
+  // IsWow64Process2 is only available on Windows 10+, so we have to dynamically
+  // check for its existence.
+  typedef BOOL(WINAPI* LPFN_IWP2)(HANDLE, USHORT*, USHORT*);
+  LPFN_IWP2 iwp2 = reinterpret_cast<LPFN_IWP2>(GetProcAddress(
+      GetModuleHandle(L"kernel32"), "IsWow64Process2"));
+  BOOL isWow64 = false;
+  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  USHORT nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  BOOL gotWow64Value;
+  if (iwp2) {
+    gotWow64Value = iwp2(GetCurrentProcess(), &processMachine, &nativeMachine);
+    if (gotWow64Value) {
+      isWow64 = (processMachine != IMAGE_FILE_MACHINE_UNKNOWN);
+    }
+  } else {
+    gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
+    // The function only indicates a WOW64 environment if it's 32-bit x86
+    // running on x86-64, so emulate what IsWow64Process2 would have given.
+    if (gotWow64Value && isWow64) {
+      processMachine = IMAGE_FILE_MACHINE_I386;
+      nativeMachine = IMAGE_FILE_MACHINE_AMD64;
+    }
+  }
   NS_WARNING_ASSERTION(gotWow64Value, "IsWow64Process failed");
   if (gotWow64Value) {
+    // Set this always, even for the x86-on-arm64 case.
     rv = SetPropertyAsBool(NS_LITERAL_STRING("isWow64"), !!isWow64);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    // Additional information if we're running x86-on-arm64
+    bool isWowARM64 = (processMachine == IMAGE_FILE_MACHINE_I386 &&
+                       nativeMachine == IMAGE_FILE_MACHINE_ARM64);
+    rv = SetPropertyAsBool(NS_LITERAL_STRING("isWowARM64"), !!isWowARM64);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -876,16 +900,8 @@ nsresult nsSystemInfo::Init() {
 
 #ifdef MOZ_WIDGET_ANDROID
   AndroidSystemInfo info;
-  if (XRE_IsContentProcess()) {
-    dom::ContentChild* child = dom::ContentChild::GetSingleton();
-    if (child) {
-      child->SendGetAndroidSystemInfo(&info);
-      SetupAndroidInfo(info);
-    }
-  } else {
-    GetAndroidSystemInfo(&info);
-    SetupAndroidInfo(info);
-  }
+  GetAndroidSystemInfo(&info);
+  SetupAndroidInfo(info);
 #endif
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -926,45 +942,36 @@ nsresult nsSystemInfo::Init() {
 
 /* static */
 void nsSystemInfo::GetAndroidSystemInfo(AndroidSystemInfo* aInfo) {
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  if (!mozilla::AndroidBridge::Bridge()) {
+  if (!jni::IsAvailable()) {
+    // called from xpcshell etc.
     aInfo->sdk_version() = 0;
     return;
   }
 
-  nsAutoString str;
-  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build",
-                                                             "MODEL", str)) {
-    aInfo->device() = str;
+  jni::String::LocalRef model = java::sdk::Build::MODEL();
+  aInfo->device() = model->ToString();
+
+  jni::String::LocalRef manufacturer =
+      mozilla::java::sdk::Build::MANUFACTURER();
+  aInfo->manufacturer() = manufacturer->ToString();
+
+  jni::String::LocalRef hardware = java::sdk::Build::HARDWARE();
+  aInfo->hardware() = hardware->ToString();
+
+  jni::String::LocalRef release = java::sdk::VERSION::RELEASE();
+  nsString str(release->ToString());
+  int major_version;
+  int minor_version;
+  int bugfix_version;
+  int num_read = sscanf(NS_ConvertUTF16toUTF8(str).get(), "%d.%d.%d",
+                        &major_version, &minor_version, &bugfix_version);
+  if (num_read == 0) {
+    aInfo->release_version() = NS_LITERAL_STRING(DEFAULT_ANDROID_VERSION);
+  } else {
+    aInfo->release_version() = str;
   }
-  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build", "MANUFACTURER", str)) {
-    aInfo->manufacturer() = str;
-  }
-  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build$VERSION", "RELEASE", str)) {
-    int major_version;
-    int minor_version;
-    int bugfix_version;
-    int num_read = sscanf(NS_ConvertUTF16toUTF8(str).get(), "%d.%d.%d",
-                          &major_version, &minor_version, &bugfix_version);
-    if (num_read == 0) {
-      aInfo->release_version() = NS_LITERAL_STRING(DEFAULT_ANDROID_VERSION);
-    } else {
-      aInfo->release_version() = str;
-    }
-  }
-  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build",
-                                                             "HARDWARE", str)) {
-    aInfo->hardware() = str;
-  }
-  int32_t sdk_version;
-  if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField(
-          "android/os/Build$VERSION", "SDK_INT", &sdk_version)) {
-    sdk_version = 0;
-  }
-  aInfo->sdk_version() = sdk_version;
+
+  aInfo->sdk_version() = jni::GetAPIVersion();
   aInfo->isTablet() = java::GeckoAppShell::IsTablet();
 }
 
@@ -989,14 +996,12 @@ void nsSystemInfo::SetupAndroidInfo(const AndroidSystemInfo& aInfo) {
   if (NS_SUCCEEDED(rv)) {
     SetPropertyAsAString(NS_LITERAL_STRING("kernel_version"), str);
   }
-  // When AndroidBridge is not available (eg. in xpcshell tests), sdk_version is
-  // 0.
+  // When JNI is not available (eg. in xpcshell tests), sdk_version is 0.
   if (aInfo.sdk_version() != 0) {
-    android_sdk_version = aInfo.sdk_version();
-    if (android_sdk_version >= 8 && !aInfo.hardware().IsEmpty()) {
+    if (!aInfo.hardware().IsEmpty()) {
       SetPropertyAsAString(NS_LITERAL_STRING("hardware"), aInfo.hardware());
     }
-    SetPropertyAsInt32(NS_LITERAL_STRING("version"), android_sdk_version);
+    SetPropertyAsInt32(NS_LITERAL_STRING("version"), aInfo.sdk_version());
   }
 }
 #endif  // MOZ_WIDGET_ANDROID

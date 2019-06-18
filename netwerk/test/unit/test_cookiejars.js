@@ -11,9 +11,8 @@ XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -58,7 +57,7 @@ function setupChannel(path)
 function setCookie() {
   var channel = setupChannel(cookieSetPath);
   channel.setRequestHeader("foo-set-cookie", tests[i].cookieName, false);
-  channel.asyncOpen2(new ChannelListener(setNextCookie, null));
+  channel.asyncOpen(new ChannelListener(setNextCookie, null));
 }
 
 function setNextCookie(request, data, context) 
@@ -78,7 +77,7 @@ function setNextCookie(request, data, context)
 function checkCookie()
 {
   var channel = setupChannel(cookieCheckPath);
-  channel.asyncOpen2(new ChannelListener(completeCheckCookie, null));
+  channel.asyncOpen(new ChannelListener(completeCheckCookie, null));
 }
 
 function completeCheckCookie(request, data, context) {
@@ -116,8 +115,10 @@ function completeCheckCookie(request, data, context) {
 function run_test()
 {
   // Allow all cookies if the pref service is available in this process.
-  if (!inChildProcess())
+  if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+    Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+  }
 
   httpserver.registerPathHandler(cookieSetPath, cookieSetHandler);
   httpserver.registerPathHandler(cookieCheckPath, cookieCheckHandler);

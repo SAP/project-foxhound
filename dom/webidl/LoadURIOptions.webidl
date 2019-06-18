@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+interface ContentSecurityPolicy;
 interface Principal;
 interface URI;
 interface InputStream;
+interface ReferrerInfo;
 
 /**
  * This dictionary holds load arguments for docshell loads.
@@ -17,23 +19,25 @@ dictionary LoadURIOptions {
   Principal? triggeringPrincipal = null;
 
   /**
+   * The CSP to be used for the load. That is *not* the CSP that will
+   * be applied to subresource loads within that document but the CSP
+   * for the document load itself. E.g. if that CSP includes
+   * upgrade-insecure-requests, then the new top-level load will
+   * be upgraded to HTTPS.
+   */
+  ContentSecurityPolicy? csp = null;
+
+  /**
    * Flags modifying load behaviour.  This parameter is a bitwise
    * combination of the load flags defined in nsIWebNavigation.idl.
    */
    long loadFlags = 0;
 
   /**
-   * The referring URI.  If this argument is null, then the referring
-   * URI will be inferred internally.
+   * The referring info of the load.  If this argument is null, then the
+   * referrer URI and referrer policy will be inferred internally.
    */
-  URI? referrerURI = null;
-
-  /**
-   * Referrer Policy for the load, defaults to REFERRER_POLICY_UNSET.
-   * Alternatively use one of REFERRER_POLICY_* constants from
-   * nsIHttpChannel.
-   */
-  long referrerPolicy = 0;
+   ReferrerInfo? referrerInfo = null;
 
   /**
    * If the URI to be loaded corresponds to a HTTP request, then this stream is

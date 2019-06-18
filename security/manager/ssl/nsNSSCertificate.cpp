@@ -80,7 +80,8 @@ class nsNSSCertListEnumerator : public nsSimpleEnumerator {
 
 NS_IMPL_ISUPPORTS(nsNSSCertificate, nsIX509Cert, nsISerializable, nsIClassInfo)
 
-/*static*/ nsNSSCertificate* nsNSSCertificate::Create(CERTCertificate* cert) {
+/*static*/
+nsNSSCertificate* nsNSSCertificate::Create(CERTCertificate* cert) {
   if (cert)
     return new nsNSSCertificate(cert);
   else
@@ -1227,9 +1228,8 @@ nsNSSCertificate::Read(nsIObjectInputStream* aStream) {
 }
 
 NS_IMETHODIMP
-nsNSSCertificate::GetInterfaces(uint32_t* count, nsIID*** array) {
-  *count = 0;
-  *array = nullptr;
+nsNSSCertificate::GetInterfaces(nsTArray<nsIID>& array) {
+  array.Clear();
   return NS_OK;
 }
 

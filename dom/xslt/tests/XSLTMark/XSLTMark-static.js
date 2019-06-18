@@ -12,7 +12,7 @@ const nsIFilePicker   = Ci.nsIFilePicker;
 const STDURLMUT_CTRID = "@mozilla.org/network/standard-url-mutator;1";
 const nsIURIMutator   = Ci.nsIURIMutator;
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var gStop = false;
 
@@ -30,7 +30,7 @@ function loadFile(aUriSpec)
     });
     var instream = 
         Cc[SIS_CTRID].createInstance(nsISIS);
-    instream.init(chan.open2());
+    instream.init(chan.open());
 
     return instream.read(instream.available());
 }

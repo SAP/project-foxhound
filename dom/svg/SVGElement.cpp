@@ -38,7 +38,6 @@
 #include "nsIFrame.h"
 #include "nsQueryObject.h"
 #include "nsLayoutUtils.h"
-#include "SVGAngle.h"
 #include "SVGAnimatedNumberList.h"
 #include "SVGAnimatedLengthList.h"
 #include "SVGAnimatedPointList.h"
@@ -52,6 +51,7 @@
 #include "SVGMotionSMILAttr.h"
 #include "nsSVGNumber2.h"
 #include "SVGNumberPair.h"
+#include "SVGOrient.h"
 #include "SVGString.h"
 #include "SVGViewBox.h"
 #include <stdarg.h>
@@ -107,8 +107,7 @@ void SVGElement::DidAnimateClass() {
   // For Servo, snapshot the element before we change it.
   nsIPresShell* shell = OwnerDoc()->GetShell();
   if (shell) {
-    nsPresContext* presContext = shell->GetPresContext();
-    if (presContext) {
+    if (nsPresContext* presContext = shell->GetPresContext()) {
       presContext->RestyleManager()->ClassAttributeWillBeChangedBySMIL(this);
     }
   }
@@ -120,8 +119,10 @@ void SVGElement::DidAnimateClass() {
   }
   mClassAnimAttr->ParseAtomArray(src);
 
+  // FIXME(emilio): This re-selector-matches, but we do the snapshot stuff right
+  // above... Is this needed anymore?
   if (shell) {
-    shell->RestyleForAnimation(this, eRestyle_Self);
+    shell->RestyleForAnimation(this, StyleRestyleHint_RESTYLE_SELF);
   }
 }
 
@@ -160,12 +161,6 @@ nsresult SVGElement::Init() {
     integerPairInfo.Reset(i);
   }
 
-  AngleAttributesInfo angleInfo = GetAngleInfo();
-
-  for (i = 0; i < angleInfo.mAngleCount; i++) {
-    angleInfo.Reset(i);
-  }
-
   BooleanAttributesInfo booleanInfo = GetBooleanInfo();
 
   for (i = 0; i < booleanInfo.mBooleanCount; i++) {
@@ -176,6 +171,12 @@ nsresult SVGElement::Init() {
 
   for (i = 0; i < enumInfo.mEnumCount; i++) {
     enumInfo.Reset(i);
+  }
+
+  SVGOrient* orient = GetOrient();
+
+  if (orient) {
+    orient->Init();
   }
 
   SVGViewBox* viewBox = GetViewBox();
@@ -462,24 +463,6 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGAngle attribute
-      AngleAttributesInfo angleInfo = GetAngleInfo();
-      for (i = 0; i < angleInfo.mAngleCount; i++) {
-        if (aAttribute == angleInfo.mAngleInfo[i].mName) {
-          rv = angleInfo.mAngles[i].SetBaseValueString(aValue, this, false);
-          if (NS_FAILED(rv)) {
-            angleInfo.Reset(i);
-          } else {
-            aResult.SetTo(angleInfo.mAngles[i], &aValue);
-            didSetResult = true;
-          }
-          foundMatch = true;
-          break;
-        }
-      }
-    }
-
-    if (!foundMatch) {
       // Check for SVGBoolean attribute
       BooleanAttributesInfo booleanInfo = GetBooleanInfo();
       for (i = 0; i < booleanInfo.mBooleanCount; i++) {
@@ -547,8 +530,21 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGViewBox attribute
-      if (aAttribute == nsGkAtoms::viewBox) {
+      // Check for orient attribute
+      if (aAttribute == nsGkAtoms::orient) {
+        SVGOrient* orient = GetOrient();
+        if (orient) {
+          rv = orient->SetBaseValueString(aValue, this, false);
+          if (NS_FAILED(rv)) {
+            orient->Init();
+          } else {
+            aResult.SetTo(*orient, &aValue);
+            didSetResult = true;
+          }
+          foundMatch = true;
+        }
+        // Check for SVGViewBox attribute
+      } else if (aAttribute == nsGkAtoms::viewBox) {
         SVGViewBox* viewBox = GetViewBox();
         if (viewBox) {
           rv = viewBox->SetBaseValueString(aValue, this, false);
@@ -750,17 +746,6 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
       }
     }
 
-    // Check if this is an angle attribute going away
-    AngleAttributesInfo angleInfo = GetAngleInfo();
-
-    for (uint32_t i = 0; i < angleInfo.mAngleCount; i++) {
-      if (aName == angleInfo.mAngleInfo[i].mName) {
-        MaybeSerializeAttrBeforeRemoval(aName, aNotify);
-        angleInfo.Reset(i);
-        return;
-      }
-    }
-
     // Check if this is a boolean attribute going away
     BooleanAttributesInfo boolInfo = GetBooleanInfo();
 
@@ -781,7 +766,17 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
       }
     }
 
-    // Check if this is a nsViewBox attribute going away
+    // Check if this is an orient attribute going away
+    if (aName == nsGkAtoms::orient) {
+      SVGOrient* orient = GetOrient();
+      if (orient) {
+        MaybeSerializeAttrBeforeRemoval(aName, aNotify);
+        orient->Init();
+        return;
+      }
+    }
+
+    // Check if this is a viewBox attribute going away
     if (aName == nsGkAtoms::viewBox) {
       SVGViewBox* viewBox = GetViewBox();
       if (viewBox) {
@@ -891,24 +886,26 @@ SVGElement::IsAttributeMapped(const nsAtom* name) const {
 }
 
 // PresentationAttributes-FillStroke
-/* static */ const Element::MappedAttributeEntry SVGElement::sFillStrokeMap[] =
-    {{nsGkAtoms::fill},
-     {nsGkAtoms::fill_opacity},
-     {nsGkAtoms::fill_rule},
-     {nsGkAtoms::paint_order},
-     {nsGkAtoms::stroke},
-     {nsGkAtoms::stroke_dasharray},
-     {nsGkAtoms::stroke_dashoffset},
-     {nsGkAtoms::stroke_linecap},
-     {nsGkAtoms::stroke_linejoin},
-     {nsGkAtoms::stroke_miterlimit},
-     {nsGkAtoms::stroke_opacity},
-     {nsGkAtoms::stroke_width},
-     {nsGkAtoms::vector_effect},
-     {nullptr}};
+/* static */
+const Element::MappedAttributeEntry SVGElement::sFillStrokeMap[] = {
+    {nsGkAtoms::fill},
+    {nsGkAtoms::fill_opacity},
+    {nsGkAtoms::fill_rule},
+    {nsGkAtoms::paint_order},
+    {nsGkAtoms::stroke},
+    {nsGkAtoms::stroke_dasharray},
+    {nsGkAtoms::stroke_dashoffset},
+    {nsGkAtoms::stroke_linecap},
+    {nsGkAtoms::stroke_linejoin},
+    {nsGkAtoms::stroke_miterlimit},
+    {nsGkAtoms::stroke_opacity},
+    {nsGkAtoms::stroke_width},
+    {nsGkAtoms::vector_effect},
+    {nullptr}};
 
 // PresentationAttributes-Graphics
-/* static */ const Element::MappedAttributeEntry SVGElement::sGraphicsMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sGraphicsMap[] = {
     {nsGkAtoms::clip_path},
     {nsGkAtoms::clip_rule},
     {nsGkAtoms::colorInterpolation},
@@ -925,64 +922,70 @@ SVGElement::IsAttributeMapped(const nsAtom* name) const {
     {nullptr}};
 
 // PresentationAttributes-TextContentElements
-/* static */ const Element::MappedAttributeEntry
-    SVGElement::sTextContentElementsMap[] = {
-        // Properties that we don't support are commented out.
-        // { nsGkAtoms::alignment_baseline },
-        // { nsGkAtoms::baseline_shift },
-        {nsGkAtoms::direction},
-        {nsGkAtoms::dominant_baseline},
-        {nsGkAtoms::letter_spacing},
-        {nsGkAtoms::text_anchor},
-        {nsGkAtoms::text_decoration},
-        {nsGkAtoms::unicode_bidi},
-        {nsGkAtoms::word_spacing},
-        {nsGkAtoms::writing_mode},
-        {nullptr}};
+/* static */
+const Element::MappedAttributeEntry SVGElement::sTextContentElementsMap[] = {
+    // Properties that we don't support are commented out.
+    // { nsGkAtoms::alignment_baseline },
+    // { nsGkAtoms::baseline_shift },
+    {nsGkAtoms::direction},
+    {nsGkAtoms::dominant_baseline},
+    {nsGkAtoms::letter_spacing},
+    {nsGkAtoms::text_anchor},
+    {nsGkAtoms::text_decoration},
+    {nsGkAtoms::unicode_bidi},
+    {nsGkAtoms::word_spacing},
+    {nsGkAtoms::writing_mode},
+    {nullptr}};
 
 // PresentationAttributes-FontSpecification
-/* static */ const Element::MappedAttributeEntry
-    SVGElement::sFontSpecificationMap[] = {
-        {nsGkAtoms::font_family},      {nsGkAtoms::font_size},
-        {nsGkAtoms::font_size_adjust}, {nsGkAtoms::font_stretch},
-        {nsGkAtoms::font_style},       {nsGkAtoms::font_variant},
-        {nsGkAtoms::fontWeight},       {nullptr}};
+/* static */
+const Element::MappedAttributeEntry SVGElement::sFontSpecificationMap[] = {
+    {nsGkAtoms::font_family},      {nsGkAtoms::font_size},
+    {nsGkAtoms::font_size_adjust}, {nsGkAtoms::font_stretch},
+    {nsGkAtoms::font_style},       {nsGkAtoms::font_variant},
+    {nsGkAtoms::fontWeight},       {nullptr}};
 
 // PresentationAttributes-GradientStop
-/* static */ const Element::MappedAttributeEntry
-    SVGElement::sGradientStopMap[] = {
-        {nsGkAtoms::stop_color}, {nsGkAtoms::stop_opacity}, {nullptr}};
+/* static */
+const Element::MappedAttributeEntry SVGElement::sGradientStopMap[] = {
+    {nsGkAtoms::stop_color}, {nsGkAtoms::stop_opacity}, {nullptr}};
 
 // PresentationAttributes-Viewports
-/* static */ const Element::MappedAttributeEntry SVGElement::sViewportsMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sViewportsMap[] = {
     {nsGkAtoms::overflow}, {nsGkAtoms::clip}, {nullptr}};
 
 // PresentationAttributes-Makers
-/* static */ const Element::MappedAttributeEntry SVGElement::sMarkersMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sMarkersMap[] = {
     {nsGkAtoms::marker_end},
     {nsGkAtoms::marker_mid},
     {nsGkAtoms::marker_start},
     {nullptr}};
 
 // PresentationAttributes-Color
-/* static */ const Element::MappedAttributeEntry SVGElement::sColorMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sColorMap[] = {
     {nsGkAtoms::color}, {nullptr}};
 
 // PresentationAttributes-Filters
-/* static */ const Element::MappedAttributeEntry SVGElement::sFiltersMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sFiltersMap[] = {
     {nsGkAtoms::colorInterpolationFilters}, {nullptr}};
 
 // PresentationAttributes-feFlood
-/* static */ const Element::MappedAttributeEntry SVGElement::sFEFloodMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sFEFloodMap[] = {
     {nsGkAtoms::flood_color}, {nsGkAtoms::flood_opacity}, {nullptr}};
 
 // PresentationAttributes-LightingEffects
-/* static */ const Element::MappedAttributeEntry
-    SVGElement::sLightingEffectsMap[] = {{nsGkAtoms::lighting_color},
-                                         {nullptr}};
+/* static */
+const Element::MappedAttributeEntry SVGElement::sLightingEffectsMap[] = {
+    {nsGkAtoms::lighting_color}, {nullptr}};
 
 // PresentationAttributes-mask
-/* static */ const Element::MappedAttributeEntry SVGElement::sMaskMap[] = {
+/* static */
+const Element::MappedAttributeEntry SVGElement::sMaskMap[] = {
     {nsGkAtoms::mask_type}, {nullptr}};
 
 //----------------------------------------------------------------------
@@ -1252,8 +1255,7 @@ nsAttrValue SVGElement::WillChangeValue(nsAtom* aName) {
   uint8_t modType =
       attrValue ? static_cast<uint8_t>(MutationEvent_Binding::MODIFICATION)
                 : static_cast<uint8_t>(MutationEvent_Binding::ADDITION);
-  nsNodeUtils::AttributeWillChange(this, kNameSpaceID_None, aName, modType,
-                                   nullptr);
+  nsNodeUtils::AttributeWillChange(this, kNameSpaceID_None, aName, modType);
 
   // This is not strictly correct--the attribute value parameter for
   // BeforeSetAttr should reflect the value that *will* be set but that implies
@@ -1341,8 +1343,9 @@ SVGViewportElement* SVGElement::GetCtx() const {
   return SVGContentUtils::GetNearestViewportElement(this);
 }
 
-/* virtual */ gfxMatrix SVGElement::PrependLocalTransformsTo(
-    const gfxMatrix& aMatrix, SVGTransformTypes aWhich) const {
+/* virtual */
+gfxMatrix SVGElement::PrependLocalTransformsTo(const gfxMatrix& aMatrix,
+                                               SVGTransformTypes aWhich) const {
   return aMatrix;
 }
 
@@ -1816,43 +1819,6 @@ void SVGElement::DidAnimateIntegerPair(uint8_t aAttrEnum) {
   }
 }
 
-SVGElement::AngleAttributesInfo SVGElement::GetAngleInfo() {
-  return AngleAttributesInfo(nullptr, nullptr, 0);
-}
-
-void SVGElement::AngleAttributesInfo::Reset(uint8_t aAttrEnum) {
-  mAngles[aAttrEnum].Init(aAttrEnum, mAngleInfo[aAttrEnum].mDefaultValue,
-                          mAngleInfo[aAttrEnum].mDefaultUnitType);
-}
-
-nsAttrValue SVGElement::WillChangeAngle(uint8_t aAttrEnum) {
-  return WillChangeValue(GetAngleInfo().mAngleInfo[aAttrEnum].mName);
-}
-
-void SVGElement::DidChangeAngle(uint8_t aAttrEnum,
-                                const nsAttrValue& aEmptyOrOldValue) {
-  AngleAttributesInfo info = GetAngleInfo();
-
-  NS_ASSERTION(info.mAngleCount > 0,
-               "DidChangeAngle on element with no angle attribs");
-  NS_ASSERTION(aAttrEnum < info.mAngleCount, "aAttrEnum out of range");
-
-  nsAttrValue newValue;
-  newValue.SetTo(info.mAngles[aAttrEnum], nullptr);
-
-  DidChangeValue(info.mAngleInfo[aAttrEnum].mName, aEmptyOrOldValue, newValue);
-}
-
-void SVGElement::DidAnimateAngle(uint8_t aAttrEnum) {
-  nsIFrame* frame = GetPrimaryFrame();
-
-  if (frame) {
-    AngleAttributesInfo info = GetAngleInfo();
-    frame->AttributeChanged(kNameSpaceID_None, info.mAngleInfo[aAttrEnum].mName,
-                            MutationEvent_Binding::SMIL);
-  }
-}
-
 SVGElement::BooleanAttributesInfo SVGElement::GetBooleanInfo() {
   return BooleanAttributesInfo(nullptr, nullptr, 0);
 }
@@ -1915,6 +1881,32 @@ void SVGElement::DidAnimateEnum(uint8_t aAttrEnum) {
   if (frame) {
     EnumAttributesInfo info = GetEnumInfo();
     frame->AttributeChanged(kNameSpaceID_None, info.mEnumInfo[aAttrEnum].mName,
+                            MutationEvent_Binding::SMIL);
+  }
+}
+
+SVGOrient* SVGElement::GetOrient() { return nullptr; }
+
+nsAttrValue SVGElement::WillChangeOrient() {
+  return WillChangeValue(nsGkAtoms::orient);
+}
+
+void SVGElement::DidChangeOrient(const nsAttrValue& aEmptyOrOldValue) {
+  SVGOrient* orient = GetOrient();
+
+  NS_ASSERTION(orient, "DidChangeOrient on element with no orient attrib");
+
+  nsAttrValue newValue;
+  newValue.SetTo(*orient, nullptr);
+
+  DidChangeValue(nsGkAtoms::orient, aEmptyOrOldValue, newValue);
+}
+
+void SVGElement::DidAnimateOrient() {
+  nsIFrame* frame = GetPrimaryFrame();
+
+  if (frame) {
+    frame->AttributeChanged(kNameSpaceID_None, nsGkAtoms::orient,
                             MutationEvent_Binding::SMIL);
   }
 }
@@ -2013,7 +2005,7 @@ void SVGElement::DidAnimateTransformList(int32_t aModType) {
     // anyway), so we need to post the change event ourself.
     nsChangeHint changeHint = GetAttributeChangeHint(transformAttr, aModType);
     if (changeHint) {
-      nsLayoutUtils::PostRestyleEvent(this, nsRestyleHint(0), changeHint);
+      nsLayoutUtils::PostRestyleEvent(this, RestyleHint{0}, changeHint);
     }
   }
 }
@@ -2228,16 +2220,13 @@ UniquePtr<SMILAttr> SVGElement::GetAnimatedAttr(int32_t aNamespaceID,
       }
     }
 
-    // Angles:
-    {
-      AngleAttributesInfo info = GetAngleInfo();
-      for (uint32_t i = 0; i < info.mAngleCount; i++) {
-        if (aName == info.mAngleInfo[i].mName) {
-          return info.mAngles[i].ToSMILAttr(this);
-        }
-      }
+    // orient:
+    if (aName == nsGkAtoms::orient) {
+      SVGOrient* orient = GetOrient();
+      return orient ? orient->ToSMILAttr(this) : nullptr;
     }
 
+    // preserveAspectRatio:
     // viewBox:
     if (aName == nsGkAtoms::viewBox) {
       SVGViewBox* viewBox = GetViewBox();

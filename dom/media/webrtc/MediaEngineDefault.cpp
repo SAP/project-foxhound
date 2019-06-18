@@ -32,21 +32,49 @@ namespace mozilla {
 
 using namespace mozilla::gfx;
 
+static nsString DefaultVideoName() {
+  // For the purpose of testing we allow to change the name of the fake device
+  // by pref.
+  nsAutoString cameraNameFromPref;
+  nsresult rv;
+  // Here it is preferred a "hard" block, provided by the combination of Await &
+  // InvokeAsync, instead of "soft" block, provided by sync dispatch which
+  // allows the waiting thread to spin its event loop. The latter would allow
+  // miltiple enumeration requests being processed out-of-order.
+  media::Await(
+      do_AddRef(SystemGroup::EventTargetFor(TaskCategory::Other)),
+      InvokeAsync(
+          SystemGroup::EventTargetFor(TaskCategory::Other), __func__, [&]() {
+            rv = Preferences::GetString("media.getusermedia.fake-camera-name",
+                                        cameraNameFromPref);
+            return GenericPromise::CreateAndResolve(true, __func__);
+          }));
+
+  if (NS_SUCCEEDED(rv)) {
+    return std::move(cameraNameFromPref);
+  }
+  return NS_LITERAL_STRING(u"Default Video Device");
+}
+
 /**
  * Default video source.
  */
 
 MediaEngineDefaultVideoSource::MediaEngineDefaultVideoSource()
-    : mTimer(nullptr), mMutex("MediaEngineDefaultVideoSource::mMutex") {}
+    : mTimer(nullptr),
+      mMutex("MediaEngineDefaultVideoSource::mMutex"),
+      mName(DefaultVideoName()) {}
 
 MediaEngineDefaultVideoSource::~MediaEngineDefaultVideoSource() {}
 
-nsString MediaEngineDefaultVideoSource::GetName() const {
-  return NS_LITERAL_STRING(u"Default Video Device");
-}
+nsString MediaEngineDefaultVideoSource::GetName() const { return mName; }
 
 nsCString MediaEngineDefaultVideoSource::GetUUID() const {
   return NS_LITERAL_CSTRING("1041FCBD-3F12-4F7B-9E9B-1EC556DD5676");
+}
+
+nsString MediaEngineDefaultVideoSource::GetGroupId() const {
+  return NS_LITERAL_STRING(u"Default Video Group");
 }
 
 uint32_t MediaEngineDefaultVideoSource::GetBestFitnessDistance(
@@ -362,6 +390,10 @@ nsCString MediaEngineDefaultAudioSource::GetUUID() const {
   return NS_LITERAL_CSTRING("B7CBD7C1-53EF-42F9-8353-73F61C70C092");
 }
 
+nsString MediaEngineDefaultAudioSource::GetGroupId() const {
+  return NS_LITERAL_STRING(u"Default Audio Group");
+}
+
 uint32_t MediaEngineDefaultAudioSource::GetBestFitnessDistance(
     const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
     const nsString& aDeviceId) const {
@@ -552,7 +584,8 @@ void MediaEngineDefault::EnumerateDevices(
       devicesForThisWindow->AppendElement(newSource);
       aDevices->AppendElement(MakeRefPtr<MediaDevice>(
           newSource, newSource->GetName(),
-          NS_ConvertUTF8toUTF16(newSource->GetUUID()), NS_LITERAL_STRING("")));
+          NS_ConvertUTF8toUTF16(newSource->GetUUID()), newSource->GetGroupId(),
+          NS_LITERAL_STRING("")));
       return;
     }
     case dom::MediaSourceEnum::Microphone: {
@@ -563,7 +596,8 @@ void MediaEngineDefault::EnumerateDevices(
         if (source->IsAvailable()) {
           aDevices->AppendElement(MakeRefPtr<MediaDevice>(
               source, source->GetName(),
-              NS_ConvertUTF8toUTF16(source->GetUUID()), NS_LITERAL_STRING("")));
+              NS_ConvertUTF8toUTF16(source->GetUUID()), source->GetGroupId(),
+              NS_LITERAL_STRING("")));
         }
       }
 
@@ -571,10 +605,10 @@ void MediaEngineDefault::EnumerateDevices(
         // All streams are currently busy, just make a new one.
         auto newSource = MakeRefPtr<MediaEngineDefaultAudioSource>();
         devicesForThisWindow->AppendElement(newSource);
-        aDevices->AppendElement(
-            MakeRefPtr<MediaDevice>(newSource, newSource->GetName(),
-                                    NS_ConvertUTF8toUTF16(newSource->GetUUID()),
-                                    NS_LITERAL_STRING("")));
+        aDevices->AppendElement(MakeRefPtr<MediaDevice>(
+            newSource, newSource->GetName(),
+            NS_ConvertUTF8toUTF16(newSource->GetUUID()),
+            newSource->GetGroupId(), NS_LITERAL_STRING("")));
       }
       return;
     }

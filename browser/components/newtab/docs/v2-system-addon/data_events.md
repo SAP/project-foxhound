@@ -362,6 +362,26 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
 }
 ```
 
+#### Pinning a tab
+
+```js
+{
+  "event": "TABPINNED",
+  "source": "TAB_CONTEXT_MENU",
+  "value": "{\"total_pinned_tabs\":2}",
+
+  // Basic metadata
+  "action": "activity_stream_user_event",
+  "client_id": "aabaace5-35f4-7345-a28e-5502147dc93c",
+  "version": "67.0a1",
+  "addon_version": "20190218094427",
+  "locale": "en-US",
+  "user_prefs": 59,
+  "page": "n/a",
+  "session_id": "n/a",
+}
+```
+
 #### Adding or editing a new TopSite
 
 ```js
@@ -929,7 +949,7 @@ This reports the user's interaction with Activity Stream Router.
   "source": "CFR",
   // message_id could be the ID of the recommendation, such as "wikipedia_addon"
   "message_id": "wikipedia_addon",
-  "event": "[INSTALL | BLOCK | DISMISS | RATIONALE | LEARN_MORE | CLICK_DOORHANGER | MANAGE]"
+  "event": "[INSTALL | PIN | BLOCK | DISMISS | RATIONALE | LEARN_MORE | CLICK_DOORHANGER | MANAGE]"
 }
 ```
 
@@ -945,7 +965,7 @@ This reports the user's interaction with Activity Stream Router.
   // message_id should be a bucket ID in the release channel, we may not use the
   // individual ID, such as addon ID, per legal's request
   "message_id": "bucket_id",
-  "event": "[INSTALL | BLOCK | DISMISS | RATIONALE | LEARN_MORE | CLICK_DOORHANGER | MANAGE]"
+  "event": "[INSTALL | PIN | BLOCK | DISMISS | RATIONALE | LEARN_MORE | CLICK_DOORHANGER | MANAGE]"
 }
 ```
 
@@ -963,5 +983,22 @@ This reports when an error has occurred when parsing/evaluating a JEXL targeting
   "message_id": "some_message_id",
   "event": "TARGETING_EXPRESSION_ERROR",
   "value": ["MALFORMED_EXPRESSION" | "OTHER_ERROR"]
+}
+```
+
+## Trailhead experiment enrollment ping
+
+This reports an enrollment ping when a user gets enrolled in a Trailhead experiment. Note that this ping is only collected through the Mozilla Events telemetry pipeline.
+
+```js
+{
+  "category": "activity_stream",
+  "method": "enroll",
+  "object": "preference_study"
+  "value": "activity-stream-firstup-trailhead-interrupts",
+  "extra_keys": {
+    "experimentType": "as-firstrun",
+    "branch": ["supercharge" | "join" | "sync" | "privacy" ...]
+  }
 }
 ```

@@ -8,7 +8,7 @@
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
-#include "mozilla/layers/CrossProcessCompositorBridgeParent.h"
+#include "mozilla/layers/ContentCompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "nsAutoPtr.h"
@@ -25,7 +25,8 @@ StaticAutoPtr<nsTArray<CompositorManagerParent*>>
     CompositorManagerParent::sActiveActors;
 #endif
 
-/* static */ already_AddRefed<CompositorManagerParent>
+/* static */
+already_AddRefed<CompositorManagerParent>
 CompositorManagerParent::CreateSameProcess() {
   MOZ_ASSERT(XRE_IsParentProcess() || recordreplay::IsRecordingOrReplaying());
   MOZ_ASSERT(NS_IsMainThread());
@@ -47,13 +48,18 @@ CompositorManagerParent::CreateSameProcess() {
   return parent.forget();
 }
 
-/* static */ void CompositorManagerParent::Create(
+/* static */
+bool CompositorManagerParent::Create(
     Endpoint<PCompositorManagerParent>&& aEndpoint) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // We are creating a manager for the another process, inside the GPU process
   // (or UI process if it subsumbed the GPU process).
   MOZ_ASSERT(aEndpoint.OtherPid() != base::GetCurrentProcId());
+
+  if (!CompositorThreadHolder::IsActive()) {
+    return false;
+  }
 
   RefPtr<CompositorManagerParent> bridge = new CompositorManagerParent();
 
@@ -62,9 +68,11 @@ CompositorManagerParent::CreateSameProcess() {
           "CompositorManagerParent::Bind", bridge,
           &CompositorManagerParent::Bind, std::move(aEndpoint));
   CompositorThreadHolder::Loop()->PostTask(runnable.forget());
+  return true;
 }
 
-/* static */ already_AddRefed<CompositorBridgeParent>
+/* static */
+already_AddRefed<CompositorBridgeParent>
 CompositorManagerParent::CreateSameProcessWidgetCompositorBridge(
     CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
     bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize) {
@@ -165,7 +173,8 @@ void CompositorManagerParent::DeferredDestroy() {
 }
 
 #ifdef COMPOSITOR_MANAGER_PARENT_EXPLICIT_SHUTDOWN
-/* static */ void CompositorManagerParent::ShutdownInternal() {
+/* static */
+void CompositorManagerParent::ShutdownInternal() {
   nsAutoPtr<nsTArray<CompositorManagerParent*>> actors;
 
   // We move here because we may attempt to acquire the same lock during the
@@ -183,7 +192,8 @@ void CompositorManagerParent::DeferredDestroy() {
 }
 #endif  // COMPOSITOR_MANAGER_PARENT_EXPLICIT_SHUTDOWN
 
-/* static */ void CompositorManagerParent::Shutdown() {
+/* static */
+void CompositorManagerParent::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
 
 #ifdef COMPOSITOR_MANAGER_PARENT_EXPLICIT_SHUTDOWN
@@ -197,8 +207,8 @@ PCompositorBridgeParent* CompositorManagerParent::AllocPCompositorBridgeParent(
     const CompositorBridgeOptions& aOpt) {
   switch (aOpt.type()) {
     case CompositorBridgeOptions::TContentCompositorOptions: {
-      CrossProcessCompositorBridgeParent* bridge =
-          new CrossProcessCompositorBridgeParent(this);
+      ContentCompositorBridgeParent* bridge =
+          new ContentCompositorBridgeParent(this);
       bridge->AddRef();
       return bridge;
     }

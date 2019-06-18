@@ -44,10 +44,11 @@ XPCVariant::XPCVariant(JSContext* cx, const Value& aJSVal)
     mJSVal = JS::ObjectValue(*obj);
 
     JSObject* unwrapped =
-        js::CheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
+        js::CheckedUnwrapDynamic(obj, cx, /* stopAtWindowProxy = */ false);
     mReturnRawObject = !(unwrapped && IS_WN_REFLECTOR(unwrapped));
-  } else
+  } else {
     mReturnRawObject = false;
+  }
 }
 
 XPCTraceableVariant::~XPCTraceableVariant() {
@@ -230,7 +231,7 @@ bool XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, HandleObject array,
       *resultType = nsXPTType::MkArrayType(nsXPTType::Idx::PWSTRING);
       break;
     case tID:
-      *resultType = nsXPTType::MkArrayType(nsXPTType::Idx::PNSIID);
+      *resultType = nsXPTType::MkArrayType(nsXPTType::Idx::NSIDPTR);
       break;
     case tISup:
       *resultType = nsXPTType::MkArrayType(nsXPTType::Idx::INTERFACE_IS_TYPE);
@@ -465,7 +466,7 @@ bool XPCVariant::VariantDataToJS(nsIVariant* variant, nsresult* pErr,
         return false;
       }
       nsID* v = &iid;
-      return XPCConvert::NativeData2JS(pJSVal, (const void*)&v, {TD_PNSIID},
+      return XPCConvert::NativeData2JS(pJSVal, (const void*)&v, {TD_NSIDPTR},
                                        &iid, 0, pErr);
     }
     case nsIDataType::VTYPE_ASTRING: {
@@ -611,7 +612,7 @@ bool XPCVariant::VariantDataToJS(nsIVariant* variant, nsresult* pErr,
           xptIndex = nsXPTType::Idx::WCHAR;
           break;
         case nsIDataType::VTYPE_ID:
-          xptIndex = nsXPTType::Idx::PNSIID;
+          xptIndex = nsXPTType::Idx::NSIDPTR;
           break;
         case nsIDataType::VTYPE_CHAR_STR:
           xptIndex = nsXPTType::Idx::PSTRING;

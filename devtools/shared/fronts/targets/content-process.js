@@ -5,23 +5,32 @@
 
 const {contentProcessTargetSpec} = require("devtools/shared/specs/targets/content-process");
 const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
+const { TargetMixin } = require("./target-mixin");
 
-class ContentProcessTargetFront extends FrontClassWithSpec(contentProcessTargetSpec) {
-  constructor(client, form) {
-    super(client, form);
-
-    this.client = client;
-    this.chromeDebugger = form.chromeDebugger;
-
-    // Save the full form for Target class usage
-    // Do not use `form` name to avoid colliding with protocol.js's `form` method
-    this.targetForm = form;
+class ContentProcessTargetFront extends
+  TargetMixin(FrontClassWithSpec(contentProcessTargetSpec)) {
+  constructor(client) {
+    super(client);
 
     this.traits = {};
   }
 
-  attachThread() {
-    return this.client.attachThread(this.chromeDebugger);
+  form(json) {
+    this.actorID = json.actor;
+
+    // Save the full form for Target class usage.
+    // Do not use `form` name to avoid colliding with protocol.js's `form` method
+    this.targetForm = json;
+    this._threadActor = json.chromeDebugger;
+  }
+
+  attach() {
+    // All target actors have a console actor to attach.
+    // All but xpcshell test actors... which is using a ContentProcessTargetActor
+    if (this.targetForm.consoleActor) {
+      return this.attachConsole();
+    }
+    return Promise.resolve();
   }
 
   reconfigure() {
@@ -32,4 +41,4 @@ class ContentProcessTargetFront extends FrontClassWithSpec(contentProcessTargetS
 }
 
 exports.ContentProcessTargetFront = ContentProcessTargetFront;
-registerFront(ContentProcessTargetFront);
+registerFront(exports.ContentProcessTargetFront);

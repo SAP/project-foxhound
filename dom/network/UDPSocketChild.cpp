@@ -84,7 +84,7 @@ UDPSocketChild::Bind(nsIUDPSocketInternal* aSocket, nsIPrincipal* aPrincipal,
     // If we want to support a passed-in principal here we'd need to
     // convert it to a PrincipalInfo
     MOZ_ASSERT(!aPrincipal);
-    mBackgroundManager->SendPUDPSocketConstructor(this, void_t(), mFilterName);
+    mBackgroundManager->SendPUDPSocketConstructor(this, Nothing(), mFilterName);
   } else {
     if (aMainThreadEventTarget) {
       gNeckoChild->SetEventTargetForActor(this, aMainThreadEventTarget);
@@ -181,7 +181,7 @@ UDPSocketChild::SendBinaryStream(const nsACString& aHost, uint16_t aPort,
 
   UDPSOCKET_LOG(
       ("%s: %s:%u", __FUNCTION__, PromiseFlatCString(aHost).get(), aPort));
-  SendOutgoingData(UDPData(autoStream.TakeOptionalValue()),
+  SendOutgoingData(UDPData(autoStream.TakeValue()),
                    UDPSocketAddr(UDPAddressInfo(nsCString(aHost), aPort)));
 
   return NS_OK;

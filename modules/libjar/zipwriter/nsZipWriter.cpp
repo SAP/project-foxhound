@@ -376,7 +376,7 @@ NS_IMETHODIMP nsZipWriter::AddEntryChannel(const nsACString &aZipEntry,
 
   nsCOMPtr<nsIInputStream> inputStream;
   nsresult rv =
-      NS_MaybeOpenChannelUsingOpen2(aChannel, getter_AddRefs(inputStream));
+      NS_MaybeOpenChannelUsingOpen(aChannel, getter_AddRefs(inputStream));
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -539,8 +539,7 @@ NS_IMETHODIMP nsZipWriter::ProcessQueue(nsIRequestObserver *aObserver,
   mProcessContext = aContext;
   mInQueue = true;
 
-  if (mProcessObserver)
-    mProcessObserver->OnStartRequest(nullptr, mProcessContext);
+  if (mProcessObserver) mProcessObserver->OnStartRequest(nullptr);
 
   BeginProcessingNextItem();
 
@@ -620,13 +619,11 @@ NS_IMETHODIMP nsZipWriter::Close() {
 }
 
 // Our nsIRequestObserver monitors removal operations performed on the queue
-NS_IMETHODIMP nsZipWriter::OnStartRequest(nsIRequest *aRequest,
-                                          nsISupports *aContext) {
+NS_IMETHODIMP nsZipWriter::OnStartRequest(nsIRequest *aRequest) {
   return NS_OK;
 }
 
 NS_IMETHODIMP nsZipWriter::OnStopRequest(nsIRequest *aRequest,
-                                         nsISupports *aContext,
                                          nsresult aStatusCode) {
   if (NS_FAILED(aStatusCode)) {
     FinishQueue(aStatusCode);
@@ -915,7 +912,7 @@ inline nsresult nsZipWriter::BeginProcessingAddition(nsZipQueueItem *aItem,
       rv = pump->AsyncRead(stream, nullptr);
       NS_ENSURE_SUCCESS(rv, rv);
     } else {
-      rv = NS_MaybeOpenChannelUsingAsyncOpen2(aItem->mChannel, stream);
+      rv = NS_MaybeOpenChannelUsingAsyncOpen(aItem->mChannel, stream);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -1031,12 +1028,11 @@ void nsZipWriter::BeginProcessingNextItem() {
  */
 void nsZipWriter::FinishQueue(nsresult aStatus) {
   nsCOMPtr<nsIRequestObserver> observer = mProcessObserver;
-  nsCOMPtr<nsISupports> context = mProcessContext;
   // Clean up everything first in case the observer decides to queue more
   // things
   mProcessObserver = nullptr;
   mProcessContext = nullptr;
   mInQueue = false;
 
-  if (observer) observer->OnStopRequest(nullptr, context, aStatus);
+  if (observer) observer->OnStopRequest(nullptr, aStatus);
 }

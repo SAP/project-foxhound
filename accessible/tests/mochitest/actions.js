@@ -51,7 +51,6 @@ function testActions(aArray) {
   gActionsQueue = new eventQueue();
 
   for (var idx = 0; idx < aArray.length; idx++) {
-
     var actionObj = aArray[idx];
     var accOrElmOrID = actionObj.ID;
     var actionIndex = actionObj.actionIndex;
@@ -133,6 +132,7 @@ function actionInvoker(aAccOrElmOrId, aActionIndex, aActionName, aEventSeq) {
       ok(false, "doAction(" + aActionIndex + ") failed with: " + e.name);
       return INVOKER_ACTION_FAILED;
     }
+    return null;
   };
 
   this.eventSeq = aEventSeq;

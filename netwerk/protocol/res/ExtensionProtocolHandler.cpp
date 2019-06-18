@@ -41,6 +41,7 @@
 #include "nsIOutputStream.h"
 #include "nsIStreamConverterService.h"
 #include "nsNetUtil.h"
+#include "nsURLHelper.h"
 #include "prio.h"
 #include "SimpleChannel.h"
 
@@ -52,7 +53,6 @@
 #define EXTENSION_SCHEME "moz-extension"
 using mozilla::dom::Promise;
 using mozilla::ipc::FileDescriptor;
-using OptionalIPCStream = mozilla::ipc::OptionalIPCStream;
 
 namespace mozilla {
 
@@ -239,8 +239,8 @@ static void CancelRequest(nsIStreamListener* aListener, nsIChannel* aChannel,
   MOZ_ASSERT(aListener);
   MOZ_ASSERT(aChannel);
 
-  aListener->OnStartRequest(aChannel, nullptr);
-  aListener->OnStopRequest(aChannel, nullptr, aResult);
+  aListener->OnStartRequest(aChannel);
+  aListener->OnStopRequest(aChannel, aResult);
   aChannel->Cancel(NS_BINDING_ABORTED);
 }
 
@@ -290,12 +290,12 @@ void ExtensionStreamGetter::OnFD(const FileDescriptor& aFD) {
   }
 
   // We must keep an owning reference to the listener
-  // until we pass it on to AsyncOpen2.
+  // until we pass it on to AsyncOpen.
   nsCOMPtr<nsIStreamListener> listener = mListener.forget();
 
   RefPtr<FileDescriptorFile> fdFile = new FileDescriptorFile(aFD, mJarFile);
   mJarChannel->SetJarFile(fdFile);
-  nsresult rv = mJarChannel->AsyncOpen2(listener);
+  nsresult rv = mJarChannel->AsyncOpen(listener);
   if (NS_FAILED(rv)) {
     CancelRequest(listener, mChannel, rv);
   }
@@ -344,20 +344,27 @@ static inline ExtensionPolicyService& EPS() {
 
 nsresult ExtensionProtocolHandler::GetFlagsForURI(nsIURI* aURI,
                                                   uint32_t* aFlags) {
-  // In general a moz-extension URI is only loadable by chrome, but a
-  // whitelisted subset are web-accessible (and cross-origin fetchable). Check
-  // that whitelist.
-  bool loadableByAnyone = false;
+  uint32_t flags =
+      URI_STD | URI_IS_LOCAL_RESOURCE | URI_IS_POTENTIALLY_TRUSTWORTHY;
 
   URLInfo url(aURI);
   if (auto* policy = EPS().GetByURL(url)) {
-    loadableByAnyone = policy->IsPathWebAccessible(url.FilePath());
+    // In general a moz-extension URI is only loadable by chrome, but a
+    // whitelisted subset are web-accessible (and cross-origin fetchable). Check
+    // that whitelist.
+    if (policy->IsPathWebAccessible(url.FilePath())) {
+      flags |= URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE;
+    } else {
+      flags |= URI_DANGEROUS_TO_LOAD;
+    }
+
+    // Disallow in private windows if the extension does not have permission.
+    if (!policy->PrivateBrowsingAllowed()) {
+      flags |= URI_DISALLOW_IN_PRIVATE_CONTEXT;
+    }
   }
 
-  *aFlags =
-      URI_STD | URI_IS_LOCAL_RESOURCE | URI_IS_POTENTIALLY_TRUSTWORTHY |
-      (loadableByAnyone ? (URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE)
-                        : URI_DANGEROUS_TO_LOAD);
+  *aFlags = flags;
   return NS_OK;
 }
 
@@ -455,12 +462,11 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
   MOZ_TRY(url->GetFileExtension(ext));
 
   nsCOMPtr<nsIChannel> channel;
-  bool haveLoadInfo = aLoadInfo;
   if (ext.LowerCaseEqualsLiteral("css")) {
     // Filter CSS files to replace locale message tokens with localized strings.
-    static const auto convert = [haveLoadInfo](nsIStreamListener* listener,
-                                               nsIChannel* channel,
-                                               nsIChannel* origChannel) -> nsresult {
+    static const auto convert = [](nsIStreamListener* listener,
+                                   nsIChannel* channel,
+                                   nsIChannel* origChannel) -> nsresult {
       nsresult rv;
       nsCOMPtr<nsIStreamConverterService> convService =
           do_GetService(NS_STREAMCONVERTERSERVICE_CONTRACTID, &rv);
@@ -476,10 +482,7 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
       MOZ_TRY(convService->AsyncConvertData(kFromType, kToType, listener, uri,
                                             getter_AddRefs(converter)));
 
-      if (haveLoadInfo) {
-        return origChannel->AsyncOpen2(converter);
-      }
-      return origChannel->AsyncOpen(converter, nullptr);
+      return origChannel->AsyncOpen(converter);
     };
 
     channel = NS_NewSimpleChannel(
@@ -501,14 +504,11 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
   } else if (readyPromise) {
     channel = NS_NewSimpleChannel(
         aURI, aLoadInfo, *result,
-        [readyPromise, haveLoadInfo](nsIStreamListener* listener, nsIChannel* channel,
-                                     nsIChannel* origChannel) -> RequestOrReason {
+        [readyPromise](nsIStreamListener* listener, nsIChannel* channel,
+                       nsIChannel* origChannel) -> RequestOrReason {
           OpenWhenReady(readyPromise, listener, origChannel,
-                        [haveLoadInfo](nsIStreamListener* aListener, nsIChannel* aChannel) {
-                          if (haveLoadInfo) {
-                            return aChannel->AsyncOpen2(aListener);
-                          }
-                          return aChannel->AsyncOpen(aListener, nullptr);
+                        [](nsIStreamListener* aListener, nsIChannel* aChannel) {
+                          return aChannel->AsyncOpen(aListener);
                         });
 
           return RequestOrReason(origChannel);
@@ -528,19 +528,17 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
   return NS_OK;
 }
 
-Result<Ok, nsresult> ExtensionProtocolHandler::AllowExternalResource(
-    nsIFile* aExtensionDir, nsIFile* aRequestedFile, bool* aResult) {
+Result<bool, nsresult> ExtensionProtocolHandler::AllowExternalResource(
+    nsIFile* aExtensionDir, nsIFile* aRequestedFile) {
   MOZ_ASSERT(!IsNeckoChild());
-  MOZ_ASSERT(aResult);
-  *aResult = false;
 
 #if defined(XP_WIN)
   // On Windows, dev builds don't use symlinks so we never need to
   // allow a resource from outside of the extension dir.
-  return Ok();
+  return false;
 #else
   if (!mozilla::IsDevelopmentBuild()) {
-    return Ok();
+    return false;
   }
 
   // On Mac and Linux unpackaged dev builds, system extensions use
@@ -548,30 +546,29 @@ Result<Ok, nsresult> ExtensionProtocolHandler::AllowExternalResource(
   // allow loading. Before we allow an unpacked extension to load a
   // resource outside of the extension dir, we make sure the extension
   // dir is within the app directory.
-  MOZ_TRY(AppDirContains(aExtensionDir, aResult));
-  if (!*aResult) {
-    return Ok();
+  bool result;
+  MOZ_TRY_VAR(result, AppDirContains(aExtensionDir));
+  if (!result) {
+    return false;
   }
 
 #  if defined(XP_MACOSX)
   // Additionally, on Mac dev builds, we make sure that the requested
   // resource is within the repo dir. We don't perform this check on Linux
   // because we don't have a reliable path to the repo dir on Linux.
-  MOZ_TRY(DevRepoContains(aRequestedFile, aResult));
-#  endif /* XP_MACOSX */
-
-  return Ok();
-#endif   /* defined(XP_WIN) */
+  return DevRepoContains(aRequestedFile);
+#  else /* XP_MACOSX */
+  return true;
+#  endif
+#endif /* defined(XP_WIN) */
 }
 
 #if defined(XP_MACOSX)
 // The |aRequestedFile| argument must already be Normalize()'d
-Result<Ok, nsresult> ExtensionProtocolHandler::DevRepoContains(
-    nsIFile* aRequestedFile, bool* aResult) {
+Result<bool, nsresult> ExtensionProtocolHandler::DevRepoContains(
+    nsIFile* aRequestedFile) {
   MOZ_ASSERT(mozilla::IsDevelopmentBuild());
   MOZ_ASSERT(!IsNeckoChild());
-  MOZ_ASSERT(aResult);
-  *aResult = false;
 
   // On the first invocation, set mDevRepo
   if (!mAlreadyCheckedDevRepo) {
@@ -584,21 +581,19 @@ Result<Ok, nsresult> ExtensionProtocolHandler::DevRepoContains(
     }
   }
 
+  bool result = false;
   if (mDevRepo) {
-    MOZ_TRY(mDevRepo->Contains(aRequestedFile, aResult));
+    MOZ_TRY(mDevRepo->Contains(aRequestedFile, &result));
   }
-
-  return Ok();
+  return result;
 }
 #endif /* XP_MACOSX */
 
 #if !defined(XP_WIN)
-Result<Ok, nsresult> ExtensionProtocolHandler::AppDirContains(
-    nsIFile* aExtensionDir, bool* aResult) {
+Result<bool, nsresult> ExtensionProtocolHandler::AppDirContains(
+    nsIFile* aExtensionDir) {
   MOZ_ASSERT(mozilla::IsDevelopmentBuild());
   MOZ_ASSERT(!IsNeckoChild());
-  MOZ_ASSERT(aResult);
-  *aResult = false;
 
   // On the first invocation, set mAppDir
   if (!mAlreadyCheckedAppDir) {
@@ -611,11 +606,11 @@ Result<Ok, nsresult> ExtensionProtocolHandler::AppDirContains(
     }
   }
 
+  bool result = false;
   if (mAppDir) {
-    MOZ_TRY(mAppDir->Contains(aExtensionDir, aResult));
+    MOZ_TRY(mAppDir->Contains(aExtensionDir, &result));
   }
-
-  return Ok();
+  return result;
 }
 #endif /* !defined(XP_WIN) */
 
@@ -734,8 +729,8 @@ Result<nsCOMPtr<nsIInputStream>, nsresult> ExtensionProtocolHandler::NewStream(
   bool isResourceFromExtensionDir = false;
   MOZ_TRY(extensionDir->Contains(requestedFile, &isResourceFromExtensionDir));
   if (!isResourceFromExtensionDir) {
-    bool isAllowed = false;
-    MOZ_TRY(AllowExternalResource(extensionDir, requestedFile, &isAllowed));
+    bool isAllowed;
+    MOZ_TRY_VAR(isAllowed, AllowExternalResource(extensionDir, requestedFile));
     if (!isAllowed) {
       LogExternalResourceError(extensionDir, requestedFile);
       return Err(NS_ERROR_FILE_ACCESS_DENIED);
@@ -844,7 +839,7 @@ static void NewSimpleChannel(nsIURI* aURI, nsILoadInfo* aLoadinfo,
       aURI, aLoadinfo, aChannel,
       [](nsIStreamListener* listener, nsIChannel* simpleChannel,
          nsIChannel* origChannel) -> RequestOrReason {
-        nsresult rv = origChannel->AsyncOpen2(listener);
+        nsresult rv = origChannel->AsyncOpen(listener);
         if (NS_FAILED(rv)) {
           simpleChannel->Cancel(NS_BINDING_ABORTED);
           return RequestOrReason(rv);

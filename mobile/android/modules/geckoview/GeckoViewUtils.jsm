@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AndroidLog: "resource://gre/modules/AndroidLog.jsm",
@@ -375,6 +375,7 @@ var GeckoViewUtils = {
    * @param aScope Scope to add the logging functions to.
    */
   initLogging: function(aTag, aScope) {
+    aScope = aScope || {};
     const tag = "GeckoView." + aTag.replace(/^GeckoView\.?/, "");
 
     // Only provide two levels for simplicity.

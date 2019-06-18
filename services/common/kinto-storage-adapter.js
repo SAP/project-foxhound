@@ -11,8 +11,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm", {});
-const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js", {});
+const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
+const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js");
 
 /**
  * Filter and sort list against provided filters and order.
@@ -213,7 +213,6 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
       const schema = await connection.getSchemaVersion();
 
       if (schema == 0) {
-
         for (let statementName of createStatements) {
           await connection.execute(statements[statementName]);
         }
@@ -332,6 +331,10 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     });
   }
 
+  async loadDump(records) {
+    return this.importBulk(records);
+  }
+
   /**
    * Load a list of records into the local database.
    *
@@ -342,7 +345,7 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
    * @param  {Array} records.
    * @return {Array} imported records.
    */
-  async loadDump(records) {
+  async importBulk(records) {
     const connection = this._connection;
     const collection_name = this.collection;
     await connection.executeTransaction(async function doImport() {

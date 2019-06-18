@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["ContentCrashHandler"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
@@ -18,7 +18,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 ChromeUtils.defineModuleGetter(this, "OS",
                                "resource://gre/modules/osfile.jsm");
 
-GeckoViewUtils.initLogging("ContentCrashHandler", this);
+const {debug, warn} = GeckoViewUtils.initLogging("ContentCrashHandler"); // eslint-disable-line no-unused-vars
 
 function getDir(name) {
   let uAppDataPath = Services.dirsvc.get("UAppData", Ci.nsIFile).path;

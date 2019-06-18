@@ -26,7 +26,7 @@ using namespace mozilla::dom;
 // Creates a new col frame
 //
 nsIFrame* NS_NewTreeColFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsTreeColFrame(aStyle);
+  return new (aPresShell) nsTreeColFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTreeColFrame)

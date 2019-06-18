@@ -14,10 +14,10 @@ namespace mozilla {
 namespace dom {
 
 template <typename M>
-/* static */ already_AddRefed<IPCBlobInputStreamParent>
-IPCBlobInputStreamParent::Create(nsIInputStream* aInputStream, uint64_t aSize,
-                                 uint64_t aChildID, nsresult* aRv,
-                                 M* aManager) {
+/* static */
+already_AddRefed<IPCBlobInputStreamParent> IPCBlobInputStreamParent::Create(
+    nsIInputStream* aInputStream, uint64_t aSize, uint64_t aChildID,
+    nsresult* aRv, M* aManager) {
   MOZ_ASSERT(aInputStream);
   MOZ_ASSERT(aRv);
 
@@ -35,9 +35,9 @@ IPCBlobInputStreamParent::Create(nsIInputStream* aInputStream, uint64_t aSize,
   return parent.forget();
 }
 
-/* static */ already_AddRefed<IPCBlobInputStreamParent>
-IPCBlobInputStreamParent::Create(const nsID& aID, uint64_t aSize,
-                                 PBackgroundParent* aManager) {
+/* static */
+already_AddRefed<IPCBlobInputStreamParent> IPCBlobInputStreamParent::Create(
+    const nsID& aID, uint64_t aSize, PBackgroundParent* aManager) {
   RefPtr<IPCBlobInputStreamParent> actor =
       new IPCBlobInputStreamParent(aID, aSize, aManager);
 
@@ -48,7 +48,7 @@ IPCBlobInputStreamParent::Create(const nsID& aID, uint64_t aSize,
 
 IPCBlobInputStreamParent::IPCBlobInputStreamParent(const nsID& aID,
                                                    uint64_t aSize,
-                                                   nsIContentParent* aManager)
+                                                   ContentParent* aManager)
     : mID(aID),
       mSize(aSize),
       mContentManager(aManager),
@@ -108,7 +108,7 @@ mozilla::ipc::IPCResult IPCBlobInputStreamParent::RecvStreamNeeded() {
   IPCBlobInputStreamStorage::Get()->GetStream(mID, 0, mSize,
                                               getter_AddRefs(stream));
   if (!stream) {
-    if (!SendStreamReady(void_t())) {
+    if (!SendStreamReady(Nothing())) {
       return IPC_FAIL(this, "SendStreamReady failed");
     }
 
@@ -130,7 +130,7 @@ mozilla::ipc::IPCResult IPCBlobInputStreamParent::RecvStreamNeeded() {
     return IPC_FAIL(this, "SendStreamReady failed");
   }
 
-  if (!SendStreamReady(ipcStream.TakeValue())) {
+  if (!SendStreamReady(Some(ipcStream.TakeValue()))) {
     return IPC_FAIL(this, "SendStreamReady failed");
   }
 

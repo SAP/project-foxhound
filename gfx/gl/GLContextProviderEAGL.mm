@@ -49,12 +49,6 @@ GLContextEAGL::~GLContextEAGL() {
   }
 }
 
-bool GLContextEAGL::Init() {
-  if (!InitWithPrefix("gl", true)) return false;
-
-  return true;
-}
-
 bool GLContextEAGL::AttachToWindow(nsIWidget* aWidget) {
   // This should only be called once
   MOZ_ASSERT(!mBackbufferFB && !mBackbufferRB);
@@ -106,7 +100,18 @@ bool GLContextEAGL::MakeCurrentImpl() const {
 
 bool GLContextEAGL::IsCurrentImpl() const { return [EAGLContext currentContext] == mContext; }
 
-bool GLContextEAGL::SetupLookupFunction() { return false; }
+static PRFuncPtr GLAPIENTRY GetLoadedProcAddress(const char* const name) {
+  PRLibrary* lib = nullptr;
+  const auto& ret = PR_FindFunctionSymbolAndLibrary(name, &leakedLibRef);
+  if (lib) {
+    PR_UnloadLibrary(lib);
+  }
+  return ret;
+}
+
+Maybe<SymbolLoader> GLContextEAGL::GetSymbolLoader() const {
+  return Some(SymbolLoader(&GetLoadedProcAddress));
+}
 
 bool GLContextEAGL::IsDoubleBuffered() const { return true; }
 
@@ -161,10 +166,12 @@ static already_AddRefed<GLContext> CreateEAGLContext(CreateContextFlags flags, b
 }
 
 already_AddRefed<GLContext> GLContextProviderEAGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aForceAccelerated) {
-  return CreateForWindow(aCompositorWidget->RealWidget(),
-                         aCompositorWidget->GetCompositorOptions().UseWebRender(),
-                         aForceAccelerated);
+    CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
+  if (!aCompositorWidget) {
+    MOZ_ASSERT(false);
+    return nullptr;
+  }
+  return CreateForWindow(aCompositorWidget->RealWidget(), aWebRender, aForceAccelerated);
 }
 
 already_AddRefed<GLContext> GLContextProviderEAGL::CreateForWindow(nsIWidget* aWidget,

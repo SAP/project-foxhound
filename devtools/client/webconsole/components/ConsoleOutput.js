@@ -3,12 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const { Component, createElement } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/redux/visibility-handler-connect");
 const {initialize} = require("devtools/client/webconsole/actions/ui");
-const {sortBy} = require("devtools/client/shared/vendor/lodash");
 
 const {
   getAllMessagesById,
@@ -19,7 +17,11 @@ const {
   getPausedExecutionPoint,
   getAllRepeatById,
 } = require("devtools/client/webconsole/selectors/messages");
-const MessageContainer = createFactory(require("devtools/client/webconsole/components/MessageContainer").MessageContainer);
+
+loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
+loader.lazyRequireGetter(this, "sortBy", "devtools/client/shared/vendor/lodash", true);
+loader.lazyRequireGetter(this, "MessageContainer", "devtools/client/webconsole/components/MessageContainer", true);
+
 const {
   MESSAGE_TYPE,
 } = require("devtools/client/webconsole/constants");
@@ -48,7 +50,7 @@ class ConsoleOutput extends Component {
       messages: PropTypes.object.isRequired,
       messagesUi: PropTypes.array.isRequired,
       serviceContainer: PropTypes.shape({
-        attachRefToHud: PropTypes.func.isRequired,
+        attachRefToWebConsoleUI: PropTypes.func.isRequired,
         openContextMenu: PropTypes.func.isRequired,
         sourceMapService: PropTypes.object,
       }),
@@ -71,19 +73,27 @@ class ConsoleOutput extends Component {
   }
 
   componentDidMount() {
-    scrollToBottom(this.outputNode);
-    this.props.serviceContainer.attachRefToHud("outputScroller", this.outputNode);
+    if (this.props.visibleMessages.length > 0) {
+      scrollToBottom(this.outputNode);
+    }
+
+    const {
+      serviceContainer,
+      onFirstMeaningfulPaint,
+      dispatch,
+    } = this.props;
+    serviceContainer.attachRefToWebConsoleUI("outputScroller", this.outputNode);
 
     // Waiting for the next paint.
     new Promise(res => requestAnimationFrame(res))
       .then(() => {
-        if (this.props.onFirstMeaningfulPaint) {
-          this.props.onFirstMeaningfulPaint();
+        if (onFirstMeaningfulPaint) {
+          onFirstMeaningfulPaint();
         }
 
         // Dispatching on next tick so we don't block on action execution.
         setTimeout(() => {
-          this.props.dispatch(initialize());
+          dispatch(initialize());
         }, 0);
       });
   }
@@ -168,26 +178,28 @@ class ConsoleOutput extends Component {
     const pausedMessage = getClosestMessage(
       visibleMessages, messages, pausedExecutionPoint);
 
-    const messageNodes = visibleMessages.map((messageId) => MessageContainer({
-      dispatch,
-      key: messageId,
-      messageId,
-      serviceContainer,
-      open: messagesUi.includes(messageId),
-      tableData: messagesTableData.get(messageId),
-      timestampsVisible,
-      repeat: messagesRepeat[messageId],
-      networkMessageUpdate: networkMessagesUpdate[messageId],
-      networkMessageActiveTabId,
-      pausedExecutionPoint,
-      getMessage: () => messages.get(messageId),
-      isPaused: !!pausedMessage && pausedMessage.id == messageId,
-      maybeScrollToBottom: this.maybeScrollToBottom,
-    }));
+    const messageNodes = visibleMessages.map((messageId) =>
+      createElement(MessageContainer, {
+        dispatch,
+        key: messageId,
+        messageId,
+        serviceContainer,
+        open: messagesUi.includes(messageId),
+        tableData: messagesTableData.get(messageId),
+        timestampsVisible,
+        repeat: messagesRepeat[messageId],
+        networkMessageUpdate: networkMessagesUpdate[messageId],
+        networkMessageActiveTabId,
+        pausedExecutionPoint,
+        getMessage: () => messages.get(messageId),
+        isPaused: !!pausedMessage && pausedMessage.id == messageId,
+        maybeScrollToBottom: this.maybeScrollToBottom,
+      }));
 
     return (
       dom.div({
         className: "webconsole-output",
+        role: "main",
         onContextMenu: this.onContextMenu,
         ref: node => {
           this.outputNode = node;
@@ -199,7 +211,9 @@ class ConsoleOutput extends Component {
 }
 
 function scrollToBottom(node) {
-  node.scrollTop = node.scrollHeight;
+  if (node.scrollHeight > node.clientHeight) {
+    node.scrollTop = node.scrollHeight;
+  }
 }
 
 function isScrolledToBottom(outputNode, scrollNode) {

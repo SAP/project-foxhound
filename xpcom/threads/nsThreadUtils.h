@@ -541,6 +541,9 @@ class PrioritizableRunnable : public Runnable, public nsIRunnablePriority {
   uint32_t mPriority;
 };
 
+extern already_AddRefed<nsIRunnable> CreateMediumHighRunnable(
+    already_AddRefed<nsIRunnable>&& aRunnable);
+
 namespace detail {
 
 // An event that can be used to call a C++11 functions or function objects,
@@ -1165,6 +1168,17 @@ class RunnableMethodImpl final
   }
 
   NS_IMETHOD Run() {
+#if defined(XP_WIN)
+    // Defeat ICF by giving every instance of Run something unique to the
+    // instance.  Stop the compiler from complaining about unused variables.
+    static bool defeat_icf MOZ_MAYBE_UNUSED = [this]() {
+      if (this == (decltype(this))0x100) {
+        __debugbreak();
+      }
+      return false;
+    }();
+#endif
+
     CancelTimer();
 
     if (MOZ_LIKELY(mReceiver.Get())) {
@@ -1751,6 +1765,13 @@ nsIEventTarget* GetMainThreadEventTarget();
 nsISerialEventTarget* GetCurrentThreadSerialEventTarget();
 
 nsISerialEventTarget* GetMainThreadSerialEventTarget();
+
+// Returns the number of CPUs, like PR_GetNumberOfProcessors, except
+// that it can return a cached value on platforms where sandboxing
+// would prevent reading the current value (currently Linux).  CPU
+// hotplugging is uncommon, so this is unlikely to make a difference
+// in practice.
+size_t GetNumberOfProcessors();
 
 }  // namespace mozilla
 

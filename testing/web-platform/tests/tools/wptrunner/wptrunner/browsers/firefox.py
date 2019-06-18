@@ -7,6 +7,7 @@ import sys
 
 import mozinfo
 import mozleak
+import mozversion
 from mozprocess import ProcessHandler
 from mozprofile import FirefoxProfile, Preferences
 from mozrunner import FirefoxRunner
@@ -86,6 +87,7 @@ def browser_kwargs(test_type, run_info_data, config, **kwargs):
             "stylo_threads": kwargs["stylo_threads"],
             "chaos_mode_flags": kwargs["chaos_mode_flags"],
             "config": config,
+            "browser_channel": kwargs["browser_channel"],
             "headless": kwargs["headless"]}
 
 
@@ -152,11 +154,24 @@ def run_info_extras(**kwargs):
                 return value.lower() in ('true', '1')
         return False
 
-    return {"e10s": kwargs["gecko_e10s"],
-            "wasm": kwargs.get("wasm", True),
-            "verify": kwargs["verify"],
-            "headless": "MOZ_HEADLESS" in os.environ,
-            "sw-e10s": get_bool_pref("dom.serviceWorkers.parent_intercept"),}
+    rv = {"e10s": kwargs["gecko_e10s"],
+          "wasm": kwargs.get("wasm", True),
+          "verify": kwargs["verify"],
+          "headless": "MOZ_HEADLESS" in os.environ,
+          "sw-e10s": get_bool_pref("dom.serviceWorkers.parent_intercept")}
+    rv.update(run_info_browser_version(kwargs["binary"]))
+    return rv
+
+
+def run_info_browser_version(binary):
+    try:
+        version_info = mozversion.get_version(binary)
+    except mozversion.errors.VersionError:
+        version_info = None
+    if version_info:
+        return {"browser_build_id": version_info.get("application_buildid", None),
+                "browser_changeset": version_info.get("application_changeset", None)}
+    return {}
 
 
 def update_properties():
@@ -173,7 +188,7 @@ class FirefoxBrowser(Browser):
                  symbols_path=None, stackwalk_binary=None, certutil_binary=None,
                  ca_certificate_path=None, e10s=False, lsan_dir=None, stackfix_dir=None,
                  binary_args=None, timeout_multiplier=None, leak_check=False, asan=False,
-                 stylo_threads=1, chaos_mode_flags=None, config=None, headless=None, **kwargs):
+                 stylo_threads=1, chaos_mode_flags=None, config=None, browser_channel="nightly", headless=None, **kwargs):
         Browser.__init__(self, logger)
         self.binary = binary
         self.prefs_root = prefs_root
@@ -210,6 +225,7 @@ class FirefoxBrowser(Browser):
         self.lsan_handler = None
         self.stylo_threads = stylo_threads
         self.chaos_mode_flags = chaos_mode_flags
+        self.browser_channel = browser_channel
         self.headless = headless
 
     def settings(self, test):
@@ -312,7 +328,10 @@ class FirefoxBrowser(Browser):
         if os.path.isfile(profiles):
             with open(profiles, 'r') as fh:
                 for name in json.load(fh)['web-platform-tests']:
-                    pref_paths.append(os.path.join(self.prefs_root, name, 'user.js'))
+                    if self.browser_channel in (None, 'nightly'):
+                        pref_paths.append(os.path.join(self.prefs_root, name, 'user.js'))
+                    elif name != 'unittest-features':
+                        pref_paths.append(os.path.join(self.prefs_root, name, 'user.js'))
         else:
             # Old preference files used before the creation of profiles.json (remove when no longer supported)
             legacy_pref_paths = (

@@ -87,8 +87,7 @@ class nsHTMLFramesetBorderFrame final : public nsLeafFrame {
                                WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual nsresult GetCursor(const nsPoint& aPoint,
-                             nsIFrame::Cursor& aCursor) override;
+  Maybe<Cursor> GetCursor(const nsPoint&) override;
 
   virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
@@ -104,7 +103,7 @@ class nsHTMLFramesetBorderFrame final : public nsLeafFrame {
   void PaintBorder(DrawTarget* aDrawTarget, nsPoint aPt);
 
  protected:
-  nsHTMLFramesetBorderFrame(ComputedStyle* aStyle, int32_t aWidth,
+  nsHTMLFramesetBorderFrame(ComputedStyle*, nsPresContext*, int32_t aWidth,
                             bool aVertical, bool aVisible);
   virtual ~nsHTMLFramesetBorderFrame();
   virtual nscoord GetIntrinsicISize() override;
@@ -144,8 +143,9 @@ class nsHTMLFramesetBlankFrame final : public nsLeafFrame {
                       nsReflowStatus& aStatus) override;
 
  protected:
-  explicit nsHTMLFramesetBlankFrame(ComputedStyle* aStyle)
-      : nsLeafFrame(aStyle, kClassID) {}
+  explicit nsHTMLFramesetBlankFrame(ComputedStyle* aStyle,
+                                    nsPresContext* aPresContext)
+      : nsLeafFrame(aStyle, aPresContext, kClassID) {}
 
   virtual ~nsHTMLFramesetBlankFrame();
   virtual nscoord GetIntrinsicISize() override;
@@ -161,8 +161,9 @@ class nsHTMLFramesetBlankFrame final : public nsLeafFrame {
 bool nsHTMLFramesetFrame::gDragInProgress = false;
 #define DEFAULT_BORDER_WIDTH_PX 6
 
-nsHTMLFramesetFrame::nsHTMLFramesetFrame(ComputedStyle* aStyle)
-    : nsContainerFrame(aStyle, kClassID) {
+nsHTMLFramesetFrame::nsHTMLFramesetFrame(ComputedStyle* aStyle,
+                                         nsPresContext* aPresContext)
+    : nsContainerFrame(aStyle, aPresContext, kClassID) {
   mNumRows = 0;
   mNumCols = 0;
   mEdgeVisibility = 0;
@@ -315,12 +316,12 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     RefPtr<ComputedStyle> pseudoComputedStyle;
     pseudoComputedStyle =
         shell->StyleSet()->ResolveNonInheritingAnonymousBoxStyle(
-            nsCSSAnonBoxes::framesetBlank());
+            PseudoStyleType::framesetBlank);
 
     // XXX the blank frame is using the content of its parent - at some point it
     // should just have null content, if we support that
-    nsHTMLFramesetBlankFrame* blankFrame =
-        new (shell) nsHTMLFramesetBlankFrame(pseudoComputedStyle);
+    nsHTMLFramesetBlankFrame* blankFrame = new (shell)
+        nsHTMLFramesetBlankFrame(pseudoComputedStyle, PresContext());
 
     blankFrame->Init(mContent, this, nullptr);
 
@@ -628,16 +629,13 @@ nsresult nsHTMLFramesetFrame::HandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
-nsresult nsHTMLFramesetFrame::GetCursor(const nsPoint& aPoint,
-                                        nsIFrame::Cursor& aCursor) {
-  aCursor.mLoading = false;
+Maybe<nsIFrame::Cursor> nsHTMLFramesetFrame::GetCursor(const nsPoint&) {
+  auto kind = StyleCursorKind::Default;
   if (mDragger) {
-    aCursor.mCursor = (mDragger->mVertical) ? StyleCursorKind::EwResize
-                                            : StyleCursorKind::NsResize;
-  } else {
-    aCursor.mCursor = StyleCursorKind::Default;
+    kind = mDragger->mVertical ? StyleCursorKind::EwResize
+                               : StyleCursorKind::NsResize;
   }
-  return NS_OK;
+  return Some(Cursor{kind, AllowCustomCursorImage::No});
 }
 
 void nsHTMLFramesetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
@@ -873,10 +871,10 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
 
         RefPtr<ComputedStyle> pseudoComputedStyle;
         pseudoComputedStyle = styleSet->ResolveNonInheritingAnonymousBoxStyle(
-            nsCSSAnonBoxes::horizontalFramesetBorder());
+            PseudoStyleType::horizontalFramesetBorder);
 
         borderFrame = new (shell) nsHTMLFramesetBorderFrame(
-            pseudoComputedStyle, borderWidth, false, false);
+            pseudoComputedStyle, PresContext(), borderWidth, false, false);
         borderFrame->Init(mContent, this, nullptr);
         mChildCount++;
         mFrames.AppendFrame(nullptr, borderFrame);
@@ -902,10 +900,10 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
             RefPtr<ComputedStyle> pseudoComputedStyle;
             pseudoComputedStyle =
                 styleSet->ResolveNonInheritingAnonymousBoxStyle(
-                    nsCSSAnonBoxes::verticalFramesetBorder());
+                    PseudoStyleType::verticalFramesetBorder);
 
             borderFrame = new (shell) nsHTMLFramesetBorderFrame(
-                pseudoComputedStyle, borderWidth, true, false);
+                pseudoComputedStyle, PresContext(), borderWidth, true, false);
             borderFrame->Init(mContent, this, nullptr);
             mChildCount++;
             mFrames.AppendFrame(nullptr, borderFrame);
@@ -1268,7 +1266,8 @@ nsIFrame* NS_NewHTMLFramesetFrame(nsIPresShell* aPresShell,
                "Framesets should not be positioned and should not float");
 #endif
 
-  return new (aPresShell) nsHTMLFramesetFrame(aStyle);
+  return new (aPresShell)
+      nsHTMLFramesetFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLFramesetFrame)
@@ -1276,11 +1275,10 @@ NS_IMPL_FRAMEARENA_HELPERS(nsHTMLFramesetFrame)
 /*******************************************************************************
  * nsHTMLFramesetBorderFrame
  ******************************************************************************/
-nsHTMLFramesetBorderFrame::nsHTMLFramesetBorderFrame(ComputedStyle* aStyle,
-                                                     int32_t aWidth,
-                                                     bool aVertical,
-                                                     bool aVisibility)
-    : nsLeafFrame(aStyle, kClassID),
+nsHTMLFramesetBorderFrame::nsHTMLFramesetBorderFrame(
+    ComputedStyle* aStyle, nsPresContext* aPresContext, int32_t aWidth,
+    bool aVertical, bool aVisibility)
+    : nsLeafFrame(aStyle, aPresContext, kClassID),
       mWidth(aWidth),
       mVertical(aVertical),
       mVisibility(aVisibility) {
@@ -1464,16 +1462,12 @@ nsresult nsHTMLFramesetBorderFrame::HandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
-nsresult nsHTMLFramesetBorderFrame::GetCursor(const nsPoint& aPoint,
-                                              nsIFrame::Cursor& aCursor) {
-  aCursor.mLoading = false;
-  if (!mCanResize) {
-    aCursor.mCursor = StyleCursorKind::Default;
-  } else {
-    aCursor.mCursor =
-        (mVertical) ? StyleCursorKind::EwResize : StyleCursorKind::NsResize;
+Maybe<nsIFrame::Cursor> nsHTMLFramesetBorderFrame::GetCursor(const nsPoint&) {
+  auto kind = StyleCursorKind::Default;
+  if (mCanResize) {
+    kind = mVertical ? StyleCursorKind::EwResize : StyleCursorKind::NsResize;
   }
-  return NS_OK;
+  return Some(Cursor{kind, AllowCustomCursorImage::No});
 }
 
 #ifdef DEBUG_FRAME_DUMP

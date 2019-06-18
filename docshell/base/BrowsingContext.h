@@ -7,8 +7,9 @@
 #ifndef mozilla_dom_BrowsingContext_h
 #define mozilla_dom_BrowsingContext_h
 
-#include "mozilla/LinkedList.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Tuple.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
@@ -17,19 +18,33 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
+#include "nsILoadInfo.h"
 
 class nsGlobalWindowOuter;
+class nsIPrincipal;
 class nsOuterWindowProxy;
+class PickleIterator;
+
+namespace IPC {
+class Message;
+}  // namespace IPC
 
 namespace mozilla {
 
 class ErrorResult;
 class LogModule;
-class OOMReporter;
+
+namespace ipc {
+class IProtocol;
+
+template <typename T>
+struct IPDLParamTraits;
+}  // namespace ipc
 
 namespace dom {
-
-class BrowsingContext;
+class BrowsingContent;
+class BrowsingContextGroup;
+class CanonicalBrowsingContext;
 class ContentParent;
 template <typename>
 struct Nullable;
@@ -38,12 +53,22 @@ class Sequence;
 struct WindowPostMessageOptions;
 class WindowProxyHolder;
 
-// List of top-level or auxiliary BrowsingContexts
-class BrowsingContextGroup : public nsTArray<WeakPtr<BrowsingContext>> {
- public:
-  NS_INLINE_DECL_REFCOUNTING(BrowsingContextGroup)
- private:
-  ~BrowsingContextGroup() {}
+class BrowsingContextBase {
+ protected:
+  BrowsingContextBase() {
+    // default-construct each field.
+#define MOZ_BC_FIELD(name, type) m##name = type();
+#include "mozilla/dom/BrowsingContextFieldList.h"
+  }
+  ~BrowsingContextBase() = default;
+
+#define MOZ_BC_FIELD(name, type)                                    \
+  type m##name;                                                     \
+                                                                    \
+  /* shadow to validate fields. aSource is setter process or null*/ \
+  void WillSet##name(type const& aValue, ContentParent* aSource) {} \
+  void DidSet##name(ContentParent* aSource) {}
+#include "mozilla/dom/BrowsingContextFieldList.h"
 };
 
 // BrowsingContext, in this context, is the cross process replicated
@@ -64,7 +89,8 @@ class BrowsingContextGroup : public nsTArray<WeakPtr<BrowsingContext>> {
 // BrowsingContext::Create* methods.
 class BrowsingContext : public nsWrapperCache,
                         public SupportsWeakPtr<BrowsingContext>,
-                        public LinkedListElement<RefPtr<BrowsingContext>> {
+                        public LinkedListElement<RefPtr<BrowsingContext>>,
+                        public BrowsingContextBase {
  public:
   enum class Type { Chrome, Content };
 
@@ -74,6 +100,9 @@ class BrowsingContext : public nsWrapperCache,
 
   // Look up a BrowsingContext in the current process by ID.
   static already_AddRefed<BrowsingContext> Get(uint64_t aId);
+  static already_AddRefed<BrowsingContext> Get(GlobalObject&, uint64_t aId) {
+    return Get(aId);
+  }
 
   // Create a brand-new BrowsingContext object.
   static already_AddRefed<BrowsingContext> Create(BrowsingContext* aParent,
@@ -81,10 +110,13 @@ class BrowsingContext : public nsWrapperCache,
                                                   const nsAString& aName,
                                                   Type aType);
 
-  // Create a BrowsingContext object from over IPC.
-  static already_AddRefed<BrowsingContext> CreateFromIPC(
-      BrowsingContext* aParent, BrowsingContext* aOpener,
-      const nsAString& aName, uint64_t aId, ContentParent* aOriginProcess);
+  // Cast this object to a canonical browsing context, and return it.
+  CanonicalBrowsingContext* Canonical();
+
+  // Is the most recent Document in this BrowsingContext loaded within this
+  // process? This may be true with a null mDocShell after the Window has been
+  // closed.
+  bool IsInProcess() const { return mIsInProcess; }
 
   // Get the DocShell for this BrowsingContext if it is in-process, or
   // null if it's not.
@@ -101,40 +133,56 @@ class BrowsingContext : public nsWrapperCache,
   // parent process. BrowsingContext objects are created attached by default, so
   // this method need only be called when restoring cached BrowsingContext
   // objects.
-  void Attach();
+  void Attach(bool aFromIPC = false);
 
   // Detach the current BrowsingContext from its parent, in both the
   // child and the parent process.
-  void Detach();
+  void Detach(bool aFromIPC = false);
 
   // Remove all children from the current BrowsingContext and cache
   // them to allow them to be attached again.
-  void CacheChildren();
+  void CacheChildren(bool aFromIPC = false);
 
   // Determine if the current BrowsingContext was 'cached' by the logic in
   // CacheChildren.
   bool IsCached();
 
-  // TODO(farre): We should sync changes from SetName to the parent
-  // process. [Bug 1490303]
-  void SetName(const nsAString& aName) { mName = aName; }
   const nsString& Name() const { return mName; }
+  void GetName(nsAString& aName) { aName = mName; }
   bool NameEquals(const nsAString& aName) { return mName.Equals(aName); }
 
   bool IsContent() const { return mType == Type::Content; }
 
   uint64_t Id() const { return mBrowsingContextId; }
 
-  BrowsingContext* GetParent() { return mParent; }
+  BrowsingContext* GetParent() const { return mParent; }
+
+  already_AddRefed<BrowsingContext> GetOpener() const { return Get(mOpenerId); }
+  void SetOpener(BrowsingContext* aOpener) {
+    SetOpenerId(aOpener ? aOpener->Id() : 0);
+  }
 
   void GetChildren(nsTArray<RefPtr<BrowsingContext>>& aChildren);
 
-  BrowsingContext* GetOpener() const { return mOpener; }
+  BrowsingContextGroup* Group() { return mGroup; }
 
-  void SetOpener(BrowsingContext* aOpener);
+  // Using the rules for choosing a browsing context we try to find
+  // the browsing context with the given name in the set of
+  // transitively reachable browsing contexts. Performs access control
+  // with regards to this.
+  // See
+  // https://html.spec.whatwg.org/multipage/browsers.html#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name.
+  //
+  // BrowsingContext::FindWithName(const nsAString&) is equivalent to
+  // calling nsIDocShellTreeItem::FindItemWithName(aName, nullptr,
+  // nullptr, false, <return value>).
+  BrowsingContext* FindWithName(const nsAString& aName);
 
-  static void GetRootBrowsingContexts(
-      nsTArray<RefPtr<BrowsingContext>>& aBrowsingContexts);
+  // Find a browsing context in this context's list of
+  // children. Doesn't consider the special names, '_self', '_parent',
+  // '_top', or '_blank'. Performs access control with regard to
+  // 'this'.
+  BrowsingContext* FindChildWithName(const nsAString& aName);
 
   nsISupports* GetParentObject() const;
   JSObject* WrapObject(JSContext* aCx,
@@ -148,11 +196,6 @@ class BrowsingContext : public nsWrapperCache,
   // This function would be called when we want to reset the user gesture
   // activation flag of the top level browsing context.
   void NotifyResetUserGestureActivation();
-
-  // These functions would only be called in the top level browsing context.
-  // They would set/reset the user gesture activation flag.
-  void SetUserGestureActivation();
-  void ResetUserGestureActivation();
 
   // Return true if it corresponding document is activated by user gesture.
   bool GetUserGestureActivation();
@@ -171,11 +214,20 @@ class BrowsingContext : public nsWrapperCache,
   using Children = nsTArray<RefPtr<BrowsingContext>>;
   const Children& GetChildren() { return mChildren; }
 
+  // Perform a pre-order walk of this BrowsingContext subtree.
+  template <typename Func>
+  void PreOrderWalk(Func&& aCallback) {
+    aCallback(this);
+    for (auto& child : GetChildren()) {
+      child->PreOrderWalk(aCallback);
+    }
+  }
+
   // Window APIs that are cross-origin-accessible (from the HTML spec).
   BrowsingContext* Window() { return Self(); }
   BrowsingContext* Self() { return this; }
   void Location(JSContext* aCx, JS::MutableHandle<JSObject*> aLocation,
-                OOMReporter& aError);
+                ErrorResult& aError);
   void Close(CallerType aCallerType, ErrorResult& aError);
   bool GetClosed(ErrorResult&) { return mClosed; }
   void Focus(ErrorResult& aError);
@@ -194,17 +246,104 @@ class BrowsingContext : public nsWrapperCache,
                       const WindowPostMessageOptions& aOptions,
                       nsIPrincipal& aSubjectPrincipal, ErrorResult& aError);
 
-  already_AddRefed<BrowsingContext> FindChildWithName(const nsAString& aName);
-
   JSObject* WrapObject(JSContext* aCx);
+
+  /**
+   * Transaction object. This object is used to specify and then commit
+   * modifications to synchronized fields in BrowsingContexts.
+   */
+  class Transaction {
+   public:
+    // Apply the changes from this transaction to the specified BrowsingContext
+    // in all processes. This method will call the correct `WillSet` and
+    // `DidSet` methods, as well as move the value.
+    //
+    // NOTE: This method mutates `this`, resetting all members to `Nothing()`
+    void Commit(BrowsingContext* aOwner);
+
+    // You probably don't want to directly call this method - instead call
+    // `Commit`, which will perform the necessary synchronization.
+    //
+    // |aSource| is the ContentParent which is performing the mutation in the
+    // parent process.
+    void Apply(BrowsingContext* aOwner, ContentParent* aSource);
+
+#define MOZ_BC_FIELD(name, type) mozilla::Maybe<type> m##name;
+#include "mozilla/dom/BrowsingContextFieldList.h"
+
+   private:
+    friend struct mozilla::ipc::IPDLParamTraits<Transaction>;
+  };
+
+#define MOZ_BC_FIELD(name, type)                        \
+  template <typename... Args>                           \
+  void Set##name(Args&&... aValue) {                    \
+    Transaction txn;                                    \
+    txn.m##name.emplace(std::forward<Args>(aValue)...); \
+    txn.Commit(this);                                   \
+  }                                                     \
+                                                        \
+  type const& Get##name() const { return m##name; }
+#include "mozilla/dom/BrowsingContextFieldList.h"
+
+  /**
+   * Information required to initialize a BrowsingContext in another process.
+   * This object may be serialized over IPC.
+   */
+  struct IPCInitializer {
+    uint64_t mId;
+
+    // IDs are used for Parent and Opener to allow for this object to be
+    // deserialized before other BrowsingContext in the BrowsingContextGroup
+    // have been initialized.
+    uint64_t mParentId;
+    already_AddRefed<BrowsingContext> GetParent();
+    already_AddRefed<BrowsingContext> GetOpener();
+
+    // Include each field, skipping mOpener, as we want to handle it
+    // separately.
+#define MOZ_BC_FIELD(name, type) type m##name;
+#include "mozilla/dom/BrowsingContextFieldList.h"
+  };
+
+  // Create an IPCInitializer object for this BrowsingContext.
+  IPCInitializer GetIPCInitializer() {
+    IPCInitializer init;
+    init.mId = Id();
+    init.mParentId = mParent ? mParent->Id() : 0;
+
+#define MOZ_BC_FIELD(name, type) init.m##name = m##name;
+#include "mozilla/dom/BrowsingContextFieldList.h"
+    return init;
+  }
+
+  // Create a BrowsingContext object from over IPC.
+  static already_AddRefed<BrowsingContext> CreateFromIPC(
+      IPCInitializer&& aInitializer, BrowsingContextGroup* aGroup,
+      ContentParent* aOriginProcess);
 
  protected:
   virtual ~BrowsingContext();
-  BrowsingContext(BrowsingContext* aParent, BrowsingContext* aOpener,
-                  const nsAString& aName, uint64_t aBrowsingContextId,
-                  Type aType);
+  BrowsingContext(BrowsingContext* aParent, BrowsingContextGroup* aGroup,
+                  uint64_t aBrowsingContextId, Type aType);
 
  private:
+  // Find the special browsing context if aName is '_self', '_parent',
+  // '_top', but not '_blank'. The latter is handled in FindWithName
+  BrowsingContext* FindWithSpecialName(const nsAString& aName);
+
+  // Find a browsing context in the subtree rooted at 'this' Doesn't
+  // consider the special names, '_self', '_parent', '_top', or
+  // '_blank'. Performs access control with regard to
+  // 'aRequestingContext'.
+  BrowsingContext* FindWithNameInSubtree(const nsAString& aName,
+                                         BrowsingContext* aRequestingContext);
+
+  // Performs access control to check that 'this' can access 'aContext'.
+  bool CanAccess(BrowsingContext* aContext);
+
+  bool IsActive() const;
+
   friend class ::nsOuterWindowProxy;
   friend class ::nsGlobalWindowOuter;
   // Update the window proxy object that corresponds to this browsing context.
@@ -223,28 +362,64 @@ class BrowsingContext : public nsWrapperCache,
 
   BrowsingContext* TopLevelBrowsingContext();
 
+  friend class Location;
+  friend class RemoteLocationProxy;
+  /**
+   * LocationProxy is the class for the native object stored as a private in a
+   * RemoteLocationProxy proxy representing a Location object in a different
+   * process. It forwards all operations to its BrowsingContext and aggregates
+   * its refcount to that BrowsingContext.
+   */
+  class LocationProxy {
+   public:
+    MozExternalRefCountType AddRef() { return GetBrowsingContext()->AddRef(); }
+    MozExternalRefCountType Release() {
+      return GetBrowsingContext()->Release();
+    }
+
+    void SetHref(const nsAString& aHref, nsIPrincipal& aSubjectPrincipal,
+                 ErrorResult& aError);
+    void Replace(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
+                 ErrorResult& aError);
+
+   private:
+    friend class RemoteLocationProxy;
+    BrowsingContext* GetBrowsingContext() {
+      return reinterpret_cast<BrowsingContext*>(
+          uintptr_t(this) - offsetof(BrowsingContext, mLocation));
+    }
+  };
+
+  // Ensure that opener is in the same BrowsingContextGroup.
+  void WillSetOpener(const uint64_t& aValue, ContentParent* aSource) {
+    if (aValue != 0) {
+      RefPtr<BrowsingContext> opener = Get(aValue);
+      MOZ_RELEASE_ASSERT(opener && opener->Group() == Group());
+    }
+  }
+
   // Type of BrowsingContent
   const Type mType;
 
   // Unique id identifying BrowsingContext
   const uint64_t mBrowsingContextId;
 
-  RefPtr<BrowsingContextGroup> mBrowsingContextGroup;
+  RefPtr<BrowsingContextGroup> mGroup;
   RefPtr<BrowsingContext> mParent;
   Children mChildren;
-  WeakPtr<BrowsingContext> mOpener;
   nsCOMPtr<nsIDocShell> mDocShell;
-  nsString mName;
+
   // This is not a strong reference, but using a JS::Heap for that should be
   // fine. The JSObject stored in here should be a proxy with a
   // nsOuterWindowProxy handler, which will update the pointer from its
   // objectMoved hook and clear it from its finalize hook.
   JS::Heap<JSObject*> mWindowProxy;
-  bool mClosed;
+  LocationProxy mLocation;
 
-  // This flag is only valid in the top level browsing context, it indicates
-  // whether the corresponding document has been activated by user gesture.
-  bool mIsActivatedByUserGesture;
+  // Is the most recent Document in this BrowsingContext loaded within this
+  // process? This may be true with a null mDocShell after the Window has been
+  // closed.
+  bool mIsInProcess : 1;
 };
 
 /**
@@ -259,7 +434,42 @@ class BrowsingContext : public nsWrapperCache,
 extern bool GetRemoteOuterWindowProxy(JSContext* aCx, BrowsingContext* aContext,
                                       JS::MutableHandle<JSObject*> aRetVal);
 
+typedef BrowsingContext::Transaction BrowsingContextTransaction;
+typedef BrowsingContext::IPCInitializer BrowsingContextInitializer;
+
 }  // namespace dom
+
+// Allow sending BrowsingContext objects over IPC.
+namespace ipc {
+template <>
+struct IPDLParamTraits<dom::BrowsingContext> {
+  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+                    dom::BrowsingContext* aParam);
+  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
+                   IProtocol* aActor, RefPtr<dom::BrowsingContext>* aResult);
+};
+
+template <>
+struct IPDLParamTraits<dom::BrowsingContext::Transaction> {
+  static void Write(IPC::Message* aMessage, IProtocol* aActor,
+                    const dom::BrowsingContext::Transaction& aTransaction);
+
+  static bool Read(const IPC::Message* aMessage, PickleIterator* aIterator,
+                   IProtocol* aActor,
+                   dom::BrowsingContext::Transaction* aTransaction);
+};
+
+template <>
+struct IPDLParamTraits<dom::BrowsingContext::IPCInitializer> {
+  static void Write(IPC::Message* aMessage, IProtocol* aActor,
+                    const dom::BrowsingContext::IPCInitializer& aInitializer);
+
+  static bool Read(const IPC::Message* aMessage, PickleIterator* aIterator,
+                   IProtocol* aActor,
+                   dom::BrowsingContext::IPCInitializer* aInitializer);
+};
+
+}  // namespace ipc
 }  // namespace mozilla
 
 #endif  // !defined(mozilla_dom_BrowsingContext_h)

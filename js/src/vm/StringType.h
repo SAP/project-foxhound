@@ -11,6 +11,8 @@
 #include "mozilla/Range.h"
 #include "mozilla/TextUtils.h"
 
+#include <type_traits>  // std::is_same
+
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
@@ -162,14 +164,15 @@ static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
  * at least X (e.g., ensureLinear will change a JSRope to be a JSFlatString).
  *
  * TaintFox: the JSString class (and all subclasses) are taint aware.
+ * TODO: check if it would be better to move TaintableString to later in
+ * the Data struct.
  */
 // clang-format on
 
-class JSString : public js::gc::Cell, public TaintableString {
+class JSString : public js::gc::Cell {
  protected:
   // TaintFox: We add another pointer size of inline chars here to make the total size of JString
   // evenly divisible by the gc::CellSize on 32 bit platforms.
-  // Reduced from 3 to 2 on 64 bit build
   static const size_t NUM_INLINE_CHARS_LATIN1 =
       3 * sizeof(void*) / sizeof(JS::Latin1Char);
   static const size_t NUM_INLINE_CHARS_TWO_BYTE =
@@ -192,6 +195,10 @@ class JSString : public js::gc::Cell, public TaintableString {
     // Additional storage for length if |flags_| is too small to fit both.
     uint32_t length_; /* JSString */
 #endif
+
+    // Taintfox: add the taint information
+    StringTaint taint_;
+
     union {
       union {
         /* JS(Fat)InlineString */
@@ -214,6 +221,7 @@ class JSString : public js::gc::Cell, public TaintableString {
         } u3;
       } s;
     };
+
   } d;
 
  public:
@@ -388,8 +396,11 @@ class JSString : public js::gc::Cell, public TaintableString {
         EXTERNAL_FLAGS == String::EXTERNAL_FLAGS,
         "shadow::String::EXTERNAL_FLAGS must match JSString::EXTERNAL_FLAGS");
     /* TaintFox: taint info offset assertion. */
-    static_assert(offsetof(JSString, taint_) == offsetof(String, taint),
+    static_assert(offsetof(JSString, d.taint_) == offsetof(String, taint),
                   "shadow::String taint offset must match JSString");
+    static_assert(offsetof(JSString, d.flags_) == 0x0,
+                  "JSString flags must be at start of memory for GC!");
+
   }
 
   /* Avoid lame compile errors in JSRope::flatten */
@@ -410,20 +421,33 @@ class JSString : public js::gc::Cell, public TaintableString {
         js::TaintFoxReport("Warning: cannot taint atomized string!");
         return;
       }
-
-      TaintableString::setTaint(taint);
+      d.taint_ = taint;
     }
   }
 
-  void setTaint(StringTaint&& taint) {
-    if (length() > 0 && taint.hasTaint()) {
-      if (isAtom()) {
-        js::TaintFoxReport("Warning: cannot taint atomized string!");
-        return;
-      }
-      TaintableString::setTaint(taint);
-    }
-  }
+  // Direct access to the associated taint information.
+  const StringTaint& taint() const { return d.taint_; }
+  const StringTaint& Taint() const { return d.taint_; }
+  StringTaint& taint() { return d.taint_; }
+  StringTaint& Taint() { return d.taint_; }
+
+  // A string is tainted if at least one of its characters is tainted.
+  bool isTainted() const { return d.taint_.hasTaint(); }
+
+  // Remove all taint information associated with this string.
+  void clearTaint() { d.taint_.clear(); }
+
+  // Initialize the taint information.
+  //
+  // This can be used instead of the public constructor, as done by JSString
+  // and its derived classes.
+  void initTaint() { new (&d.taint_) StringTaint(); }
+
+  // Finalize this instance.
+  //
+  // Same as above, this can be used instead of the destructor. It guarantees
+  // that all owned resources of this instance are released.
+  void finalizeTaint() { d.taint_.~StringTaint(); }
 
   MOZ_ALWAYS_INLINE
   uint32_t flags() const { return uint32_t(d.flags_); }
@@ -619,7 +643,7 @@ class JSString : public js::gc::Cell, public TaintableString {
 
   /* TaintFox: taint property offset calculation. */
   static size_t offsetOfTaint() {
-    return offsetof(JSString, taint_);
+    return offsetof(JSString, d.taint_);
   }
 
   // Offsets for direct field from jit code. A number of places directly
@@ -1005,7 +1029,8 @@ class JSFlatString : public JSLinearString {
 
  public:
   template <js::AllowGC allowGC, typename CharT>
-  static inline JSFlatString* new_(JSContext* cx, const CharT* chars,
+  static inline JSFlatString* new_(JSContext* cx,
+                                   js::UniquePtr<CharT[], JS::FreePolicy> chars,
                                    size_t length);
 
   inline bool isIndexSlow(uint32_t* indexp) const {
@@ -1371,6 +1396,24 @@ MOZ_ALWAYS_INLINE JSAtom* JSFlatString::morphAtomizedStringIntoPermanentAtom(
 
 namespace js {
 
+/**
+ * An indexable characters class exposing unaligned, little-endian encoded
+ * char16_t data.
+ */
+class LittleEndianChars {
+ public:
+  explicit constexpr LittleEndianChars(const uint8_t* leTwoByte)
+      : current(leTwoByte) {}
+
+  constexpr char16_t operator[](size_t index) const {
+    size_t offset = index * sizeof(char16_t);
+    return (current[offset + 1] << 8) | current[offset];
+  }
+
+ private:
+  const uint8_t* current;
+};
+
 class StaticStrings {
  private:
   /* Bigger chars cannot be in a length-2 string. */
@@ -1422,8 +1465,14 @@ class StaticStrings {
   static bool isStatic(JSAtom* atom);
 
   /* Return null if no static atom exists for the given (chars, length). */
-  template <typename CharT>
-  MOZ_ALWAYS_INLINE JSAtom* lookup(const CharT* chars, size_t length) {
+  template <typename Chars>
+  MOZ_ALWAYS_INLINE JSAtom* lookup(Chars chars, size_t length) {
+    static_assert(std::is_same<Chars, const Latin1Char*>::value ||
+                      std::is_same<Chars, const char16_t*>::value ||
+                      std::is_same<Chars, LittleEndianChars>::value,
+                  "for understandability, |chars| must be one of a few "
+                  "identified types");
+
     switch (length) {
       case 1: {
         char16_t c = chars[0];
@@ -1461,6 +1510,19 @@ class StaticStrings {
     }
 
     return nullptr;
+  }
+
+  template <typename CharT, typename = typename std::enable_if<
+                                std::is_same<CharT, char>::value ||
+                                std::is_same<CharT, const char>::value ||
+                                !std::is_const<CharT>::value>::type>
+  MOZ_ALWAYS_INLINE JSAtom* lookup(CharT* chars, size_t length) {
+    // Collapse calls for |char*| or |const char*| into |const unsigned char*|
+    // to avoid excess instantiations.  Collapse the remaining |CharT*| to
+    // |const CharT*| for the same reason.
+    using UnsignedCharT = typename std::make_unsigned<CharT>::type;
+    UnsignedCharT* unsignedChars = reinterpret_cast<UnsignedCharT*>(chars);
+    return lookup(const_cast<const UnsignedCharT*>(unsignedChars), length);
   }
 
  private:
@@ -1534,16 +1596,23 @@ static inline UniqueChars StringToNewUTF8CharsZ(JSContext* maybecx,
                 .c_str());
 }
 
-/* GC-allocate a string descriptor for the given malloc-allocated chars. */
+/**
+ * Allocate a string with the given contents, potentially GCing in the process.
+ */
 template <typename CharT>
-extern JSFlatString* NewString(JSContext* cx, CharT* chars, size_t length);
+extern JSFlatString* NewString(JSContext* cx,
+                               UniquePtr<CharT[], JS::FreePolicy> chars,
+                               size_t length);
 
-/* Like NewString, but doesn't try to deflate to Latin1. */
+/* Like NewString, but doesn't attempt to deflate to Latin1. */
 template <typename CharT>
-extern JSFlatString* NewStringDontDeflate(JSContext* cx, CharT* chars,
-                                          size_t length);
+extern JSFlatString* NewStringDontDeflate(
+    JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length);
 
-/* GC-allocate a string descriptor for the given malloc-allocated chars. */
+/**
+ * Allocate a string with the given contents.  If |allowGC == CanGC|, this may
+ * trigger a GC.
+ */
 template <js::AllowGC allowGC, typename CharT>
 extern JSFlatString* NewString(JSContext* cx,
                                UniquePtr<CharT[], JS::FreePolicy> chars,
@@ -1603,6 +1672,13 @@ inline JSFlatString* NewStringCopyUTF8Z(JSContext* cx,
 JSString* NewMaybeExternalString(JSContext* cx, const char16_t* s, size_t n,
                                  const JSStringFinalizer* fin,
                                  bool* allocatedExternal);
+
+/**
+ * Allocate a new string consisting of |chars[0..length]| characters.
+ */
+extern JSFlatString* NewStringFromLittleEndianNoGC(JSContext* cx,
+                                                   LittleEndianChars chars,
+                                                   size_t length);
 
 JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
 

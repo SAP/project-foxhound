@@ -1171,8 +1171,8 @@ bool WebrtcVideoConduit::GetVideoDecoderStats(double* framerateMean,
   return true;
 }
 
-bool WebrtcVideoConduit::GetRTPStats(uint32_t* jitterMs,
-                                     uint32_t* packetsLost) {
+bool WebrtcVideoConduit::GetRTPReceiverStats(uint32_t* jitterMs,
+                                             uint32_t* packetsLost) {
   ASSERT_ON_THREAD(mStsThread);
 
   CSFLogVerbose(LOGTAG, "%s for VideoConduit:%p", __FUNCTION__, this);

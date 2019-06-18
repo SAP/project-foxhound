@@ -20,10 +20,6 @@ from taskgraph.util.scriptworker import (
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import Required, Optional
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 repackage_signing_description_schema = schema.extend({
     Required('depname', default='repackage'): basestring,
     Optional('label'): basestring,
@@ -55,10 +51,8 @@ def make_repackage_signing_description(config, jobs):
             treeherder.setdefault('symbol', 'rs(N)')
         else:
             treeherder.setdefault('symbol', 'rs(B)')
-        dep_th_platform = dep_job.task.get('extra', {}).get(
-            'treeherder', {}).get('machine', {}).get('platform', '')
-        treeherder.setdefault('platform',
-                              "{}/opt".format(dep_th_platform))
+        dep_th_platform = dep_job.task.get('extra', {}).get('treeherder-platform')
+        treeherder.setdefault('platform', dep_th_platform)
         treeherder.setdefault(
             'tier',
             dep_job.task.get('extra', {}).get('treeherder', {}).get('tier', 1)

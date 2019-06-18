@@ -11,12 +11,8 @@
 # file so that ESLint works correctly:
 # tools/lint/eslint/eslint-plugin-mozilla/lib/environments/browser-window.js
 
-<script type="text/javascript"
-#ifdef BROWSER_XHTML
-xmlns="http://www.w3.org/1999/xhtml"
-#endif
->
-Components.utils.import("resource://gre/modules/Services.jsm");
+<script type="text/javascript">
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 Services.scriptloader.loadSubScript("chrome://browser/content/browser.js", this);
 Services.scriptloader.loadSubScript("chrome://browser/content/browser-places.js", this);

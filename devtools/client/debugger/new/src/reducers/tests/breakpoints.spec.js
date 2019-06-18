@@ -13,6 +13,7 @@ import {
 } from "../breakpoints";
 
 import { createBreakpoint } from "../../utils/breakpoint";
+import { makeMappedLocation } from "../../utils/test-mockup";
 
 function initializeStateWith(data) {
   const state = initialBreakpointsState();
@@ -24,11 +25,17 @@ describe("Breakpoints Selectors", () => {
   it("it gets a breakpoint for an original source", () => {
     const sourceId = "server1.conn1.child1/source1/originalSource";
     const matchingBreakpoints = {
-      id1: createBreakpoint({ line: 1, sourceId: sourceId })
+      id1: createBreakpoint(
+        makeMappedLocation({ line: 1, sourceId: sourceId }),
+        { options: {} }
+      )
     };
 
     const otherBreakpoints = {
-      id2: createBreakpoint({ line: 1, sourceId: "not-this-source" })
+      id2: createBreakpoint(
+        makeMappedLocation({ line: 1, sourceId: "not-this-source" }),
+        { options: {} }
+      )
     };
 
     const data = {
@@ -51,21 +58,25 @@ describe("Breakpoints Selectors", () => {
     const generatedSourceId = "random-source";
     const matchingBreakpoints = {
       id1: createBreakpoint(
+        makeMappedLocation(
+          { line: 1, sourceId: "original-source-id-1" },
+          { line: 1, sourceId: generatedSourceId }
+        ),
         {
-          line: 1,
-          sourceId: "original-source-id-1"
-        },
-        { generatedLocation: { line: 1, sourceId: generatedSourceId } }
+          options: {}
+        }
       )
     };
 
     const otherBreakpoints = {
       id2: createBreakpoint(
+        makeMappedLocation(
+          { line: 1, sourceId: "original-source-id-2" },
+          { line: 1, sourceId: "not-this-source" }
+        ),
         {
-          line: 1,
-          sourceId: "original-source-id-2"
-        },
-        { generatedLocation: { line: 1, sourceId: "not-this-source" } }
+          options: {}
+        }
       )
     };
 

@@ -38,13 +38,14 @@ using namespace mozilla;
 // Creates a new Resizer frame and returns it
 //
 nsIFrame* NS_NewResizerFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsResizerFrame(aStyle);
+  return new (aPresShell) nsResizerFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsResizerFrame)
 
-nsResizerFrame::nsResizerFrame(ComputedStyle* aStyle)
-    : nsTitleBarFrame(aStyle, kClassID) {}
+nsResizerFrame::nsResizerFrame(ComputedStyle* aStyle,
+                               nsPresContext* aPresContext)
+    : nsTitleBarFrame(aStyle, aPresContext, kClassID) {}
 
 nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
                                      WidgetGUIEvent* aEvent,
@@ -393,10 +394,11 @@ void nsResizerFrame::AdjustDimensions(int32_t* aPos, int32_t* aSize,
   if (aResizerDirection == -1) *aPos += oldSize - *aSize;
 }
 
-/* static */ void nsResizerFrame::ResizeContent(nsIContent* aContent,
-                                                const Direction& aDirection,
-                                                const SizeInfo& aSizeInfo,
-                                                SizeInfo* aOriginalSizeInfo) {
+/* static */
+void nsResizerFrame::ResizeContent(nsIContent* aContent,
+                                   const Direction& aDirection,
+                                   const SizeInfo& aSizeInfo,
+                                   SizeInfo* aOriginalSizeInfo) {
   // for XUL elements, just set the width and height attributes. For
   // other elements, set style.width and style.height
   if (aContent->IsXULElement()) {
@@ -449,8 +451,9 @@ void nsResizerFrame::AdjustDimensions(int32_t* aPos, int32_t* aSize,
   }
 }
 
-/* static */ void nsResizerFrame::MaybePersistOriginalSize(
-    nsIContent* aContent, const SizeInfo& aSizeInfo) {
+/* static */
+void nsResizerFrame::MaybePersistOriginalSize(nsIContent* aContent,
+                                              const SizeInfo& aSizeInfo) {
   nsresult rv;
 
   aContent->GetProperty(nsGkAtoms::_moz_original_size, &rv);
@@ -462,7 +465,8 @@ void nsResizerFrame::AdjustDimensions(int32_t* aPos, int32_t* aSize,
   if (NS_SUCCEEDED(rv)) sizeInfo.forget();
 }
 
-/* static */ void nsResizerFrame::RestoreOriginalSize(nsIContent* aContent) {
+/* static */
+void nsResizerFrame::RestoreOriginalSize(nsIContent* aContent) {
   nsresult rv;
   SizeInfo* sizeInfo = static_cast<SizeInfo*>(
       aContent->GetProperty(nsGkAtoms::_moz_original_size, &rv));

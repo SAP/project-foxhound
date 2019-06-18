@@ -20,20 +20,21 @@ add_task(async function() {
 });
 
 async function performTests() {
-  const { jsterm, ui } = await openNewTabAndConsole(TEST_URI);
+  const hud = await openNewTabAndConsole(TEST_URI);
+  const { jsterm, ui } = hud;
 
   const { autocompletePopup: popup } = jsterm;
 
   ok(!popup.isOpen, "popup is not open");
   const onPopupOpen = popup.once("popup-opened");
 
-  jsterm.setInputValue("document.body");
+  setInputValue(hud, "document.body");
   EventUtils.sendString(".");
 
   await onPopupOpen;
 
   ok(popup.isOpen, "popup is open");
-  const cacheMatches = ui.consoleOutput.getStore().getState().autocomplete.cache.matches;
+  const cacheMatches = ui.wrapper.getStore().getState().autocomplete.cache.matches;
   is(popup.itemCount, cacheMatches.length, "popup.itemCount is correct");
   ok(cacheMatches.includes("addEventListener"),
     "addEventListener is in the list of suggestions");
@@ -49,7 +50,7 @@ async function performTests() {
   ok(!popup.isOpen, "popup is not open");
   const onAutoCompleteUpdated = jsterm.once("autocomplete-updated");
   const inputStr = "document.b";
-  jsterm.setInputValue(inputStr);
+  setInputValue(hud, inputStr);
   EventUtils.sendString("o");
 
   await onAutoCompleteUpdated;
@@ -59,5 +60,5 @@ async function performTests() {
   // > document.bo        <-- input
   // > -----------dy      <-- autocomplete
   const spaces = " ".repeat(inputStr.length + 1);
-  checkJsTermCompletionValue(jsterm, spaces + "dy", "autocomplete shows document.body");
+  checkInputCompletionValue(hud, spaces + "dy", "autocomplete shows document.body");
 }

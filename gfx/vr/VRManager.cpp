@@ -51,7 +51,8 @@ const uint32_t kVRActiveTaskInterval = 1;  // milliseconds
  */
 const uint32_t kVRIdleTaskInterval = 100;  // milliseconds
 
-/*static*/ void VRManager::ManagerInit() {
+/*static*/
+void VRManager::ManagerInit() {
   MOZ_ASSERT(NS_IsMainThread());
 
   // TODO: We should make VRManager::ManagerInit
@@ -155,7 +156,8 @@ void VRManager::Shutdown() {
 
 void VRManager::Init() { mInitialized = true; }
 
-/* static */ VRManager* VRManager::Get() {
+/* static */
+VRManager* VRManager::Get() {
   MOZ_ASSERT(sVRManagerSingleton != nullptr);
 
   return sVRManagerSingleton;
@@ -226,7 +228,8 @@ void VRManager::StopTasks() {
   }
 }
 
-/*static*/ void VRManager::TaskTimerCallback(nsITimer* aTimer, void* aClosure) {
+/*static*/
+void VRManager::TaskTimerCallback(nsITimer* aTimer, void* aClosure) {
   /**
    * It is safe to use the pointer passed in aClosure to reference the
    * VRManager object as the timer is canceled in VRManager::Destroy.
@@ -242,6 +245,13 @@ void VRManager::RunTasks() {
   // Will be called once every 1ms when a VR presentation
   // is active or once per vsync when a VR presentation is
   // not active.
+
+  if (!mInitialized) {
+    // We may have been destroyed but still have messages
+    // in the queue from mTaskTimer.  Bail out to avoid
+    // running them.
+    return;
+  }
 
   TimeStamp now = TimeStamp::Now();
   double lastTickMs = mAccumulator100ms;

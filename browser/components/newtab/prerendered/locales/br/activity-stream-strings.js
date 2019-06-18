@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Mat eo, komprenet am eus",
   "prefs_home_header": "Endalc'had Degemer Firefox",
   "prefs_home_description": "Dibabit peseurt endalc'had a fell deoc'h kaout war ho skramm Firefox Degemer.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Degemer Firefox",
+  "prefs_content_discovery_description": "Gant ann dizoloadenn endalc'hadoù e Firefox Home e c'hallit dizoloiñ pennadoù a berzhded uhel eus pep lec'h er web.",
+  "prefs_content_discovery_button": "Diweredekaat an dizoloadenn endalc'hadoù",
   "prefs_section_rows_option": "{num} renk;{num} renk;{num} renk;{num} a renkoù;{num} renk",
   "prefs_search_header": "Klask web",
   "prefs_topsites_description": "Al lec'hiennoù a weladennit ar muiañ",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Enrollit pennadoù a-zoare e Pocket ha magit ho spered gant lennadennoù boemus.",
   "highlights_empty_state": "Krogit da verdeiñ hag e tiskouezimp deoc’h pennadoù, videoioù ha pajennoù all gweladennet pe lakaet er sinedoù nevez ’zo.",
   "topstories_empty_state": "Aet oc'h betek penn. Distroit diwezhatoc'h evit muioc’h a istorioù digant {provider}. N’oc'h ket evit gortoz? Dibabit un danvez brudet evit klask muioc’h a bennadoù dedennus eus pep lec’h er web.",
-  "manual_migration_explanation2": "Amprouit Firefox gant sinedoù, roll istor ha gerioù-tremen ur merdeer all.",
-  "manual_migration_cancel_button": "N'am bo ket",
-  "manual_migration_import_button": "Enporzhiañ bremañ",
   "error_fallback_default_info": "Chaous, un dra bennak a zo a-dreuz en ur gargañ an endalc'had.",
   "error_fallback_default_refresh_suggestion": "Adkargit ar bajenn evit klask en-dro.",
   "section_menu_action_remove_section": "Dilemel ar gevrenn",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Kenderc'hel",
   "firstrun_skip_login": "Tremen ar bazenn-mañ",
   "context_menu_title": "Digeriñ al lañser",
-  "pocket_learn_more": "Gouzout hiroc'h"
+  "manual_migration_explanation2": "Amprouit Firefox gant sinedoù, roll istor ha gerioù-tremen ur merdeer all.",
+  "manual_migration_cancel_button": "N'am bo ket",
+  "manual_migration_import_button": "Enporzhiañ bremañ"
 };

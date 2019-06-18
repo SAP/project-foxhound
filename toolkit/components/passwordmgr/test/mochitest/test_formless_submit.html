@@ -10,16 +10,23 @@
 </head>
 <body>
 <script type="application/javascript">
+const {LoginFormFactory} = SpecialPowers.Cu.import("resource://gre/modules/LoginFormFactory.jsm");
 const LMCBackstagePass = SpecialPowers.Cu.import("resource://gre/modules/LoginManagerContent.jsm");
-const { LoginManagerContent, LoginFormFactory } = LMCBackstagePass;
+const { LoginManagerContent } = LMCBackstagePass;
 
-let chromeScript = runInParent(SimpleTest.getTestFileURL("pwmgr_common.js"));
+function loadFrame() {
+  return new Promise(resolve => {
+    document.getElementById("loginFrame").addEventListener("load", (evt) => {
+      if (evt.target.contentWindow.location.href.includes("blank.html")) {
+        resolve();
+      }
+    });
+  });
+}
 
 let loadPromise = new Promise(resolve => {
   document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("loginFrame").addEventListener("load", (evt) => {
-      resolve();
-    });
+    resolve(loadFrame());
   });
 });
 
@@ -43,7 +50,7 @@ const TESTCASES = [
     document: `<input type=password value="pass1">`,
     inputIndexForFormLike: 0,
 
-    // Expected outputs similar to RemoteLogins:onFormSubmit
+    // Expected outputs similar to PasswordManager:onFormSubmit
     hostname: DEFAULT_ORIGIN,
     formSubmitURL: DEFAULT_ORIGIN,
     usernameFieldValue: null,
@@ -126,20 +133,22 @@ const TESTCASES = [
 function getSubmitMessage() {
   info("getSubmitMessage");
   return new Promise((resolve, reject) => {
-    chromeScript.addMessageListener("formSubmissionProcessed", function processed(...args) {
+    PWMGR_COMMON_PARENT.addMessageListener("formSubmissionProcessed", function processed(...args) {
       info("got formSubmissionProcessed");
-      chromeScript.removeMessageListener("formSubmissionProcessed", processed);
+      PWMGR_COMMON_PARENT.removeMessageListener("formSubmissionProcessed", processed);
       resolve(...args);
     });
   });
 }
 
 add_task(async function test() {
+  let count = 0;
   let loginFrame = document.getElementById("loginFrame");
-  let frameDoc = loginFrame.contentWindow.document;
 
   for (let tc of TESTCASES) {
+    let frameDoc = loginFrame.contentWindow.document;
     info("Starting testcase: " + JSON.stringify(tc));
+
     // eslint-disable-next-line no-unsanitized/property
     frameDoc.documentElement.innerHTML = tc.document;
     let inputForFormLike = frameDoc.querySelectorAll("input")[tc.inputIndexForFormLike];
@@ -152,7 +161,7 @@ add_task(async function test() {
 
     let submittedResult = await processedPromise;
 
-    // Check data sent via RemoteLogins:onFormSubmit
+    // Check data sent via PasswordManager:onFormSubmit
     is(submittedResult.hostname, tc.hostname, "Check hostname");
     is(submittedResult.formSubmitURL, tc.formSubmitURL, "Check formSubmitURL");
 
@@ -169,6 +178,11 @@ add_task(async function test() {
     } else {
       is(submittedResult.oldPasswordField.value, tc.oldPasswordFieldValue, "Check oldPasswordFieldValue");
     }
+
+    loadPromise = loadFrame();
+    loginFrame.contentWindow.location =
+      "http://mochi.test:8888/tests/toolkit/components/passwordmgr/test/mochitest/blank.html?" + count++;
+    await loadPromise;
   }
 });
 
@@ -177,7 +191,7 @@ add_task(async function test() {
 <p id="display"></p>
 
 <div id="content">
-  <iframe id="loginFrame" src="http://mochi.test:8888/tests/toolkit/components/passwordmgr/test/blank.html"></iframe>
+  <iframe id="loginFrame" src="http://mochi.test:8888/tests/toolkit/components/passwordmgr/test/mochitest/blank.html"></iframe>
 </div>
 <pre id="test"></pre>
 </body>

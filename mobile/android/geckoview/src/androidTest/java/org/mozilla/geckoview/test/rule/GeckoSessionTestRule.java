@@ -5,6 +5,7 @@
 
 package org.mozilla.geckoview.test.rule;
 
+import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.GeckoDisplay;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoResult.OnValueListener;
@@ -35,6 +36,7 @@ import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 
 import android.app.Instrumentation;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
 import android.net.LocalSocketAddress;
@@ -957,16 +959,24 @@ public class GeckoSessionTestRule implements TestRule {
         return RuntimeCreator.getRuntime();
     }
 
+    public @Nullable GeckoDisplay getDisplay() {
+        return mDisplay;
+    }
+
     protected static Object setDelegate(final @NonNull Class<?> cls,
                                         final @NonNull GeckoSession session,
                                         final @Nullable Object delegate)
             throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
         if (cls == GeckoSession.TextInputDelegate.class) {
-            return SessionTextInput.class.getMethod("setDelegate",
-                                                    cls).invoke(session.getTextInput(), delegate);
+            return SessionTextInput.class.getMethod("setDelegate", cls)
+                   .invoke(session.getTextInput(), delegate);
         }
-        return GeckoSession.class.getMethod("set" + cls.getSimpleName(),
-                                            cls).invoke(session, delegate);
+        if (cls == ContentBlocking.Delegate.class) {
+            return GeckoSession.class.getMethod("setContentBlockingDelegate", cls)
+                   .invoke(session, delegate);
+        }
+        return GeckoSession.class.getMethod("set" + cls.getSimpleName(), cls)
+               .invoke(session, delegate);
     }
 
     protected static Object getDelegate(final @NonNull Class<?> cls,
@@ -976,7 +986,12 @@ public class GeckoSessionTestRule implements TestRule {
             return SessionTextInput.class.getMethod("getDelegate")
                                          .invoke(session.getTextInput());
         }
-        return GeckoSession.class.getMethod("get" + cls.getSimpleName()).invoke(session);
+        if (cls == ContentBlocking.Delegate.class) {
+            return GeckoSession.class.getMethod("getContentBlockingDelegate")
+                   .invoke(session);
+        }
+        return GeckoSession.class.getMethod("get" + cls.getSimpleName())
+               .invoke(session);
     }
 
     @NonNull
@@ -1201,9 +1216,10 @@ public class GeckoSessionTestRule implements TestRule {
         prepareSession(mMainSession);
 
         if (mDisplaySize != null) {
-            mDisplayTexture = new SurfaceTexture(0);
-            mDisplaySurface = new Surface(mDisplayTexture);
             mDisplay = mMainSession.acquireDisplay();
+            mDisplayTexture = new SurfaceTexture(0);
+            mDisplayTexture.setDefaultBufferSize(mDisplaySize.x, mDisplaySize.y);
+            mDisplaySurface = new Surface(mDisplayTexture);
             mDisplay.surfaceChanged(mDisplaySurface, mDisplaySize.x, mDisplaySize.y);
         }
 
@@ -1278,7 +1294,6 @@ public class GeckoSessionTestRule implements TestRule {
             // We cannot detect initial page load without progress delegate.
             assertThat("ProgressDelegate cannot be null-delegate when opening session",
                        GeckoSession.ProgressDelegate.class, not(isIn(mNullDelegates)));
-
             mCallRecordHandler = new CallRecordHandler() {
                 private boolean mIsAboutBlank = !lookForAboutBlank;
 

@@ -4,8 +4,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 /** This little class ensures that redirects maintain an https:// origin */
 function RedirectHttpsOnly() {}
@@ -46,21 +46,21 @@ ResourceLoader.load = function(uri, doc) {
 
     ioChannel.loadGroup = doc.documentLoadGroup.QueryInterface(Ci.nsILoadGroup);
     ioChannel.notificationCallbacks = new RedirectHttpsOnly();
-    ioChannel.asyncOpen2(listener);
+    ioChannel.asyncOpen(listener);
   });
 };
 
 ResourceLoader.prototype = {
-  onDataAvailable(request, context, input, offset, count) {
+  onDataAvailable(request, input, offset, count) {
     let stream = Cc["@mozilla.org/scriptableinputstream;1"]
       .createInstance(Ci.nsIScriptableInputStream);
     stream.init(input);
     this.data += stream.read(count);
   },
 
-  onStartRequest(request, context) {},
+  onStartRequest(request) {},
 
-  onStopRequest(request, context, status) {
+  onStopRequest(request, status) {
     if (Components.isSuccessCode(status)) {
       var statusCode = request.QueryInterface(Ci.nsIHttpChannel).responseStatus;
       if (statusCode === 200) {

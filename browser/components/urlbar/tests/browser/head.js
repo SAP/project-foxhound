@@ -9,10 +9,11 @@
 
 let sandbox;
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
   UrlbarController: "resource:///modules/UrlbarController.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarQueryContext: "resource:///modules/UrlbarUtils.jsm",
@@ -24,9 +25,4 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser/head-common.js",
   this);
 
-/* global sinon */
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js");
-
-registerCleanupFunction(function() {
-  delete window.sinon;
-});
+const {sinon} = ChromeUtils.import("resource://testing-common/Sinon.jsm");

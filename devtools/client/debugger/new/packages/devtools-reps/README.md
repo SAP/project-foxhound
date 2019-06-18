@@ -45,7 +45,7 @@ Supported types:
 You need to clone the debugger.html repository, then install dependencies, for which you'll need the [Yarn](https://yarnpkg.com/en/) tool:
 
 ```
-git clone https://github.com/devtools-html/debugger.html.git
+git clone https://github.com/firefox-devtools/debugger.git
 cd debugger.html
 yarn install
 ```
@@ -63,17 +63,17 @@ and navigate to `http://localhost:8000` to access the dashboard.
 
 Navigating to the above address will have landed you on an empty launchpad UI:
 
-![Image of empty launchpad](./assets/images/empty-launchpad.png)
+![Image of empty launchpad](./images/empty-launchpad.png)
 
 Click on the _Launch Firefox_ button. This should launch Firefox with a dedicated profile, listening for connections on port 6080.
 
 The UI should update automatically and show you at least one tab for the new Firefox instance. If it doesn't, reload the dashboard.
 
-![Image of launchpad](./assets/images/launchpad-app.png)
+![Image of launchpad](./images/launchpad-app.png)
 
 Click on any of the tabs. This should open the demo app:
 
-![Image of demo app](./assets/images/demo-app.png)
+![Image of demo app](./images/demo-app.png)
 
 Then you can type any expression in the input field. They will be evaluated against the target tab selected in the previous steps (so if there specific objects on window on this webpage, you can check how they are represented with reps etc, ...).
 
@@ -95,9 +95,9 @@ They were first moved to the [devtools-reps][gh-devtools-reps] repository, then 
 
 [history]: https://github.com/mozilla/gecko-dev/commits/master/devtools/client/shared/components/reps
 [gh-devtools-reps]:
-https://github.com/devtools-html/reps/commits/master
+https://github.com/firefox-devtools/reps/commits/master
 [gh-devtools-core]:
-https://github.com/devtools-html/devtools-core/commits/5ba3d6f6a44def9978a983edd6f2f89747dca2c7/packages/devtools-reps
+https://github.com/firefox-devtools/devtools-core/commits/5ba3d6f6a44def9978a983edd6f2f89747dca2c7/packages/devtools-reps
 
 ## License
 

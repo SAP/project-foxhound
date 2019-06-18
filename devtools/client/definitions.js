@@ -6,7 +6,6 @@
 
 const Services = require("Services");
 const osString = Services.appinfo.OS;
-const { Cu } = require("chrome");
 
 // Panels
 loader.lazyGetter(this, "OptionsPanel", () => require("devtools/client/framework/toolbox-options").OptionsPanel);
@@ -14,8 +13,6 @@ loader.lazyGetter(this, "InspectorPanel", () => require("devtools/client/inspect
 loader.lazyGetter(this, "WebConsolePanel", () => require("devtools/client/webconsole/panel").WebConsolePanel);
 loader.lazyGetter(this, "NewDebuggerPanel", () => require("devtools/client/debugger/new/panel").DebuggerPanel);
 loader.lazyGetter(this, "StyleEditorPanel", () => require("devtools/client/styleeditor/panel").StyleEditorPanel);
-loader.lazyGetter(this, "CanvasDebuggerPanel", () => require("devtools/client/canvasdebugger/panel").CanvasDebuggerPanel);
-loader.lazyGetter(this, "WebAudioEditorPanel", () => require("devtools/client/webaudioeditor/panel").WebAudioEditorPanel);
 loader.lazyGetter(this, "MemoryPanel", () => require("devtools/client/memory/panel").MemoryPanel);
 loader.lazyGetter(this, "PerformancePanel", () => require("devtools/client/performance/panel").PerformancePanel);
 loader.lazyGetter(this, "NewPerformancePanel", () => require("devtools/client/performance-new/panel").PerformancePanel);
@@ -79,7 +76,8 @@ Tools.inspector = {
       return l10n("inspector.mac.tooltip", cmdShiftC, cmdOptC);
     }
 
-    return l10n("inspector.tooltip2", "Ctrl+Shift+") + l10n("inspector.commandkey");
+    const ctrlShiftC = "Ctrl+Shift+" + l10n("inspector.commandkey");
+    return l10n("inspector.tooltip2", ctrlShiftC);
   },
   inMenu: true,
 
@@ -170,52 +168,6 @@ Tools.styleEditor = {
 
   build: function(iframeWindow, toolbox) {
     return new StyleEditorPanel(iframeWindow, toolbox);
-  },
-};
-
-Tools.shaderEditor = {
-  id: "shadereditor",
-  ordinal: 5,
-  visibilityswitch: "devtools.shadereditor.enabled",
-  icon: "chrome://devtools/skin/images/tool-shadereditor.svg",
-  url: "chrome://devtools/content/shadereditor/index.xul",
-  label: l10n("ToolboxShaderEditor.label"),
-  panelLabel: l10n("ToolboxShaderEditor.panelLabel"),
-  tooltip: l10n("ToolboxShaderEditor.tooltip"),
-
-  isTargetSupported: function(target) {
-    return target.hasActor("webgl") && !target.chrome;
-  },
-
-  build: function(iframeWindow, toolbox) {
-    const { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
-    const browserRequire = BrowserLoader({
-      baseURI: "resource://devtools/client/shadereditor/",
-      window: iframeWindow,
-    }).require;
-    const { ShaderEditorPanel } = browserRequire("devtools/client/shadereditor/panel");
-    return new ShaderEditorPanel(toolbox);
-  },
-};
-
-Tools.canvasDebugger = {
-  id: "canvasdebugger",
-  ordinal: 6,
-  visibilityswitch: "devtools.canvasdebugger.enabled",
-  icon: "chrome://devtools/skin/images/tool-canvas.svg",
-  url: "chrome://devtools/content/canvasdebugger/index.xul",
-  label: l10n("ToolboxCanvasDebugger.label"),
-  panelLabel: l10n("ToolboxCanvasDebugger.panelLabel"),
-  tooltip: l10n("ToolboxCanvasDebugger.tooltip"),
-
-  // Hide the Canvas Debugger in the Add-on Debugger and Browser Toolbox
-  // (bug 1047520).
-  isTargetSupported: function(target) {
-    return target.hasActor("canvas") && !target.chrome;
-  },
-
-  build: function(iframeWindow, toolbox) {
-    return new CanvasDebuggerPanel(iframeWindow, toolbox);
   },
 };
 
@@ -337,25 +289,6 @@ Tools.storage = {
   },
 };
 
-Tools.webAudioEditor = {
-  id: "webaudioeditor",
-  ordinal: 11,
-  visibilityswitch: "devtools.webaudioeditor.enabled",
-  icon: "chrome://devtools/skin/images/tool-webaudio.svg",
-  url: "chrome://devtools/content/webaudioeditor/index.xul",
-  label: l10n("ToolboxWebAudioEditor1.label"),
-  panelLabel: l10n("ToolboxWebAudioEditor1.panelLabel"),
-  tooltip: l10n("ToolboxWebAudioEditor1.tooltip"),
-
-  isTargetSupported: function(target) {
-    return !target.chrome && target.hasActor("webaudio");
-  },
-
-  build: function(iframeWindow, toolbox) {
-    return new WebAudioEditorPanel(iframeWindow, toolbox);
-  },
-};
-
 Tools.scratchpad = {
   id: "scratchpad",
   ordinal: 12,
@@ -456,9 +389,6 @@ var defaultTools = [
   Tools.inspector,
   Tools.jsdebugger,
   Tools.styleEditor,
-  Tools.shaderEditor,
-  Tools.canvasDebugger,
-  Tools.webAudioEditor,
   Tools.performance,
   Tools.netMonitor,
   Tools.storage,

@@ -7,14 +7,13 @@
 
 const myScope = this;
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/DeferredTask.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
 ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const Utils = TelemetryUtils;
 
@@ -529,8 +528,12 @@ var Impl = {
     }
 
     try {
-      await TelemetryStorage.addPendingPing(ping);
-      await TelemetryArchive.promiseArchivePing(ping);
+      // Previous aborted-session might have been with a canary client ID.
+      // Don't send it.
+      if (ping.clientId != Utils.knownClientID) {
+        await TelemetryStorage.addPendingPing(ping);
+        await TelemetryArchive.promiseArchivePing(ping);
+      }
     } catch (e) {
       this._log.error("checkAbortedSessionPing - Unable to add the pending ping", e);
     } finally {
@@ -1117,6 +1120,16 @@ var Impl = {
 
     // Register the builtin probes.
     for (let category in scalarJSProbes) {
+      // Expire the expired scalars
+      for (let name in scalarJSProbes[category]) {
+        let def = scalarJSProbes[category][name];
+        if (!def || !def.expires || def.expires == "never" || def.expires == "default") {
+          continue;
+        }
+        if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, def.expires) >= 0) {
+          def.expired = true;
+        }
+      }
       Telemetry.registerBuiltinScalars(category, scalarJSProbes[category]);
     }
   },
@@ -1137,6 +1150,15 @@ var Impl = {
 
     // Register the builtin probes.
     for (let category in eventJSProbes) {
+      for (let name in eventJSProbes[category]) {
+        let def = eventJSProbes[category][name];
+        if (!def || !def.expires || def.expires == "never" || def.expires == "default") {
+          continue;
+        }
+        if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, def.expires) >= 0) {
+          def.expired = true;
+        }
+      }
       Telemetry.registerBuiltinEvents(category, eventJSProbes[category]);
     }
   },

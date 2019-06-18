@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Išsaugokite patinkančius straipsnius į „Pocket“, bei sužadinkite savo mintis stulbinančiomis istorijomis.",
   "highlights_empty_state": "Pradėkite naršyti, o mes čia pateiksime puikių straipsnių, vaizdo įrašų bei kitų tinklalapių, kuriuose neseniai lankėtės ar įtraukėte į adresyną.",
   "topstories_empty_state": "Viską perskaitėte. Užsukite vėliau, norėdami rasti daugiau gerų straipsnių iš „{provider}“. Nekantraujate? Pasirinkite populiarią temą, norėdami rasti daugiau puikių straipsnių saityne.",
-  "manual_migration_explanation2": "Išbandykite „Firefox“ su adresynu, žurnalu bei slaptažodžiais iš kitos naršyklės.",
-  "manual_migration_cancel_button": "Ačiū, ne",
-  "manual_migration_import_button": "Importuoti dabar",
   "error_fallback_default_info": "Ups, įkeliant šį turinį įvyko klaida.",
   "error_fallback_default_refresh_suggestion": "Pabandykite iš naujo įkelti tinklalapį.",
   "section_menu_action_remove_section": "Pašalinti skiltį",
@@ -100,7 +97,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_privacy_notice": "Privatumo pranešimas",
   "firstrun_title": "Pasiimkite „Firefox“ su savimi",
   "firstrun_content": "Turėkite savo adresyną, žurnalą, slaptažodžius ir kitas nuostatas visuose savo įrenginiuose.",
-  "firstrun_learn_more_link": "Sužinokite daugiau apie „Firefox“ paskyras",
+  "firstrun_learn_more_link": "Sužinokite apie „Firefox“ paskyras daugiau",
   "firstrun_form_header": "Įveskite savo el. paštą",
   "firstrun_form_sub_header": "norėdami tęsti su „Firefox Sync“.",
   "firstrun_email_input_placeholder": "El. paštas",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Privatumo pranešimu",
   "firstrun_continue_to_login": "Tęsti",
   "firstrun_skip_login": "Praleisti šį žingsnį",
-  "context_menu_title": "Atverti meniu"
+  "context_menu_title": "Atverti meniu",
+  "manual_migration_explanation2": "Išbandykite „Firefox“ su adresynu, žurnalu bei slaptažodžiais iš kitos naršyklės.",
+  "manual_migration_cancel_button": "Ačiū, ne",
+  "manual_migration_import_button": "Importuoti dabar"
 };

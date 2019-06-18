@@ -6,7 +6,7 @@ var EXPORTED_SYMBOLS = [ "InlineSpellChecker",
                          "SpellCheckHelper" ];
 const MAX_UNDO_STACK_DEPTH = 1;
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function InlineSpellChecker(aEditor) {
   this.init(aEditor);
@@ -289,9 +289,8 @@ InlineSpellChecker.prototype = {
     this.mAddedWordStack.push(this.mMisspelling);
     if (this.mRemote)
       this.mRemote.addToDictionary();
-    else {
+    else
       this.mInlineSpellChecker.addWordToDictionary(this.mMisspelling);
-    }
   },
   // callback for removing the last added word to the dictionary LIFO fashion
   undoAddToDictionary() {

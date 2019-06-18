@@ -29,7 +29,8 @@
 namespace mozilla {
 namespace wr {
 
-/* static */ UniquePtr<RenderCompositor> RenderCompositorANGLE::Create(
+/* static */
+UniquePtr<RenderCompositor> RenderCompositorANGLE::Create(
     RefPtr<widget::CompositorWidget>&& aWidget) {
   UniquePtr<RenderCompositorANGLE> compositor =
       MakeUnique<RenderCompositorANGLE>(std::move(aWidget));
@@ -158,7 +159,10 @@ bool RenderCompositorANGLE::Initialize() {
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
-    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    // DXGI_USAGE_SHADER_INPUT is set for improving performanc of copying from
+    // framebuffer to texture on intel gpu.
+    desc.BufferUsage =
+        DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_SHADER_INPUT;
     // Do not use DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, since it makes HWND
     // unreusable.
     // desc.BufferCount = 2;
@@ -186,7 +190,10 @@ bool RenderCompositorANGLE::Initialize() {
     swapDesc.BufferDesc.RefreshRate.Denominator = 1;
     swapDesc.SampleDesc.Count = 1;
     swapDesc.SampleDesc.Quality = 0;
-    swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    // DXGI_USAGE_SHADER_INPUT is set for improving performanc of copying from
+    // framebuffer to texture on intel gpu.
+    swapDesc.BufferUsage =
+        DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_SHADER_INPUT;
     swapDesc.BufferCount = 1;
     swapDesc.OutputWindow = hwnd;
     swapDesc.Windowed = TRUE;
@@ -281,7 +288,9 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
   desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
   desc.SampleDesc.Count = 1;
   desc.SampleDesc.Quality = 0;
-  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  // DXGI_USAGE_SHADER_INPUT is set for improving performanc of copying from
+  // framebuffer to texture on intel gpu.
+  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_SHADER_INPUT;
   if (useTripleBuffering) {
     desc.BufferCount = 3;
   } else {
@@ -503,7 +512,7 @@ void RenderCompositorANGLE::WaitForPreviousPresentQuery() {
   while (mWaitForPresentQueries.size() >= waitLatency) {
     RefPtr<ID3D11Query>& query = mWaitForPresentQueries.front();
     BOOL result;
-    layers::WaitForGPUQuery(mDevice, mCtx, query, &result);
+    layers::WaitForFrameGPUQuery(mDevice, mCtx, query, &result);
 
     // Recycle query for later use.
     mRecycledQuery = query;

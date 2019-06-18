@@ -14,6 +14,7 @@
 #include "GeckoProfiler.h"
 
 #include "nsLocalFile.h"
+#include "nsLocalFileCommon.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsNativeCharsetUtils.h"
 
@@ -1051,8 +1052,8 @@ static void StripRundll32(nsString& aCommandString) {
 // to launch the associated application as it strips parameters and
 // rundll.exe from the string. Designed for retrieving display information
 // on a particular handler.
-/* static */ bool nsLocalFile::CleanupCmdHandlerPath(
-    nsAString& aCommandHandler) {
+/* static */
+bool nsLocalFile::CleanupCmdHandlerPath(nsAString& aCommandHandler) {
   nsAutoString handlerCommand(aCommandHandler);
 
   // Straight command path:
@@ -1133,6 +1134,33 @@ nsLocalFile::OpenANSIFileDesc(const char* aMode, FILE** aResult) {
   return NS_ERROR_FAILURE;
 }
 
+static nsresult do_create(nsIFile* aFile, const nsString& aPath,
+                          uint32_t aAttributes) {
+  PRFileDesc* file;
+  nsresult rv =
+      OpenFile(aPath, PR_RDONLY | PR_CREATE_FILE | PR_APPEND | PR_EXCL,
+               aAttributes, false, &file);
+  if (file) {
+    PR_Close(file);
+  }
+
+  if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
+    // need to return already-exists for directories (bug 452217)
+    bool isdir;
+    if (NS_SUCCEEDED(aFile->IsDirectory(&isdir)) && isdir) {
+      rv = NS_ERROR_FILE_ALREADY_EXISTS;
+    }
+  }
+  return rv;
+}
+
+static nsresult do_mkdir(nsIFile*, const nsString& aPath, uint32_t) {
+  if (!::CreateDirectoryW(aPath.get(), nullptr)) {
+    return ConvertWinError(GetLastError());
+  }
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsLocalFile::Create(uint32_t aType, uint32_t aAttributes) {
   if (aType != NORMAL_FILE_TYPE && aType != DIRECTORY_TYPE) {
@@ -1141,6 +1169,14 @@ nsLocalFile::Create(uint32_t aType, uint32_t aAttributes) {
 
   nsresult rv = Resolve();
   if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
+    return rv;
+  }
+
+  auto* createFunc = (aType == NORMAL_FILE_TYPE ? do_create : do_mkdir);
+
+  rv = createFunc(this, mResolvedPath, aAttributes);
+
+  if (NS_SUCCEEDED(rv) || NS_ERROR_FILE_ALREADY_EXISTS == rv) {
     return rv;
   }
 
@@ -1203,43 +1239,12 @@ nsLocalFile::Create(uint32_t aType, uint32_t aAttributes) {
     }
   }
 
-  if (aType == NORMAL_FILE_TYPE) {
-    PRFileDesc* file;
-    rv = OpenFile(mResolvedPath,
-                  PR_RDONLY | PR_CREATE_FILE | PR_APPEND | PR_EXCL, aAttributes,
-                  false, &file);
-    if (file) {
-      PR_Close(file);
-    }
-
-    if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
-      // need to return already-exists for directories (bug 452217)
-      bool isdir;
-      if (NS_SUCCEEDED(IsDirectory(&isdir)) && isdir) {
-        rv = NS_ERROR_FILE_ALREADY_EXISTS;
-      }
-    } else if (NS_ERROR_FILE_NOT_FOUND == rv &&
-               NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
-      // If a previous CreateDirectory failed due to access, return that.
-      return NS_ERROR_FILE_ACCESS_DENIED;
-    }
-    return rv;
+  // If our last CreateDirectory failed due to access, return that.
+  if (NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
+    return directoryCreateError;
   }
 
-  if (aType == DIRECTORY_TYPE) {
-    if (!::CreateDirectoryW(mResolvedPath.get(), nullptr)) {
-      rv = ConvertWinError(GetLastError());
-      if (NS_ERROR_FILE_NOT_FOUND == rv &&
-          NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
-        // If a previous CreateDirectory failed due to access, return that.
-        return NS_ERROR_FILE_ACCESS_DENIED;
-      }
-      return rv;
-    }
-    return NS_OK;
-  }
-
-  return NS_ERROR_FILE_UNKNOWN_TYPE;
+  return createFunc(this, mResolvedPath, aAttributes);
 }
 
 NS_IMETHODIMP
@@ -2740,89 +2745,9 @@ nsLocalFile::IsExecutable(bool* aResult) {
       *p += (*p >= L'A' && *p <= L'Z') ? 'a' - 'A' : 0;
     }
 
-    // Search for any of the set of executable extensions.
-    static const char* const executableExts[] = {
-        // clang-format off
-      "ad",
-      "ade",         // access project extension
-      "adp",
-      "air",         // Adobe AIR installer
-      "app",         // executable application
-      "application", // from bug 348763
-      "asp",
-      "bas",
-      "bat",
-      "chm",
-      "cmd",
-      "com",
-      "cpl",
-      "crt",
-      "exe",
-      "fxp",         // FoxPro compiled app
-      "hlp",
-      "hta",
-      "inf",
-      "ins",
-      "isp",
-      "jar",         // java application bundle
-      "js",
-      "jse",
-      "lnk",
-      "mad",         // Access Module Shortcut
-      "maf",         // Access
-      "mag",         // Access Diagram Shortcut
-      "mam",         // Access Macro Shortcut
-      "maq",         // Access Query Shortcut
-      "mar",         // Access Report Shortcut
-      "mas",         // Access Stored Procedure
-      "mat",         // Access Table Shortcut
-      "mau",         // Media Attachment Unit
-      "mav",         // Access View Shortcut
-      "maw",         // Access Data Access Page
-      "mda",         // Access Add-in, MDA Access 2 Workgroup
-      "mdb",
-      "mde",
-      "mdt",         // Access Add-in Data
-      "mdw",         // Access Workgroup Information
-      "mdz",         // Access Wizard Template
-      "msc",
-      "msh",         // Microsoft Shell
-      "mshxml",      // Microsoft Shell
-      "msi",
-      "msp",
-      "mst",
-      "ops",         // Office Profile Settings
-      "pcd",
-      "pif",
-      "plg",         // Developer Studio Build Log
-      "prf",         // windows system file
-      "prg",
-      "pst",
-      "reg",
-      "scf",         // Windows explorer command
-      "scr",
-      "sct",
-      "settingcontent-ms",
-      "shb",
-      "shs",
-      "url",
-      "vb",
-      "vbe",
-      "vbs",
-      "vsd",
-      "vsmacros",    // Visual Studio .NET Binary-based Macro Project
-      "vss",
-      "vst",
-      "vsw",
-      "ws",
-      "wsc",
-      "wsf",
-      "wsh"
-        // clang-format on
-    };
-    nsDependentSubstring ext = Substring(path, dotIdx + 1);
-    for (size_t i = 0; i < ArrayLength(executableExts); ++i) {
-      if (ext.EqualsASCII(executableExts[i])) {
+    nsDependentSubstring ext = Substring(path, dotIdx);
+    for (size_t i = 0; i < ArrayLength(sExecutableExts); ++i) {
+      if (ext.EqualsASCII(sExecutableExts[i])) {
         // Found a match.  Set result and quit.
         *aResult = true;
         break;

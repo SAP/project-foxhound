@@ -15,21 +15,18 @@ import { removeDocument } from "../utils/editor";
 import { selectSource } from "./sources";
 
 import {
-  getSourcesByURLs,
   getSourceTabs,
-  getSourceFromId,
+  getSourceByURL,
   getNewSelectedSourceId,
   removeSourceFromTabList,
   removeSourcesFromTabList
 } from "../selectors";
 
-import { getMainThread } from "../reducers/debuggee";
-
 import type { Action, ThunkArgs } from "./types";
-import type { Source, Worker } from "../types";
+import type { Source } from "../types";
 
 export function updateTab(source: Source, framework: string): Action {
-  const { url, id: sourceId, thread } = source;
+  const { url, id: sourceId } = source;
   const isOriginal = isOriginalId(source.id);
 
   return {
@@ -37,21 +34,19 @@ export function updateTab(source: Source, framework: string): Action {
     url,
     framework,
     isOriginal,
-    sourceId,
-    thread
+    sourceId
   };
 }
 
 export function addTab(source: Source): Action {
-  const { url, id: sourceId, thread } = source;
+  const { url, id: sourceId } = source;
   const isOriginal = isOriginalId(source.id);
 
   return {
     type: "ADD_TAB",
     url,
     isOriginal,
-    sourceId,
-    thread
+    sourceId
   };
 }
 
@@ -86,35 +81,13 @@ export function closeTab(source: Source) {
  */
 export function closeTabs(urls: string[]) {
   return ({ dispatch, getState, client }: ThunkArgs) => {
-    const sources = getSourcesByURLs(getState(), urls);
+    const sources = urls
+      .map(url => getSourceByURL(getState(), url))
+      .filter(Boolean);
     sources.map(source => removeDocument(source.id));
 
     const tabs = removeSourcesFromTabList(getSourceTabs(getState()), sources);
     dispatch(({ type: "CLOSE_TABS", sources, tabs }: Action));
-
-    const sourceId = getNewSelectedSourceId(getState(), tabs);
-    dispatch(selectSource(sourceId));
-  };
-}
-
-export function closeTabsForMissingThreads(workers: Worker[]) {
-  return ({ dispatch, getState }: ThunkArgs) => {
-    const oldTabs = getSourceTabs(getState());
-    const mainThread = getMainThread(getState());
-    const removed = [];
-    for (const { sourceId } of oldTabs) {
-      if (sourceId) {
-        const source = getSourceFromId(getState(), sourceId);
-        if (
-          source.thread != mainThread.actor &&
-          !workers.some(({ actor }) => actor == source.thread)
-        ) {
-          removed.push(source);
-        }
-      }
-    }
-    const tabs = removeSourcesFromTabList(oldTabs, removed);
-    dispatch({ type: "CLOSE_TABS", removed, tabs });
 
     const sourceId = getNewSelectedSourceId(getState(), tabs);
     dispatch(selectSource(sourceId));

@@ -11,17 +11,19 @@
  *
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
 });
 
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+  "resource://gre/modules/NetUtil.jsm");
+
 var httpServer = null;
 
-function make_channel(url, callback, ctx) {
+function make_channel(url) {
   return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
 }
 
@@ -60,9 +62,9 @@ function run_test()
   var chan = make_channel(URL);
 
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "");
+  cc.preferAlternativeDataType(altContentType, "", true);
 
-  chan.asyncOpen2(new ChannelListener(readServerContent, null));
+  chan.asyncOpen(new ChannelListener(readServerContent, null));
   do_test_pending();
 }
 
@@ -89,15 +91,15 @@ function openAltChannel()
 {
   var chan = make_channel(URL);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "");
+  cc.preferAlternativeDataType(altContentType, "", true);
 
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(altDataListener);
 }
 
-var listener = {
+var altDataListener = {
   buffer: "",
-  onStartRequest: function(request, context) { },
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onStartRequest: function(request) { },
+  onDataAvailable: function(request, stream, offset, count) {
     let string = NetUtil.readInputStreamToString(stream, count);
     this.buffer += string;
 
@@ -110,11 +112,46 @@ var listener = {
       os.close();
     }
   },
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
     Assert.equal(cc.alternativeDataType, altContentType);
     Assert.equal(this.buffer.length, altContent.length);
     Assert.equal(this.buffer, altContent);
-    httpServer.stop(do_test_finished);
+    openAltChannelWithOriginalContent();
   },
 };
+
+function openAltChannelWithOriginalContent()
+{
+  var chan = make_channel(URL);
+  var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
+  cc.preferAlternativeDataType(altContentType, "", false);
+
+  chan.asyncOpen(originalListener);
+}
+
+var originalListener = {
+  buffer: "",
+  onStartRequest: function(request) { },
+  onDataAvailable: function(request, stream, offset, count) {
+    let string = NetUtil.readInputStreamToString(stream, count);
+    this.buffer += string;
+  },
+  onStopRequest: function(request, status) {
+    var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
+    Assert.equal(cc.alternativeDataType, altContentType);
+    Assert.equal(this.buffer.length, responseContent.length);
+    Assert.equal(this.buffer, responseContent);
+    testAltDataStream(cc);
+  },
+};
+
+function testAltDataStream(cc)
+{
+  cc.getAltDataInputStream(altContentType, {
+    onInputStreamReady: function(aInputStream) {
+      Assert.ok(!!aInputStream);
+      httpServer.stop(do_test_finished);
+    }
+  });
+}

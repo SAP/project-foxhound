@@ -9,9 +9,8 @@
  * - this time the alt data must arive
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
@@ -85,9 +84,9 @@ function asyncOpen()
   var chan = make_channel(URL);
 
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "");
+  cc.preferAlternativeDataType(altContentType, "", true);
 
-  chan.asyncOpen2(new ChannelListener(readServerContent, null));
+  chan.asyncOpen(new ChannelListener(readServerContent, null));
 }
 
 function readServerContent(request, buffer)
@@ -120,9 +119,9 @@ function flushAndOpenAltChannel()
 function openAltChannel() {
   var chan = make_channel(URL);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "");
+  cc.preferAlternativeDataType(altContentType, "", true);
 
-  chan.asyncOpen2(new ChannelListener(readAltContent, null));
+  chan.asyncOpen(new ChannelListener(readAltContent, null));
 }
 
 function readAltContent(request, buffer)

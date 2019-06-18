@@ -388,13 +388,15 @@ size_t MacIOSurface::GetPlaneCount() {
   return MacIOSurfaceLib::IOSurfaceGetPlaneCount(mIOSurfacePtr);
 }
 
-/*static*/ size_t MacIOSurface::GetMaxWidth() {
+/*static*/
+size_t MacIOSurface::GetMaxWidth() {
   if (!MacIOSurfaceLib::isInit()) return -1;
   return MacIOSurfaceLib::IOSurfaceGetPropertyMaximum(
       MacIOSurfaceLib::kPropWidth);
 }
 
-/*static*/ size_t MacIOSurface::GetMaxHeight() {
+/*static*/
+size_t MacIOSurface::GetMaxHeight() {
   if (!MacIOSurfaceLib::isInit()) return -1;
   return MacIOSurfaceLib::IOSurfaceGetPropertyMaximum(
       MacIOSurfaceLib::kPropHeight);
@@ -439,7 +441,7 @@ using mozilla::gfx::IntSize;
 using mozilla::gfx::SourceSurface;
 using mozilla::gfx::SurfaceFormat;
 
-void MacIOSurfaceBufferDeallocator(void* aClosure) {
+static void MacIOSurfaceBufferDeallocator(void* aClosure) {
   MOZ_ASSERT(aClosure);
 
   delete[] static_cast<unsigned char*>(aClosure);

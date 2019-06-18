@@ -2,15 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import {
   getSources,
   getSelectedSource,
   getSourceInSources
 } from "../reducers/sources";
-import { getFrames } from "../reducers/pause";
+import { getCurrentThreadFrames } from "../reducers/pause";
 import { annotateFrames } from "../utils/pause/frames";
 import { isOriginal } from "../utils/source";
 import { get } from "lodash";
+import type { State } from "../reducers/types";
 import type { Frame, Source } from "../types";
 import type { SourcesMap } from "../reducers/sources";
 import { createSelector } from "reselect";
@@ -21,12 +24,20 @@ function getLocation(frame, isGeneratedSource) {
     : frame.location;
 }
 
-function getSourceForFrame(sources, frame, isGeneratedSource) {
+function getSourceForFrame(
+  sources: SourcesMap,
+  frame: Frame,
+  isGeneratedSource
+) {
   const sourceId = getLocation(frame, isGeneratedSource).sourceId;
   return getSourceInSources(sources, sourceId);
 }
 
-function appendSource(sources, frame, selectedSource) {
+function appendSource(
+  sources: SourcesMap,
+  frame: Frame,
+  selectedSource: ?Source
+): Frame {
   const isGeneratedSource = selectedSource && !isOriginal(selectedSource);
   return {
     ...frame,
@@ -44,7 +55,7 @@ export function formatCallStackFrames(
     return null;
   }
 
-  const formattedFrames = frames
+  const formattedFrames: Frame[] = frames
     .filter(frame => getSourceForFrame(sources, frame))
     .map(frame => appendSource(sources, frame, selectedSource))
     .filter(frame => !get(frame, "source.isBlackBoxed"));
@@ -52,8 +63,9 @@ export function formatCallStackFrames(
   return annotateFrames(formattedFrames);
 }
 
-export const getCallStackFrames = createSelector(
-  getFrames,
+// eslint-disable-next-line
+export const getCallStackFrames: State => Frame[] = (createSelector: any)(
+  getCurrentThreadFrames,
   getSources,
   getSelectedSource,
   formatCallStackFrames

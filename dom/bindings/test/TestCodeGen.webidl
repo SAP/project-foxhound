@@ -783,8 +783,8 @@ interface TestInterface {
   void dontEnforceRangeOrClamp(byte arg);
   void doEnforceRange([EnforceRange] byte arg);
   void doClamp([Clamp] byte arg);
-  [EnforceRange] attribute byte enforcedByte;
-  [Clamp] attribute byte clampedByte;
+  attribute [EnforceRange] byte enforcedByte;
+  attribute [Clamp] byte clampedByte;
 
   // Typedefs
   const myLong myLongConstant = 5;
@@ -879,21 +879,21 @@ interface TestInterface {
   readonly attribute boolean prefable4;
   [Pref="abc.def"]
   readonly attribute boolean prefable5;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable6;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable7;
-  [Pref="ghi.jkl", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="ghi.jkl", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable8;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable9;
   [Pref="abc.def"]
   void prefable10();
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable11();
   [Pref="abc.def", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable12;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable13();
   [Pref="abc.def", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable14;
@@ -915,7 +915,7 @@ interface TestInterface {
   readonly attribute boolean conditionalOnSecureContext1;
   [SecureContext, Pref="abc.def"]
   readonly attribute boolean conditionalOnSecureContext2;
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean conditionalOnSecureContext3;
   [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
   readonly attribute boolean conditionalOnSecureContext4;
@@ -923,7 +923,7 @@ interface TestInterface {
   void conditionalOnSecureContext5();
   [SecureContext, Pref="abc.def"]
   void conditionalOnSecureContext6();
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void conditionalOnSecureContext7();
   [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
   void conditionalOnSecureContext8();
@@ -1188,7 +1188,7 @@ dictionary DictWithConditionalMembers {
   long chromeOnlyMember;
   [Func="TestFuncControlledMember"]
   long funcControlledMember;
-  [ChromeOnly, Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [ChromeOnly, Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   long chromeOnlyFuncControlledMember;
 };
 
@@ -1314,4 +1314,27 @@ interface TestCEReactionsInterface {
   getter long item(unsigned long index);
   getter DOMString (DOMString name);
   readonly attribute unsigned long length;
+};
+
+typedef [EnforceRange] octet OctetRange;
+typedef [Clamp] octet OctetClamp;
+typedef [TreatNullAs=EmptyString] DOMString NullEmptyString;
+
+dictionary TestAttributesOnDictionaryMembers {
+  [Clamp] octet a;
+  [ChromeOnly, Clamp] octet b;
+  required [Clamp] octet c;
+  [ChromeOnly] octet d;
+  // ChromeOnly doesn't mix with required, so we can't
+  // test [ChromeOnly] required [Clamp] octet e
+};
+
+interface TestAttributesOnTypes {
+  void foo(OctetClamp thingy);
+  void bar(OctetRange thingy);
+  void baz(NullEmptyString thingy);
+  attribute [Clamp] octet someAttr;
+  void argWithAttr([Clamp] octet arg0, optional [Clamp] octet arg1);
+  // There aren't any argument-only attributes that we can test here,
+  // TreatNonCallableAsNull isn't compatible with Clamp-able types
 };

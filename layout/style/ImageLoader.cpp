@@ -22,14 +22,18 @@
 #include "GeckoProfiler.h"
 #include "mozilla/layers/WebRenderUserData.h"
 
+using namespace mozilla::dom;
+
 namespace mozilla {
 namespace css {
 
-/* static */ void ImageLoader::Init() {
+/* static */
+void ImageLoader::Init() {
   sImages = new nsClassHashtable<nsUint64HashKey, ImageTableEntry>();
 }
 
-/* static */ void ImageLoader::Shutdown() {
+/* static */
+void ImageLoader::Shutdown() {
   delete sImages;
   sImages = nullptr;
 }
@@ -244,8 +248,8 @@ imgRequestProxy* ImageLoader::RegisterCSSImage(URLValue* aImage) {
   return requestWeak;
 }
 
-/* static */ void ImageLoader::DeregisterCSSImageFromAllLoaders(
-    URLValue* aImage) {
+/* static */
+void ImageLoader::DeregisterCSSImageFromAllLoaders(URLValue* aImage) {
   MOZ_ASSERT(aImage);
 
   uint64_t loadID = aImage->LoadID();
@@ -264,8 +268,8 @@ imgRequestProxy* ImageLoader::RegisterCSSImage(URLValue* aImage) {
   }
 }
 
-/* static */ void ImageLoader::DeregisterCSSImageFromAllLoaders(
-    uint64_t aImageLoadID) {
+/* static */
+void ImageLoader::DeregisterCSSImageFromAllLoaders(uint64_t aImageLoadID) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aImageLoadID != 0);
 
@@ -420,8 +424,8 @@ void ImageLoader::ClearFrames(nsPresContext* aPresContext) {
   mFrameToRequestMap.Clear();
 }
 
-/* static */ void ImageLoader::LoadImage(URLValue* aImage,
-                                         Document* aLoadingDoc) {
+/* static */
+void ImageLoader::LoadImage(URLValue* aImage, Document* aLoadingDoc) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aLoadingDoc);
   MOZ_ASSERT(aImage);
@@ -481,7 +485,7 @@ static bool IsRenderNoImages(uint32_t aDisplayItemKey) {
   return flags & TYPE_RENDERS_NO_IMAGES;
 }
 
-static void InvalidateImages(nsIFrame* aFrame) {
+static void InvalidateImages(nsIFrame* aFrame, imgIRequest* aRequest) {
   bool invalidateFrame = false;
   const SmallPointerArray<DisplayItemData>& array = aFrame->DisplayItemData();
   for (uint32_t i = 0; i < array.Length(); i++) {
@@ -516,7 +520,7 @@ static void InvalidateImages(nsIFrame* aFrame) {
           break;
         case layers::WebRenderUserData::UserDataType::eImage:
           if (static_cast<layers::WebRenderImageData*>(data.get())
-                  ->UsingSharedSurface()) {
+                  ->UsingSharedSurface(aRequest->GetProducerId())) {
             break;
           }
           MOZ_FALLTHROUGH;
@@ -532,7 +536,9 @@ static void InvalidateImages(nsIFrame* aFrame) {
   }
 }
 
-void ImageLoader::RequestPaintIfNeeded(FrameSet* aFrameSet, bool aForcePaint) {
+void ImageLoader::RequestPaintIfNeeded(FrameSet* aFrameSet,
+                                       imgIRequest* aRequest,
+                                       bool aForcePaint) {
   NS_ASSERTION(aFrameSet, "Must have a frame set");
   NS_ASSERTION(mDocument, "Should have returned earlier!");
 
@@ -545,7 +551,7 @@ void ImageLoader::RequestPaintIfNeeded(FrameSet* aFrameSet, bool aForcePaint) {
         // might not find the right display item.
         frame->InvalidateFrame();
       } else {
-        InvalidateImages(frame);
+        InvalidateImages(frame, aRequest);
 
         // Update ancestor rendering observers (-moz-element etc)
         nsIFrame* f = frame;
@@ -730,7 +736,7 @@ nsresult ImageLoader::OnFrameComplete(imgIRequest* aRequest) {
   // Since we just finished decoding a frame, we always want to paint, in case
   // we're now able to paint an image that we couldn't paint before (and hence
   // that we don't have retained data for).
-  RequestPaintIfNeeded(frameSet, /* aForcePaint = */ true);
+  RequestPaintIfNeeded(frameSet, aRequest, /* aForcePaint = */ true);
 
   return NS_OK;
 }
@@ -745,7 +751,7 @@ nsresult ImageLoader::OnFrameUpdate(imgIRequest* aRequest) {
     return NS_OK;
   }
 
-  RequestPaintIfNeeded(frameSet, /* aForcePaint = */ false);
+  RequestPaintIfNeeded(frameSet, aRequest, /* aForcePaint = */ false);
 
   return NS_OK;
 }

@@ -173,7 +173,7 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsMenuPopupFrame)
 
-  explicit nsMenuPopupFrame(ComputedStyle* aStyle);
+  explicit nsMenuPopupFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
 
   // nsMenuParent interface
   virtual nsMenuFrame* GetCurrentMenuItem() override;
@@ -247,9 +247,6 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   nsresult CreateWidgetForView(nsView* aView);
   uint8_t GetShadowStyle();
 
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
-
   virtual bool IsLeafDynamic() const override;
 
   virtual void UpdateWidgetProperties() override;
@@ -269,8 +266,8 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   nsresult SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove,
                             bool aSizedToPopup, bool aNotify);
 
-  bool HasGeneratedChildren() { return mGeneratedChildren; }
-  void SetGeneratedChildren() { mGeneratedChildren = true; }
+  // Force the children to be generated if they have not already been generated.
+  void GenerateFrames();
 
   // called when the Enter key is pressed while the popup is open. This will
   // just pass the call down to the current menu, if any. If a current menu

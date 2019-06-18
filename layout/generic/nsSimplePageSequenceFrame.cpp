@@ -38,13 +38,15 @@ mozilla::LazyLogModule gLayoutPrintingLog("printing-layout");
 
 nsSimplePageSequenceFrame* NS_NewSimplePageSequenceFrame(
     nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsSimplePageSequenceFrame(aStyle);
+  return new (aPresShell)
+      nsSimplePageSequenceFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSimplePageSequenceFrame)
 
-nsSimplePageSequenceFrame::nsSimplePageSequenceFrame(ComputedStyle* aStyle)
-    : nsContainerFrame(aStyle, kClassID),
+nsSimplePageSequenceFrame::nsSimplePageSequenceFrame(
+    ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsContainerFrame(aStyle, aPresContext, kClassID),
       mTotalPages(-1),
       mCalledBeginPage(false),
       mCurrentCanvasListSetup(false) {
@@ -714,8 +716,7 @@ void nsSimplePageSequenceFrame::BuildDisplayList(
       if (child->GetVisualOverflowRectRelativeToParent().Intersects(visible)) {
         nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
             aBuilder, child, visible - child->GetPosition(),
-            visible - child->GetPosition(),
-            aBuilder->IsAtRootOfPseudoStackingContext());
+            visible - child->GetPosition());
         child->BuildDisplayListForStackingContext(aBuilder, &content);
         aBuilder->ResetMarkedFramesForDisplayList(this);
       }
@@ -724,7 +725,7 @@ void nsSimplePageSequenceFrame::BuildDisplayList(
   }
 
   content.AppendToTop(MakeDisplayItem<nsDisplayTransform>(
-      aBuilder, this, &content, content.GetBuildingRect(),
+      aBuilder, this, &content, content.GetBuildingRect(), 0,
       ::ComputePageSequenceTransform));
 
   aLists.Content()->AppendToTop(&content);

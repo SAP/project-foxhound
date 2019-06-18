@@ -112,7 +112,7 @@ nsresult AsyncScriptCompiler::Start(
   rv = NS_NewIncrementalStreamLoader(getter_AddRefs(loader), this);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return channel->AsyncOpen2(loader);
+  return channel->AsyncOpen(loader);
 }
 
 static void OffThreadScriptLoaderCallback(JS::OffThreadToken* aToken,
@@ -249,7 +249,8 @@ AsyncScriptCompiler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
 namespace mozilla {
 namespace dom {
 
-/* static */ already_AddRefed<Promise> ChromeUtils::CompileScript(
+/* static */
+already_AddRefed<Promise> ChromeUtils::CompileScript(
     GlobalObject& aGlobal, const nsAString& aURL,
     const CompileScriptOptionsDictionary& aOptions, ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());

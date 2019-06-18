@@ -184,12 +184,10 @@ class AsyncFreeSnowWhite : public Runnable {
 
 namespace xpc {
 
-CompartmentPrivate::CompartmentPrivate(JS::Compartment* c,
-                                       XPCWrappedNativeScope* scope,
-                                       mozilla::BasePrincipal* origin,
-                                       const SiteIdentifier& site)
+CompartmentPrivate::CompartmentPrivate(
+    JS::Compartment* c, mozilla::UniquePtr<XPCWrappedNativeScope> scope,
+    mozilla::BasePrincipal* origin, const SiteIdentifier& site)
     : originInfo(origin, site),
-      scope(scope),
       wantXrays(false),
       allowWaivers(true),
       isWebExtensionContentScript(false),
@@ -199,9 +197,9 @@ CompartmentPrivate::CompartmentPrivate(JS::Compartment* c,
       hasExclusiveExpandos(false),
       universalXPConnectEnabled(false),
       wasShutdown(false),
-      mWrappedJSMap(JSObject2WrappedJSMap::newMap(XPC_JS_MAP_LENGTH)) {
+      mWrappedJSMap(JSObject2WrappedJSMap::newMap(XPC_JS_MAP_LENGTH)),
+      mScope(std::move(scope)) {
   MOZ_COUNT_CTOR(xpc::CompartmentPrivate);
-  mozilla::PodArrayZero(wrapperDenialWarnings);
 }
 
 CompartmentPrivate::~CompartmentPrivate() {
@@ -218,10 +216,12 @@ void CompartmentPrivate::SystemIsBeingShutDown() {
   }
 }
 
-RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {}
+RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {
+  mozilla::PodArrayZero(wrapperDenialWarnings);
+}
 
-/* static */ void RealmPrivate::Init(HandleObject aGlobal,
-                                     const SiteIdentifier& aSite) {
+/* static */
+void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   MOZ_ASSERT(aGlobal);
   DebugOnly<const js::Class*> clasp = js::GetObjectClass(aGlobal);
   MOZ_ASSERT(clasp->flags &
@@ -242,9 +242,9 @@ RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {}
   if (CompartmentPrivate* priv = CompartmentPrivate::Get(c)) {
     MOZ_ASSERT(priv->originInfo.IsSameOrigin(principal));
   } else {
-    auto* scope = new XPCWrappedNativeScope(c, aGlobal);
-    priv =
-        new CompartmentPrivate(c, scope, BasePrincipal::Cast(principal), aSite);
+    auto scope = mozilla::MakeUnique<XPCWrappedNativeScope>(c, aGlobal);
+    priv = new CompartmentPrivate(c, std::move(scope),
+                                  BasePrincipal::Cast(principal), aSite);
     JS_SetCompartmentPrivate(c, priv);
   }
 }
@@ -591,10 +591,8 @@ bool EnableUniversalXPConnect(JSContext* cx) {
   // but we define it when UniversalXPConnect is enabled to support legacy
   // tests.
   Compartment* comp = js::GetContextCompartment(cx);
-  XPCWrappedNativeScope* scope = CompartmentPrivate::Get(comp)->scope;
-  if (!scope) {
-    return true;
-  }
+  XPCWrappedNativeScope* scope = CompartmentPrivate::Get(comp)->GetScope();
+  MOZ_ASSERT(scope);
   scope->ForcePrivilegedComponents();
   return scope->AttachComponentsObject(cx);
 }
@@ -603,8 +601,9 @@ bool CompartmentOriginInfo::IsSameOrigin(nsIPrincipal* aOther) const {
   return mOrigin->FastEquals(aOther);
 }
 
-/* static */ bool CompartmentOriginInfo::Subsumes(JS::Compartment* aCompA,
-                                                  JS::Compartment* aCompB) {
+/* static */
+bool CompartmentOriginInfo::Subsumes(JS::Compartment* aCompA,
+                                     JS::Compartment* aCompB) {
   CompartmentPrivate* apriv = CompartmentPrivate::Get(aCompA);
   CompartmentPrivate* bpriv = CompartmentPrivate::Get(aCompB);
   MOZ_ASSERT(apriv);
@@ -612,8 +611,9 @@ bool CompartmentOriginInfo::IsSameOrigin(nsIPrincipal* aOther) const {
   return apriv->originInfo.mOrigin->FastSubsumes(bpriv->originInfo.mOrigin);
 }
 
-/* static */ bool CompartmentOriginInfo::SubsumesIgnoringFPD(
-    JS::Compartment* aCompA, JS::Compartment* aCompB) {
+/* static */
+bool CompartmentOriginInfo::SubsumesIgnoringFPD(JS::Compartment* aCompA,
+                                                JS::Compartment* aCompB) {
   CompartmentPrivate* apriv = CompartmentPrivate::Get(aCompA);
   CompartmentPrivate* bpriv = CompartmentPrivate::Get(aCompB);
   MOZ_ASSERT(apriv);
@@ -634,6 +634,17 @@ void SetCompartmentChangedDocumentDomain(JS::Compartment* compartment) {
 
 JSObject* UnprivilegedJunkScope() {
   return XPCJSRuntime::Get()->UnprivilegedJunkScope();
+}
+
+JSObject* NACScope(JSObject* global) {
+  // If we're a chrome global, just use ourselves.
+  if (AccessCheck::isChrome(global)) {
+    return global;
+  }
+
+  JSObject* scope = UnprivilegedJunkScope();
+  JS::ExposeObjectToActiveJS(scope);
+  return scope;
 }
 
 JSObject* PrivilegedJunkScope() { return XPCJSRuntime::Get()->LoaderGlobal(); }
@@ -729,7 +740,7 @@ void XPCJSRuntime::TraceNativeBlackRoots(JSTracer* trc) {
 }
 
 void XPCJSRuntime::TraceAdditionalNativeGrayRoots(JSTracer* trc) {
-  XPCWrappedNativeScope::TraceWrappedNativesInAllScopes(trc);
+  XPCWrappedNativeScope::TraceWrappedNativesInAllScopes(this, trc);
 
   for (XPCRootSetElem* e = mVariantRoots; e; e = e->GetNextRoot()) {
     static_cast<XPCTraceableVariant*>(e)->TraceJS(trc);
@@ -803,9 +814,9 @@ void xpc_UnmarkSkippableJSHolders() {
   }
 }
 
-/* static */ void XPCJSRuntime::GCSliceCallback(JSContext* cx,
-                                                JS::GCProgress progress,
-                                                const JS::GCDescription& desc) {
+/* static */
+void XPCJSRuntime::GCSliceCallback(JSContext* cx, JS::GCProgress progress,
+                                   const JS::GCDescription& desc) {
   XPCJSRuntime* self = nsXPConnect::GetRuntimeInstance();
   if (!self) {
     return;
@@ -818,7 +829,8 @@ void xpc_UnmarkSkippableJSHolders() {
   }
 }
 
-/* static */ void XPCJSRuntime::DoCycleCollectionCallback(JSContext* cx) {
+/* static */
+void XPCJSRuntime::DoCycleCollectionCallback(JSContext* cx) {
   // The GC has detected that a CC at this point would collect a tremendous
   // amount of garbage that is being revivified unnecessarily.
   NS_DispatchToCurrentThread(
@@ -842,9 +854,9 @@ void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
   }
 }
 
-/* static */ void XPCJSRuntime::FinalizeCallback(JSFreeOp* fop,
-                                                 JSFinalizeStatus status,
-                                                 void* data) {
+/* static */
+void XPCJSRuntime::FinalizeCallback(JSFreeOp* fop, JSFinalizeStatus status,
+                                    void* data) {
   XPCJSRuntime* self = nsXPConnect::GetRuntimeInstance();
   if (!self) {
     return;
@@ -870,9 +882,6 @@ void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
       break;
     }
     case JSFINALIZE_GROUP_END: {
-      // Sweep scopes needing cleanup
-      XPCWrappedNativeScope::KillDyingScopes();
-
       MOZ_ASSERT(self->mDoingFinalization, "bad state");
       self->mDoingFinalization = false;
 
@@ -947,8 +956,8 @@ void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
   }
 }
 
-/* static */ void XPCJSRuntime::WeakPointerZonesCallback(JSContext* cx,
-                                                         void* data) {
+/* static */
+void XPCJSRuntime::WeakPointerZonesCallback(JSContext* cx, void* data) {
   // Called before each sweeping slice -- after processing any final marking
   // triggered by barriers -- to clear out any references to things that are
   // about to be finalized and update any pointers to moved GC things.
@@ -956,12 +965,12 @@ void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
 
   self->mWrappedJSMap->UpdateWeakPointersAfterGC();
   self->mUAWidgetScopeMap.sweep();
-
-  XPCWrappedNativeScope::UpdateWeakPointersInAllScopesAfterGC();
 }
 
-/* static */ void XPCJSRuntime::WeakPointerCompartmentCallback(
-    JSContext* cx, JS::Compartment* comp, void* data) {
+/* static */
+void XPCJSRuntime::WeakPointerCompartmentCallback(JSContext* cx,
+                                                  JS::Compartment* comp,
+                                                  void* data) {
   // Called immediately after the ZoneGroup weak pointer callback, but only
   // once for each compartment that is being swept.
   CompartmentPrivate* xpcComp = CompartmentPrivate::Get(comp);
@@ -973,6 +982,7 @@ void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
 void CompartmentPrivate::UpdateWeakPointersAfterGC() {
   mRemoteProxies.sweep();
   mWrappedJSMap->UpdateWeakPointersAfterGC();
+  mScope->UpdateWeakPointersAfterGC();
 }
 
 void XPCJSRuntime::CustomOutOfMemoryCallback() {
@@ -1148,6 +1158,9 @@ void XPCJSRuntime::Shutdown(JSContext* cx) {
 
   delete mDyingWrappedNativeProtoMap;
   mDyingWrappedNativeProtoMap = nullptr;
+
+  // Prevent ~LinkedList assertion failures if we leaked things.
+  mWrappedNativeScopes.clear();
 
   CycleCollectedJSRuntime::Shutdown(cx);
 }
@@ -2250,7 +2263,7 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
       RootedObject global(cx, JS::GetRealmGlobalOrNull(realm));
       if (global) {
         RefPtr<nsGlobalWindowInner> window;
-        if (NS_SUCCEEDED(UNWRAP_OBJECT(Window, global, window))) {
+        if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Window, global, window))) {
           // The global is a |window| object.  Use the path prefix that
           // we should have already created for it.
           if (mTopWindowPaths->Get(window->WindowID(), &extras->pathPrefix))
@@ -2278,7 +2291,7 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
     RootedObject global(cx, JS::GetRealmGlobalOrNull(realm));
     if (global) {
       RefPtr<nsGlobalWindowInner> window;
-      if (NS_SUCCEEDED(UNWRAP_OBJECT(Window, global, window))) {
+      if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Window, global, window))) {
         // The global is a |window| object.  Use the path prefix that
         // we should have already created for it.
         if (mWindowPaths->Get(window->WindowID(), &extras->jsPathPrefix)) {
@@ -2724,6 +2737,7 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
       break;
     case JS_TELEMETRY_GC_NURSERY_BYTES:
       Telemetry::Accumulate(Telemetry::GC_NURSERY_BYTES, sample);
+      Telemetry::Accumulate(Telemetry::GC_NURSERY_BYTES_2, sample);
       break;
     case JS_TELEMETRY_GC_PRETENURE_COUNT:
       Telemetry::Accumulate(Telemetry::GC_PRETENURE_COUNT, sample);
@@ -2831,7 +2845,7 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
   scriptChannel->SetContentType(NS_LITERAL_CSTRING("text/plain"));
 
   nsCOMPtr<nsIInputStream> scriptStream;
-  rv = scriptChannel->Open2(getter_AddRefs(scriptStream));
+  rv = scriptChannel->Open(getter_AddRefs(scriptStream));
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint64_t rawLen;
@@ -2924,6 +2938,7 @@ XPCJSRuntime::XPCJSRuntime(JSContext* aCx)
       mClassInfo2NativeSetMap(
           ClassInfo2NativeSetMap::newMap(XPC_NATIVE_SET_MAP_LENGTH)),
       mNativeSetMap(NativeSetMap::newMap(XPC_NATIVE_SET_MAP_LENGTH)),
+      mWrappedNativeScopes(),
       mDyingWrappedNativeProtoMap(
           XPCWrappedNativeProtoMap::newMap(XPC_DYING_NATIVE_PROTO_MAP_LENGTH)),
       mGCIsRunning(false),

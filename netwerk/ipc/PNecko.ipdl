@@ -9,7 +9,6 @@ include protocol PContent;
 include protocol PHttpChannel;
 include protocol PCookieService;
 include protocol PBrowser;
-include protocol PWyciwygChannel;
 include protocol PFTPChannel;
 include protocol PWebSocket;
 include protocol PWebSocketEventListener;
@@ -26,7 +25,7 @@ include protocol PChildToParentStream; //FIXME: bug #792908
 include protocol PParentToChildStream; //FIXME: bug #792908
 include protocol PStunAddrsRequest;
 include protocol PFileChannel;
-include protocol PTrackingDummyChannel;
+include protocol PClassifierDummyChannel;
 include protocol PWebrtcProxyChannel;
 include protocol PSocketProcessBridge;
 
@@ -51,7 +50,6 @@ nested(upto inside_cpow) sync protocol PNecko
   manager PContent;
   manages PHttpChannel;
   manages PCookieService;
-  manages PWyciwygChannel;
   manages PFTPChannel;
   manages PWebSocket;
   manages PWebSocketEventListener;
@@ -66,7 +64,7 @@ nested(upto inside_cpow) sync protocol PNecko
   manages PTransportProvider;
   manages PAltDataOutputStream;
   manages PStunAddrsRequest;
-  manages PTrackingDummyChannel;
+  manages PClassifierDummyChannel;
   manages PWebrtcProxyChannel;
 
 parent:
@@ -76,7 +74,6 @@ parent:
   async PHttpChannel(PBrowserOrId browser,
                      SerializedLoadContext loadContext,
                      HttpChannelCreationArgs args);
-  async PWyciwygChannel();
   async PFTPChannel(PBrowserOrId browser, SerializedLoadContext loadContext,
                     FTPChannelCreationArgs args);
 
@@ -91,10 +88,10 @@ parent:
   async PWebSocketEventListener(uint64_t aInnerWindowID);
 
   /* Predictor Methods */
-  async PredPredict(OptionalURIParams targetURI, OptionalURIParams sourceURI,
+  async PredPredict(URIParams? targetURI, URIParams? sourceURI,
                     uint32_t reason, OriginAttributes originAttributes,
                     bool hasVerifier);
-  async PredLearn(URIParams targetURI, OptionalURIParams sourceURI,
+  async PredLearn(URIParams targetURI, URIParams? sourceURI,
                   uint32_t reason, OriginAttributes originAttributes);
   async PredReset();
 
@@ -115,9 +112,9 @@ parent:
 
   async PChannelDiverter(ChannelDiverterArgs channel);
 
-  async PTrackingDummyChannel(nsIURI uri, nsIURI aTopWindowURI,
-                              nsresult aTopWindowURIResult,
-                              OptionalLoadInfoArgs loadInfo);
+  async PClassifierDummyChannel(nsIURI uri, nsIURI aTopWindowURI,
+                                nsresult aTopWindowURIResult,
+                                LoadInfoArgs? loadInfo);
 
   /**
    * These are called from the child with the results of the auth prompt.

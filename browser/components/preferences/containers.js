@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
+const {ContextualIdentityService} = ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
 
 /**
  * We want to set the window title immediately to prevent flickers.
@@ -36,6 +35,7 @@ let gContainersManager = {
     "pet",
     "tree",
     "chill",
+    "fence",
   ],
 
   colors: [
@@ -47,6 +47,7 @@ let gContainersManager = {
     "red",
     "pink",
     "purple",
+    "toolbar",
   ],
 
   onLoad() {
@@ -107,7 +108,7 @@ let gContainersManager = {
       document.l10n.setAttributes(iconSwatch, `containers-icon-${icon}`);
       let iconElement = document.createXULElement("hbox");
       iconElement.className = "userContext-icon";
-      iconElement.setAttribute("data-identity-icon", icon);
+      iconElement.classList.add("identity-icon-" + icon);
 
       iconSwatch.appendChild(iconElement);
       radiogroup.appendChild(iconSwatch);
@@ -135,8 +136,8 @@ let gContainersManager = {
       document.l10n.setAttributes(colorSwatch, `containers-color-${color}`);
       let iconElement = document.createXULElement("hbox");
       iconElement.className = "userContext-icon";
-      iconElement.setAttribute("data-identity-icon", "circle");
-      iconElement.setAttribute("data-identity-color", color);
+      iconElement.classList.add("identity-icon-circle");
+      iconElement.classList.add("identity-color-" + color);
 
       colorSwatch.appendChild(iconElement);
       radiogroup.appendChild(colorSwatch);

@@ -208,8 +208,9 @@ void nsTreeColumn::Invalidate(ErrorResult& aRv) {
 
 nsIContent* nsTreeColumn::GetParentObject() const { return mContent; }
 
-/* virtual */ JSObject* nsTreeColumn::WrapObject(
-    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+/* virtual */
+JSObject* nsTreeColumn::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
   return dom::TreeColumn_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -235,6 +236,22 @@ int32_t nsTreeColumn::GetWidth(mozilla::ErrorResult& aRv) {
   return nsPresContext::AppUnitsToIntCSSPixels(frame->GetRect().width);
 }
 
+already_AddRefed<nsTreeColumn> nsTreeColumn::GetPreviousColumn() {
+  nsIFrame* frame = GetFrame();
+  while (frame) {
+    frame = frame->GetPrevSibling();
+    if (frame && frame->GetContent()->IsElement()) {
+      RefPtr<nsTreeColumn> column =
+          mColumns->GetColumnFor(frame->GetContent()->AsElement());
+      if (column) {
+        return column.forget();
+      }
+    }
+  }
+
+  return nullptr;
+}
+
 nsTreeColumns::nsTreeColumns(nsTreeBodyFrame* aTree) : mTree(aTree) {}
 
 nsTreeColumns::~nsTreeColumns() { nsTreeColumns::InvalidateColumns(); }
@@ -254,8 +271,9 @@ nsIContent* nsTreeColumns::GetParentObject() const {
   return mTree ? mTree->GetBaseElement() : nullptr;
 }
 
-/* virtual */ JSObject* nsTreeColumns::WrapObject(
-    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+/* virtual */
+JSObject* nsTreeColumns::WrapObject(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
   return dom::TreeColumns_Binding::Wrap(aCx, this, aGivenProto);
 }
 

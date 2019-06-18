@@ -5,7 +5,7 @@
 // This module provides a facility for disconnecting Sync and FxA, optionally
 // sanitizing profile data as part of the process.
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
@@ -14,6 +14,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
+  Utils: "resource://services-sync/util.js",
 });
 
 XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
@@ -157,6 +158,15 @@ this.SyncDisconnectInternal = {
     // function that waits for the sync lock - it will immediately resolve
     // if the abort controller is aborted.
     let log = Log.repository.getLogger("Sync.Service");
+
+    // If the master-password is locked then we will fail to fully sanitize,
+    // so prompt for that now. If canceled, we just abort now.
+    log.info("checking master-password state");
+    if (!Utils.ensureMPUnlocked()) {
+      log.warn("The master-password needs to be unlocked to fully disconnect from sync");
+      return;
+    }
+
     log.info("waiting for any existing syncs to complete");
     let locked = await this.promiseNotSyncing(abortController);
 
@@ -174,7 +184,6 @@ this.SyncDisconnectInternal = {
     if (sanitizeBrowserData) {
       await this.doSanitizeBrowserData();
     }
-
   },
 
   async disconnect(options) {

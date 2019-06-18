@@ -45,6 +45,7 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/net/NeckoChannelParams.h"
 
 #include "js/Conversions.h"
 #include "js/TypeDecls.h"
@@ -135,7 +136,8 @@ void FetchEvent::PostInit(
   mScriptSpec.Assign(aScriptSpec);
 }
 
-/*static*/ already_AddRefed<FetchEvent> FetchEvent::Constructor(
+/*static*/
+already_AddRefed<FetchEvent> FetchEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
     const FetchEventInit& aOptions, ErrorResult& aRv) {
   RefPtr<EventTarget> owner = do_QueryObject(aGlobal.GetAsSupports());
@@ -272,9 +274,9 @@ class StartResponse final : public Runnable {
     nsresult rv = mChannel->GetChannel(getter_AddRefs(underlyingChannel));
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ENSURE_TRUE(underlyingChannel, NS_ERROR_UNEXPECTED);
-    nsCOMPtr<nsILoadInfo> loadInfo = underlyingChannel->GetLoadInfo();
+    nsCOMPtr<nsILoadInfo> loadInfo = underlyingChannel->LoadInfo();
 
-    if (!loadInfo || !CSPPermitsResponse(loadInfo)) {
+    if (!CSPPermitsResponse(loadInfo)) {
       mChannel->CancelInterception(NS_ERROR_CONTENT_BLOCKED);
       return NS_OK;
     }
@@ -319,7 +321,7 @@ class StartResponse final : public Runnable {
         !outerChannel->PreferredAlternativeDataTypes().IsEmpty()) {
       // TODO: handle multiple types properly.
       preferredAltDataType.Assign(
-          mozilla::Get<0>(outerChannel->PreferredAlternativeDataTypes()[0]));
+          outerChannel->PreferredAlternativeDataTypes()[0].type());
     }
 
     // Get the alternative data type saved in the InternalResponse
@@ -1171,20 +1173,18 @@ void ExtendableMessageEvent::GetSource(
   }
 }
 
-/* static */ already_AddRefed<ExtendableMessageEvent>
-ExtendableMessageEvent::Constructor(const GlobalObject& aGlobal,
-                                    const nsAString& aType,
-                                    const ExtendableMessageEventInit& aOptions,
-                                    ErrorResult& aRv) {
+/* static */
+already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aType,
+    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   return Constructor(t, aType, aOptions, aRv);
 }
 
-/* static */ already_AddRefed<ExtendableMessageEvent>
-ExtendableMessageEvent::Constructor(mozilla::dom::EventTarget* aEventTarget,
-                                    const nsAString& aType,
-                                    const ExtendableMessageEventInit& aOptions,
-                                    ErrorResult& aRv) {
+/* static */
+already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
+    mozilla::dom::EventTarget* aEventTarget, const nsAString& aType,
+    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
   RefPtr<ExtendableMessageEvent> event =
       new ExtendableMessageEvent(aEventTarget);
 

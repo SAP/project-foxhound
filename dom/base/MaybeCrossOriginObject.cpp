@@ -27,8 +27,8 @@ namespace mozilla {
 namespace dom {
 
 /* static */
-bool MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(
-    JSContext* cx, JS::Handle<JSObject*> obj) {
+bool MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(JSContext* cx,
+                                                              JSObject* obj) {
   MOZ_ASSERT(!js::IsCrossCompartmentWrapper(obj));
   // WindowProxy and Window must always be same-Realm, so we can do
   // our IsPlatformObjectSameOrigin check against either one.  But verify that
@@ -41,7 +41,8 @@ bool MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(
 
   BasePrincipal* subjectPrincipal =
       BasePrincipal::Cast(nsContentUtils::SubjectPrincipal(cx));
-  nsIPrincipal* objectPrincipal = nsContentUtils::ObjectPrincipal(obj);
+  BasePrincipal* objectPrincipal =
+      BasePrincipal::Cast(nsContentUtils::ObjectPrincipal(obj));
 
   // The spec effectively has an EqualsConsideringDomain check here,
   // because the spec has no concept of asymmetric security
@@ -53,11 +54,25 @@ bool MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(
   // SubsumesConsideringDomain give the same results and use
   // EqualsConsideringDomain for the check we actually do, since it's
   // stricter and more closely matches the spec.
+  //
+  // That said, if the (not very well named)
+  // OriginAttributes::IsRestrictOpenerAccessForFPI() method returns
+  // false, we want to use FastSubsumesConsideringDomainIgnoringFPD
+  // instead of FastEqualsConsideringDomain, because in that case we
+  // still want to treat things which are in different first-party
+  // contexts as same-origin.
   MOZ_ASSERT(
       subjectPrincipal->FastEqualsConsideringDomain(objectPrincipal) ==
           subjectPrincipal->FastSubsumesConsideringDomain(objectPrincipal),
       "Why are we in an asymmetric case here?");
-  return subjectPrincipal->FastEqualsConsideringDomain(objectPrincipal);
+  if (OriginAttributes::IsRestrictOpenerAccessForFPI()) {
+    return subjectPrincipal->FastEqualsConsideringDomain(objectPrincipal);
+  }
+
+  return subjectPrincipal->FastSubsumesConsideringDomainIgnoringFPD(
+             objectPrincipal) &&
+         objectPrincipal->FastSubsumesConsideringDomainIgnoringFPD(
+             subjectPrincipal);
 }
 
 bool MaybeCrossOriginObjectMixins::CrossOriginGetOwnPropertyHelper(
@@ -420,14 +435,50 @@ bool MaybeCrossOriginObject<Base>::defineProperty(
 }
 
 template <typename Base>
-JSObject* MaybeCrossOriginObject<Base>::enumerate(
-    JSContext* cx, JS::Handle<JSObject*> proxy) const {
-  // We want to avoid any possible magic here and just do the BaseProxyHandler
-  // thing of using our property keys to enumerate.
-  //
-  // Note that we do not need to enter the Realm of "proxy" here, nor do we want
-  // to: if this is a cross-origin access we want to handle it appropriately.
-  return js::BaseProxyHandler::enumerate(cx, proxy);
+bool MaybeCrossOriginObject<Base>::enumerate(JSContext* cx,
+                                             JS::Handle<JSObject*> proxy,
+                                             JS::AutoIdVector& props) const {
+  // Just get the property keys from ourselves, in whatever Realm we happen to
+  // be in. It's important to not enter the Realm of "proxy" here, because that
+  // would affect the list of keys we claim to have. We wrap the proxy in the
+  // current compartment just to be safe; it doesn't affect behavior as far as
+  // CrossOriginObjectWrapper and MaybeCrossOriginObject are concerned.
+  JS::Rooted<JSObject*> self(cx, proxy);
+  if (!MaybeWrapObject(cx, &self)) {
+    return false;
+  }
+
+  return js::GetPropertyKeys(cx, self, 0, &props);
+}
+
+template <typename Base>
+bool MaybeCrossOriginObject<Base>::hasInstance(JSContext* cx,
+                                               JS::Handle<JSObject*> proxy,
+                                               JS::MutableHandle<JS::Value> v,
+                                               bool* bp) const {
+  if (!IsPlatformObjectSameOrigin(cx, proxy)) {
+    // In the cross-origin case we never have @@hasInstance, and we're never
+    // callable, so just go ahead and report an error.  If we enter the realm of
+    // "proxy" to do that, our caller won't be able to do anything with the
+    // exception, so instead let's wrap "proxy" into our realm.  We definitely
+    // do NOT want to call JS::InstanceofOperator here after entering "proxy's"
+    // realm, because that would do the wrong thing with @@hasInstance on the
+    // object by seeing any such definitions when we should not.
+    JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*proxy));
+    if (!MaybeWrapValue(cx, &val)) {
+      return false;
+    }
+    return js::ReportIsNotFunction(cx, val);
+  }
+
+  // Safe to enter the realm of "proxy" and do the normal thing of looking up
+  // @@hasInstance, etc.
+  JSAutoRealm ar(cx, proxy);
+  JS::Rooted<JS::Value> val(cx, v);
+  if (!MaybeWrapValue(cx, &val)) {
+    return false;
+  }
+  return JS::InstanceofOperator(cx, proxy, val, bp);
 }
 
 // Force instantiations of the out-of-line template methods we need.

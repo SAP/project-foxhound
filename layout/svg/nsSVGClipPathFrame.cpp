@@ -28,7 +28,8 @@ using namespace mozilla::image;
 
 nsIFrame* NS_NewSVGClipPathFrame(nsIPresShell* aPresShell,
                                  ComputedStyle* aStyle) {
-  return new (aPresShell) nsSVGClipPathFrame(aStyle);
+  return new (aPresShell)
+      nsSVGClipPathFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGClipPathFrame)
@@ -89,8 +90,8 @@ already_AddRefed<DrawTarget> nsSVGClipPathFrame::CreateClipMask(
   }
 
   DrawTarget* referenceDT = aReferenceContext.GetDrawTarget();
-  RefPtr<DrawTarget> maskDT =
-      referenceDT->CreateSimilarDrawTarget(bounds.Size(), SurfaceFormat::A8);
+  RefPtr<DrawTarget> maskDT = referenceDT->CreateClippedDrawTarget(
+      bounds.Size(), Matrix::Translation(bounds.TopLeft()), SurfaceFormat::A8);
 
   aOffset = bounds.TopLeft();
 

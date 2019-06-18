@@ -94,7 +94,8 @@ VertexInfo write_vertex(RectWithSize instance_rect,
                         float z,
                         Transform transform,
                         PictureTask task,
-                        RectWithSize snap_rect) {
+                        RectWithSize snap_rect,
+                        bool snap_to_primitive) {
 
     // Select the corner of the local rect that we are processing.
     vec2 local_pos = instance_rect.p0 + instance_rect.size * aPosition.xy;
@@ -102,19 +103,30 @@ VertexInfo write_vertex(RectWithSize instance_rect,
     // Clamp to the two local clip rects.
     vec2 clamped_local_pos = clamp_rect(local_pos, local_clip_rect);
 
+    RectWithSize visible_rect;
+    if (snap_to_primitive) {
+        // We are producing a picture. The snap rect has already taken into
+        // account the clipping we wish to consider for snapping purposes.
+        visible_rect = snap_rect;
+    } else {
+        // Compute the visible rect to snap against. This ensures segments along
+        // the edges are snapped consistently with other nearby primitives.
+        visible_rect = intersect_rects(local_clip_rect, snap_rect);
+    }
+
     /// Compute the snapping offset.
     vec2 snap_offset = compute_snap_offset(
         clamped_local_pos,
         transform.m,
-        snap_rect,
-        task.common_data.device_pixel_scale
+        visible_rect,
+        task.device_pixel_scale
     );
 
     // Transform the current vertex to world space.
     vec4 world_pos = transform.m * vec4(clamped_local_pos, 0.0, 1.0);
 
     // Convert the world positions to device pixel space.
-    vec2 device_pos = world_pos.xy * task.common_data.device_pixel_scale;
+    vec2 device_pos = world_pos.xy * task.device_pixel_scale;
 
     // Apply offsets for the render task to get correct screen location.
     vec2 final_offset = snap_offset - task.content_origin + task.common_data.task_rect.p0;
@@ -191,7 +203,7 @@ VertexInfo write_transform_vertex(RectWithSize local_segment_rect,
     // Transform the current vertex to the world cpace.
     vec4 world_pos = transform.m * vec4(local_pos, 0.0, 1.0);
     vec4 final_pos = vec4(
-        world_pos.xy * task.common_data.device_pixel_scale + task_offset * world_pos.w,
+        world_pos.xy * task.device_pixel_scale + task_offset * world_pos.w,
         z * world_pos.w,
         world_pos.w
     );
@@ -214,13 +226,23 @@ VertexInfo write_transform_vertex(RectWithSize local_segment_rect,
 }
 
 void write_clip(vec4 world_pos, vec2 snap_offset, ClipArea area) {
-    vec2 uv = world_pos.xy * area.common_data.device_pixel_scale +
+    vec2 uv = world_pos.xy * area.device_pixel_scale +
         world_pos.w * (snap_offset + area.common_data.task_rect.p0 - area.screen_origin);
     vClipMaskUvBounds = vec4(
         area.common_data.task_rect.p0,
         area.common_data.task_rect.p0 + area.common_data.task_rect.size
     );
     vClipMaskUv = vec4(uv, area.common_data.texture_layer_index, world_pos.w);
+}
+
+// Read the exta image data containing the homogeneous screen space coordinates
+// of the corners, interpolate between them, and return real screen space UV.
+vec2 get_image_quad_uv(int address, vec2 f) {
+    ImageResourceExtra extra_data = fetch_image_resource_extra(address);
+    vec4 x = mix(extra_data.st_tl, extra_data.st_tr, f.x);
+    vec4 y = mix(extra_data.st_bl, extra_data.st_br, f.x);
+    vec4 z = mix(x, y, f.y);
+    return z.xy / z.w;
 }
 #endif //WR_VERTEX_SHADER
 

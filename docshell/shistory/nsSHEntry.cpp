@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "nsIContentSecurityPolicy.h"
 #include "nsDocShellEditorData.h"
 #include "nsDocShellLoadTypes.h"
 #include "nsIContentViewer.h"
@@ -20,6 +21,7 @@
 #include "nsSHistory.h"
 
 #include "mozilla/net/ReferrerPolicy.h"
+#include "nsIReferrerInfo.h"
 
 namespace dom = mozilla::dom;
 
@@ -27,7 +29,6 @@ static uint32_t gEntryID = 0;
 
 nsSHEntry::nsSHEntry()
     : mShared(new nsSHEntryShared()),
-      mReferrerPolicy(mozilla::net::RP_Unset),
       mLoadType(0),
       mID(gEntryID++),
       mScrollPositionX(0),
@@ -45,8 +46,7 @@ nsSHEntry::nsSHEntry(const nsSHEntry& aOther)
       mURI(aOther.mURI),
       mOriginalURI(aOther.mOriginalURI),
       mResultPrincipalURI(aOther.mResultPrincipalURI),
-      mReferrerURI(aOther.mReferrerURI),
-      mReferrerPolicy(aOther.mReferrerPolicy),
+      mReferrerInfo(aOther.mReferrerInfo),
       mTitle(aOther.mTitle),
       mPostData(aOther.mPostData),
       mLoadType(0)  // XXX why not copy?
@@ -156,27 +156,15 @@ nsSHEntry::SetLoadReplace(bool aLoadReplace) {
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetReferrerURI(nsIURI** aReferrerURI) {
-  *aReferrerURI = mReferrerURI;
-  NS_IF_ADDREF(*aReferrerURI);
+nsSHEntry::GetReferrerInfo(nsIReferrerInfo** aReferrerInfo) {
+  *aReferrerInfo = mReferrerInfo;
+  NS_IF_ADDREF(*aReferrerInfo);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetReferrerURI(nsIURI* aReferrerURI) {
-  mReferrerURI = aReferrerURI;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSHEntry::GetReferrerPolicy(uint32_t* aReferrerPolicy) {
-  *aReferrerPolicy = mReferrerPolicy;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSHEntry::SetReferrerPolicy(uint32_t aReferrerPolicy) {
-  mReferrerPolicy = aReferrerPolicy;
+nsSHEntry::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
+  mReferrerInfo = aReferrerInfo;
   return NS_OK;
 }
 
@@ -397,7 +385,8 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
                   nsILayoutHistoryState* aLayoutHistoryState,
                   uint32_t aCacheKey, const nsACString& aContentType,
                   nsIPrincipal* aTriggeringPrincipal,
-                  nsIPrincipal* aPrincipalToInherit, const nsID& aDocShellID,
+                  nsIPrincipal* aPrincipalToInherit,
+                  nsIContentSecurityPolicy* aCsp, const nsID& aDocShellID,
                   bool aDynamicCreation) {
   MOZ_ASSERT(
       aTriggeringPrincipal,
@@ -414,6 +403,7 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
   mShared->mContentType = aContentType;
   mShared->mTriggeringPrincipal = aTriggeringPrincipal;
   mShared->mPrincipalToInherit = aPrincipalToInherit;
+  mShared->mCsp = aCsp;
   mShared->mDocShellID = aDocShellID;
   mShared->mDynamicallyCreated = aDynamicCreation;
 
@@ -505,6 +495,18 @@ nsSHEntry::GetPrincipalToInherit(nsIPrincipal** aPrincipalToInherit) {
 NS_IMETHODIMP
 nsSHEntry::SetPrincipalToInherit(nsIPrincipal* aPrincipalToInherit) {
   mShared->mPrincipalToInherit = aPrincipalToInherit;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::GetCsp(nsIContentSecurityPolicy** aCsp) {
+  NS_IF_ADDREF(*aCsp = mShared->mCsp);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetCsp(nsIContentSecurityPolicy* aCsp) {
+  mShared->mCsp = aCsp;
   return NS_OK;
 }
 

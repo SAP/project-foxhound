@@ -3,8 +3,6 @@
 
 'use strict';
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const {PushDB, PushService, PushServiceHttp2} = serviceExports;
 
 var prefs;
@@ -26,10 +24,7 @@ function run_test() {
   prefs.setBoolPref("dom.push.enabled", true);
   prefs.setBoolPref("dom.push.connection.enabled", true);
 
-  addCertOverride("localhost", serverPort,
-                  Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-                  Ci.nsICertOverrideService.ERROR_MISMATCH |
-                  Ci.nsICertOverrideService.ERROR_TIME);
+  trustHttp2CA();
 
   prefs.setIntPref("network.http.speculative-parallel-limit", oldPref);
 

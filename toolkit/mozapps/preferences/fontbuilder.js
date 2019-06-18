@@ -19,16 +19,17 @@ var FontBuilder = {
   _allFonts: null,
   _langGroupSupported: false,
   async buildFontList(aLanguage, aFontType, aMenuList) {
-    // Reset the list
-    while (aMenuList.hasChildNodes())
-      aMenuList.firstChild.remove();
+    // Remove the original <menupopup>
+    if (aMenuList.menupopup) {
+      aMenuList.menupopup.remove();
+    }
 
     let defaultFont = null;
     // Load Font Lists
     let fonts = await this.enumerator.EnumerateFontsAsync(aLanguage, aFontType);
-    if (fonts.length > 0)
+    if (fonts.length > 0) {
       defaultFont = this.enumerator.getDefaultFont(aLanguage, aFontType);
-    else {
+    } else {
       fonts = await this.enumerator.EnumerateFontsAsync(aLanguage, "");
       if (fonts.length > 0)
         defaultFont = this.enumerator.getDefaultFont(aLanguage, "");

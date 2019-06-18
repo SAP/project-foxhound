@@ -22,8 +22,9 @@
 namespace mozilla {
 namespace gl {
 
-/*static*/ void SharedSurface::ProdCopy(SharedSurface* src, SharedSurface* dest,
-                                        SurfaceFactory* factory) {
+/*static*/
+void SharedSurface::ProdCopy(SharedSurface* src, SharedSurface* dest,
+                             SurfaceFactory* factory) {
   GLContext* gl = src->mGL;
 
   // If `src` begins locked, it must end locked, though we may
@@ -334,8 +335,9 @@ void SurfaceFactory::StopRecycling(layers::SharedSurfaceTextureClient* tc) {
   mozilla::Unused << didErase;
 }
 
-/*static*/ void SurfaceFactory::RecycleCallback(layers::TextureClient* rawTC,
-                                                void* rawFactory) {
+/*static*/
+void SurfaceFactory::RecycleCallback(layers::TextureClient* rawTC,
+                                     void* rawFactory) {
   RefPtr<layers::SharedSurfaceTextureClient> tc;
   tc = static_cast<layers::SharedSurfaceTextureClient*>(rawTC);
   SurfaceFactory* factory = static_cast<SurfaceFactory*>(rawFactory);
@@ -506,14 +508,9 @@ bool ReadbackSharedSurface(SharedSurface* src, gfx::DrawTarget* dst) {
 
     // ReadPixels from the current FB into lockedBits.
     {
-      size_t alignment = 8;
-      if (dstStride % 4 == 0) alignment = 4;
-
       ScopedPackState scopedPackState(gl);
-      if (alignment != 4) {
-        gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, alignment);
-      }
-
+      bool handled = scopedPackState.SetForWidthAndStrideRGBA(width, dstStride);
+      MOZ_RELEASE_ASSERT(handled, "Unhandled stride");
       gl->raw_fReadPixels(0, 0, width, height, readGLFormat, readType,
                           dstBytes);
     }

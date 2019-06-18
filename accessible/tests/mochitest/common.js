@@ -16,6 +16,8 @@ const nsIAccessibleVirtualCursorChangeEvent =
   Ci.nsIAccessibleVirtualCursorChangeEvent;
 const nsIAccessibleObjectAttributeChangedEvent =
   Ci.nsIAccessibleObjectAttributeChangedEvent;
+const nsIAccessibleAnnouncementEvent =
+  Ci.nsIAccessibleAnnouncementEvent;
 
 const nsIAccessibleStates = Ci.nsIAccessibleStates;
 const nsIAccessibleRole = Ci.nsIAccessibleRole;
@@ -87,7 +89,7 @@ const MAX_TRIM_LENGTH = 100;
 /**
  * Services to determine if e10s is enabled.
  */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * nsIAccessibilityService service.
@@ -155,8 +157,10 @@ function addA11yLoadEvent(aFunc, aWindow) {
         var accDoc = getAccessible(targetDocument);
         var state = {};
         accDoc.getState(state, {});
-        if (state.value & STATE_BUSY)
-          return waitForDocLoad();
+        if (state.value & STATE_BUSY) {
+          waitForDocLoad();
+          return;
+        }
 
         window.setTimeout(aFunc, 0);
       },
@@ -256,10 +260,8 @@ function getAccessible(aAccOrElmOrID, aInterfaces, aElmObj, aDoNotFailIf) {
 
   if (aAccOrElmOrID instanceof nsIAccessible) {
     try { elm = aAccOrElmOrID.DOMNode; } catch (e) { }
-
   } else if (Node.isInstance(aAccOrElmOrID)) {
     elm = aAccOrElmOrID;
-
   } else {
     elm = document.getElementById(aAccOrElmOrID);
     if (!elm) {
@@ -388,6 +390,7 @@ const kSkipTreeFullCheck = 1;
  *                                      fields
  * @param aFlags          [in, optional] flags, see constants above
  */
+// eslint-disable-next-line complexity
 function testAccessibleTree(aAccOrElmOrID, aAccTree, aFlags) {
   var acc = getAccessible(aAccOrElmOrID);
   if (!acc)
@@ -503,7 +506,6 @@ function testAccessibleTree(aAccOrElmOrID, aAccTree, aFlags) {
           }
           info("Matching " + prettyName(accTree) + " and " + prettyName(acc) +
                " child at index " + i + " : " + prettyName(accChild));
-
         } catch (e) {
           ok(false, prettyName(accTree) + " is expected to have a child at index " + i +
              " : " + prettyName(testChild) + ", original tested: " +
@@ -746,6 +748,7 @@ function getAccessibleDOMNodeID(accessible) {
     // property corresponds to the "id" of its body element.
     return accessible.id;
   } catch (e) { /* This will fail if accessible is not a proxy. */ }
+  return null;
 }
 
 /**

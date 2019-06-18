@@ -17,6 +17,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ClientManagerService.h"
 #include "mozilla/dom/PBackgroundLSDatabaseParent.h"
 #include "mozilla/dom/PBackgroundLSObserverParent.h"
 #include "mozilla/dom/PBackgroundLSRequestParent.h"
@@ -30,7 +31,9 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/dom/quota/UsageInfo.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsClassHashtable.h"
@@ -179,9 +182,15 @@ const uint32_t kFlushTimeoutMs = 5000;
 
 const char kPrivateBrowsingObserverTopic[] = "last-pb-context-exited";
 
+const uint32_t kDefaultNextGen = false;
 const uint32_t kDefaultOriginLimitKB = 5 * 1024;
 const uint32_t kDefaultShadowWrites = true;
 const uint32_t kDefaultSnapshotPrefill = 4096;
+const uint32_t kDefaultClientValidation = true;
+/**
+ *
+ */
+const char kNextGenPref[] = "dom.storage.next_gen";
 /**
  * LocalStorage data limit as determined by summing up the lengths of all string
  * keys and values.  This is consistent with the legacy implementation and other
@@ -206,6 +215,8 @@ const char kShadowWritesPref[] = "dom.storage.shadow_writes";
  * sent.  See `Snapshot`.
  */
 const char kSnapshotPrefillPref[] = "dom.storage.snapshot_prefill";
+
+const char kClientValidationPref[] = "dom.storage.client_validation";
 
 /**
  * The amount of time a PreparedDatastore instance should stick around after a
@@ -2130,6 +2141,7 @@ class LSRequestBase : public DatastoreOperationBase,
 
   nsCOMPtr<nsIEventTarget> mMainEventTarget;
   State mState;
+  bool mWaitingForFinish;
 
  public:
   explicit LSRequestBase(nsIEventTarget* aMainEventTarget);
@@ -2149,6 +2161,8 @@ class LSRequestBase : public DatastoreOperationBase,
 
  private:
   void SendReadyMessage();
+
+  void Finish();
 
   void SendResults();
 
@@ -2218,7 +2232,6 @@ class PrepareDatastoreOp : public LSRequestBase, public OpenDirectoryListener {
   };
 
   nsCOMPtr<nsIEventTarget> mMainEventTarget;
-  RefPtr<ContentParent> mContentParent;
   RefPtr<PrepareDatastoreOp> mDelayedOp;
   RefPtr<DirectoryLock> mDirectoryLock;
   RefPtr<Connection> mConnection;
@@ -2227,7 +2240,7 @@ class PrepareDatastoreOp : public LSRequestBase, public OpenDirectoryListener {
   LoadDataOp* mLoadDataOp;
   nsDataHashtable<nsStringHashKey, nsString> mValues;
   nsTArray<LSItemInfo> mOrderedItems;
-  const LSRequestPrepareDatastoreParams mParams;
+  const LSRequestCommonParams mParams;
   Maybe<ContentParentId> mContentParentId;
   nsCString mSuffix;
   nsCString mGroup;
@@ -2240,6 +2253,7 @@ class PrepareDatastoreOp : public LSRequestBase, public OpenDirectoryListener {
   int64_t mSizeOfKeys;
   int64_t mSizeOfItems;
   NestedState mNestedState;
+  const bool mCreateIfNotExists;
   bool mDatabaseNotAvailable;
   bool mRequestedDirectoryLock;
   bool mInvalidated;
@@ -2250,8 +2264,8 @@ class PrepareDatastoreOp : public LSRequestBase, public OpenDirectoryListener {
 
  public:
   PrepareDatastoreOp(nsIEventTarget* aMainEventTarget,
-                     already_AddRefed<ContentParent> aContentParent,
-                     const LSRequestParams& aParams);
+                     const LSRequestParams& aParams,
+                     const Maybe<ContentParentId>& aContentParentId);
 
   bool OriginIsKnown() const {
     AssertIsOnOwningThread();
@@ -2489,9 +2503,10 @@ class ArchivedOriginScope {
   DataType mData;
 
  public:
-  static ArchivedOriginScope* CreateFromOrigin(nsIPrincipal* aPrincipal);
+  static ArchivedOriginScope* CreateFromOrigin(
+      const nsACString& aOriginAttrSuffix, const nsACString& aOriginKey);
 
-  static ArchivedOriginScope* CreateFromPrefix(nsIPrincipal* aPrincipal);
+  static ArchivedOriginScope* CreateFromPrefix(const nsACString& aOriginKey);
 
   static ArchivedOriginScope* CreateFromPattern(
       const OriginAttributesPattern& aPattern);
@@ -2546,50 +2561,19 @@ class ArchivedOriginScope {
   explicit ArchivedOriginScope(const Null&& aNull) : mData(aNull) {}
 };
 
-class ArchivedOriginScopeHelper : public Runnable {
-  Monitor mMonitor;
-  const OriginAttributes mAttrs;
-  const nsCString mSpec;
-  nsAutoPtr<ArchivedOriginScope> mArchivedOriginScope;
-  nsresult mMainThreadResultCode;
-  bool mWaiting;
-  bool mPrefix;
-
- public:
-  ArchivedOriginScopeHelper(const nsACString& aSpec,
-                            const OriginAttributes& aAttrs, bool aPrefix)
-      : Runnable("dom::localstorage::ArchivedOriginScopeHelper"),
-        mMonitor("ArchivedOriginScopeHelper::mMonitor"),
-        mAttrs(aAttrs),
-        mSpec(aSpec),
-        mMainThreadResultCode(NS_OK),
-        mWaiting(true),
-        mPrefix(aPrefix) {
-    AssertIsOnIOThread();
-  }
-
-  nsresult BlockAndReturnArchivedOriginScope(
-      nsAutoPtr<ArchivedOriginScope>& aArchivedOriginScope);
-
- private:
-  nsresult RunOnMainThread();
-
-  NS_DECL_NSIRUNNABLE
-};
-
 class QuotaClient final : public mozilla::dom::quota::Client {
-  class ClearPrivateBrowsingRunnable;
   class Observer;
   class MatchFunction;
 
   static QuotaClient* sInstance;
-  static bool sObserversRegistered;
 
   Mutex mShadowDatabaseMutex;
   bool mShutdownRequested;
 
  public:
   QuotaClient();
+
+  static nsresult Initialize();
 
   static QuotaClient* GetInstance() {
     AssertIsOnBackgroundThread();
@@ -2612,8 +2596,6 @@ class QuotaClient final : public mozilla::dom::quota::Client {
 
     return QuotaManager::IsShuttingDown();
   }
-
-  static nsresult RegisterObservers(nsIEventTarget* aBackgroundEventTarget);
 
   mozilla::Mutex& ShadowDatabaseMutex() {
     MOZ_ASSERT(IsOnIOThread() || IsOnConnectionThread());
@@ -2673,33 +2655,20 @@ class QuotaClient final : public mozilla::dom::quota::Client {
                          ArchivedOriginScope* aArchivedOriginScope) const;
 };
 
-class QuotaClient::ClearPrivateBrowsingRunnable final : public Runnable {
- public:
-  ClearPrivateBrowsingRunnable()
-      : Runnable("mozilla::dom::ClearPrivateBrowsingRunnable") {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
-
- private:
-  ~ClearPrivateBrowsingRunnable() = default;
-
-  NS_DECL_NSIRUNNABLE
-};
-
 class QuotaClient::Observer final : public nsIObserver {
-  nsCOMPtr<nsIEventTarget> mBackgroundEventTarget;
-
  public:
-  explicit Observer(nsIEventTarget* aBackgroundEventTarget)
-      : mBackgroundEventTarget(aBackgroundEventTarget) {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
-
-  NS_DECL_ISUPPORTS
+  static nsresult Initialize();
 
  private:
+  Observer() { MOZ_ASSERT(NS_IsMainThread()); }
+
   ~Observer() { MOZ_ASSERT(NS_IsMainThread()); }
 
+  nsresult Init();
+
+  nsresult Shutdown();
+
+  NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 };
 
@@ -2720,6 +2689,10 @@ class QuotaClient::MatchFunction final : public mozIStorageFunction {
 /*******************************************************************************
  * Globals
  ******************************************************************************/
+
+#ifdef DEBUG
+bool gLocalStorageInitialized = false;
+#endif
 
 typedef nsTArray<PrepareDatastoreOp*> PrepareDatastoreOpArray;
 
@@ -2753,9 +2726,11 @@ typedef nsClassHashtable<nsCStringHashKey, nsTArray<Observer*>>
 
 StaticAutoPtr<ObserverHashtable> gObservers;
 
+Atomic<bool> gNextGen(kDefaultNextGen);
 Atomic<uint32_t, Relaxed> gOriginLimitKB(kDefaultOriginLimitKB);
 Atomic<bool> gShadowWrites(kDefaultShadowWrites);
 Atomic<int32_t, Relaxed> gSnapshotPrefill(kDefaultSnapshotPrefill);
+Atomic<bool> gClientValidation(kDefaultClientValidation);
 
 typedef nsDataHashtable<nsCStringHashKey, int64_t> UsageHashtable;
 
@@ -2942,11 +2917,63 @@ void SnapshotPrefillPrefChangedCallback(const char* aPrefName, void* aClosure) {
   gSnapshotPrefill = snapshotPrefill;
 }
 
+void ClientValidationPrefChangedCallback(const char* aPrefName,
+                                         void* aClosure) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPrefName, kClientValidationPref));
+  MOZ_ASSERT(!aClosure);
+
+  gClientValidation = Preferences::GetBool(aPrefName, kDefaultClientValidation);
+}
+
 }  // namespace
 
 /*******************************************************************************
  * Exported functions
  ******************************************************************************/
+
+void InitializeLocalStorage() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!gLocalStorageInitialized);
+
+  if (!QuotaManager::IsRunningGTests()) {
+    // This service has to be started on the main thread currently.
+    nsCOMPtr<mozIStorageService> ss;
+    if (NS_WARN_IF(!(ss = do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID)))) {
+      NS_WARNING("Failed to get storage service!");
+    }
+  }
+
+  if (NS_FAILED(QuotaClient::Initialize())) {
+    NS_WARNING("Failed to initialize quota client!");
+  }
+
+  if (NS_FAILED(Preferences::AddAtomicBoolVarCache(&gNextGen, kNextGenPref,
+                                                   kDefaultNextGen))) {
+    NS_WARNING("Unable to respond to next gen pref changes!");
+  }
+
+  if (NS_FAILED(Preferences::AddAtomicUintVarCache(
+          &gOriginLimitKB, kDefaultQuotaPref, kDefaultOriginLimitKB))) {
+    NS_WARNING("Unable to respond to default quota pref changes!");
+  }
+
+  Preferences::RegisterCallbackAndCall(ShadowWritesPrefChangedCallback,
+                                       kShadowWritesPref);
+
+  Preferences::RegisterCallbackAndCall(SnapshotPrefillPrefChangedCallback,
+                                       kSnapshotPrefillPref);
+
+  Preferences::RegisterCallbackAndCall(ClientValidationPrefChangedCallback,
+                                       kClientValidationPref);
+
+#ifdef DEBUG
+  gLocalStorageInitialized = true;
+#endif
+}
+
+bool GetCurrentNextGenPrefValue() { return gNextGen; }
 
 PBackgroundLSDatabaseParent* AllocPBackgroundLSDatabaseParent(
     const PrincipalInfo& aPrincipalInfo, const uint32_t& aPrivateBrowsingId,
@@ -3088,11 +3115,140 @@ bool DeallocPBackgroundLSObserverParent(PBackgroundLSObserverParent* aActor) {
   return true;
 }
 
+bool VerifyPrincipalInfo(const Maybe<ContentParentId>& aContentParentId,
+                         const PrincipalInfo& aPrincipalInfo,
+                         const Maybe<nsID>& aClientId) {
+  AssertIsOnBackgroundThread();
+
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(aPrincipalInfo))) {
+    ASSERT_UNLESS_FUZZING();
+    return false;
+  }
+
+  if (aClientId.isSome() && gClientValidation) {
+    RefPtr<ClientManagerService> svc = ClientManagerService::GetInstance();
+    if (svc &&
+        !svc->HasWindow(aContentParentId, aPrincipalInfo, aClientId.ref())) {
+      ASSERT_UNLESS_FUZZING();
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool VerifyOriginKey(const nsACString& aOriginKey,
+                     const PrincipalInfo& aPrincipalInfo) {
+  AssertIsOnBackgroundThread();
+
+  nsCString originAttrSuffix;
+  nsCString originKey;
+  nsresult rv = GenerateOriginKey2(aPrincipalInfo, originAttrSuffix, originKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    ASSERT_UNLESS_FUZZING();
+    return false;
+  }
+
+  if (NS_WARN_IF(originKey != aOriginKey)) {
+    LS_WARNING("originKey (%s) doesn't match passed one (%s)!", originKey.get(),
+               nsCString(aOriginKey).get());
+    ASSERT_UNLESS_FUZZING();
+    return false;
+  }
+
+  return true;
+}
+
+bool VerifyRequestParams(const Maybe<ContentParentId>& aContentParentId,
+                         const LSRequestParams& aParams) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != LSRequestParams::T__None);
+
+  switch (aParams.type()) {
+    case LSRequestParams::TLSRequestPreloadDatastoreParams: {
+      const LSRequestCommonParams& params =
+          aParams.get_LSRequestPreloadDatastoreParams().commonParams();
+
+      if (NS_WARN_IF(!VerifyPrincipalInfo(aContentParentId,
+                                          params.principalInfo(), Nothing()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      if (NS_WARN_IF(
+              !VerifyOriginKey(params.originKey(), params.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+      break;
+    }
+
+    case LSRequestParams::TLSRequestPrepareDatastoreParams: {
+      const LSRequestPrepareDatastoreParams& params =
+          aParams.get_LSRequestPrepareDatastoreParams();
+
+      const LSRequestCommonParams& commonParams = params.commonParams();
+
+      if (NS_WARN_IF(!VerifyPrincipalInfo(aContentParentId,
+                                          commonParams.principalInfo(),
+                                          params.clientId()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+
+      if (NS_WARN_IF(!VerifyOriginKey(commonParams.originKey(),
+                                      commonParams.principalInfo()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+      break;
+    }
+
+    case LSRequestParams::TLSRequestPrepareObserverParams: {
+      const LSRequestPrepareObserverParams& params =
+          aParams.get_LSRequestPrepareObserverParams();
+
+      if (NS_WARN_IF(!VerifyPrincipalInfo(
+              aContentParentId, params.principalInfo(), params.clientId()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+      break;
+    }
+
+    default:
+      MOZ_CRASH("Should never get here!");
+  }
+
+  return true;
+}
+
 PBackgroundLSRequestParent* AllocPBackgroundLSRequestParent(
     PBackgroundParent* aBackgroundActor, const LSRequestParams& aParams) {
   AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != LSRequestParams::T__None);
 
   if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread())) {
+    return nullptr;
+  }
+
+#ifdef DEBUG
+  // Always verify parameters in DEBUG builds!
+  bool trustParams = false;
+#else
+  bool trustParams = !BackgroundParent::IsOtherProcessActor(aBackgroundActor);
+#endif
+
+  Maybe<ContentParentId> contentParentId;
+
+  uint64_t childID = BackgroundParent::GetChildID(aBackgroundActor);
+  if (childID) {
+    contentParentId = Some(ContentParentId(childID));
+  }
+
+  if (!trustParams &&
+      NS_WARN_IF(!VerifyRequestParams(contentParentId, aParams))) {
+    ASSERT_UNLESS_FUZZING();
     return nullptr;
   }
 
@@ -3106,12 +3262,10 @@ PBackgroundLSRequestParent* AllocPBackgroundLSRequestParent(
   RefPtr<LSRequestBase> actor;
 
   switch (aParams.type()) {
+    case LSRequestParams::TLSRequestPreloadDatastoreParams:
     case LSRequestParams::TLSRequestPrepareDatastoreParams: {
-      RefPtr<ContentParent> contentParent =
-          BackgroundParent::GetContentParent(aBackgroundActor);
-
-      RefPtr<PrepareDatastoreOp> prepareDatastoreOp = new PrepareDatastoreOp(
-          mainEventTarget, contentParent.forget(), aParams);
+      RefPtr<PrepareDatastoreOp> prepareDatastoreOp =
+          new PrepareDatastoreOp(mainEventTarget, aParams, contentParentId);
 
       if (!gPrepareDatastoreOps) {
         gPrepareDatastoreOps = new PrepareDatastoreOpArray();
@@ -3166,12 +3320,59 @@ bool DeallocPBackgroundLSRequestParent(PBackgroundLSRequestParent* aActor) {
   return true;
 }
 
-PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
-    const LSSimpleRequestParams& aParams) {
+bool VerifyRequestParams(const Maybe<ContentParentId>& aContentParentId,
+                         const LSSimpleRequestParams& aParams) {
   AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != LSSimpleRequestParams::T__None);
+
+  switch (aParams.type()) {
+    case LSSimpleRequestParams::TLSSimpleRequestPreloadedParams: {
+      const LSSimpleRequestPreloadedParams& params =
+          aParams.get_LSSimpleRequestPreloadedParams();
+
+      if (NS_WARN_IF(!VerifyPrincipalInfo(aContentParentId,
+                                          params.principalInfo(), Nothing()))) {
+        ASSERT_UNLESS_FUZZING();
+        return false;
+      }
+      break;
+    }
+
+    default:
+      MOZ_CRASH("Should never get here!");
+  }
+
+  return true;
+}
+
+PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
+    PBackgroundParent* aBackgroundActor, const LSSimpleRequestParams& aParams) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aParams.type() != LSSimpleRequestParams::T__None);
 
   if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread())) {
     return nullptr;
+  }
+
+#ifdef DEBUG
+  // Always verify parameters in DEBUG builds!
+  bool trustParams = false;
+#else
+  bool trustParams = !BackgroundParent::IsOtherProcessActor(aBackgroundActor);
+#endif
+
+  if (!trustParams) {
+    Maybe<ContentParentId> contentParentId;
+
+    uint64_t childID = BackgroundParent::GetChildID(aBackgroundActor);
+    if (childID) {
+      contentParentId = Some(ContentParentId(childID));
+    }
+
+    if (NS_WARN_IF(!VerifyRequestParams(contentParentId, aParams))) {
+      ASSERT_UNLESS_FUZZING();
+      return nullptr;
+    }
   }
 
   RefPtr<LSSimpleRequestBase> actor;
@@ -3217,6 +3418,23 @@ bool DeallocPBackgroundLSSimpleRequestParent(
   // Transfer ownership back from IPDL.
   RefPtr<LSSimpleRequestBase> actor =
       dont_AddRef(static_cast<LSSimpleRequestBase*>(aActor));
+
+  return true;
+}
+
+bool RecvLSClearPrivateBrowsing() {
+  AssertIsOnBackgroundThread();
+
+  if (gDatastores) {
+    for (auto iter = gDatastores->ConstIter(); !iter.Done(); iter.Next()) {
+      Datastore* datastore = iter.Data();
+      MOZ_ASSERT(datastore);
+
+      if (datastore->PrivateBrowsingId()) {
+        datastore->PrivateBrowsingClear();
+      }
+    }
+  }
 
   return true;
 }
@@ -3658,12 +3876,12 @@ void ConnectionDatastoreOperationBase::RunOnOwningThread() {
 
   if (!MayProceed()) {
     MaybeSetFailureCode(NS_ERROR_FAILURE);
+  }
+
+  if (NS_SUCCEEDED(ResultCode())) {
+    OnSuccess();
   } else {
-    if (NS_SUCCEEDED(ResultCode())) {
-      OnSuccess();
-    } else {
-      OnFailure(ResultCode());
-    }
+    OnFailure(ResultCode());
   }
 
   Cleanup();
@@ -5391,7 +5609,9 @@ mozilla::ipc::IPCResult Observer::RecvDeleteMe() {
  ******************************************************************************/
 
 LSRequestBase::LSRequestBase(nsIEventTarget* aMainEventTarget)
-    : mMainEventTarget(aMainEventTarget), mState(State::Initial) {}
+    : mMainEventTarget(aMainEventTarget),
+      mState(State::Initial),
+      mWaitingForFinish(false) {}
 
 LSRequestBase::~LSRequestBase() {
   MOZ_ASSERT_IF(MayProceedOnNonOwningThread(),
@@ -5403,11 +5623,7 @@ void LSRequestBase::Dispatch() {
 
   mState = State::Opening;
 
-  if (mMainEventTarget) {
-    MOZ_ALWAYS_SUCCEEDS(mMainEventTarget->Dispatch(this, NS_DISPATCH_NORMAL));
-  } else {
-    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
-  }
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(this));
 }
 
 nsresult LSRequestBase::NestedRun() { return NS_OK; }
@@ -5425,11 +5641,28 @@ void LSRequestBase::SendReadyMessage() {
     Unused << SendReady();
 
     mState = State::WaitingForFinish;
+
+    mWaitingForFinish = true;
   } else {
     Cleanup();
 
     mState = State::Completed;
   }
+}
+
+void LSRequestBase::Finish() {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState == State::WaitingForFinish);
+
+  mState = State::SendingResults;
+
+  mWaitingForFinish = false;
+
+  // This LSRequestBase can only be held alive by the IPDL. Run() can end up
+  // with clearing that last reference. So we need to add a self reference here.
+  RefPtr<LSRequestBase> kungFuDeathGrip = this;
+
+  MOZ_ALWAYS_SUCCEEDS(this->Run());
 }
 
 void LSRequestBase::SendResults() {
@@ -5505,6 +5738,23 @@ void LSRequestBase::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnOwningThread();
 
   NoteComplete();
+
+  // Assume ActorDestroy can happen at any time, so we can't probe the current
+  // state since mState can be modified on any thread (only one thread at a time
+  // based on the state machine).  However we can use mWaitingForFinish which is
+  // only touched on the owning thread.  If mWaitingForFinisg is true, we can
+  // also modify mState since we are guaranteed that there are no pending
+  // runnables which would probe mState to decide what code needs to run (there
+  // shouldn't be any running runnables on other threads either).
+
+  if (mWaitingForFinish) {
+    Finish();
+  }
+
+  // We don't have to handle the case when mWaitingForFinish is not true since
+  // it means that either nothing has been initialized yet, so nothing to
+  // cleanup or there are pending runnables that will detect that the actor has
+  // been destroyed and cleanup accordingly.
 }
 
 mozilla::ipc::IPCResult LSRequestBase::RecvCancel() {
@@ -5520,15 +5770,8 @@ mozilla::ipc::IPCResult LSRequestBase::RecvCancel() {
 
 mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(mState == State::WaitingForFinish);
 
-  mState = State::SendingResults;
-
-  // This LSRequestBase can only be held alive by the IPDL. Run() can end up
-  // with clearing that last reference. So we need to add a self reference here.
-  RefPtr<LSRequestBase> kungFuDeathGrip = this;
-
-  MOZ_ALWAYS_SUCCEEDS(this->Run());
+  Finish();
 
   return IPC_OK();
 }
@@ -5538,19 +5781,23 @@ mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
  ******************************************************************************/
 
 PrepareDatastoreOp::PrepareDatastoreOp(
-    nsIEventTarget* aMainEventTarget,
-    already_AddRefed<ContentParent> aContentParent,
-    const LSRequestParams& aParams)
+    nsIEventTarget* aMainEventTarget, const LSRequestParams& aParams,
+    const Maybe<ContentParentId>& aContentParentId)
     : LSRequestBase(aMainEventTarget),
       mMainEventTarget(aMainEventTarget),
-      mContentParent(std::move(aContentParent)),
       mLoadDataOp(nullptr),
-      mParams(aParams.get_LSRequestPrepareDatastoreParams()),
+      mParams(
+          aParams.type() == LSRequestParams::TLSRequestPreloadDatastoreParams
+              ? aParams.get_LSRequestPreloadDatastoreParams().commonParams()
+              : aParams.get_LSRequestPrepareDatastoreParams().commonParams()),
+      mContentParentId(aContentParentId),
       mPrivateBrowsingId(0),
       mUsage(0),
       mSizeOfKeys(0),
       mSizeOfItems(0),
       mNestedState(NestedState::BeforeNesting),
+      mCreateIfNotExists(aParams.type() ==
+                         LSRequestParams::TLSRequestPrepareDatastoreParams),
       mDatabaseNotAvailable(false),
       mRequestedDirectoryLock(false),
       mInvalidated(false)
@@ -5559,12 +5806,9 @@ PrepareDatastoreOp::PrepareDatastoreOp(
       mDEBUGUsage(0)
 #endif
 {
-  MOZ_ASSERT(aParams.type() ==
-             LSRequestParams::TLSRequestPrepareDatastoreParams);
-
-  if (mContentParent) {
-    mContentParentId = Some(mContentParent->ChildID());
-  }
+  MOZ_ASSERT(
+      aParams.type() == LSRequestParams::TLSRequestPreloadDatastoreParams ||
+      aParams.type() == LSRequestParams::TLSRequestPrepareDatastoreParams);
 }
 
 PrepareDatastoreOp::~PrepareDatastoreOp() {
@@ -5575,15 +5819,11 @@ PrepareDatastoreOp::~PrepareDatastoreOp() {
 }
 
 nsresult PrepareDatastoreOp::Open() {
-  MOZ_ASSERT(NS_IsMainThread());
+  AssertIsOnOwningThread();
   MOZ_ASSERT(mState == State::Opening);
   MOZ_ASSERT(mNestedState == NestedState::BeforeNesting);
 
-  // Swap this to the stack now to ensure that we release it on this thread.
-  RefPtr<ContentParent> contentParent;
-  mContentParent.swap(contentParent);
-
-  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnNonBackgroundThread()) ||
+  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread()) ||
       !MayProceedOnNonOwningThread()) {
     return NS_ERROR_FAILURE;
   }
@@ -5595,39 +5835,8 @@ nsresult PrepareDatastoreOp::Open() {
   } else {
     MOZ_ASSERT(principalInfo.type() == PrincipalInfo::TContentPrincipalInfo);
 
-    nsresult rv;
-    nsCOMPtr<nsIPrincipal> principal =
-        PrincipalInfoToPrincipal(principalInfo, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = QuotaManager::GetInfoFromPrincipal(principal, &mSuffix, &mGroup,
-                                            &mMainThreadOrigin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = principal->GetPrivateBrowsingId(&mPrivateBrowsingId);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    mArchivedOriginScope = ArchivedOriginScope::CreateFromOrigin(principal);
-    if (NS_WARN_IF(!mArchivedOriginScope)) {
-      return NS_ERROR_FAILURE;
-    }
-  }
-
-  // This service has to be started on the main thread currently.
-  nsCOMPtr<mozIStorageService> ss;
-  if (NS_WARN_IF(!(ss = do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID)))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsresult rv = QuotaClient::RegisterObservers(OwningEventTarget());
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    QuotaManager::GetInfoFromValidatedPrincipalInfo(
+        principalInfo, &mSuffix, &mGroup, &mMainThreadOrigin);
   }
 
   mState = State::Nesting;
@@ -5649,6 +5858,27 @@ nsresult PrepareDatastoreOp::CheckExistingOperations() {
     return NS_ERROR_FAILURE;
   }
 
+  const PrincipalInfo& principalInfo = mParams.principalInfo();
+
+  nsCString originAttrSuffix;
+  uint32_t privateBrowsingId;
+
+  if (principalInfo.type() == PrincipalInfo::TSystemPrincipalInfo) {
+    privateBrowsingId = 0;
+  } else {
+    MOZ_ASSERT(principalInfo.type() == PrincipalInfo::TContentPrincipalInfo);
+
+    const ContentPrincipalInfo& info = principalInfo.get_ContentPrincipalInfo();
+    const OriginAttributes& attrs = info.attrs();
+    attrs.CreateSuffix(originAttrSuffix);
+
+    privateBrowsingId = attrs.mPrivateBrowsingId;
+  }
+
+  mArchivedOriginScope = ArchivedOriginScope::CreateFromOrigin(
+      originAttrSuffix, mParams.originKey());
+  MOZ_ASSERT(mArchivedOriginScope);
+
   // Normally it's safe to access member variables without a mutex because even
   // though we hop between threads, the variables are never accessed by multiple
   // threads at the same time.
@@ -5658,6 +5888,8 @@ nsresult PrepareDatastoreOp::CheckExistingOperations() {
   mOrigin = mMainThreadOrigin;
 
   MOZ_ASSERT(!mOrigin.IsEmpty());
+
+  mPrivateBrowsingId = privateBrowsingId;
 
   mNestedState = NestedState::CheckClosingDatastore;
 
@@ -5882,7 +6114,7 @@ nsresult PrepareDatastoreOp::DatabaseWork() {
 
   bool hasDataForMigration = mArchivedOriginScope->HasMatches(gArchivedOrigins);
 
-  bool createIfNotExists = mParams.createIfNotExists() || hasDataForMigration;
+  bool createIfNotExists = mCreateIfNotExists || hasDataForMigration;
 
   nsCOMPtr<nsIFile> directoryEntry;
   rv = quotaManager->EnsureOriginIsInitialized(
@@ -6328,12 +6560,11 @@ void PrepareDatastoreOp::GetResponse(LSRequestResponse& aResponse) {
   MOZ_ASSERT(NS_SUCCEEDED(ResultCode()));
 
   if (mDatabaseNotAvailable) {
-    MOZ_ASSERT(!mParams.createIfNotExists());
+    MOZ_ASSERT(!mCreateIfNotExists);
 
-    LSRequestPrepareDatastoreResponse prepareDatastoreResponse;
-    prepareDatastoreResponse.datastoreId() = null_t();
+    LSRequestPreloadDatastoreResponse preloadDatastoreResponse;
 
-    aResponse = prepareDatastoreResponse;
+    aResponse = preloadDatastoreResponse;
 
     return;
   }
@@ -6367,7 +6598,7 @@ void PrepareDatastoreOp::GetResponse(LSRequestResponse& aResponse) {
 
   nsAutoPtr<PreparedDatastore> preparedDatastore(
       new PreparedDatastore(mDatastore, mContentParentId, mOrigin, datastoreId,
-                            /* aForPreload */ !mParams.createIfNotExists()));
+                            /* aForPreload */ !mCreateIfNotExists));
 
   if (!gPreparedDatastores) {
     gPreparedDatastores = new PreparedDatastoreHashtable();
@@ -6380,10 +6611,16 @@ void PrepareDatastoreOp::GetResponse(LSRequestResponse& aResponse) {
 
   preparedDatastore.forget();
 
-  LSRequestPrepareDatastoreResponse prepareDatastoreResponse;
-  prepareDatastoreResponse.datastoreId() = datastoreId;
+  if (mCreateIfNotExists) {
+    LSRequestPrepareDatastoreResponse prepareDatastoreResponse;
+    prepareDatastoreResponse.datastoreId() = datastoreId;
 
-  aResponse = prepareDatastoreResponse;
+    aResponse = prepareDatastoreResponse;
+  } else {
+    LSRequestPreloadDatastoreResponse preloadDatastoreResponse;
+
+    aResponse = preloadDatastoreResponse;
+  }
 }
 
 void PrepareDatastoreOp::Cleanup() {
@@ -6607,10 +6844,10 @@ PrepareObserverOp::PrepareObserverOp(nsIEventTarget* aMainEventTarget,
 }
 
 nsresult PrepareObserverOp::Open() {
-  MOZ_ASSERT(NS_IsMainThread());
+  AssertIsOnOwningThread();
   MOZ_ASSERT(mState == State::Opening);
 
-  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnNonBackgroundThread()) ||
+  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread()) ||
       !MayProceedOnNonOwningThread()) {
     return NS_ERROR_FAILURE;
   }
@@ -6622,18 +6859,8 @@ nsresult PrepareObserverOp::Open() {
   } else {
     MOZ_ASSERT(principalInfo.type() == PrincipalInfo::TContentPrincipalInfo);
 
-    nsresult rv;
-    nsCOMPtr<nsIPrincipal> principal =
-        PrincipalInfoToPrincipal(principalInfo, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = QuotaManager::GetInfoFromPrincipal(principal, nullptr, nullptr,
-                                            &mOrigin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    QuotaManager::GetInfoFromValidatedPrincipalInfo(principalInfo, nullptr,
+                                                    nullptr, &mOrigin);
   }
 
   mState = State::SendingReadyMessage;
@@ -6679,7 +6906,7 @@ void LSSimpleRequestBase::Dispatch() {
 
   mState = State::Opening;
 
-  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(this));
 }
 
 void LSSimpleRequestBase::SendResults() {
@@ -6758,10 +6985,10 @@ PreloadedOp::PreloadedOp(const LSSimpleRequestParams& aParams)
 }
 
 nsresult PreloadedOp::Open() {
-  MOZ_ASSERT(NS_IsMainThread());
+  AssertIsOnOwningThread();
   MOZ_ASSERT(mState == State::Opening);
 
-  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnNonBackgroundThread()) ||
+  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread()) ||
       !MayProceedOnNonOwningThread()) {
     return NS_ERROR_FAILURE;
   }
@@ -6773,18 +7000,8 @@ nsresult PreloadedOp::Open() {
   } else {
     MOZ_ASSERT(principalInfo.type() == PrincipalInfo::TContentPrincipalInfo);
 
-    nsresult rv;
-    nsCOMPtr<nsIPrincipal> principal =
-        PrincipalInfoToPrincipal(principalInfo, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = QuotaManager::GetInfoFromPrincipal(principal, nullptr, nullptr,
-                                            &mOrigin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    QuotaManager::GetInfoFromValidatedPrincipalInfo(principalInfo, nullptr,
+                                                    nullptr, &mOrigin);
   }
 
   mState = State::SendingResults;
@@ -6819,35 +7036,15 @@ void PreloadedOp::GetResponse(LSSimpleRequestResponse& aResponse) {
 
 // static
 ArchivedOriginScope* ArchivedOriginScope::CreateFromOrigin(
-    nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aPrincipal);
-
-  nsCString originAttrSuffix;
-  nsCString originKey;
-  nsresult rv = GenerateOriginKey(aPrincipal, originAttrSuffix, originKey);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
+    const nsACString& aOriginAttrSuffix, const nsACString& aOriginKey) {
   return new ArchivedOriginScope(
-      std::move(Origin(originAttrSuffix, originKey)));
+      std::move(Origin(aOriginAttrSuffix, aOriginKey)));
 }
 
 // static
 ArchivedOriginScope* ArchivedOriginScope::CreateFromPrefix(
-    nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aPrincipal);
-
-  nsCString originAttrSuffix;
-  nsCString originKey;
-  nsresult rv = GenerateOriginKey(aPrincipal, originAttrSuffix, originKey);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
-  return new ArchivedOriginScope(std::move(Prefix(originKey)));
+    const nsACString& aOriginKey) {
+  return new ArchivedOriginScope(std::move(Prefix(aOriginKey)));
 }
 
 // static
@@ -7043,79 +7240,10 @@ void ArchivedOriginScope::RemoveMatches(
 }
 
 /*******************************************************************************
- * ArchivedOriginScopeHelper
- ******************************************************************************/
-
-nsresult ArchivedOriginScopeHelper::BlockAndReturnArchivedOriginScope(
-    nsAutoPtr<ArchivedOriginScope>& aArchivedOriginScope) {
-  AssertIsOnIOThread();
-
-  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
-
-  mozilla::MonitorAutoLock lock(mMonitor);
-  while (mWaiting) {
-    lock.Wait();
-  }
-
-  if (NS_WARN_IF(NS_FAILED(mMainThreadResultCode))) {
-    return mMainThreadResultCode;
-  }
-
-  aArchivedOriginScope = std::move(mArchivedOriginScope);
-  return NS_OK;
-}
-
-nsresult ArchivedOriginScopeHelper::RunOnMainThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), mSpec);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(uri, mAttrs);
-  if (NS_WARN_IF(!principal)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (mPrefix) {
-    mArchivedOriginScope = ArchivedOriginScope::CreateFromPrefix(principal);
-  } else {
-    mArchivedOriginScope = ArchivedOriginScope::CreateFromOrigin(principal);
-  }
-  if (NS_WARN_IF(!mArchivedOriginScope)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ArchivedOriginScopeHelper::Run() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsresult rv = RunOnMainThread();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    mMainThreadResultCode = rv;
-  }
-
-  mozilla::MonitorAutoLock lock(mMonitor);
-  MOZ_ASSERT(mWaiting);
-
-  mWaiting = false;
-  lock.Notify();
-
-  return NS_OK;
-}
-
-/*******************************************************************************
  * QuotaClient
  ******************************************************************************/
 
 QuotaClient* QuotaClient::sInstance = nullptr;
-bool QuotaClient::sObserversRegistered = false;
 
 QuotaClient::QuotaClient()
     : mShadowDatabaseMutex("LocalStorage mShadowDatabaseMutex"),
@@ -7133,45 +7261,20 @@ QuotaClient::~QuotaClient() {
   sInstance = nullptr;
 }
 
-mozilla::dom::quota::Client::Type QuotaClient::GetType() {
-  return QuotaClient::LS;
-}
-
 // static
-nsresult QuotaClient::RegisterObservers(
-    nsIEventTarget* aBackgroundEventTarget) {
+nsresult QuotaClient::Initialize() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aBackgroundEventTarget);
 
-  if (!sObserversRegistered) {
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    if (NS_WARN_IF(!obs)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    nsCOMPtr<nsIObserver> observer = new Observer(aBackgroundEventTarget);
-
-    nsresult rv =
-        obs->AddObserver(observer, kPrivateBrowsingObserverTopic, false);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    if (NS_FAILED(Preferences::AddAtomicUintVarCache(
-            &gOriginLimitKB, kDefaultQuotaPref, kDefaultOriginLimitKB))) {
-      NS_WARNING("Unable to respond to default quota pref changes!");
-    }
-
-    Preferences::RegisterCallbackAndCall(ShadowWritesPrefChangedCallback,
-                                         kShadowWritesPref);
-
-    Preferences::RegisterCallbackAndCall(SnapshotPrefillPrefChangedCallback,
-                                         kSnapshotPrefillPref);
-
-    sObserversRegistered = true;
+  nsresult rv = Observer::Initialize();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   return NS_OK;
+}
+
+mozilla::dom::quota::Client::Type QuotaClient::GetType() {
+  return QuotaClient::LS;
 }
 
 nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
@@ -7774,13 +7877,21 @@ nsresult QuotaClient::CreateArchivedOriginScope(
       return NS_ERROR_FAILURE;
     }
 
-    RefPtr<ArchivedOriginScopeHelper> helper =
-        new ArchivedOriginScopeHelper(spec, attrs, /* aPrefix */ false);
+    ContentPrincipalInfo contentPrincipalInfo;
+    contentPrincipalInfo.attrs() = attrs;
+    contentPrincipalInfo.spec() = spec;
 
-    rv = helper->BlockAndReturnArchivedOriginScope(archivedOriginScope);
+    PrincipalInfo principalInfo(contentPrincipalInfo);
+
+    nsCString originAttrSuffix;
+    nsCString originKey;
+    rv = GenerateOriginKey2(principalInfo, originAttrSuffix, originKey);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+
+    archivedOriginScope =
+        ArchivedOriginScope::CreateFromOrigin(originAttrSuffix, originKey);
   } else if (aOriginScope.IsPrefix()) {
     nsCString spec;
     OriginAttributes attrs;
@@ -7789,13 +7900,20 @@ nsresult QuotaClient::CreateArchivedOriginScope(
       return NS_ERROR_FAILURE;
     }
 
-    RefPtr<ArchivedOriginScopeHelper> helper =
-        new ArchivedOriginScopeHelper(spec, attrs, /* aPrefix */ true);
+    ContentPrincipalInfo contentPrincipalInfo;
+    contentPrincipalInfo.attrs() = attrs;
+    contentPrincipalInfo.spec() = spec;
 
-    rv = helper->BlockAndReturnArchivedOriginScope(archivedOriginScope);
+    PrincipalInfo principalInfo(contentPrincipalInfo);
+
+    nsCString originAttrSuffix;
+    nsCString originKey;
+    rv = GenerateOriginKey2(principalInfo, originAttrSuffix, originKey);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+
+    archivedOriginScope = ArchivedOriginScope::CreateFromPrefix(originKey);
   } else if (aOriginScope.IsPattern()) {
     archivedOriginScope =
         ArchivedOriginScope::CreateFromPattern(aOriginScope.GetPattern());
@@ -7846,20 +7964,58 @@ nsresult QuotaClient::PerformDelete(
   return NS_OK;
 }
 
-NS_IMETHODIMP
-QuotaClient::ClearPrivateBrowsingRunnable::Run() {
-  AssertIsOnBackgroundThread();
+// static
+nsresult QuotaClient::Observer::Initialize() {
+  MOZ_ASSERT(NS_IsMainThread());
 
-  if (gDatastores) {
-    for (auto iter = gDatastores->ConstIter(); !iter.Done(); iter.Next()) {
-      Datastore* datastore = iter.Data();
-      MOZ_ASSERT(datastore);
+  RefPtr<Observer> observer = new Observer();
 
-      if (datastore->PrivateBrowsingId()) {
-        datastore->PrivateBrowsingClear();
-      }
-    }
+  nsresult rv = observer->Init();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
+
+  return NS_OK;
+}
+
+nsresult QuotaClient::Observer::Init() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_WARN_IF(!obs)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = obs->AddObserver(this, kPrivateBrowsingObserverTopic, false);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+nsresult QuotaClient::Observer::Shutdown() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_WARN_IF(!obs)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  MOZ_ALWAYS_SUCCEEDS(obs->RemoveObserver(this, kPrivateBrowsingObserverTopic));
+  MOZ_ALWAYS_SUCCEEDS(obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID));
+
+  // In general, the instance will have died after the latter removal call, so
+  // it's not safe to do anything after that point.
+  // However, Shutdown is currently called from Observe which is called by the
+  // Observer Service which holds a strong reference to the observer while the
+  // Observe method is being called.
 
   return NS_OK;
 }
@@ -7871,12 +8027,27 @@ QuotaClient::Observer::Observe(nsISupports* aSubject, const char* aTopic,
                                const char16_t* aData) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!strcmp(aTopic, kPrivateBrowsingObserverTopic)) {
-    RefPtr<ClearPrivateBrowsingRunnable> runnable =
-        new ClearPrivateBrowsingRunnable();
+  nsresult rv;
 
-    MOZ_ALWAYS_SUCCEEDS(
-        mBackgroundEventTarget->Dispatch(runnable, NS_DISPATCH_NORMAL));
+  if (!strcmp(aTopic, kPrivateBrowsingObserverTopic)) {
+    PBackgroundChild* backgroundActor =
+        BackgroundChild::GetOrCreateForCurrentThread();
+    if (NS_WARN_IF(!backgroundActor)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (NS_WARN_IF(!backgroundActor->SendLSClearPrivateBrowsing())) {
+      return NS_ERROR_FAILURE;
+    }
+
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    rv = Shutdown();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
 
     return NS_OK;
   }

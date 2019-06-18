@@ -107,8 +107,9 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   aReturn.Append(quoteChar);
 }
 
-/* static */ void nsStyleUtil::AppendEscapedCSSIdent(const nsAString& aIdent,
-                                                     nsAString& aReturn) {
+/* static */
+void nsStyleUtil::AppendEscapedCSSIdent(const nsAString& aIdent,
+                                        nsAString& aReturn) {
   // The relevant parts of the CSS grammar are:
   //   ident    ([-]?{nmstart}|[-][-]){nmchar}*
   //   nmstart  [_a-z]|{nonascii}|{escape}
@@ -166,9 +167,11 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   }
 }
 
-/* static */ void nsStyleUtil::AppendBitmaskCSSValue(
-    const nsCSSKTableEntry aTable[], int32_t aMaskedValue, int32_t aFirstMask,
-    int32_t aLastMask, nsAString& aResult) {
+/* static */
+void nsStyleUtil::AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
+                                        int32_t aMaskedValue,
+                                        int32_t aFirstMask, int32_t aLastMask,
+                                        nsAString& aResult) {
   for (int32_t mask = aFirstMask; mask <= aLastMask; mask <<= 1) {
     if (mask & aMaskedValue) {
       AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(mask, aTable), aResult);
@@ -181,8 +184,9 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   MOZ_ASSERT(aMaskedValue == 0, "unexpected bit remaining in bitfield");
 }
 
-/* static */ void nsStyleUtil::AppendAngleValue(const nsStyleCoord& aAngle,
-                                                nsAString& aResult) {
+/* static */
+void nsStyleUtil::AppendAngleValue(const nsStyleCoord& aAngle,
+                                   nsAString& aResult) {
   MOZ_ASSERT(aAngle.IsAngleValue(), "Should have angle value");
 
   // Append number.
@@ -198,8 +202,8 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   }
 }
 
-/* static */ void nsStyleUtil::AppendPaintOrderValue(uint8_t aValue,
-                                                     nsAString& aResult) {
+/* static */
+void nsStyleUtil::AppendPaintOrderValue(uint8_t aValue, nsAString& aResult) {
   static_assert(
       NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
       "SVGStyleStruct::mPaintOrder and local variables not big enough");
@@ -256,7 +260,8 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   }
 }
 
-/* static */ float nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha) {
+/* static */
+float nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha) {
   // Alpha values are expressed as decimals, so we should convert
   // back, using as few decimal places as possible for
   // round-tripping.
@@ -269,8 +274,33 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
   return rounded;
 }
 
-/* static */ bool nsStyleUtil::IsSignificantChild(
-    nsIContent* aChild, bool aWhitespaceIsSignificant) {
+/* static */
+void nsStyleUtil::GetSerializedColorValue(nscolor aColor,
+                                          nsAString& aSerializedColor) {
+  MOZ_ASSERT(aSerializedColor.IsEmpty());
+
+  const bool hasAlpha = NS_GET_A(aColor) != 255;
+  if (hasAlpha) {
+    aSerializedColor.AppendLiteral("rgba(");
+  } else {
+    aSerializedColor.AppendLiteral("rgb(");
+  }
+  aSerializedColor.AppendInt(NS_GET_R(aColor));
+  aSerializedColor.AppendLiteral(", ");
+  aSerializedColor.AppendInt(NS_GET_G(aColor));
+  aSerializedColor.AppendLiteral(", ");
+  aSerializedColor.AppendInt(NS_GET_B(aColor));
+  if (hasAlpha) {
+    aSerializedColor.AppendLiteral(", ");
+    float alpha = nsStyleUtil::ColorComponentToFloat(NS_GET_A(aColor));
+    nsStyleUtil::AppendCSSNumber(alpha, aSerializedColor);
+  }
+  aSerializedColor.AppendLiteral(")");
+}
+
+/* static */
+bool nsStyleUtil::IsSignificantChild(nsIContent* aChild,
+                                     bool aWhitespaceIsSignificant) {
   bool isText = aChild->IsText();
 
   if (!isText && !aChild->IsComment() && !aChild->IsProcessingInstruction()) {
@@ -281,8 +311,9 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
          (aWhitespaceIsSignificant || !aChild->TextIsOnlyWhitespace());
 }
 
-/* static */ bool nsStyleUtil::ThreadSafeIsSignificantChild(
-    const nsIContent* aChild, bool aWhitespaceIsSignificant) {
+/* static */
+bool nsStyleUtil::ThreadSafeIsSignificantChild(const nsIContent* aChild,
+                                               bool aWhitespaceIsSignificant) {
   bool isText = aChild->IsText();
 
   if (!isText && !aChild->IsComment() && !aChild->IsProcessingInstruction()) {
@@ -298,25 +329,26 @@ void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
 // element's content-box, this method checks whether the given
 // "object-position" coordinate might cause overflow in its dimension.
 static bool ObjectPositionCoordMightCauseOverflow(
-    const Position::Coord& aCoord) {
+    const LengthPercentage& aCoord) {
   // Any nonzero length in "object-position" can push us to overflow
   // (particularly if our concrete object size is exactly the same size as the
   // replaced element's content-box).
-  if (aCoord.mLength != 0) {
+  if (aCoord.LengthInCSSPixels() != 0.) {
     return true;
   }
 
   // Percentages are interpreted as a fraction of the extra space. So,
   // percentages in the 0-100% range are safe, but values outside of that
   // range could cause overflow.
-  if (aCoord.mHasPercent &&
-      (aCoord.mPercent < 0.0f || aCoord.mPercent > 1.0f)) {
+  if (aCoord.HasPercent() &&
+      (aCoord.Percentage() < 0.0f || aCoord.Percentage() > 1.0f)) {
     return true;
   }
   return false;
 }
 
-/* static */ bool nsStyleUtil::ObjectPropsMightCauseOverflow(
+/* static */
+bool nsStyleUtil::ObjectPropsMightCauseOverflow(
     const nsStylePosition* aStylePos) {
   auto objectFit = aStylePos->mObjectFit;
 
@@ -332,19 +364,22 @@ static bool ObjectPositionCoordMightCauseOverflow(
   // Check each of our "object-position" coords to see if it could cause
   // overflow in its dimension:
   const Position& objectPosistion = aStylePos->mObjectPosition;
-  if (ObjectPositionCoordMightCauseOverflow(objectPosistion.mXPosition) ||
-      ObjectPositionCoordMightCauseOverflow(objectPosistion.mYPosition)) {
+  if (ObjectPositionCoordMightCauseOverflow(objectPosistion.horizontal) ||
+      ObjectPositionCoordMightCauseOverflow(objectPosistion.vertical)) {
     return true;
   }
 
   return false;
 }
 
-/* static */ bool nsStyleUtil::CSPAllowsInlineStyle(
-    Element* aElement, nsIPrincipal* aPrincipal,
-    nsIPrincipal* aTriggeringPrincipal, nsIURI* aSourceURI,
-    uint32_t aLineNumber, uint32_t aColumnNumber, const nsAString& aStyleText,
-    nsresult* aRv) {
+/* static */
+bool nsStyleUtil::CSPAllowsInlineStyle(Element* aElement,
+                                       nsIPrincipal* aPrincipal,
+                                       nsIPrincipal* aTriggeringPrincipal,
+                                       nsIURI* aSourceURI, uint32_t aLineNumber,
+                                       uint32_t aColumnNumber,
+                                       const nsAString& aStyleText,
+                                       nsresult* aRv) {
   nsresult rv;
 
   if (aRv) {

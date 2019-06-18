@@ -10,9 +10,8 @@
  * <copied from="test_authentication.js"/>
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const FLAG_RETURN_FALSE   = 1 << 0;
 const FLAG_WRONG_PASSWORD = 1 << 1;
@@ -160,7 +159,7 @@ Requestor.prototype = {
 var listener = {
   expectedCode: -1, // uninitialized
 
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     try {
       // Proxy auth cancellation return failures to avoid spoofing
       if (!Components.isSuccessCode(request.status) &&
@@ -191,7 +190,7 @@ var listener = {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     Assert.equal(status, Cr.NS_ERROR_ABORT);
 
     if (current_test < (tests.length - 1)) {
@@ -254,7 +253,7 @@ function test_proxy_returnfalse() {
   var chan = makeChan();
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 0);
   listener.expectedCode = 407; // Proxy Unauthorized
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -264,7 +263,7 @@ function test_proxy_wrongpw() {
   var chan = makeChan();
   chan.notificationCallbacks = new Requestor(FLAG_WRONG_PASSWORD, 0);
   listener.expectedCode = 200; // Eventually OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 
@@ -273,7 +272,7 @@ function test_all_ok() {
   var chan = makeChan();
   chan.notificationCallbacks = new Requestor(0, 0);
   listener.expectedCode = 200; // OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 
@@ -282,7 +281,7 @@ function test_proxy_407_cookie() {
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 0);
   chan.setRequestHeader("X-Set-407-Cookie", "1", false);
   listener.expectedCode = 407; // Proxy Unauthorized
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -292,7 +291,7 @@ function test_proxy_200_cookie() {
   chan.notificationCallbacks = new Requestor(0, 0);
   chan.setRequestHeader("X-Set-407-Cookie", "1", false);
   listener.expectedCode = 200; // OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 
@@ -301,7 +300,7 @@ function test_host_returnfalse() {
   var chan = makeChan();
   chan.notificationCallbacks = new Requestor(0, FLAG_RETURN_FALSE);
   listener.expectedCode = 401; // Host Unauthorized
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -311,7 +310,7 @@ function test_host_wrongpw() {
   var chan = makeChan();
   chan.notificationCallbacks = new Requestor(0, FLAG_WRONG_PASSWORD);
   listener.expectedCode = 200; // Eventually OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 
@@ -321,7 +320,7 @@ function test_proxy_wrongpw_host_wrongpw() {
   chan.notificationCallbacks =
       new Requestor(FLAG_WRONG_PASSWORD, FLAG_WRONG_PASSWORD);
   listener.expectedCode = 200; // OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 
@@ -331,7 +330,7 @@ function test_proxy_wrongpw_host_returnfalse() {
   chan.notificationCallbacks =
       new Requestor(FLAG_WRONG_PASSWORD, FLAG_RETURN_FALSE);
   listener.expectedCode = 401; // Host Unauthorized
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
   do_test_pending();
 }
 

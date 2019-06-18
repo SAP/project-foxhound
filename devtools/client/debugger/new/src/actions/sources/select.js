@@ -23,7 +23,7 @@ import { loadSourceText } from "./loadSourceText";
 import { prefs } from "../../utils/prefs";
 import { shouldPrettyPrint, isMinified } from "../../utils/source";
 import { createLocation } from "../../utils/location";
-import { getMappedLocation } from "../../utils/source-maps";
+import { mapLocation } from "../../utils/source-maps";
 
 import {
   getSource,
@@ -42,7 +42,6 @@ export const setSelectedLocation = (
   location: SourceLocation
 ) => ({
   type: "SET_SELECTED_LOCATION",
-  thread: source.thread,
   source,
   location
 });
@@ -88,10 +87,13 @@ export function selectSourceURL(
  * @memberof actions/sources
  * @static
  */
-export function selectSource(sourceId: string) {
+export function selectSource(
+  sourceId: string,
+  options: PartialPosition = { line: 1 }
+) {
   return async ({ dispatch }: ThunkArgs) => {
-    const location = createLocation({ sourceId });
-    return await dispatch(selectSpecificLocation(location));
+    const location = createLocation({ ...options, sourceId });
+    return dispatch(selectSpecificLocation(location));
   };
 }
 
@@ -131,7 +133,7 @@ export function selectLocation(
       selectedSource &&
       isOriginalId(selectedSource.id) != isOriginalId(location.sourceId)
     ) {
-      location = await getMappedLocation(getState(), sourceMaps, location);
+      location = await mapLocation(getState(), sourceMaps, location);
       source = getSourceFromId(getState(), location.sourceId);
     }
 
@@ -190,11 +192,7 @@ export function jumpToMappedLocation(location: SourceLocation) {
       return;
     }
 
-    const pairedLocation = await getMappedLocation(
-      getState(),
-      sourceMaps,
-      location
-    );
+    const pairedLocation = await mapLocation(getState(), sourceMaps, location);
 
     return dispatch(selectSpecificLocation({ ...pairedLocation }));
   };

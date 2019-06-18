@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/CommonDialog.jsm");
+const {CommonDialog} = ChromeUtils.import("resource://gre/modules/CommonDialog.jsm");
 
 var propBag, args, Dialog;
 
@@ -43,6 +42,9 @@ function commonDialogOnLoad() {
 
     Dialog = new CommonDialog(args, ui);
     Dialog.onLoad(dialog);
+
+    document.addEventListener("dialogextra1", function() { Dialog.onButton2(); window.close(); });
+    document.addEventListener("dialogextra2", function() { Dialog.onButton3(); window.close(); });
     // resize the window to the content
     window.sizeToContent();
     window.getAttention();

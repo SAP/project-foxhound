@@ -33,6 +33,7 @@ nsScriptErrorBase::nsScriptErrorBase()
     : mMessage(),
       mMessageName(),
       mSourceName(),
+      mSourceId(0),
       mLineNumber(0),
       mSourceLine(),
       mColumnNumber(0),
@@ -67,6 +68,12 @@ void nsScriptErrorBase::InitializeOnMainThread() {
   }
 
   mInitializedOnMainThread = true;
+}
+
+NS_IMETHODIMP
+nsScriptErrorBase::InitSourceId(uint32_t value) {
+  mSourceId = value;
+  return NS_OK;
 }
 
 // nsIConsoleMessage methods
@@ -104,6 +111,12 @@ nsScriptErrorBase::GetErrorMessage(nsAString& aResult) {
 NS_IMETHODIMP
 nsScriptErrorBase::GetSourceName(nsAString& aResult) {
   aResult.Assign(mSourceName);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsScriptErrorBase::GetSourceId(uint32_t* result) {
+  *result = mSourceId;
   return NS_OK;
 }
 
@@ -380,7 +393,8 @@ nsScriptErrorBase::GetNotes(nsIArray** aNotes) {
   return NS_OK;
 }
 
-/* static */ bool nsScriptErrorBase::ComputeIsFromPrivateWindow(
+/* static */
+bool nsScriptErrorBase::ComputeIsFromPrivateWindow(
     nsGlobalWindowInner* aWindow) {
   // Never mark exceptions from chrome windows as having come from private
   // windows, since we always want them to be reported.
@@ -392,15 +406,20 @@ nsScriptErrorBase::GetNotes(nsIArray** aNotes) {
 NS_IMPL_ISUPPORTS(nsScriptError, nsIConsoleMessage, nsIScriptError)
 
 nsScriptErrorNote::nsScriptErrorNote()
-    : mMessage(), mSourceName(), mLineNumber(0), mColumnNumber(0) {}
+    : mMessage(),
+      mSourceName(),
+      mSourceId(0),
+      mLineNumber(0),
+      mColumnNumber(0) {}
 
 nsScriptErrorNote::~nsScriptErrorNote() {}
 
 void nsScriptErrorNote::Init(const nsAString& message,
-                             const nsAString& sourceName, uint32_t lineNumber,
-                             uint32_t columnNumber) {
+                             const nsAString& sourceName, uint32_t sourceId,
+                             uint32_t lineNumber, uint32_t columnNumber) {
   mMessage.Assign(message);
   AssignSourceNameHelper(mSourceName, sourceName);
+  mSourceId = sourceId;
   mLineNumber = lineNumber;
   mColumnNumber = columnNumber;
 }
@@ -415,6 +434,12 @@ nsScriptErrorNote::GetErrorMessage(nsAString& aResult) {
 NS_IMETHODIMP
 nsScriptErrorNote::GetSourceName(nsAString& aResult) {
   aResult.Assign(mSourceName);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsScriptErrorNote::GetSourceId(uint32_t* result) {
+  *result = mSourceId;
   return NS_OK;
 }
 

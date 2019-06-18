@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DebuggerModules(
+CompiledModules(
     'breakpointAtLocation.js',
     'breakpoints.js',
     'breakpointSources.js',
@@ -15,8 +15,7 @@ DebuggerModules(
     'inComponent.js',
     'index.js',
     'isSelectedFrameVisible.js',
+    'pause.js',
     'visibleBreakpoints.js',
     'visibleColumnBreakpoints.js',
-    'visiblePausePoints.js',
-    'visibleSelectedFrame.js',
 )

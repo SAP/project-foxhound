@@ -7,6 +7,7 @@ job-defaults:
         by-test-platform:
             linux64/debug: both
             default: false
+    socketprocess-e10s: false
     mozharness:
         script:
             by-test-platform:
@@ -38,14 +39,17 @@ mochitest:
     treeherder-symbol: M()
     loopback-video: true
     run-on-projects: built-projects
-    tier: default
+    tier:
+        by-test-platform:
+            android-em-7.*/opt: 2
+            default: default
     instance-size:
         by-test-platform:
             android-em.*: xlarge
             default: default
     virtualization:
         by-test-platform:
-            windows10-64-qr/.*: virtual-with-gpu
+            windows10-64(?:-pgo)?-qr/.*: virtual-with-gpu
             default: virtual
     chunks:
         by-test-platform:
@@ -104,6 +108,7 @@ mochitest-browser-chrome:
         by-test-platform:
             linux64-.*cov/opt: 7200
             windows10-64-ccov/debug: 7200
+            windows10-aarch64/*: 7200
             macosx64-ccov/debug: 10800
             linux.*/debug: 5400
             default: 3600
@@ -137,9 +142,10 @@ browser-screenshots:
     run-on-projects:
         by-test-platform:
             # We don't want debug, pgo, devedition or nightly builds
-            windows7-32/opt: ['mozilla-central', 'integration']
-            windows10-64/opt: ['mozilla-central', 'integration']
-            linux64/opt: ['mozilla-central', 'integration']
+            windows7-32-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
+            windows10-64-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
+            (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central']
+            linux64-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
             macosx64/opt: ['mozilla-central', 'integration']
             default: []
     max-run-time: 3600
@@ -213,11 +219,12 @@ mochitest-devtools-chrome:
         by-test-platform:
             windows10-64-ccov/debug: 7200
             macosx64-ccov/debug: 9000
+            linux64-ccov/debug: 7200
             default: 5400
     chunks:
         by-test-platform:
-            linux64/debug: 12
-            linux64-ccov/debug: 12
+            linux64/debug: 16
+            linux64-ccov/debug: 16
             windows10-64-ccov/debug: 10
             macosx64-ccov/debug: 15
             default: 8
@@ -230,6 +237,21 @@ mochitest-devtools-chrome:
             default: default
     # Bug 1296086: high number of intermittents observed with software GL and large instances
     allow-software-gl-layers: false
+
+mochitest-devtools-webreplay:
+    description: "Mochitest devtools-webreplay run"
+    suite: mochitest/mochitest-devtools-webreplay
+    treeherder-symbol: M(dt-wr)
+    loopback-video: true
+    tier: 2
+    max-run-time: 900
+    mozharness:
+        mochitest-flavor: chrome
+    allow-software-gl-layers: false
+    run-on-projects:
+        by-test-platform:
+            macosx64.*/opt: ['trunk', 'try']
+            default: []
 
 mochitest-gpu:
     description: "Mochitest GPU run"
@@ -266,10 +288,14 @@ mochitest-media:
             macosx64-ccov/debug: 7200
             default: 5400
     run-on-projects: built-projects
+    socketprocess-e10s:
+        by-test-platform:
+            android.*: false
+            default: both
     loopback-video: true
     virtualization:
         by-test-platform:
-            windows10-64-qr/.*: virtual-with-gpu
+            windows10-64(?:-pgo)?-qr/.*: virtual-with-gpu
             default: virtual
     instance-size:
         by-test-platform:

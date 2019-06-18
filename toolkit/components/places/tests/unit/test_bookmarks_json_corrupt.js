@@ -19,7 +19,7 @@
  * throw an error.
  */
 
-ChromeUtils.import("resource://gre/modules/BookmarkJSONUtils.jsm");
+const {BookmarkJSONUtils} = ChromeUtils.import("resource://gre/modules/BookmarkJSONUtils.jsm");
 
 // Exported bookmarks file pointer.
 var bookmarksExportedFile;

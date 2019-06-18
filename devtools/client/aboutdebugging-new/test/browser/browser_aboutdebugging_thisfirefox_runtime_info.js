@@ -27,10 +27,11 @@ add_task(async function() {
     disableRuntimeClientFactoryMock();
   });
 
-  const { document, tab } = await openAboutDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
   info("Check that the 'This Firefox' mock is properly displayed");
-  const thisFirefoxRuntimeInfo = document.querySelector(".js-runtime-info");
+  const thisFirefoxRuntimeInfo = document.querySelector(".js-runtime-name");
   ok(thisFirefoxRuntimeInfo, "Runtime info for this-firefox runtime is displayed");
   const runtimeInfoText = thisFirefoxRuntimeInfo.textContent;
   ok(runtimeInfoText.includes("Firefox"),

@@ -893,6 +893,14 @@ macro_rules! define_string_types {
             }
         }
 
+        impl Clone for $String {
+            fn clone(&self) -> Self {
+                let mut copy = $String::new();
+                copy.assign(self);
+                copy
+            }
+        }
+
         impl AsRef<[$char_t]> for $String {
             fn as_ref(&self) -> &[$char_t] {
                 &self
@@ -1425,6 +1433,8 @@ pub mod test_helpers {
                   dataflags, Rust_Test_Member_nsString_mDataFlags);
     member_check!(nsStringRepr, nsString, nsStr<'static>,
                   classflags, Rust_Test_Member_nsString_mClassFlags);
+    member_check!(nsStringRepr, nsString, nsStr<'static>,
+                  taint, Rust_Test_Member_nsString_mTaint);
     member_check!(nsCStringRepr, nsCString, nsCStr<'static>,
                   data, Rust_Test_Member_nsCString_mData);
     member_check!(nsCStringRepr, nsCString, nsCStr<'static>,
@@ -1433,6 +1443,8 @@ pub mod test_helpers {
                   dataflags, Rust_Test_Member_nsCString_mDataFlags);
     member_check!(nsCStringRepr, nsCString, nsCStr<'static>,
                   classflags, Rust_Test_Member_nsCString_mClassFlags);
+    member_check!(nsCStringRepr, nsCString, nsCStr<'static>,
+                  taint, Rust_Test_Member_nsCString_mTaint);
 
     #[no_mangle]
     #[allow(non_snake_case)]

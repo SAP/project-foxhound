@@ -109,7 +109,9 @@ function waitForEvent(aSubject, aEventName, aTimeoutMs, aTarget) {
 
 function openPreferencesViaOpenPreferencesAPI(aPane, aOptions) {
   return new Promise(resolve => {
-    let finalPrefPaneLoaded = TestUtils.topicObserved("sync-pane-loaded", () => true);
+    let finalPaneEvent = Services.prefs.getBoolPref("identity.fxaccounts.enabled") ?
+                           "sync-pane-loaded" : "privacy-pane-loaded";
+    let finalPrefPaneLoaded = TestUtils.topicObserved(finalPaneEvent, () => true);
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
     openPreferences(aPane);
     let newTabBrowser = gBrowser.selectedBrowser;
@@ -124,7 +126,6 @@ function openPreferencesViaOpenPreferencesAPI(aPane, aOptions) {
         resolve({ selectedPane });
       }, { once: true });
     }, { capture: true, once: true });
-
   });
 }
 
@@ -143,9 +144,9 @@ async function evaluateSearchResults(keyword, searchReults) {
   for (let i = 0; i < mainPrefTag.childElementCount; i++) {
     let child = mainPrefTag.children[i];
     if (searchReults.includes(child.id)) {
-      is_element_visible(child, "Should be in search results");
+      is_element_visible(child, `${child.id} should be in search results`);
     } else if (child.id) {
-      is_element_hidden(child, "Should not be in search results");
+      is_element_hidden(child, `${child.id} should not be in search results`);
     }
   }
 }

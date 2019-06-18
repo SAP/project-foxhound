@@ -6,8 +6,6 @@
 
 "use strict";
 
-// To disable all Web Replay tests, see browser.ini
-
 // Test basic step-over/back functionality in web replay.
 add_task(async function() {
   const tab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
@@ -15,17 +13,18 @@ add_task(async function() {
   openTrustedLinkIn(EXAMPLE_URL + "doc_rr_basic.html", "current");
   await once(Services.ppmm, "RecordingFinished");
 
-  const toolbox = await attachDebugger(tab), client = toolbox.threadClient;
+  const { target, toolbox } = await attachDebugger(tab), client = toolbox.threadClient;
   await client.interrupt();
-  await setBreakpoint(client, "doc_rr_basic.html", 21);
+  const bp = await setBreakpoint(client, "doc_rr_basic.html", 21);
   await rewindToLine(client, 21);
-  await checkEvaluateInTopFrame(client, "number", 10);
+  await checkEvaluateInTopFrame(target, "number", 10);
   await reverseStepOverToLine(client, 20);
-  await checkEvaluateInTopFrame(client, "number", 9);
-  await checkEvaluateInTopFrameThrows(client, "window.alert(3)");
+  await checkEvaluateInTopFrame(target, "number", 9);
+  await checkEvaluateInTopFrameThrows(target, "window.alert(3)");
   await stepOverToLine(client, 21);
-  await checkEvaluateInTopFrame(client, "number", 10);
+  await checkEvaluateInTopFrame(target, "number", 10);
 
+  await client.removeBreakpoint(bp);
   await toolbox.destroy();
   await gBrowser.removeTab(tab);
 });

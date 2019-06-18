@@ -34,7 +34,7 @@ const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
 
 var gFeatures = undefined;
 
-let {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm", {});
+let {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
 
 requestLongerTimeout(3);
 
@@ -118,7 +118,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: true,
           allowList: false,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -133,7 +133,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: false,
           allowList: true,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -148,7 +148,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: false,
           allowList: false,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -163,7 +163,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: true,
           allowList: false,
           callback: callbackTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -178,7 +178,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: true,
           allowList: true,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -193,7 +193,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: true,
           allowList: true,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -208,7 +208,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: true,
           allowList: true,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: 0,
           runInPrivateWindow,
           iframeSandbox,
@@ -223,7 +223,7 @@ this.AntiTracking = {
           blockingByContentBlockingRTUI: false,
           allowList: false,
           callback: callbackNonTracking,
-          extraPrefs: [],
+          extraPrefs,
           expectedBlockingNotifications: false,
           runInPrivateWindow,
           iframeSandbox,
@@ -284,6 +284,21 @@ this.AntiTracking = {
 
     if (extraPrefs && Array.isArray(extraPrefs) && extraPrefs.length) {
       await SpecialPowers.pushPrefEnv({"set": extraPrefs });
+
+      for (let item of extraPrefs) {
+        // When setting up skip URLs, we need to wait to ensure our prefs
+        // actually take effect.  In order to do this, we set up a skip list
+        // observer and wait until it calls us back.
+        if (item[0] == "urlclassifier.trackingAnnotationSkipURLs") {
+          info("Waiting for the skip list service to initialize...");
+          let classifier = Cc["@mozilla.org/url-classifier/dbservice;1"]
+                             .getService(Ci.nsIURIClassifier);
+          let feature = classifier.getFeatureByName("tracking-annotation");
+          await TestUtils.waitForCondition(() => feature.skipHostList == item[1].toLowerCase(),
+                                           "Skip list service initialized");
+          break;
+        }
+      }
     }
 
     await UrlClassifierTestUtils.addTestTrackers();
@@ -357,6 +372,7 @@ this.AntiTracking = {
                                   options.callbackAfterRemoval.toString() : null,
                                 accessRemoval: options.accessRemoval,
                                 iframeSandbox: options.iframeSandbox,
+                                allowList: options.allowList,
                                 doAccessRemovalChecks },
                               async function(obj) {
         let id = "id" + Math.random();
@@ -365,7 +381,8 @@ this.AntiTracking = {
           ifr.id = id;
           ifr.onload = function() {
             info("Sending code to the 3rd party content");
-            ifr.contentWindow.postMessage(obj.callback, "*");
+            let callback = obj.allowList + "!!!" + obj.callback;
+            ifr.contentWindow.postMessage(callback, "*");
           };
           if (typeof obj.iframeSandbox == "string") {
             ifr.setAttribute("sandbox", obj.iframeSandbox);
@@ -481,7 +498,7 @@ this.AntiTracking = {
         await TestUtils.topicObserved("browser-delayed-startup-finished");
       }
 
-      await AntiTracking._setupTest(win, BEHAVIOR_REJECT_TRACKER, true, true, extraPrefs);
+      await AntiTracking._setupTest(win, BEHAVIOR_REJECT_TRACKER, true, extraPrefs);
 
       info("Creating a new tab");
       let tab = BrowserTestUtils.addTab(win.gBrowser, TEST_TOP_PAGE);
@@ -558,7 +575,7 @@ this.AntiTracking = {
         await TestUtils.topicObserved("browser-delayed-startup-finished");
       }
 
-      await AntiTracking._setupTest(win, BEHAVIOR_REJECT_TRACKER, true, true, extraPrefs);
+      await AntiTracking._setupTest(win, BEHAVIOR_REJECT_TRACKER, true, extraPrefs);
 
       info("Creating a new tab");
       let tab = BrowserTestUtils.addTab(win.gBrowser, TEST_TOP_PAGE);

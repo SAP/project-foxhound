@@ -11,7 +11,7 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProvidersManager"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
   PlacesUtils: "resource://modules/PlacesUtils.jsm",
@@ -23,7 +23,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.repository.getLogger("Places.Urlbar.ProvidersManager"));
+  Log.repository.getLogger("Urlbar.ProvidersManager"));
 
 // List of available local providers, each is implemented in its own jsm module
 // and will track different queries internally by queryContext.
@@ -200,7 +200,7 @@ class Query {
    * @param {object} controller
    *        The controller to be notified
    * @param {object} muxer
-   *        The muxer to sort matches
+   *        The muxer to sort results
    * @param {object} providers
    *        Map of all the providers by type and name
    */
@@ -213,8 +213,8 @@ class Query {
     this.started = false;
     this.canceled = false;
     this.complete = false;
-    // Array of acceptable MATCH_SOURCE values for this query. Providers not
-    // returning any of these will be skipped, as well as matches not part of
+    // Array of acceptable RESULT_SOURCE values for this query. Providers not
+    // returning any of these will be skipped, as well as results not part of
     // this subset (Note we still expect the provider to do its own internal
     // filtering, our additional filtering will be for sanity).
     this.acceptableSources = [];
@@ -237,9 +237,10 @@ class Query {
       if (this.canceled) {
         break;
       }
-      if (this._providerHasAcceptableSources(provider)) {
-        promises.push(provider.startQuery(this.context, this.add.bind(this)));
-      }
+      // Immediate type providers may return heuristic results, that usually can
+      // bypass suggest.* preferences, so we always execute them, regardless of
+      // this.acceptableSources, and filter results in add().
+      promises.push(provider.startQuery(this.context, this.add.bind(this)));
     }
 
     // Tracks the delay timer. We will fire (in this specific case, cancel would
@@ -308,7 +309,12 @@ class Query {
       throw new Error("Invalid provider passed to the add callback");
     }
     // Stop returning results as soon as we've been canceled.
-    if (this.canceled || !this.acceptableSources.includes(match.source)) {
+    if (this.canceled) {
+      return;
+    }
+    // Check if the result source should be filtered out. Pay attention to the
+    // heuristic result though, that is supposed to be added regardless.
+    if (!this.acceptableSources.includes(match.source) && !match.heuristic) {
       return;
     }
 
@@ -427,14 +433,14 @@ function getAcceptableMatchSources(context) {
                                                  UrlbarTokenizer.TYPE.RESTRICT_SEARCH,
                                                ].includes(t.type));
   let restrictTokenType = restrictToken ? restrictToken.type : undefined;
-  for (let source of Object.values(UrlbarUtils.MATCH_SOURCE)) {
+  for (let source of Object.values(UrlbarUtils.RESULT_SOURCE)) {
     // Skip sources that the context doesn't care about.
     if (context.sources && !context.sources.includes(source)) {
       continue;
     }
     // Check prefs and restriction tokens.
     switch (source) {
-      case UrlbarUtils.MATCH_SOURCE.BOOKMARKS:
+      case UrlbarUtils.RESULT_SOURCE.BOOKMARKS:
         if (UrlbarPrefs.get("suggest.bookmark") &&
             (!restrictTokenType ||
              restrictTokenType === UrlbarTokenizer.TYPE.RESTRICT_BOOKMARK ||
@@ -442,33 +448,33 @@ function getAcceptableMatchSources(context) {
           acceptedSources.push(source);
         }
         break;
-      case UrlbarUtils.MATCH_SOURCE.HISTORY:
+      case UrlbarUtils.RESULT_SOURCE.HISTORY:
         if (UrlbarPrefs.get("suggest.history") &&
             (!restrictTokenType ||
              restrictTokenType === UrlbarTokenizer.TYPE.RESTRICT_HISTORY)) {
           acceptedSources.push(source);
         }
         break;
-      case UrlbarUtils.MATCH_SOURCE.SEARCH:
+      case UrlbarUtils.RESULT_SOURCE.SEARCH:
         if (UrlbarPrefs.get("suggest.searches") &&
             (!restrictTokenType ||
              restrictTokenType === UrlbarTokenizer.TYPE.RESTRICT_SEARCH)) {
           acceptedSources.push(source);
         }
         break;
-      case UrlbarUtils.MATCH_SOURCE.TABS:
+      case UrlbarUtils.RESULT_SOURCE.TABS:
         if (UrlbarPrefs.get("suggest.openpage") &&
             (!restrictTokenType ||
              restrictTokenType === UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE)) {
           acceptedSources.push(source);
         }
         break;
-      case UrlbarUtils.MATCH_SOURCE.OTHER_NETWORK:
+      case UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK:
         if (!context.isPrivate && !restrictTokenType) {
           acceptedSources.push(source);
         }
         break;
-      case UrlbarUtils.MATCH_SOURCE.OTHER_LOCAL:
+      case UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL:
       default:
         if (!restrictTokenType) {
           acceptedSources.push(source);

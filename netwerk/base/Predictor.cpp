@@ -539,7 +539,7 @@ class PredictorLearnRunnable final : public Runnable {
     ipc::URIParams serTargetURI;
     SerializeURI(mTargetURI, serTargetURI);
 
-    ipc::OptionalURIParams serSourceURI;
+    Maybe<ipc::URIParams> serSourceURI;
     SerializeURI(mSourceURI, serSourceURI);
 
     PREDICTOR_LOG(("predictor::learn (async) forwarding to parent"));
@@ -607,6 +607,8 @@ nsresult Predictor::Create(nsISupports *aOuter, const nsIID &aIID,
 
   RefPtr<Predictor> svc = new Predictor();
   if (IsNeckoChild()) {
+    NeckoChild::InitNeckoChild();
+
     // Child threads only need to be call into the public interface methods
     // so we don't bother with initialization
     return svc->QueryInterface(aIID, aResult);
@@ -655,7 +657,7 @@ Predictor::PredictNative(nsIURI *targetURI, nsIURI *sourceURI,
 
     PREDICTOR_LOG(("    called on child process"));
 
-    ipc::OptionalURIParams serTargetURI, serSourceURI;
+    Maybe<ipc::URIParams> serTargetURI, serSourceURI;
     SerializeURI(targetURI, serTargetURI);
     SerializeURI(sourceURI, serSourceURI);
 
@@ -848,7 +850,7 @@ void Predictor::PredictForLink(nsIURI *targetURI, nsIURI *sourceURI,
   nsCOMPtr<nsIPrincipal> principal =
       BasePrincipal::CreateCodebasePrincipal(targetURI, originAttributes);
 
-  mSpeculativeService->SpeculativeConnect2(targetURI, principal, nullptr);
+  mSpeculativeService->SpeculativeConnect(targetURI, principal, nullptr);
   if (verifier) {
     PREDICTOR_LOG(("    sending verification"));
     verifier->OnPredictPreconnect(targetURI);
@@ -1244,7 +1246,8 @@ nsresult Predictor::Prefetch(nsIURI *uri, nsIURI *referrer,
   nsresult rv = NS_NewChannel(
       getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-      nsIContentPolicy::TYPE_OTHER, nullptr, /* aPerformanceStorage */
+      nsIContentPolicy::TYPE_OTHER, nullptr, /* nsICookieSettings */
+      nullptr,                               /* aPerformanceStorage */
       nullptr,                               /* aLoadGroup */
       nullptr,                               /* aCallbacks */
       nsIRequest::LOAD_BACKGROUND);
@@ -1255,10 +1258,8 @@ nsresult Predictor::Prefetch(nsIURI *uri, nsIURI *referrer,
     return rv;
   }
 
-  nsCOMPtr<nsILoadInfo> loadInfo = channel->GetLoadInfo();
-  if (loadInfo) {
-    rv = loadInfo->SetOriginAttributes(originAttributes);
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+  rv = loadInfo->SetOriginAttributes(originAttributes);
 
   if (NS_FAILED(rv)) {
     PREDICTOR_LOG(
@@ -1280,12 +1281,12 @@ nsresult Predictor::Prefetch(nsIURI *uri, nsIURI *referrer,
 
   nsCOMPtr<nsIStreamListener> listener =
       new PrefetchListener(verifier, uri, this);
-  PREDICTOR_LOG(("    calling AsyncOpen2 listener=%p channel=%p",
-                 listener.get(), channel.get()));
-  rv = channel->AsyncOpen2(listener);
+  PREDICTOR_LOG(("    calling AsyncOpen listener=%p channel=%p", listener.get(),
+                 channel.get()));
+  rv = channel->AsyncOpen(listener);
   if (NS_FAILED(rv)) {
     PREDICTOR_LOG(
-        ("    AsyncOpen2 failed rv=0x%" PRIX32, static_cast<uint32_t>(rv)));
+        ("    AsyncOpen failed rv=0x%" PRIX32, static_cast<uint32_t>(rv)));
   }
 
   return rv;
@@ -1334,7 +1335,7 @@ bool Predictor::RunPredictions(nsIURI *referrer,
     ++totalPreconnects;
     nsCOMPtr<nsIPrincipal> principal =
         BasePrincipal::CreateCodebasePrincipal(uri, originAttributes);
-    mSpeculativeService->SpeculativeConnect2(uri, principal, this);
+    mSpeculativeService->SpeculativeConnect(uri, principal, this);
     predicted = true;
     if (verifier) {
       PREDICTOR_LOG(("    sending preconnect verification"));
@@ -2322,15 +2323,13 @@ NS_IMPL_ISUPPORTS(Predictor::PrefetchListener, nsIStreamListener,
 
 // nsIRequestObserver
 NS_IMETHODIMP
-Predictor::PrefetchListener::OnStartRequest(nsIRequest *aRequest,
-                                            nsISupports *aContext) {
+Predictor::PrefetchListener::OnStartRequest(nsIRequest *aRequest) {
   mStartTime = TimeStamp::Now();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 Predictor::PrefetchListener::OnStopRequest(nsIRequest *aRequest,
-                                           nsISupports *aContext,
                                            nsresult aStatusCode) {
   PREDICTOR_LOG(("OnStopRequest this=%p aStatusCode=0x%" PRIX32, this,
                  static_cast<uint32_t>(aStatusCode)));
@@ -2385,7 +2384,6 @@ Predictor::PrefetchListener::OnStopRequest(nsIRequest *aRequest,
 // nsIStreamListener
 NS_IMETHODIMP
 Predictor::PrefetchListener::OnDataAvailable(nsIRequest *aRequest,
-                                             nsISupports *aContext,
                                              nsIInputStream *aInputStream,
                                              uint64_t aOffset,
                                              const uint32_t aCount) {

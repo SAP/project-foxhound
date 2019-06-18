@@ -48,7 +48,8 @@ bool IsImmersiveContentActive(const mozilla::gfx::VRBrowserState& aState) {
 
 }  // anonymous namespace
 
-/*static*/ already_AddRefed<VRService> VRService::Create() {
+/*static*/
+already_AddRefed<VRService> VRService::Create() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!gfxPrefs::VRServiceEnabled()) {
@@ -108,15 +109,13 @@ void VRService::Start() {
   // to OpenMutex when there is no GPU process to create
   // VRSystemManagerExternal and its mutex.
   if (!mMutex && !XRE_IsParentProcess()) {
-     mMutex = OpenMutex(
-        MUTEX_ALL_ACCESS,       // request full access
-        false,                  // handle not inheritable
-        TEXT("mozilla::vr::ShmemMutex"));  // object name
+    mMutex = OpenMutex(MUTEX_ALL_ACCESS,  // request full access
+                       false,             // handle not inheritable
+                       TEXT("mozilla::vr::ShmemMutex"));  // object name
 
     if (mMutex == NULL) {
       nsAutoCString msg;
-      msg.AppendPrintf("VRService OpenMutex error \"%lu\".",
-                       GetLastError());
+      msg.AppendPrintf("VRService OpenMutex error \"%lu\".", GetLastError());
       NS_WARNING(msg.get());
       MOZ_ASSERT(false);
     }
@@ -181,6 +180,7 @@ void VRService::Stop() {
 #if defined(XP_WIN)
   if (mMutex) {
     CloseHandle(mMutex);
+    mMutex = NULL;
   }
 #endif
   mSession = nullptr;
@@ -461,18 +461,18 @@ void VRService::PushState(const mozilla::gfx::VRSystemState& aState) {
   }
 #else
   bool state = true;
-#if defined(XP_WIN)
+#  if defined(XP_WIN)
   if (!XRE_IsParentProcess()) {
     WaitForMutex lock(mMutex);
     state = lock.GetStatus();
   }
-#endif  // defined(XP_WIN)
+#  endif  // defined(XP_WIN)
   if (state) {
     mAPIShmem->generationA++;
     memcpy((void*)&mAPIShmem->state, &aState, sizeof(VRSystemState));
     mAPIShmem->generationB++;
   }
-#endif // defined(MOZ_WIDGET_ANDROID)
+#endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
 void VRService::PullState(mozilla::gfx::VRBrowserState& aState) {
@@ -484,36 +484,36 @@ void VRService::PullState(mozilla::gfx::VRBrowserState& aState) {
   // locked for the duration of the memcpy to and from shmem on
   // both sides.
   // On x86/x64 It is fallable -- If a dirty copy is detected by
-  // a mismatch of browserGenerationA and browserGenerationB,
+  // a mismatch of geckoGenerationA and geckoGenerationB,
   // the copy is discarded and will not replace the last known
   // browser state.
 
 #if defined(MOZ_WIDGET_ANDROID)
-  if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->browserMutex)) ==
+  if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->geckoMutex)) ==
       0) {
-    memcpy(&aState, &tmp.browserState, sizeof(VRBrowserState));
-    pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->browserMutex));
+    memcpy(&aState, &tmp.geckoState, sizeof(VRBrowserState));
+    pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->geckoMutex));
   }
 #else
   bool status = true;
-#if defined(XP_WIN)
+#  if defined(XP_WIN)
   if (!XRE_IsParentProcess()) {
     WaitForMutex lock(mMutex);
     status = lock.GetStatus();
   }
-#endif  // defined(XP_WIN)
+#  endif  // defined(XP_WIN)
   if (status) {
     VRExternalShmem tmp;
-    if (mAPIShmem->browserGenerationA != mBrowserGeneration) {
+    if (mAPIShmem->geckoGenerationA != mBrowserGeneration) {
       memcpy(&tmp, mAPIShmem, sizeof(VRExternalShmem));
-      if (tmp.browserGenerationA == tmp.browserGenerationB &&
-          tmp.browserGenerationA != 0 && tmp.browserGenerationA != -1) {
-        memcpy(&aState, &tmp.browserState, sizeof(VRBrowserState));
-        mBrowserGeneration = tmp.browserGenerationA;
+      if (tmp.geckoGenerationA == tmp.geckoGenerationB &&
+          tmp.geckoGenerationA != 0 && tmp.geckoGenerationA != -1) {
+        memcpy(&aState, &tmp.geckoState, sizeof(VRBrowserState));
+        mBrowserGeneration = tmp.geckoGenerationA;
       }
     }
   }
-#endif  // defined(MOZ_WIDGET_ANDROID)
+#endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
 VRExternalShmem* VRService::GetAPIShmem() { return mAPIShmem; }

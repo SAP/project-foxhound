@@ -28,9 +28,41 @@
  *   The nsIInterfaceRequestor of the parent window; may be null
  */
 
-ChromeUtils.import("resource://gre/modules/SharedPromptUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {EnableDelayHelper} = ChromeUtils.import("resource://gre/modules/SharedPromptUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
+class MozHandler extends window.MozElements.MozRichlistitem {
+  connectedCallback() {
+    this.textContent = "";
+    this.appendChild(window.MozXULElement.parseXULToFragment(`
+      <vbox pack="center">
+        <image height="32" width="32"/>
+      </vbox>
+      <vbox flex="1">
+        <label class="name"/>
+        <label class="description"/>
+      </vbox>
+    `));
+    this.initializeAttributeInheritance();
+  }
+
+  static get inheritedAttributes() {
+    return {
+      "image": "src=image,disabled",
+      ".name": "value=name,disabled",
+      ".description": "value=description,disabled",
+    };
+  }
+
+  get label() {
+    return `${this.getAttribute("name")} ${this.getAttribute("description")}`;
+  }
+}
+
+customElements.define("mozapps-handler", MozHandler, {
+  extends: "richlistitem",
+});
 
 var dialog = {
   // Member Variables
@@ -51,10 +83,28 @@ var dialog = {
     this._handlerInfo = window.arguments[7].QueryInterface(Ci.nsIHandlerInfo);
     this._URI         = window.arguments[8].QueryInterface(Ci.nsIURI);
     this._windowCtxt  = window.arguments[9];
-    if (this._windowCtxt)
+    let usePrivateBrowsing = false;
+    if (this._windowCtxt) {
+      // The context should be nsIRemoteWindowContext in OOP, or nsIDOMWindow otherwise.
+      try {
+        usePrivateBrowsing = this._windowCtxt.getInterface(Ci.nsIRemoteWindowContext)
+                                             .usePrivateBrowsing;
+      } catch (e) {
+        try {
+          let opener = this._windowCtxt.getInterface(Ci.nsIDOMWindow);
+          usePrivateBrowsing = PrivateBrowsingUtils.isContentWindowPrivate(opener);
+        } catch (e) {
+          Cu.reportError(`No interface to determine privateness: ${e}`);
+        }
+      }
       this._windowCtxt.QueryInterface(Ci.nsIInterfaceRequestor);
+    }
+
+    this.isPrivate = usePrivateBrowsing ||
+                     (window.opener && PrivateBrowsingUtils.isWindowPrivate(window.opener));
+
     this._itemChoose  = document.getElementById("item-choose");
-    this._okButton    = document.documentElement.getButton("accept");
+    this._okButton    = document.documentElement.getButton("extra1");
 
     var description = {
       image: document.getElementById("description-image"),
@@ -81,6 +131,9 @@ var dialog = {
 
     // UI is ready, lets populate our list
     this.populateList();
+    // Explicitly not an 'accept' button to avoid having `enter` accept the dialog.
+    document.addEventListener("dialogextra1", () => { this.onOK(); });
+    document.addEventListener("dialogaccept", e => { e.preventDefault(); });
 
     this._delayHelper = new EnableDelayHelper({
       disableDialog: () => {
@@ -104,8 +157,7 @@ var dialog = {
     var preferredHandler = this._handlerInfo.preferredApplicationHandler;
     for (let i = possibleHandlers.length - 1; i >= 0; --i) {
       let app = possibleHandlers.queryElementAt(i, Ci.nsIHandlerApp);
-      let elm = document.createElement("richlistitem");
-      elm.setAttribute("type", "handler");
+      let elm = document.createElement("richlistitem", {is: "mozapps-handler"});
       elm.setAttribute("name", app.name);
       elm.obj = app;
 
@@ -125,6 +177,21 @@ var dialog = {
           elm.setAttribute("image", uri.prePath + "/favicon.ico");
         }
         elm.setAttribute("description", uri.prePath);
+
+        // Check for extensions needing private browsing access before
+        // creating UI elements.
+        if (this.isPrivate) {
+          let policy = WebExtensionPolicy.getByURI(uri);
+          if (policy && !policy.privateBrowsingAllowed) {
+            var bundle = document.getElementById("base-strings");
+            var disabledLabel = bundle.getString("privatebrowsing.disabled.label");
+            elm.setAttribute("disabled", true);
+            elm.setAttribute("description", disabledLabel);
+            if (app == preferredHandler) {
+              preferredHandler = null;
+            }
+          }
+        }
       } else if (app instanceof Ci.nsIDBusHandlerApp) {
         elm.setAttribute("description", app.method);
       } else if (!(app instanceof Ci.nsIGIOMimeApp)) {
@@ -138,8 +205,7 @@ var dialog = {
     }
 
     if (this._handlerInfo.hasDefaultHandler) {
-      let elm = document.createElement("richlistitem");
-      elm.setAttribute("type", "handler");
+      let elm = document.createElement("richlistitem", {is: "mozapps-handler"});
       elm.id = "os-default-handler";
       elm.setAttribute("name", this._handlerInfo.defaultDescription);
 
@@ -170,8 +236,7 @@ var dialog = {
           }
         }
         if (!appAlreadyInHandlers) {
-          let elm = document.createElement("richlistitem");
-          elm.setAttribute("type", "handler");
+          let elm = document.createElement("richlistitem", {is: "mozapps-handler"});
           elm.setAttribute("name", handler.name);
           elm.obj = handler;
           items.insertBefore(elm, this._itemChoose);
@@ -212,8 +277,7 @@ var dialog = {
           }
         }
 
-        let elm = document.createElement("richlistitem");
-        elm.setAttribute("type", "handler");
+        let elm = document.createElement("richlistitem", {is: "mozapps-handler"});
         elm.setAttribute("name", fp.file.leafName);
         elm.setAttribute("image", "moz-icon://" + uri.spec + "?size=32");
         elm.obj = handlerApp;
@@ -227,7 +291,10 @@ var dialog = {
  /**
   * Function called when the OK button is pressed.
   */
-  onAccept: function onAccept() {
+  onOK: function onOK() {
+    if (this._buttonDisabled) {
+      return;
+    }
     var checkbox = document.getElementById("remember");
     if (!checkbox.hidden) {
       // We need to make sure that the default is properly set now
@@ -235,8 +302,9 @@ var dialog = {
         // default OS handler doesn't have this property
         this._handlerInfo.preferredAction = Ci.nsIHandlerInfo.useHelperApp;
         this._handlerInfo.preferredApplicationHandler = this.selectedItem.obj;
-      } else
+      } else {
         this._handlerInfo.preferredAction = Ci.nsIHandlerInfo.useSystemDefault;
+      }
     }
     this._handlerInfo.alwaysAskBeforeHandling = !checkbox.checked;
 
@@ -245,8 +313,7 @@ var dialog = {
     hs.store(this._handlerInfo);
 
     this._handlerInfo.launchWithURI(this._URI, this._windowCtxt);
-
-    return true;
+    window.close();
   },
 
  /**
@@ -274,7 +341,7 @@ var dialog = {
     if (this.selectedItem == this._itemChoose)
       this.chooseApplication();
     else
-      document.documentElement.acceptDialog();
+      this.onOK();
   },
 
   // Getters / Setters

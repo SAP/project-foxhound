@@ -2,7 +2,7 @@
 
 exports[`initializing when pending breakpoints exist in prefs syncs pending breakpoints 1`] = `
 Object {
-  "http://localhost:8000/examples/bar.js:5:": Object {
+  "http://localhost:8000/examples/bar.js:5:2": Object {
     "astLocation": Object {
       "index": 0,
       "name": undefined,
@@ -10,47 +10,23 @@ Object {
         "line": 5,
       },
     },
-    "condition": null,
     "disabled": false,
     "generatedLocation": Object {
-      "column": undefined,
+      "column": 2,
       "line": 5,
       "sourceUrl": "http://localhost:8000/examples/bar.js",
     },
-    "hidden": false,
     "location": Object {
-      "column": undefined,
+      "column": 2,
       "line": 5,
+      "sourceId": "",
       "sourceUrl": "http://localhost:8000/examples/bar.js",
     },
-  },
-}
-`;
-
-exports[`invalid breakpoint location a corrected corresponding pending breakpoint is added 1`] = `
-Object {
-  "astLocation": Object {
-    "index": 0,
-    "name": undefined,
-    "offset": Object {
-      "line": 7,
-      "sourceId": "foo.js",
-      "sourceUrl": "http://localhost:8000/examples/foo.js",
+    "options": Object {
+      "condition": null,
+      "hidden": false,
     },
   },
-  "condition": null,
-  "disabled": false,
-  "generatedLocation": Object {
-    "column": undefined,
-    "line": 7,
-    "sourceUrl": "http://localhost:8000/examples/foo.js",
-  },
-  "location": Object {
-    "column": undefined,
-    "line": 7,
-    "sourceUrl": "http://localhost:8000/examples/foo.js",
-  },
-  "log": false,
 }
 `;
 
@@ -60,24 +36,28 @@ Object {
     "index": 0,
     "name": undefined,
     "offset": Object {
+      "column": 1,
       "line": 5,
       "sourceId": "foo.js",
       "sourceUrl": "http://localhost:8000/examples/foo.js",
     },
   },
-  "condition": null,
   "disabled": false,
   "generatedLocation": Object {
-    "column": undefined,
+    "column": 1,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo.js",
   },
   "location": Object {
-    "column": undefined,
+    "column": 1,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo.js",
   },
-  "log": false,
+  "options": Object {
+    "condition": null,
+    "hidden": false,
+    "logValue": null,
+  },
 }
 `;
 
@@ -87,24 +67,28 @@ Object {
     "index": 0,
     "name": undefined,
     "offset": Object {
+      "column": 0,
       "line": 5,
       "sourceId": "foo",
       "sourceUrl": "http://localhost:8000/examples/foo",
     },
   },
-  "condition": null,
   "disabled": false,
   "generatedLocation": Object {
-    "column": undefined,
+    "column": 0,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo",
   },
   "location": Object {
-    "column": undefined,
+    "column": 0,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo",
   },
-  "log": false,
+  "options": Object {
+    "condition": null,
+    "hidden": false,
+    "logValue": null,
+  },
 }
 `;
 
@@ -114,23 +98,27 @@ Object {
     "index": 0,
     "name": undefined,
     "offset": Object {
+      "column": 0,
       "line": 5,
       "sourceId": "foo2",
       "sourceUrl": "http://localhost:8000/examples/foo2",
     },
   },
-  "condition": null,
   "disabled": false,
   "generatedLocation": Object {
-    "column": undefined,
+    "column": 0,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo2",
   },
   "location": Object {
-    "column": undefined,
+    "column": 0,
     "line": 5,
     "sourceUrl": "http://localhost:8000/examples/foo2",
   },
-  "log": false,
+  "options": Object {
+    "condition": null,
+    "hidden": false,
+    "logValue": null,
+  },
 }
 `;

@@ -472,6 +472,16 @@ bool nsXULElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   return shouldFocus;
 }
 
+int32_t nsXULElement::ScreenX() {
+  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
+  return frame ? frame->GetScreenRect().x : 0;
+}
+
+int32_t nsXULElement::ScreenY() {
+  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
+  return frame ? frame->GetScreenRect().y : 0;
+}
+
 bool nsXULElement::HasMenu() {
   nsMenuFrame* menu = do_QueryFrame(GetPrimaryFrame());
   return menu != nullptr;
@@ -661,8 +671,7 @@ nsresult nsXULElement::BindToTree(Document* aDocument, nsIContent* aParent,
             tag == nsGkAtoms::scrollcorner || tag == nsGkAtoms::slider ||
             tag == nsGkAtoms::thumb ||
             // other
-            tag == nsGkAtoms::datetimebox || tag == nsGkAtoms::resizer ||
-            tag == nsGkAtoms::label || tag == nsGkAtoms::videocontrols,
+            tag == nsGkAtoms::resizer || tag == nsGkAtoms::label,
         "Unexpected XUL element in non-XUL doc");
   }
 #endif
@@ -721,6 +730,15 @@ void nsXULElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   }
 
   nsStyledElement::UnbindFromTree(aDeep, aNullParent);
+}
+
+void nsXULElement::DoneAddingChildren(bool aHaveNotified) {
+  if (IsXULElement(nsGkAtoms::linkset)) {
+    Document* doc = GetComposedDoc();
+    if (doc) {
+      doc->OnL10nResourceContainerParsed();
+    }
+  }
 }
 
 void nsXULElement::UnregisterAccessKey(const nsAString& aOldValue) {
@@ -1073,28 +1091,33 @@ nsresult nsXULElement::PreHandleEvent(EventChainVisitor& aVisitor) {
 
 nsChangeHint nsXULElement::GetAttributeChangeHint(const nsAtom* aAttribute,
                                                   int32_t aModType) const {
-  nsChangeHint retval(nsChangeHint(0));
-
   if (aAttribute == nsGkAtoms::value &&
       (aModType == MutationEvent_Binding::REMOVAL ||
-       aModType == MutationEvent_Binding::ADDITION)) {
-    if (IsAnyOfXULElements(nsGkAtoms::label, nsGkAtoms::description))
-      // Label and description dynamically morph between a normal
-      // block and a cropping single-line XUL text frame.  If the
-      // value attribute is being added or removed, then we need to
-      // return a hint of frame change.  (See bugzilla bug 95475 for
-      // details.)
-      retval = nsChangeHint_ReconstructFrame;
-  } else {
-    // if left or top changes we reflow. This will happen in xul
-    // containers that manage positioned children such as a stack.
-    if (nsGkAtoms::left == aAttribute || nsGkAtoms::top == aAttribute ||
-        nsGkAtoms::right == aAttribute || nsGkAtoms::bottom == aAttribute ||
-        nsGkAtoms::start == aAttribute || nsGkAtoms::end == aAttribute)
-      retval = NS_STYLE_HINT_REFLOW;
+       aModType == MutationEvent_Binding::ADDITION) &&
+      IsAnyOfXULElements(nsGkAtoms::label, nsGkAtoms::description)) {
+    // Label and description dynamically morph between a normal
+    // block and a cropping single-line XUL text frame.  If the
+    // value attribute is being added or removed, then we need to
+    // return a hint of frame change.  (See bugzilla bug 95475 for
+    // details.)
+    return nsChangeHint_ReconstructFrame;
   }
 
-  return retval;
+  if (aAttribute == nsGkAtoms::type &&
+      IsAnyOfXULElements(nsGkAtoms::toolbarbutton, nsGkAtoms::button)) {
+    // type=menu switches from a button frame to a menu frame.
+    return nsChangeHint_ReconstructFrame;
+  }
+
+  // if left or top changes we reflow. This will happen in xul
+  // containers that manage positioned children such as a stack.
+  if (nsGkAtoms::left == aAttribute || nsGkAtoms::top == aAttribute ||
+      nsGkAtoms::right == aAttribute || nsGkAtoms::bottom == aAttribute ||
+      nsGkAtoms::start == aAttribute || nsGkAtoms::end == aAttribute) {
+    return NS_STYLE_HINT_REFLOW;
+  }
+
+  return nsChangeHint(0);
 }
 
 NS_IMETHODIMP_(bool)

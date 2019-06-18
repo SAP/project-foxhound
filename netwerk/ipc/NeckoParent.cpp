@@ -14,7 +14,6 @@
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/CookieServiceParent.h"
-#include "mozilla/net/WyciwygChannelParent.h"
 #include "mozilla/net/FTPChannelParent.h"
 #include "mozilla/net/WebSocketChannelParent.h"
 #include "mozilla/net/WebSocketEventListenerParent.h"
@@ -25,9 +24,9 @@
 #include "mozilla/net/FileChannelParent.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/net/ChannelDiverterParent.h"
+#include "mozilla/net/ClassifierDummyChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/net/RequestContextService.h"
-#include "mozilla/net/TrackingDummyChannelParent.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/PSocketProcessBridgeParent.h"
 #ifdef MOZ_WEBRTC
@@ -66,7 +65,6 @@ using mozilla::dom::TCPServerSocketParent;
 using mozilla::dom::TCPSocketParent;
 using mozilla::dom::UDPSocketParent;
 using mozilla::ipc::LoadInfoArgsToLoadInfo;
-using mozilla::ipc::OptionalPrincipalInfo;
 using mozilla::ipc::PrincipalInfo;
 using mozilla::net::PTCPServerSocketParent;
 using mozilla::net::PTCPSocketParent;
@@ -104,21 +102,20 @@ static PBOverrideStatus PBOverrideStatusFromLoadContext(
 }
 
 static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
-    const OptionalLoadInfoArgs& aOptionalLoadInfoArgs) {
-  if (aOptionalLoadInfoArgs.type() != OptionalLoadInfoArgs::TLoadInfoArgs) {
+    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs) {
+  if (aOptionalLoadInfoArgs.isNothing()) {
     return nullptr;
   }
 
-  const LoadInfoArgs& loadInfoArgs = aOptionalLoadInfoArgs.get_LoadInfoArgs();
-  const OptionalPrincipalInfo& optionalPrincipalInfo =
+  const LoadInfoArgs& loadInfoArgs = aOptionalLoadInfoArgs.ref();
+  const Maybe<PrincipalInfo>& optionalPrincipalInfo =
       loadInfoArgs.requestingPrincipalInfo();
 
-  if (optionalPrincipalInfo.type() != OptionalPrincipalInfo::TPrincipalInfo) {
+  if (optionalPrincipalInfo.isNothing()) {
     return nullptr;
   }
 
-  const PrincipalInfo& principalInfo =
-      optionalPrincipalInfo.get_PrincipalInfo();
+  const PrincipalInfo& principalInfo = optionalPrincipalInfo.ref();
 
   return PrincipalInfoToPrincipal(principalInfo);
 }
@@ -148,7 +145,7 @@ static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
 // We prefer to crash on the parent, so we get the reason in the crash report.
 static MOZ_COLD void CrashWithReason(const char* reason) {
 #ifndef RELEASE_OR_BETA
-  MOZ_CRASH_UNSAFE_OOL(reason);
+  MOZ_CRASH_UNSAFE(reason);
 #endif
 }
 
@@ -358,7 +355,7 @@ PAltDataOutputStreamParent* NeckoParent::AllocPAltDataOutputStreamParent(
     const nsCString& type, const int64_t& predictedSize,
     PHttpChannelParent* channel) {
   HttpChannelParent* chan = static_cast<HttpChannelParent*>(channel);
-  nsCOMPtr<nsIOutputStream> stream;
+  nsCOMPtr<nsIAsyncOutputStream> stream;
   nsresult rv = chan->OpenAlternativeOutputStream(type, predictedSize,
                                                   getter_AddRefs(stream));
   AltDataOutputStreamParent* parent = new AltDataOutputStreamParent(stream);
@@ -424,18 +421,6 @@ PCookieServiceParent* NeckoParent::AllocPCookieServiceParent() {
 
 bool NeckoParent::DeallocPCookieServiceParent(PCookieServiceParent* cs) {
   delete cs;
-  return true;
-}
-
-PWyciwygChannelParent* NeckoParent::AllocPWyciwygChannelParent() {
-  WyciwygChannelParent* p = new WyciwygChannelParent();
-  p->AddRef();
-  return p;
-}
-
-bool NeckoParent::DeallocPWyciwygChannelParent(PWyciwygChannelParent* channel) {
-  WyciwygChannelParent* p = static_cast<WyciwygChannelParent*>(channel);
-  p->Release();
   return true;
 }
 
@@ -632,9 +617,9 @@ mozilla::ipc::IPCResult NeckoParent::RecvSpeculativeConnect(
   nsCOMPtr<nsIPrincipal> principal(aPrincipal);
   if (uri && speculator) {
     if (aAnonymous) {
-      speculator->SpeculativeAnonymousConnect2(uri, principal, nullptr);
+      speculator->SpeculativeAnonymousConnect(uri, principal, nullptr);
     } else {
-      speculator->SpeculativeConnect2(uri, principal, nullptr);
+      speculator->SpeculativeConnect(uri, principal, nullptr);
     }
   }
   return IPC_OK();
@@ -758,8 +743,8 @@ mozilla::ipc::IPCResult NeckoParent::RecvOnAuthCancelled(
 
 /* Predictor Messages */
 mozilla::ipc::IPCResult NeckoParent::RecvPredPredict(
-    const ipc::OptionalURIParams& aTargetURI,
-    const ipc::OptionalURIParams& aSourceURI, const uint32_t& aReason,
+    const Maybe<ipc::URIParams>& aTargetURI,
+    const Maybe<ipc::URIParams>& aSourceURI, const uint32_t& aReason,
     const OriginAttributes& aOriginAttributes, const bool& hasVerifier) {
   nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
   nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
@@ -780,7 +765,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvPredPredict(
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPredLearn(
-    const ipc::URIParams& aTargetURI, const ipc::OptionalURIParams& aSourceURI,
+    const ipc::URIParams& aTargetURI, const Maybe<ipc::URIParams>& aSourceURI,
     const uint32_t& aReason, const OriginAttributes& aOriginAttributes) {
   nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
   nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
@@ -920,19 +905,18 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetExtensionFD(
   return IPC_OK();
 }
 
-PTrackingDummyChannelParent* NeckoParent::AllocPTrackingDummyChannelParent(
+PClassifierDummyChannelParent* NeckoParent::AllocPClassifierDummyChannelParent(
     nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
-    const OptionalLoadInfoArgs& aLoadInfo) {
-  RefPtr<TrackingDummyChannelParent> c = new TrackingDummyChannelParent();
+    const Maybe<LoadInfoArgs>& aLoadInfo) {
+  RefPtr<ClassifierDummyChannelParent> c = new ClassifierDummyChannelParent();
   return c.forget().take();
 }
 
-mozilla::ipc::IPCResult NeckoParent::RecvPTrackingDummyChannelConstructor(
-    PTrackingDummyChannelParent* aActor, nsIURI* aURI, nsIURI* aTopWindowURI,
-    const nsresult& aTopWindowURIResult,
-    const OptionalLoadInfoArgs& aLoadInfo) {
-  TrackingDummyChannelParent* p =
-      static_cast<TrackingDummyChannelParent*>(aActor);
+mozilla::ipc::IPCResult NeckoParent::RecvPClassifierDummyChannelConstructor(
+    PClassifierDummyChannelParent* aActor, nsIURI* aURI, nsIURI* aTopWindowURI,
+    const nsresult& aTopWindowURIResult, const Maybe<LoadInfoArgs>& aLoadInfo) {
+  ClassifierDummyChannelParent* p =
+      static_cast<ClassifierDummyChannelParent*>(aActor);
 
   if (NS_WARN_IF(!aURI)) {
     return IPC_FAIL_NO_REASON(this);
@@ -948,10 +932,10 @@ mozilla::ipc::IPCResult NeckoParent::RecvPTrackingDummyChannelConstructor(
   return IPC_OK();
 }
 
-bool NeckoParent::DeallocPTrackingDummyChannelParent(
-    PTrackingDummyChannelParent* aActor) {
-  RefPtr<TrackingDummyChannelParent> c =
-      dont_AddRef(static_cast<TrackingDummyChannelParent*>(aActor));
+bool NeckoParent::DeallocPClassifierDummyChannelParent(
+    PClassifierDummyChannelParent* aActor) {
+  RefPtr<ClassifierDummyChannelParent> c =
+      dont_AddRef(static_cast<ClassifierDummyChannelParent*>(aActor));
   MOZ_ASSERT(c);
   return true;
 }

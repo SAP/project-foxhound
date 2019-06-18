@@ -1,8 +1,4 @@
 ---
-metadata:
-  description: Source file archives
-  name: Beetmover source archive manifest
-  owner: release@mozilla.com
 s3_bucket_paths:
   by-platform:
     fennec-source:
@@ -15,9 +11,6 @@ default_locales:  # if given an empty locale, use these locales
   - en-US
 tasktype_map:  # Map task reference to task type.
   release-source-checksums-signing: signing
-platform_names:
-  path_platform: ''
-  filename_platform: ''
 
 # A default entry, which the mappings below extend and override.
 # Final 'destinations' will be the product of:
@@ -26,7 +19,7 @@ default: &default
   from:
     - release-source-checksums-signing
   all_locales: false
-  description: "TODO"
+  description: "TO_BE_OVERRIDDEN"
   locale_prefix: ''
   source_path_modifier: ''
   destinations:  # locale_prefix is appended
@@ -36,14 +29,26 @@ default: &default
 mapping:
   target-source.checksums:
     <<: *default
+    description: "Checksums file for the source zip files"
     pretty_name:
+      by-platform:
+        firefox-source: firefox-${version}.checksums.beet
+        devedition-source: firefox-${version}.checksums.beet
+        fennec-source: fennec-${version}.checksums.beet
+    checksums_path:
       by-platform:
         firefox-source: firefox-${version}.checksums.beet
         devedition-source: firefox-${version}.checksums.beet
         fennec-source: fennec-${version}.checksums.beet
   target-source.checksums.asc:
     <<: *default
+    description: "Detached signature for the checksums file"
     pretty_name:
+      by-platform:
+        firefox-source: firefox-${version}.checksums.asc
+        devedition-source: firefox-${version}.checksums.asc
+        fennec-source: fennec-${version}.checksums.asc
+    checksums_path:
       by-platform:
         firefox-source: firefox-${version}.checksums.asc
         devedition-source: firefox-${version}.checksums.asc

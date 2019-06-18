@@ -7,7 +7,6 @@ user_pref("browser.addon-watch.interval", -1); // Deactivate add-on watching
 // Disable Bookmark backups by default.
 user_pref("browser.bookmarks.max_backups", 0);
 user_pref("browser.cache.disk.smart_size.enabled", false);
-user_pref("browser.cache.disk.smart_size.first_run", false);
 user_pref("browser.chrome.dynamictoolbar", false);
 user_pref("browser.contentHandlers.types.0.uri", "http://127.0.0.1/rss?url=%s");
 user_pref("browser.contentHandlers.types.1.uri", "http://127.0.0.1/rss?url=%s");
@@ -64,6 +63,9 @@ user_pref("extensions.update.url", "http://127.0.0.1/extensions-dummy/updateURL"
 user_pref("extensions.webservice.discoverURL", "http://127.0.0.1/extensions-dummy/discoveryURL");
 user_pref("identity.fxaccounts.auth.uri", "https://127.0.0.1/fxa-dummy/");
 user_pref("identity.fxaccounts.migrateToDevEdition", false);
+// Avoid idle-daily notifications, to avoid expensive operations that may
+// cause unexpected test timeouts.
+user_pref("idle.lastDailyNotification", -1);
 // Make tests run consistently on DevEdition (which has a lightweight theme
 // selected by default).
 user_pref("lightweightThemes.selectedThemeID", "");

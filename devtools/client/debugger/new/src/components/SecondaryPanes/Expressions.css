@@ -94,7 +94,6 @@
 
 .expression-container__close-btn {
   position: absolute;
-  offset-inline-end: 0px;
   inset-inline-end: 0px;
   top: 1px;
 }
@@ -116,6 +115,6 @@
   padding-inline-start: 10px;
 }
 
-.expression-input {
-  max-width: 50%;
+.input-expression:not(:placeholder-shown) {
+  font-family: var(--monospace-font-family);
 }

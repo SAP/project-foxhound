@@ -13,13 +13,13 @@
 #include "nsIPropertyBag2.h"
 #include "ProcessPriorityManager.h"
 #include "nsServiceManagerUtils.h"
+#include "nsIXULRuntime.h"
 
 // This number is fairly arbitrary ... the intention is to put off
 // launching another app process until the last one has finished
 // loading its content, to reduce CPU/memory/IO contention.
 #define DEFAULT_ALLOCATE_DELAY 1000
 
-using namespace mozilla;
 using namespace mozilla::hal;
 using namespace mozilla::dom;
 
@@ -72,12 +72,14 @@ class PreallocatedProcessManagerImpl final : public nsIObserver {
   bool IsEmpty() const { return !mPreallocatedProcess && !mLaunchInProgress; }
 };
 
-/* static */ StaticRefPtr<PreallocatedProcessManagerImpl>
+/* static */
+StaticRefPtr<PreallocatedProcessManagerImpl>
     PreallocatedProcessManagerImpl::sSingleton;
-/* static */ uint32_t PreallocatedProcessManagerImpl::sPrelaunchDelayMS = 0;
+/* static */
+uint32_t PreallocatedProcessManagerImpl::sPrelaunchDelayMS = 0;
 
-/* static */ PreallocatedProcessManagerImpl*
-PreallocatedProcessManagerImpl::Singleton() {
+/* static */
+PreallocatedProcessManagerImpl* PreallocatedProcessManagerImpl::Singleton() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!sSingleton) {
     sSingleton = new PreallocatedProcessManagerImpl();
@@ -316,22 +318,23 @@ inline PreallocatedProcessManagerImpl* GetPPMImpl() {
   return PreallocatedProcessManagerImpl::Singleton();
 }
 
-/* static */ void PreallocatedProcessManager::AddBlocker(
-    ContentParent* aParent) {
+/* static */
+void PreallocatedProcessManager::AddBlocker(ContentParent* aParent) {
   GetPPMImpl()->AddBlocker(aParent);
 }
 
-/* static */ void PreallocatedProcessManager::RemoveBlocker(
-    ContentParent* aParent) {
+/* static */
+void PreallocatedProcessManager::RemoveBlocker(ContentParent* aParent) {
   GetPPMImpl()->RemoveBlocker(aParent);
 }
 
-/* static */ already_AddRefed<ContentParent>
-PreallocatedProcessManager::Take() {
+/* static */
+already_AddRefed<ContentParent> PreallocatedProcessManager::Take() {
   return GetPPMImpl()->Take();
 }
 
-/* static */ bool PreallocatedProcessManager::Provide(ContentParent* aParent) {
+/* static */
+bool PreallocatedProcessManager::Provide(ContentParent* aParent) {
   return GetPPMImpl()->Provide(aParent);
 }
 

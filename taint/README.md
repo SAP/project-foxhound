@@ -128,3 +128,8 @@ Gecko
 * nsTextFragment (dom/base/nsTextFragment.h)
     - Inherits from TaintableString
 
+
+## References
+
+### Mozilla internal String guide
+https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Guide/Internal_strings

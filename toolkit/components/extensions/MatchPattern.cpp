@@ -233,7 +233,8 @@ const char* HOST_LOCATOR_SCHEMES[] = {
 
 const char* WILDCARD_SCHEMES[] = {"http", "https", "ws", "wss", nullptr};
 
-/* static */ already_AddRefed<MatchPattern> MatchPattern::Constructor(
+/* static */
+already_AddRefed<MatchPattern> MatchPattern::Constructor(
     dom::GlobalObject& aGlobal, const nsAString& aPattern,
     const MatchPatternOptions& aOptions, ErrorResult& aRv) {
   RefPtr<MatchPattern> pattern = new MatchPattern(aGlobal.GetAsSupports());
@@ -323,6 +324,11 @@ void MatchPattern::Init(JSContext* aCx, const nsAString& aPattern,
     } else if (StringHead(host, 2).EqualsLiteral("*.")) {
       mDomain = NS_ConvertUTF16toUTF8(Substring(host, 2));
       mMatchSubdomain = true;
+    } else if (host.Length() > 1 && host[0] == '[' &&
+               host[host.Length() - 1] == ']') {
+      // This is an IPv6 literal, we drop the enclosing `[]` to be
+      // consistent with nsIURI.
+      mDomain = NS_ConvertUTF16toUTF8(Substring(host, 1, host.Length() - 2));
     } else {
       mDomain = NS_ConvertUTF16toUTF8(host);
     }
@@ -455,7 +461,8 @@ JSObject* MatchPattern::WrapObject(JSContext* aCx,
   return MatchPattern_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-/* static */ bool MatchPattern::MatchesAllURLs(const URLInfo& aURL) {
+/* static */
+bool MatchPattern::MatchesAllURLs(const URLInfo& aURL) {
   RefPtr<AtomSet> permittedSchemes = AtomSet::Get<PERMITTED_SCHEMES>();
   return permittedSchemes->Contains(aURL.Scheme());
 }
@@ -474,7 +481,8 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(MatchPattern)
  * MatchPatternSet
  *****************************************************************************/
 
-/* static */ already_AddRefed<MatchPatternSet> MatchPatternSet::Constructor(
+/* static */
+already_AddRefed<MatchPatternSet> MatchPatternSet::Constructor(
     dom::GlobalObject& aGlobal,
     const nsTArray<dom::OwningStringOrMatchPattern>& aPatterns,
     const MatchPatternOptions& aOptions, ErrorResult& aRv) {
@@ -595,9 +603,11 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(MatchPatternSet)
 
 MatchGlob::~MatchGlob() { mozilla::DropJSObjects(this); }
 
-/* static */ already_AddRefed<MatchGlob> MatchGlob::Constructor(
-    dom::GlobalObject& aGlobal, const nsAString& aGlob, bool aAllowQuestion,
-    ErrorResult& aRv) {
+/* static */
+already_AddRefed<MatchGlob> MatchGlob::Constructor(dom::GlobalObject& aGlobal,
+                                                   const nsAString& aGlob,
+                                                   bool aAllowQuestion,
+                                                   ErrorResult& aRv) {
   RefPtr<MatchGlob> glob = new MatchGlob(aGlobal.GetAsSupports());
   glob->Init(aGlobal.Context(), aGlob, aAllowQuestion, aRv);
   if (aRv.Failed()) {

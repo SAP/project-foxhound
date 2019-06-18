@@ -31,7 +31,7 @@ function assertContextMatches(context, expectedValues) {
 }
 
 add_task(function setup() {
-  sandbox = sinon.sandbox.create();
+  sandbox = sinon.createSandbox();
 
   fPM = {
     startQuery: sandbox.stub(),
@@ -194,19 +194,6 @@ add_task(function test_cancel_query() {
 });
 
 add_task(function test_receiveResults() {
-  const context = createContext();
-  context.results = [];
-  controller.receiveResults(context);
-
-  Assert.equal(generalListener.onQueryResults.callCount, 1,
-    "Should have called onQueryResults for the listener");
-  Assert.deepEqual(generalListener.onQueryResults.args[0], [context],
-    "Should have called onQueryResults with the context");
-
-  sandbox.resetHistory();
-});
-
-add_task(function test_autocomplete_enabled() {
   const context = createContext();
   context.results = [];
   controller.receiveResults(context);

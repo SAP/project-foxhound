@@ -7,6 +7,7 @@
 #include "AudioBuffer.h"
 #include "mozilla/dom/AudioBufferBinding.h"
 #include "jsfriendapi.h"
+#include "js/ArrayBuffer.h"  // JS::StealArrayBufferContents
 #include "mozilla/ErrorResult.h"
 #include "AudioSegment.h"
 #include "AudioChannelFormat.h"
@@ -170,7 +171,8 @@ AudioBuffer::~AudioBuffer() {
   mozilla::DropJSObjects(this);
 }
 
-/* static */ already_AddRefed<AudioBuffer> AudioBuffer::Constructor(
+/* static */
+already_AddRefed<AudioBuffer> AudioBuffer::Constructor(
     const GlobalObject& aGlobal, const AudioBufferOptions& aOptions,
     ErrorResult& aRv) {
   if (!aOptions.mNumberOfChannels) {
@@ -199,7 +201,8 @@ void AudioBuffer::SetSharedChannels(
   mSharedChannels.mBufferFormat = AUDIO_FORMAT_FLOAT32;
 }
 
-/* static */ already_AddRefed<AudioBuffer> AudioBuffer::Create(
+/* static */
+already_AddRefed<AudioBuffer> AudioBuffer::Create(
     nsPIDOMWindowInner* aWindow, uint32_t aNumberOfChannels, uint32_t aLength,
     float aSampleRate,
     already_AddRefed<ThreadSharedFloatArrayBufferList> aInitialContents,
@@ -219,7 +222,8 @@ void AudioBuffer::SetSharedChannels(
   return buffer.forget();
 }
 
-/* static */ already_AddRefed<AudioBuffer> AudioBuffer::Create(
+/* static */
+already_AddRefed<AudioBuffer> AudioBuffer::Create(
     nsPIDOMWindowInner* aWindow, float aSampleRate,
     AudioChunk&& aInitialContents) {
   AudioChunk initialContents = aInitialContents;
@@ -423,7 +427,7 @@ AudioBuffer::StealJSArrayDataIntoSharedChannels(JSContext* aJSContext) {
     // RestoreJSChannelData, where they are created unshared.
     MOZ_ASSERT(!isSharedMemory);
     auto stolenData = arrayBuffer
-                          ? static_cast<float*>(JS_StealArrayBufferContents(
+                          ? static_cast<float*>(JS::StealArrayBufferContents(
                                 aJSContext, arrayBuffer))
                           : nullptr;
     if (stolenData) {

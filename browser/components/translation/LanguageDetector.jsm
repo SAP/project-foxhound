@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["LanguageDetector"];
 
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 // Since Emscripten can handle heap growth, but not heap shrinkage, we
 // need to refresh the worker after we've processed a particularly large
@@ -81,9 +81,9 @@ var workerManager = {
   // results. Otherwise, reschedule termination until after the next
   // idle timeout.
   _flushWorker() {
-    if (this.detectionQueue.length)
+    if (this.detectionQueue.length) {
       this.flushWorker();
-    else {
+    } else {
       if (this._worker)
         this._worker.terminate();
 

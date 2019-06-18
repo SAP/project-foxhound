@@ -1,4 +1,4 @@
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const HELPERAPP_DIALOG_CONTRACT = "@mozilla.org/helperapplauncherdialog;1";
 const HELPERAPP_DIALOG_CID =
@@ -6,13 +6,13 @@ const HELPERAPP_DIALOG_CID =
 
 const FAKE_CID = Cc["@mozilla.org/uuid-generator;1"].
                    getService(Ci.nsIUUIDGenerator).generateUUID();
-
+/* eslint-env mozilla/frame-script */
 function HelperAppLauncherDialog() {}
 HelperAppLauncherDialog.prototype = {
-  show: function(aLauncher, aWindowContext, aReason) {
+  show(aLauncher, aWindowContext, aReason) {
     sendAsyncMessage("suggestedFileName", aLauncher.suggestedFileName);
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIHelperAppLauncherDialog]),
 };
 
 var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);

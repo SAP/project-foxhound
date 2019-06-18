@@ -31,6 +31,10 @@ class Client;
 
 }  // namespace quota
 
+void InitializeLocalStorage();
+
+bool GetCurrentNextGenPrefValue();
+
 PBackgroundLSDatabaseParent* AllocPBackgroundLSDatabaseParent(
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
     const uint32_t& aPrivateBrowsingId, const uint64_t& aDatastoreId);
@@ -60,6 +64,7 @@ bool RecvPBackgroundLSRequestConstructor(PBackgroundLSRequestParent* aActor,
 bool DeallocPBackgroundLSRequestParent(PBackgroundLSRequestParent* aActor);
 
 PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
+    mozilla::ipc::PBackgroundParent* aBackgroundActor,
     const LSSimpleRequestParams& aParams);
 
 bool RecvPBackgroundLSSimpleRequestConstructor(
@@ -68,6 +73,8 @@ bool RecvPBackgroundLSSimpleRequestConstructor(
 
 bool DeallocPBackgroundLSSimpleRequestParent(
     PBackgroundLSSimpleRequestParent* aActor);
+
+bool RecvLSClearPrivateBrowsing();
 
 namespace localstorage {
 

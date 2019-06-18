@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
@@ -50,38 +50,52 @@ function emptyPermissions() {
 }
 
 var ExtensionPermissions = {
-  async _saveSoon(extension) {
-    await lazyInit();
-
-    prefs.data[extension.id] = await this._getCached(extension);
-    return prefs.saveSoon();
+  _update(extensionId, perms) {
+    prefs.data[extensionId] = perms;
+    prefs.saveSoon();
+    return StartupCache.permissions.set(extensionId, perms);
   },
 
-  async _get(extension) {
+  async _get(extensionId) {
     await lazyInit();
 
-    let perms = prefs.data[extension.id];
+    let perms = prefs.data[extensionId];
     if (!perms) {
       perms = emptyPermissions();
-      prefs.data[extension.id] = perms;
     }
 
     return perms;
   },
 
-  async _getCached(extension) {
-    return StartupCache.permissions.get(extension.id,
-                                        () => this._get(extension));
+  async _getCached(extensionId) {
+    return StartupCache.permissions.get(extensionId,
+                                        () => this._get(extensionId));
   },
 
-  get(extension) {
-    return this._getCached(extension);
+  /**
+   * Retrieves the optional permissions for the given extension.
+   * The information may be retrieved from the StartupCache, and otherwise fall
+   * back to data from the disk (and cache the result in the StartupCache).
+   *
+   * @param {string} extensionId The extensionId
+   * @returns {object} An object with "permissions" and "origins" array.
+   *   The object may be a direct reference to the storage or cache, so its
+   *   value should immediately be used and not be modified by callers.
+   */
+  get(extensionId) {
+    return this._getCached(extensionId);
   },
 
-  // Add new permissions for the given extension.  `permissions` is
-  // in the format that is passed to browser.permissions.request().
-  async add(extension, perms) {
-    let {permissions, origins} = await this._getCached(extension);
+  /**
+   * Add new permissions for the given extension.  `permissions` is
+   * in the format that is passed to browser.permissions.request().
+   *
+   * @param {string} extensionId The extension id
+   * @param {Object} perms Object with permissions and origins array.
+   * @param {EventEmitter} emitter optional object implementing emitter interfaces
+   */
+  async add(extensionId, perms, emitter) {
+    let {permissions, origins} = await this._get(extensionId);
 
     let added = emptyPermissions();
 
@@ -101,15 +115,23 @@ var ExtensionPermissions = {
     }
 
     if (added.permissions.length > 0 || added.origins.length > 0) {
-      this._saveSoon(extension);
-      extension.emit("add-permissions", added);
+      await this._update(extensionId, {permissions, origins});
+      if (emitter) {
+        emitter.emit("add-permissions", added);
+      }
     }
   },
 
-  // Revoke permissions from the given extension.  `permissions` is
-  // in the format that is passed to browser.permissions.remove().
-  async remove(extension, perms) {
-    let {permissions, origins} = await this._getCached(extension);
+  /**
+   * Revoke permissions from the given extension.  `permissions` is
+   * in the format that is passed to browser.permissions.request().
+   *
+   * @param {string} extensionId The extension id
+   * @param {Object} perms Object with permissions and origins array.
+   * @param {EventEmitter} emitter optional object implementing emitter interfaces
+   */
+  async remove(extensionId, perms, emitter) {
+    let {permissions, origins} = await this._get(extensionId);
 
     let removed = emptyPermissions();
 
@@ -132,16 +154,18 @@ var ExtensionPermissions = {
     }
 
     if (removed.permissions.length > 0 || removed.origins.length > 0) {
-      this._saveSoon(extension);
-      extension.emit("remove-permissions", removed);
+      await this._update(extensionId, {permissions, origins});
+      if (emitter) {
+        emitter.emit("remove-permissions", removed);
+      }
     }
   },
 
-  async removeAll(extension) {
-    let perms = await this._getCached(extension);
-
-    if (perms.permissions.length || perms.origins.length) {
-      Object.assign(perms, emptyPermissions());
+  async removeAll(extensionId) {
+    await lazyInit();
+    StartupCache.permissions.delete(extensionId);
+    if (prefs.data[extensionId]) {
+      delete prefs.data[extensionId];
       prefs.saveSoon();
     }
   },

@@ -96,7 +96,6 @@ XPIDL_SOURCES += [
     'nsIResumableChannel.idl',
     'nsISecCheckWrapChannel.idl',
     'nsISecureBrowserUI.idl',
-    'nsISecurityEventSink.idl',
     'nsISensitiveInfoHiddenURI.idl',
     'nsISerializationHelper.idl',
     'nsIServerSocket.idl',
@@ -130,11 +129,6 @@ XPIDL_SOURCES += [
     'nsPISocketTransportService.idl',
 ]
 
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    XPIDL_SOURCES += [
-        'nsIBrowserSearchService.idl',
-    ]
-
 XPIDL_MODULE = 'necko'
 
 EXPORTS += [
@@ -149,6 +143,7 @@ EXPORTS += [
     'nsSerializationHelper.h',
     'nsSimpleNestedURI.h',
     'nsSimpleURI.h',
+    'nsStandardURL.h',
     'nsStreamListenerWrapper.h',
     'nsURIHashKey.h',
     'nsURLHelper.h',
@@ -222,7 +217,6 @@ UNIFIED_SOURCES += [
     'nsProxyInfo.cpp',
     'nsRedirectHistoryEntry.cpp',
     'nsRequestObserverProxy.cpp',
-    'nsSecCheckWrapChannel.cpp',
     'nsSerializationHelper.cpp',
     'nsServerSocket.cpp',
     'nsSimpleNestedURI.cpp',
@@ -304,8 +298,10 @@ LOCAL_INCLUDES += [
     '/netwerk/url-classifier',
 ]
 
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    LOCAL_INCLUDES += [
+        '/xpcom/base',
+    ]
+
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

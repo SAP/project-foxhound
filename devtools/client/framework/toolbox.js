@@ -31,7 +31,7 @@ var Startup = Cc["@mozilla.org/devtools/startup-clh;1"].getService(Ci.nsISupport
   .wrappedJSObject;
 
 const { BrowserLoader } =
-  ChromeUtils.import("resource://devtools/client/shared/browser-loader.js", {});
+  ChromeUtils.import("resource://devtools/client/shared/browser-loader.js");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
@@ -62,6 +62,8 @@ loader.lazyRequireGetter(this, "sortPanelDefinitions",
   "devtools/client/framework/toolbox-tabs-order-manager", true);
 loader.lazyRequireGetter(this, "createEditContextMenu",
   "devtools/client/framework/toolbox-context-menu", true);
+loader.lazyRequireGetter(this, "remoteClientManager",
+  "devtools/client/shared/remote-debugging/remote-client-manager.js", true);
 
 loader.lazyGetter(this, "domNodeConstants", () => {
   return require("devtools/shared/dom-node-constants");
@@ -124,6 +126,14 @@ function Toolbox(target, selectedTool, hostType, contentWindow, frameId,
   // Map of frames (id => frame-info) and currently selected frame id.
   this.frameMap = new Map();
   this.selectedFrameId = null;
+
+  /**
+   * KeyShortcuts instance specific to WINDOW host type.
+   * This is the key shortcuts that are only register when the toolbox
+   * is loaded in its own window. Otherwise, these shortcuts are typically
+   * registered by devtools-startup.js module.
+   */
+  this._windowHostShortcuts = null;
 
   this._toolRegistered = this._toolRegistered.bind(this);
   this._toolUnregistered = this._toolUnregistered.bind(this);
@@ -218,6 +228,9 @@ Toolbox.HostType = {
   LEFT: "left",
   WINDOW: "window",
   CUSTOM: "custom",
+  // This is typically used by `about:debugging`, when opening toolbox in a new tab,
+  // via `about:devtools-toolbox` URLs.
+  PAGE: "page",
 };
 
 Toolbox.prototype = {
@@ -435,6 +448,14 @@ Toolbox.prototype = {
         this._URL = this.win.location.href;
       }
 
+      if (this.hostType === Toolbox.HostType.PAGE) {
+        // Displays DebugTargetInfo which shows the basic information of debug target,
+        // if `about:devtools-toolbox` URL opens directly.
+        // DebugTargetInfo requires this._deviceDescription to be populated
+        this._showDebugTargetInfo = true;
+        this._deviceDescription = await this._getDeviceDescription();
+      }
+
       const domHelper = new DOMHelpers(this.win);
       const domReady = new Promise(resolve => {
         domHelper.onceDOMReady(() => {
@@ -448,15 +469,6 @@ Toolbox.prototype = {
       // Load the toolbox-level actor fronts and utilities now
       await this._target.attach();
 
-      // Displays DebugTargetInfo which shows the basic information of debug target,
-      // if `about:devtools-toolbar` URL opens directly.
-      if (isToolboxURL) {
-        this._showDebugTargetInfo = true;
-        const deviceFront = await this.target.client.mainRoot.getFront("device");
-        // DebugTargetInfo requires the device description to be rendered.
-        this._deviceDescription = await deviceFront.getDescription();
-      }
-
       // Start tracking network activity on toolbox open for targets such as tabs.
       // (Workers and potentially others don't manage the console client in the target.)
       if (this._target.activeConsole) {
@@ -469,6 +481,12 @@ Toolbox.prototype = {
       this._threadClient = await attachThread(this);
       await domReady;
 
+      // The web console is immediately loaded when replaying, so that the
+      // timeline will always be populated with generated messages.
+      if (this.target.isReplayEnabled()) {
+        await this.loadTool("webconsole");
+      }
+
       this.isReady = true;
 
       const framesPromise = this._listFrames();
@@ -477,10 +495,15 @@ Toolbox.prototype = {
       Services.prefs.addObserver("devtools.serviceWorkers.testing.enabled",
                                  this._applyServiceWorkersTestingSettings);
 
+      // Register listener for handling context menus in standard
+      // input elements: <input> and <textarea>.
+      // There is also support for custom input elements using
+      // .devtools-input class (e.g. CodeMirror instances).
       this.doc.addEventListener("contextmenu", (e) => {
         if (e.originalTarget.closest("input[type=text]") ||
             e.originalTarget.closest("input[type=search]") ||
             e.originalTarget.closest("input:not([type])") ||
+            e.originalTarget.closest(".devtools-input") ||
             e.originalTarget.closest("textarea")) {
           e.stopPropagation();
           e.preventDefault();
@@ -579,6 +602,14 @@ Toolbox.prototype = {
       // passing `e` to console.error, it is not on the stdout, so print it via dump.
       dump(e.stack + "\n");
     });
+  },
+
+  _getDeviceDescription: async function() {
+    const deviceFront = await this.target.client.mainRoot.getFront("device");
+    const description = await deviceFront.getDescription();
+    const remoteId = new this.win.URLSearchParams(this.win.location.href).get("remoteId");
+    const connectionType = remoteClientManager.getConnectionTypeByRemoteId(remoteId);
+    return Object.assign({}, description, { connectionType });
   },
 
   /**
@@ -709,6 +740,7 @@ Toolbox.prototype = {
       case Toolbox.HostType.WINDOW: return 2;
       case Toolbox.HostType.CUSTOM: return 3;
       case Toolbox.HostType.LEFT: return 4;
+      case Toolbox.HostType.PAGE: return 5;
       default: return 9;
     }
   },
@@ -720,6 +752,7 @@ Toolbox.prototype = {
       case Toolbox.HostType.LEFT: return "left";
       case Toolbox.HostType.RIGHT: return "right";
       case Toolbox.HostType.WINDOW: return "window";
+      case Toolbox.HostType.PAGE: return "page";
       case Toolbox.HostType.CUSTOM: return "other";
       default: return "bottom";
     }
@@ -921,23 +954,6 @@ Toolbox.prototype = {
                    event.preventDefault();
                  });
 
-    // Close toolbox key-shortcut handler
-    const onClose = event => this.closeToolbox();
-    this.shortcuts.on(L10N.getStr("toolbox.toggleToolboxF12.key"), onClose);
-
-    // CmdOrCtrl+W is registered only when the toolbox is running in
-    // detached window. In the other case the entire browser tab
-    // is closed when the user uses this shortcut.
-    if (this.hostType == "window") {
-      this.shortcuts.on(L10N.getStr("toolbox.closeToolbox.key"), onClose);
-    }
-
-    if (AppConstants.platform == "macosx") {
-      this.shortcuts.on(L10N.getStr("toolbox.toggleToolboxOSX.key"), onClose);
-    } else {
-      this.shortcuts.on(L10N.getStr("toolbox.toggleToolbox.key"), onClose);
-    }
-
     // Add event listeners
     this.doc.addEventListener("keypress", this._splitConsoleOnKeypress);
     this.doc.addEventListener("focus", this._onFocus, true);
@@ -1010,8 +1026,20 @@ Toolbox.prototype = {
    */
   _addKeysToWindow: function() {
     if (this.hostType != Toolbox.HostType.WINDOW) {
+      // If we are toggling back to other host type, we should unregister the window
+      // listeners
+      if (this._windowHostShortcuts) {
+        this._windowHostShortcuts.destroy();
+        this._windowHostShortcuts = null;
+      }
       return;
     }
+    if (!this._windowHostShortcuts) {
+      this._windowHostShortcuts = new KeyShortcuts({
+        window: this.doc.defaultView,
+      });
+    }
+    const shortcuts = this._windowHostShortcuts;
 
     for (const item of Startup.KeyShortcuts) {
       const { id, toolId, shortcut, modifiers } = item;
@@ -1019,16 +1047,30 @@ Toolbox.prototype = {
 
       if (id == "browserConsole") {
         // Add key for toggling the browser console from the detached window
-        this.shortcuts.on(electronKey, () => {
+        shortcuts.on(electronKey, () => {
           HUDService.toggleBrowserConsole();
         });
       } else if (toolId) {
         // KeyShortcuts contain tool-specific and global key shortcuts,
         // here we only need to copy shortcut specific to each tool.
-        this.shortcuts.on(electronKey, () => {
+        shortcuts.on(electronKey, () => {
           this.selectTool(toolId, "key_shortcut").then(() => this.fireCustomKey(toolId));
         });
       }
+    }
+
+    // CmdOrCtrl+W is registered only when the toolbox is running in
+    // detached window. In the other case the entire browser tab
+    // is closed when the user uses this shortcut.
+    shortcuts.on(L10N.getStr("toolbox.closeToolbox.key"), this.closeToolbox);
+
+    // The others are only registered in window host type as for other hosts,
+    // these keys are already registered by devtools-startup.js
+    shortcuts.on(L10N.getStr("toolbox.toggleToolboxF12.key"), this.closeToolbox);
+    if (AppConstants.platform == "macosx") {
+      shortcuts.on(L10N.getStr("toolbox.toggleToolboxOSX.key"), this.closeToolbox);
+    } else {
+      shortcuts.on(L10N.getStr("toolbox.toggleToolbox.key"), this.closeToolbox);
     }
   },
 
@@ -1087,6 +1129,7 @@ Toolbox.prototype = {
     for (const type in Toolbox.HostType) {
       const position = Toolbox.HostType[type];
       if (position == Toolbox.HostType.CUSTOM ||
+          position == Toolbox.HostType.PAGE ||
           (!sideEnabled &&
             (position == Toolbox.HostType.LEFT || position == Toolbox.HostType.RIGHT))) {
         continue;
@@ -1239,7 +1282,7 @@ Toolbox.prototype = {
       id: "command-button-frames",
       description: L10N.getStr("toolbox.frames.tooltip"),
       isTargetSupported: target => {
-        return target.activeTab && target.activeTab.traits.frames;
+        return target.traits.frames;
       },
       isCurrentlyVisible: () => {
         const hasFrames = this.frameMap.size > 1;
@@ -1307,6 +1350,7 @@ Toolbox.prototype = {
 
   _onPickerStarted: async function() {
     this.doc.addEventListener("keypress", this._onPickerKeypress, true);
+    this.telemetry.scalarAdd("devtools.inspector.element_picker_used", 1);
   },
 
   _onPickerStopped: function() {
@@ -1330,15 +1374,36 @@ Toolbox.prototype = {
   _buildPickerButton() {
     this.pickerButton = this._createButtonState({
       id: "command-button-pick",
-      description: L10N.getStr("pickButton.tooltip"),
+      description: this._getPickerTooltip(),
       onClick: this._onPickerClick,
       isInStartContainer: true,
       isTargetSupported: target => {
-        return target.activeTab && target.activeTab.traits.frames;
+        return target.traits.frames;
       },
     });
 
     return this.pickerButton;
+  },
+
+  /**
+   * Get the tooltip for the element picker button.
+   * It has multiple possible keyboard shortcuts for macOS.
+   *
+   * @return {String}
+   */
+  _getPickerTooltip() {
+    let shortcut = L10N.getStr("toolbox.elementPicker.key");
+    shortcut = KeyShortcuts.parseElectronKey(this.win, shortcut);
+    shortcut = KeyShortcuts.stringify(shortcut);
+    const shortcutMac = L10N.getStr("toolbox.elementPicker.mac.key");
+    const isMac = Services.appinfo.OS === "Darwin";
+    const label = isMac
+      ? "toolbox.elementPicker.mac.tooltip"
+      : "toolbox.elementPicker.tooltip";
+
+    return isMac
+      ? L10N.getFormatStr(label, shortcut, shortcutMac)
+      : L10N.getFormatStr(label, shortcut);
   },
 
   /**
@@ -1349,17 +1414,15 @@ Toolbox.prototype = {
     const pref = "devtools.cache.disabled";
     const cacheDisabled = Services.prefs.getBoolPref(pref);
 
-    if (this.target.activeTab) {
-      await this.target.activeTab.reconfigure({
-        options: {
-          "cacheDisabled": cacheDisabled,
-        },
-      });
+    await this.target.reconfigure({
+      options: {
+        "cacheDisabled": cacheDisabled,
+      },
+    });
 
-      // This event is only emitted for tests in order to know when to reload
-      if (flags.testing) {
-        this.emit("cache-reconfigured");
-      }
+    // This event is only emitted for tests in order to know when to reload
+    if (flags.testing) {
+      this.emit("cache-reconfigured");
     }
   },
 
@@ -1372,13 +1435,11 @@ Toolbox.prototype = {
     const serviceWorkersTestingEnabled =
       Services.prefs.getBoolPref(pref) || false;
 
-    if (this.target.activeTab) {
-      this.target.activeTab.reconfigure({
-        options: {
-          "serviceWorkersTestingEnabled": serviceWorkersTestingEnabled,
-        },
-      });
-    }
+    this.target.reconfigure({
+      options: {
+        "serviceWorkersTestingEnabled": serviceWorkersTestingEnabled,
+      },
+    });
   },
 
   /**
@@ -1422,7 +1483,7 @@ Toolbox.prototype = {
       this.telemetry.toolClosed("paintflashing", this.sessionId, this);
     }
     this.isPaintFlashing = !this.isPaintFlashing;
-    return this.target.activeTab.reconfigure({
+    return this.target.reconfigure({
       options: {
         "paintFlashing": this.isPaintFlashing,
       },
@@ -1444,7 +1505,7 @@ Toolbox.prototype = {
     } else {
       // If the current panel doesn't define a custom updatePickerButton,
       // revert the button to its default state
-      button.description = L10N.getStr("pickButton.tooltip");
+      button.description = this._getPickerTooltip();
       button.className = null;
       button.disabled = null;
     }
@@ -1535,8 +1596,6 @@ Toolbox.prototype = {
     if (toolDefinition.buildToolStartup && !this._toolStartups.has(id)) {
       this._toolStartups.set(id, toolDefinition.buildToolStartup(this));
     }
-
-    this._addKeysToWindow();
   },
 
   /**
@@ -2042,7 +2101,7 @@ Toolbox.prototype = {
     }
 
     // Cold webconsole event message_count is handled in
-    // devtools/client/webconsole/webconsole-output-wrapper.js
+    // devtools/client/webconsole/webconsole-wrapper.js
     if (!cold && id === "webconsole") {
       this.telemetry.addEventProperty(
         this, "enter", "webconsole", null, "message_count", 0);
@@ -2192,7 +2251,7 @@ Toolbox.prototype = {
       // Recording tabs need to be reloaded in a new content process.
       reloadAndRecordTab();
     } else {
-      this.target.activeTab.reload({ force: force });
+      this.target.reload({ force: force });
     }
   },
 
@@ -2360,12 +2419,12 @@ Toolbox.prototype = {
   },
 
   _listFrames: async function(event) {
-    if (!this.target.activeTab || !this.target.activeTab.traits.frames) {
+    if (!this.target.traits.frames) {
       // We are not targetting a regular BrowsingContextTargetActor
       // it can be either an addon or browser toolbox actor
       return promise.resolve();
     }
-    const { frames } = await this.target.activeTab.listFrames();
+    const { frames } = await this.target.listFrames();
     this._updateFrames({ frames });
   },
 
@@ -2375,7 +2434,7 @@ Toolbox.prototype = {
   onSelectFrame: function(frameId) {
     // Send packet to the backend to select specified frame and
     // wait for 'frameUpdate' event packet to update the UI.
-    this.target.activeTab.switchToFrame({ windowId: frameId });
+    this.target.switchToFrame({ windowId: frameId });
   },
 
   /**
@@ -2963,7 +3022,13 @@ Toolbox.prototype = {
           // target attribute to be still
           // defined.
           try {
-            win.location.replace("about:blank");
+            // If this toolbox displayed as a page, avoid to move to `about:blank`.
+            // For example in case of reloading, when the thread of processing of
+            // destroying the toolbox arrives at here after starting reloading process,
+            // although we should display same page, `about:blank` will display.
+            if (this.hostType !== Toolbox.HostType.PAGE) {
+              win.location.replace("about:blank");
+            }
           } catch (e) {
             // Do nothing;
           }
@@ -3116,16 +3181,16 @@ Toolbox.prototype = {
    * Opens source in style editor. Falls back to plain "view-source:".
    * @see devtools/client/shared/source-utils.js
    */
-  viewSourceInStyleEditor: function(sourceURL, sourceLine) {
-    return viewSource.viewSourceInStyleEditor(this, sourceURL, sourceLine);
+  viewSourceInStyleEditor: function(sourceURL, sourceLine, sourceColumn) {
+    return viewSource.viewSourceInStyleEditor(this, sourceURL, sourceLine, sourceColumn);
   },
 
   /**
    * Opens source in debugger. Falls back to plain "view-source:".
    * @see devtools/client/shared/source-utils.js
    */
-  viewSourceInDebugger: function(sourceURL, sourceLine, reason) {
-    return viewSource.viewSourceInDebugger(this, sourceURL, sourceLine, reason);
+  viewSourceInDebugger: function(sourceURL, sourceLine, sourceId, reason) {
+    return viewSource.viewSourceInDebugger(this, sourceURL, sourceLine, sourceId, reason);
   },
 
   /**

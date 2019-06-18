@@ -1,4 +1,4 @@
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 var gMimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
 var gHandlerSvc = Cc["@mozilla.org/uriloader/handler-service;1"].getService(Ci.nsIHandlerService);
@@ -41,7 +41,7 @@ function createMockedObjects(createHandlerApp) {
 
   // Proxy for the mocked MIME info for faking the read-only attributes
   let mockedMIME = new Proxy(internalMockedMIME, {
-    get: function (target, property) {
+    get(target, property) {
       switch (property) {
       case "hasDefaultHandler":
         return true;
@@ -68,7 +68,7 @@ function createMockedObjects(createHandlerApp) {
     targetFile: null, // never read
     // PRTime is microseconds since epoch, Date.now() returns milliseconds:
     timeDownloadStarted: Date.now() * 1000,
-    QueryInterface: ChromeUtils.generateQI([Ci.nsICancelable, Ci.nsIHelperAppLauncher])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsICancelable, Ci.nsIHelperAppLauncher]),
   };
 
   registerCleanupFunction(function() {

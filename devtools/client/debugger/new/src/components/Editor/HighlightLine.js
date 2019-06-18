@@ -13,10 +13,16 @@ import {
   getVisibleSelectedFrame,
   getSelectedLocation,
   getSelectedSource,
-  getPauseCommand
+  getPauseCommand,
+  getCurrentThread
 } from "../../selectors";
 
-import type { Frame, SourceLocation, Source } from "../../types";
+import type {
+  Frame,
+  SourceLocation,
+  Source,
+  SourceDocuments
+} from "../../types";
 import type { Command } from "../../reducers/types";
 
 type Props = {
@@ -122,6 +128,28 @@ export class HighlightLine extends Component<Props> {
 
     const doc = getDocument(sourceId);
     doc.addLineClass(editorLine, "line", "highlight-line");
+    this.resetHighlightLine(doc, editorLine);
+  }
+
+  resetHighlightLine(doc: SourceDocuments, editorLine: number) {
+    const editorWrapper: HTMLElement | null = document.querySelector(
+      ".editor-wrapper"
+    );
+
+    if (editorWrapper === null) {
+      return;
+    }
+
+    const style = getComputedStyle(editorWrapper);
+    const durationString = style.getPropertyValue("--highlight-line-duration");
+
+    let duration = durationString.match(/\d+/);
+    duration = duration.length ? Number(duration[0]) : 0;
+
+    setTimeout(
+      () => doc && doc.removeLineClass(editorLine, "line", "highlight-line"),
+      duration
+    );
   }
 
   clearHighlightLine(selectedLocation: SourceLocation, selectedSource: Source) {
@@ -141,7 +169,7 @@ export class HighlightLine extends Component<Props> {
 }
 
 export default connect(state => ({
-  pauseCommand: getPauseCommand(state),
+  pauseCommand: getPauseCommand(state, getCurrentThread(state)),
   selectedFrame: getVisibleSelectedFrame(state),
   selectedLocation: getSelectedLocation(state),
   selectedSource: getSelectedSource(state)

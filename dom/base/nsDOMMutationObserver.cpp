@@ -139,8 +139,7 @@ void nsMutationReceiver::NativeAnonymousChildListChange(nsIContent* aContent,
 void nsMutationReceiver::AttributeWillChange(mozilla::dom::Element* aElement,
                                              int32_t aNameSpaceID,
                                              nsAtom* aAttribute,
-                                             int32_t aModType,
-                                             const nsAttrValue* aNewValue) {
+                                             int32_t aModType) {
   if (nsAutoMutationBatch::IsBatching() ||
       !ObservesAttr(RegisterTarget(), aElement, aNameSpaceID, aAttribute)) {
     return;
@@ -366,8 +365,7 @@ void nsAnimationReceiver::RecordAnimationMutation(
   }
 
   // Record animations targeting to a pseudo element only when subtree is true.
-  if (animationTarget->mPseudoType !=
-          mozilla::CSSPseudoElementType::NotPseudo &&
+  if (animationTarget->mPseudoType != PseudoStyleType::NotPseudo &&
       !Subtree()) {
     return;
   }
@@ -547,7 +545,8 @@ class MutationObserverMicroTask final : public MicroTaskRunnable {
   }
 };
 
-/* static */ void nsDOMMutationObserver::QueueMutationObserverMicroTask() {
+/* static */
+void nsDOMMutationObserver::QueueMutationObserverMicroTask() {
   CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
   if (!ccjs) {
     return;

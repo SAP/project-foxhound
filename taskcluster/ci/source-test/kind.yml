@@ -19,15 +19,19 @@ jobs-from:
    - doc.yml
    - file-metadata.yml
    - jsshell.yml
-   - mocha.yml
    - mozlint.yml
+   - node.yml
    - python.yml
    - webidl.yml
    - wpt-manifest.yml
+
+job-defaults:
+   attributes:
+      retrigger: true
 
 # This is used by run-task based tasks to lookup which build task it
 # should depend on based on its own platform.
 dependent-build-platforms:
    linux64-asan/opt: build-linux64-asan/opt
    linux64/debug: build-linux64/debug
-   linux64.*: build-linux64/opt
+   linux64.*: build-linux64/pgo

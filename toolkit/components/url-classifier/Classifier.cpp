@@ -15,6 +15,7 @@
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Components.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -23,8 +24,8 @@
 #include "mozilla/Base64.h"
 #include "mozilla/Unused.h"
 #include "mozilla/UniquePtr.h"
-#include "nsIUrlClassifierUtils.h"
 #include "nsUrlClassifierDBService.h"
+#include "nsUrlClassifierUtils.h"
 
 // MOZ_LOG=UrlClassifierDbService:5
 extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
@@ -404,30 +405,6 @@ void Classifier::TableRequest(nsACString& aResult) {
   mIsTableRequestResultOutdated = false;
 }
 
-nsresult Classifier::CheckURI(const nsACString& aSpec,
-                              const nsTArray<nsCString>& aTables,
-                              LookupResultArray& aResults) {
-  Telemetry::AutoTimer<Telemetry::URLCLASSIFIER_CL_CHECK_TIME> timer;
-
-  // Get the set of fragments based on the url. This is necessary because we
-  // only look up at most 5 URLs per aSpec, even if aSpec has more than 5
-  // components.
-  nsTArray<nsCString> fragments;
-  nsresult rv = LookupCache::GetLookupFragments(aSpec, &fragments);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  LookupCacheArray cacheArray;
-  for (const nsCString& table : aTables) {
-    LookupResultArray results;
-    rv = CheckURIFragments(fragments, table, results);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    aResults.AppendElements(results);
-  }
-
-  return NS_OK;
-}
-
 nsresult Classifier::CheckURIFragments(
     const nsTArray<nsCString>& aSpecFragments, const nsACString& aTable,
     LookupResultArray& aResults) {
@@ -744,8 +721,10 @@ nsresult Classifier::ApplyUpdatesBackground(TableUpdateArray& aUpdates,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIUrlClassifierUtils> urlUtil =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID);
+  nsUrlClassifierUtils* urlUtil = nsUrlClassifierUtils::GetInstance();
+  if (NS_WARN_IF(!urlUtil)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsCString provider;
   // Assume all TableUpdate objects should have the same provider.
@@ -1182,8 +1161,10 @@ bool Classifier::CheckValidUpdate(TableUpdateArray& aUpdates,
 }
 
 nsCString Classifier::GetProvider(const nsACString& aTableName) {
-  nsCOMPtr<nsIUrlClassifierUtils> urlUtil =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID);
+  nsUrlClassifierUtils* urlUtil = nsUrlClassifierUtils::GetInstance();
+  if (NS_WARN_IF(!urlUtil)) {
+    return EmptyCString();
+  }
 
   nsCString provider;
   nsresult rv = urlUtil->GetProvider(aTableName, provider);
@@ -1596,9 +1577,10 @@ nsresult Classifier::LoadMetadata(nsIFile* aDirectory, nsACString& aResult) {
       continue;
     }
 
-    nsCString state;
-    nsCString checksum;
-    rv = lookupCacheV4->LoadMetadata(state, checksum);
+    nsCString state, sha256;
+    rv = lookupCacheV4->LoadMetadata(state, sha256);
+    Telemetry::Accumulate(Telemetry::URLCLASSIFIER_VLPS_METADATA_CORRUPT,
+                          rv == NS_ERROR_FILE_CORRUPTED);
     if (NS_FAILED(rv)) {
       LOG(("Failed to get metadata for table %s", tableName.get()));
       continue;
@@ -1610,7 +1592,7 @@ nsresult Classifier::LoadMetadata(nsIFile* aDirectory, nsACString& aResult) {
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsAutoCString checksumBase64;
-    rv = Base64Encode(checksum, checksumBase64);
+    rv = Base64Encode(sha256, checksumBase64);
     NS_ENSURE_SUCCESS(rv, rv);
 
     LOG(("Appending state '%s' and checksum '%s' for table %s",

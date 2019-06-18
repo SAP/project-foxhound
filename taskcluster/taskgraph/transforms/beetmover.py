@@ -114,10 +114,6 @@ UPSTREAM_SOURCE_ARTIFACTS = [
     "source.tar.xz.asc",
 ]
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 transforms = TransformSequence()
 
 beetmover_description_schema = schema.extend({
@@ -174,10 +170,11 @@ def make_task_description(config, jobs):
             )
         )
 
-        dependent_kind = str(dep_job.kind)
-        dependencies = {dependent_kind: dep_job.label}
+        dependencies = {dep_job.kind: dep_job.label}
 
-        if len(dep_job.dependencies) > 1:
+        # XXX release snap-repackage has a variable number of dependencies, depending on how many
+        # "post-beetmover-dummy" jobs there are in the graph.
+        if dep_job.kind != 'release-snap-repackage' and len(dep_job.dependencies) > 1:
             raise NotImplementedError(
                 "Can't beetmove a signing task with multiple dependencies")
         signing_dependencies = dep_job.dependencies
@@ -299,7 +296,9 @@ def make_task_worker(config, jobs):
     for job in jobs:
         valid_beetmover_job = (len(job["dependencies"]) == 2 and
                                any(['signing' in j for j in job['dependencies']]))
-        if not valid_beetmover_job:
+        # XXX release snap-repackage has a variable number of dependencies, depending on how many
+        # "post-beetmover-dummy" jobs there are in the graph.
+        if '-snap-' not in job['label'] and not valid_beetmover_job:
             raise NotImplementedError("Beetmover must have two dependencies.")
 
         locale = job["attributes"].get("locale")
@@ -317,7 +316,7 @@ def make_task_worker(config, jobs):
 
         if should_use_artifact_map(platform, config.params['project']):
             upstream_artifacts = generate_beetmover_upstream_artifacts(
-                job, platform, locale
+                config, job, platform, locale
             )
         else:
             upstream_artifacts = generate_upstream_artifacts(

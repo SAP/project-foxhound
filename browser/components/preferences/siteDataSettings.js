@@ -5,9 +5,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "SiteDataManager",
                                "resource:///modules/SiteDataManager.jsm");
@@ -63,7 +62,7 @@ let gSiteDataSettings = {
     // Add "Storage" column
     if (site.usage > 0 || site.persisted) {
       let [value, unit] = DownloadUtils.convertByteUnits(site.usage);
-      let strName = site.persisted ? "site-usage-persistent" : "site-usage-pattern";
+      let strName = site.persisted ? "site-storage-persistent" : "site-storage-usage";
       addColumnItem({
         id: strName,
         args: { value, unit },
@@ -222,7 +221,7 @@ let gSiteDataSettings = {
     this._updateButtonsState();
   },
 
-  saveChanges() {
+  async saveChanges() {
     // Tracks whether the user confirmed their decision.
     let allowed = false;
 
@@ -234,12 +233,20 @@ let gSiteDataSettings = {
       if (this._sites.length == removals.length) {
         allowed = SiteDataManager.promptSiteDataRemoval(window);
         if (allowed) {
-          SiteDataManager.removeAll();
+          try {
+            await SiteDataManager.removeAll();
+          } catch (e) {
+            Cu.reportError(e);
+          }
         }
       } else {
         allowed = SiteDataManager.promptSiteDataRemoval(window, removals);
         if (allowed) {
-          SiteDataManager.remove(removals).catch(Cu.reportError);
+          try {
+            await SiteDataManager.remove(removals);
+          } catch (e) {
+            Cu.reportError(e);
+          }
         }
       }
     }

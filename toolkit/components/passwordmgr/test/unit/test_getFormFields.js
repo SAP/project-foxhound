@@ -8,8 +8,9 @@
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
-const LMCBackstagePass = ChromeUtils.import("resource://gre/modules/LoginManagerContent.jsm", {});
-const { LoginManagerContent, LoginFormFactory } = LMCBackstagePass;
+const {LoginFormFactory} = ChromeUtils.import("resource://gre/modules/LoginFormFactory.jsm");
+const LMCBackstagePass = ChromeUtils.import("resource://gre/modules/LoginManagerContent.jsm", null);
+const { LoginManagerContent } = LMCBackstagePass;
 const TESTCASES = [
   {
     description: "1 password field outside of a <form>",

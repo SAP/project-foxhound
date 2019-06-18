@@ -6,8 +6,17 @@
 
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/ipc/InProcessParent.h"
-#include "mozilla/dom/ChromeBrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/WindowGlobalActorsBinding.h"
+#include "mozilla/dom/ChromeUtils.h"
+#include "mozJSComponentLoader.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsQueryObject.h"
+
+#include "mozilla/dom/JSWindowActorBinding.h"
+#include "mozilla/dom/JSWindowActorParent.h"
+#include "mozilla/dom/JSWindowActorService.h"
 
 using namespace mozilla::ipc;
 
@@ -29,7 +38,7 @@ WindowGlobalParent::WindowGlobalParent(const WindowGlobalInit& aInit,
   MOZ_RELEASE_ASSERT(mDocumentPrincipal, "Must have a valid principal");
 
   // NOTE: mBrowsingContext initialized in Init()
-  MOZ_RELEASE_ASSERT(aInit.browsingContextId() != 0,
+  MOZ_RELEASE_ASSERT(aInit.browsingContext(),
                      "Must be made in BrowsingContext");
 }
 
@@ -55,7 +64,7 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
     processId = static_cast<ContentParent*>(Manager()->Manager())->ChildID();
   }
 
-  mBrowsingContext = ChromeBrowsingContext::Get(aInit.browsingContextId());
+  mBrowsingContext = CanonicalBrowsingContext::Cast(aInit.browsingContext());
   MOZ_ASSERT(mBrowsingContext);
 
   // XXX(nika): This won't be the case soon, but for now this is a good
@@ -81,9 +90,6 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
         docShell->GetTopFrameElement(getter_AddRefs(frameElement));
       }
     }
-
-    // We took a reference to our BrowsingContext in WindowGlobalChild::Create.
-    RefPtr<ChromeBrowsingContext> dummy = dont_AddRef(mBrowsingContext.get());
   } else {
     // In the cross-process case, we can get the frame element from our manager.
     MOZ_ASSERT(Manager()->GetProtocolTypeId() == PBrowserMsgStart);
@@ -92,7 +98,7 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
 
   // Extract the nsFrameLoader from the current frame element. We may not have a
   // nsFrameLoader if we are a chrome document.
-  nsCOMPtr<nsIFrameLoaderOwner> flOwner = do_QueryInterface(frameElement);
+  RefPtr<nsFrameLoaderOwner> flOwner = do_QueryObject(frameElement);
   if (flOwner) {
     mFrameLoader = flOwner->GetFrameLoader();
   }
@@ -103,8 +109,9 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
   }
 }
 
-/* static */ already_AddRefed<WindowGlobalParent>
-WindowGlobalParent::GetByInnerWindowId(uint64_t aInnerWindowId) {
+/* static */
+already_AddRefed<WindowGlobalParent> WindowGlobalParent::GetByInnerWindowId(
+    uint64_t aInnerWindowId) {
   if (!gWindowGlobalParentsById) {
     return nullptr;
   }
@@ -119,6 +126,13 @@ already_AddRefed<WindowGlobalChild> WindowGlobalParent::GetChildActor() {
   return do_AddRef(static_cast<WindowGlobalChild*>(otherSide));
 }
 
+already_AddRefed<TabParent> WindowGlobalParent::GetTabParent() {
+  if (IsInProcess() || mIPCClosed) {
+    return nullptr;
+  }
+  return do_AddRef(static_cast<TabParent*>(Manager()));
+}
+
 IPCResult WindowGlobalParent::RecvUpdateDocumentURI(nsIURI* aURI) {
   // XXX(nika): Assert that the URI change was one which makes sense (either
   // about:blank -> a real URI, or a legal push/popstate URI change?)
@@ -129,6 +143,89 @@ IPCResult WindowGlobalParent::RecvUpdateDocumentURI(nsIURI* aURI) {
 IPCResult WindowGlobalParent::RecvBecomeCurrentWindowGlobal() {
   mBrowsingContext->SetCurrentWindowGlobal(this);
   return IPC_OK();
+}
+
+IPCResult WindowGlobalParent::RecvDestroy() {
+  if (!mIPCClosed) {
+    RefPtr<TabParent> tabParent = GetTabParent();
+    if (!tabParent || !tabParent->IsDestroyed()) {
+      Unused << Send__delete__(this);
+    }
+  }
+  return IPC_OK();
+}
+
+IPCResult WindowGlobalParent::RecvAsyncMessage(const nsString& aActorName,
+                                               const nsString& aMessageName,
+                                               const ClonedMessageData& aData) {
+  StructuredCloneData data;
+  data.BorrowFromClonedMessageDataForParent(aData);
+  HandleAsyncMessage(aActorName, aMessageName, data);
+  return IPC_OK();
+}
+
+void WindowGlobalParent::HandleAsyncMessage(const nsString& aActorName,
+                                            const nsString& aMessageName,
+                                            StructuredCloneData& aData) {
+  if (NS_WARN_IF(mIPCClosed)) {
+    return;
+  }
+
+  // Force creation of the actor if it hasn't been created yet.
+  IgnoredErrorResult rv;
+  RefPtr<JSWindowActorParent> actor = GetActor(aActorName, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return;
+  }
+
+  // Get the JSObject for the named actor.
+  JS::RootedObject obj(RootingCx(), actor->GetWrapper());
+  if (NS_WARN_IF(!obj)) {
+    // If we don't have a preserved wrapper, there won't be any receiver
+    // method to call.
+    return;
+  }
+
+  RefPtr<JSWindowActorService> actorSvc = JSWindowActorService::GetSingleton();
+  if (NS_WARN_IF(!actorSvc)) {
+    return;
+  }
+
+  actorSvc->ReceiveMessage(actor, obj, aMessageName, aData);
+}
+
+already_AddRefed<JSWindowActorParent> WindowGlobalParent::GetActor(
+    const nsAString& aName, ErrorResult& aRv) {
+  // Check if this actor has already been created, and return it if it has.
+  if (mWindowActors.Contains(aName)) {
+    return do_AddRef(mWindowActors.GetWeak(aName));
+  }
+
+  // Otherwise, we want to create a new instance of this actor. Call into the
+  // JSWindowActorService to trigger construction
+  RefPtr<JSWindowActorService> actorSvc = JSWindowActorService::GetSingleton();
+  if (!actorSvc) {
+    return nullptr;
+  }
+
+  JS::RootedObject obj(RootingCx());
+  actorSvc->ConstructActor(aName, /* aParentSide */ true, mBrowsingContext,
+                           &obj, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  // Unwrap our actor to a JSWindowActorParent object.
+  RefPtr<JSWindowActorParent> actor;
+  if (NS_FAILED(UNWRAP_OBJECT(JSWindowActorParent, &obj, actor))) {
+    return nullptr;
+  }
+
+  MOZ_RELEASE_ASSERT(!actor->Manager(),
+                     "mManager was already initialized once!");
+  actor->Init(aName, this);
+  mWindowActors.Put(aName, actor);
+  return actor.forget();
 }
 
 bool WindowGlobalParent::IsCurrentGlobal() {
@@ -166,7 +263,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WindowGlobalParent)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WindowGlobalParent, mFrameLoader,
-                                      mBrowsingContext)
+                                      mBrowsingContext, mWindowActors)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WindowGlobalParent)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WindowGlobalParent)

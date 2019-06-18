@@ -446,12 +446,12 @@ and the developer is not affected.
 __ https://unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html
 __ https://unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html#bs
 
-Partial Arguments
------------------
+Partially-formatted variables
+-----------------------------
 
 When it comes to formatting data, Fluent allows the developer to provide
 a set of parameters for the formatter, and the localizer can fine tune some of them.
-This technique is called `partial arguments`__.
+This technique is called `partially-formatted variables`__.
 
 For example, when formatting a date, the developer can just pass a JS :js:`Date` object,
 but its default formatting will be pretty expressive. In most cases, the developer
@@ -492,7 +492,7 @@ At the moment Fluent supports two formatters that match JS Intl API counterparts
 
 With time more formatters will be added.
 
-__ https://projectfluent.org/fluent/guide/functions.html#partial-arguments
+__ https://projectfluent.org/fluent/guide/functions.html#partially-formatted-variables
 __ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/NumberFormat
 __ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DateTimeFormat
 
@@ -696,12 +696,6 @@ DOMLocalization
 
 DOMLocalization extends :js:`Localization` with functionality to operate on HTML, XUL
 and the DOM directly including DOM Overlays and Mutation Observers.
-
-mozDOMLocalization
-------------------
-
-mozDOMLocalization is a wrapper on DOMLocalization which exposes it via XPIDL
-to allow DocumentL10n and Document to communicate with it.
 
 DocumentL10n
 ------------

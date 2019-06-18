@@ -9,48 +9,15 @@
 // This is loaded into chrome windows with the subscript loader. Wrap in
 // a block to prevent accidentally leaking globals onto `window`.
 {
-
-const inheritsMap = {
-  ".searchbar-textbox": ["disabled", "disableautocomplete", "searchengine", "src", "newlines"],
-  ".searchbar-search-button": ["addengines"],
-};
-
-function inheritAttribute(parent, child, attr) {
-  if (!parent.hasAttribute(attr)) {
-    child.removeAttribute(attr);
-  } else {
-    child.setAttribute(attr, parent.getAttribute(attr));
-  }
-}
-
 /**
  * Defines the search bar element.
  */
 class MozSearchbar extends MozXULElement {
-
-  static get observedAttributes() {
-    let unique = new Set();
-    for (let i in inheritsMap) {
-      inheritsMap[i].forEach(attr => unique.add(attr));
-    }
-    return Array.from(unique);
-  }
-
-  attributeChangedCallback() {
-    this.inheritAttributes();
-  }
-
-  inheritAttributes() {
-    if (!this.isConnected) {
-      return;
-    }
-
-    for (let sel in inheritsMap) {
-      let node = this.querySelector(sel);
-      for (let attr of inheritsMap[sel]) {
-        inheritAttribute(this, node, attr);
-      }
-    }
+  static get inheritedAttributes() {
+    return {
+      ".searchbar-textbox": "disabled,disableautocomplete,searchengine,src,newlines",
+      ".searchbar-search-button": "addengines",
+    };
   }
 
   constructor() {
@@ -74,9 +41,9 @@ class MozSearchbar extends MozXULElement {
     };
     this.content = MozXULElement.parseXULToFragment(`
       <stringbundle src="chrome://browser/locale/search.properties"></stringbundle>
-      <textbox class="searchbar-textbox" type="autocomplete" inputtype="search" placeholder="&searchInput.placeholder;" flex="1" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0" inherits="disabled,disableautocomplete,searchengine,src,newlines">
+      <textbox class="searchbar-textbox" type="autocomplete" inputtype="search" placeholder="&searchInput.placeholder;" flex="1" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0">
         <box>
-          <hbox class="searchbar-search-button" inherits="addengines" tooltiptext="&searchIcon.tooltip;">
+          <hbox class="searchbar-search-button" tooltiptext="&searchIcon.tooltip;">
             <image class="searchbar-search-icon"></image>
             <image class="searchbar-search-icon-overlay"></image>
           </hbox>
@@ -95,7 +62,7 @@ class MozSearchbar extends MozXULElement {
     }
 
     this.appendChild(document.importNode(this.content, true));
-    this.inheritAttributes();
+    this.initializeAttributeInheritance();
     window.addEventListener("unload", this.destroy);
     this._ignoreFocus = false;
 
@@ -121,19 +88,15 @@ class MozSearchbar extends MozXULElement {
 
     (window.delayedStartupPromise || Promise.resolve()).then(() => {
       window.requestIdleCallback(() => {
-        Services.search.init(aStatus => {
+        Services.search.init().then(aStatus => {
           // Bail out if the binding's been destroyed
           if (!this._initialized)
             return;
 
-          if (Components.isSuccessCode(aStatus)) {
-            // Refresh the display (updating icon, etc)
-            this.updateDisplay();
-            BrowserSearch.updateOpenSearchBadge();
-          } else {
-            Cu.reportError("Cannot initialize search service, bailing out: " + aStatus);
-          }
-        });
+          // Refresh the display (updating icon, etc)
+          this.updateDisplay();
+          BrowserSearch.updateOpenSearchBadge();
+        }).catch(status => Cu.reportError("Cannot initialize search service, bailing out: " + status));
       });
     });
 
@@ -153,9 +116,9 @@ class MozSearchbar extends MozXULElement {
     }, { capture: true, once: true });
   }
 
-  get engines() {
+  async getEngines() {
     if (!this._engines)
-      this._engines = Services.search.getVisibleEngines();
+      this._engines = await Services.search.getVisibleEngines();
     return this._engines;
   }
 
@@ -244,17 +207,31 @@ class MozSearchbar extends MozXULElement {
     }
   }
 
-  selectEngine(aEvent, isNextEngine) {
-    // Find the new index
-    let newIndex = this.engines.indexOf(this.currentEngine);
-    newIndex += isNextEngine ? 1 : -1;
-
-    if (newIndex >= 0 && newIndex < this.engines.length) {
-      this.currentEngine = this.engines[newIndex];
-    }
-
+  async selectEngine(aEvent, isNextEngine) {
+    // Stop event bubbling now, because the rest of this method is async.
     aEvent.preventDefault();
     aEvent.stopPropagation();
+
+    // Find the new index.
+    let engines = await this.getEngines();
+    let currentName = this.currentEngine.name;
+    let newIndex = -1;
+    let lastIndex = engines.length - 1;
+    for (let i = lastIndex; i >= 0; --i) {
+      if (engines[i].name == currentName) {
+        // Check bounds to cycle through the list of engines continuously.
+        if (!isNextEngine && i == 0) {
+          newIndex = lastIndex;
+        } else if (isNextEngine && i == lastIndex) {
+          newIndex = 0;
+        } else {
+          newIndex = i + (isNextEngine ? 1 : -1);
+        }
+        break;
+      }
+    }
+
+    this.currentEngine = engines[newIndex];
 
     this.openSuggestionsPanel();
   }
@@ -391,15 +368,12 @@ class MozSearchbar extends MozXULElement {
       if (target.engine) {
         this.currentEngine = target.engine;
       } else if (target.classList.contains("addengine-item")) {
-        // Select the installed engine if the installation succeeds
-        let installCallback = {
-          onSuccess: engine => this.currentEngine = engine,
-        };
-        Services.search.addEngine(target.getAttribute("uri"), null,
-          target.getAttribute("src"), false,
-          installCallback);
-      } else
+        // Select the installed engine if the installation succeeds.
+        Services.search.addEngine(target.getAttribute("uri"),
+          target.getAttribute("src"), false).then(engine => this.currentEngine = engine);
+      } else {
         return;
+      }
 
       this.focus();
       this.select();
@@ -483,10 +457,8 @@ class MozSearchbar extends MozXULElement {
         this.openSuggestionsPanel(true);
       }
     });
-
   }
 }
 
 customElements.define("searchbar", MozSearchbar);
-
 }

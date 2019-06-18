@@ -12,7 +12,7 @@
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/mozInlineSpellChecker.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 
 #include "nsCRT.h"
@@ -39,7 +39,6 @@
 #include "nsContentUtils.h"
 #include "nsIDocumentEncoder.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsFocusManager.h"
 #include "nsPIDOMWindow.h"
@@ -145,7 +144,6 @@ HTMLEditor::HTMLEditor()
     : mCRInParagraphCreatesParagraph(false),
       mCSSAware(false),
       mSelectedCellIndex(0),
-      mHasShownResizers(false),
       mIsObjectResizingEnabled(HTMLEditorPrefs::IsResizingUIEnabledByDefault()),
       mIsResizing(false),
       mPreserveRatio(false),
@@ -153,11 +151,9 @@ HTMLEditor::HTMLEditor()
       mIsAbsolutelyPositioningEnabled(
           HTMLEditorPrefs::IsAbsolutePositioningUIEnabledByDefault()),
       mResizedObjectIsAbsolutelyPositioned(false),
-      mHasShownGrabber(false),
       mGrabberClicked(false),
       mIsMoving(false),
       mSnapToGridEnabled(false),
-      mHasShownInlineTableEditor(false),
       mIsInlineTableEditingEnabled(
           HTMLEditorPrefs::IsInlineTableEditingUIEnabledByDefault()),
       mOriginalX(0),
@@ -174,9 +170,6 @@ HTMLEditor::HTMLEditor()
       mYIncrementFactor(0),
       mWidthIncrementFactor(0),
       mHeightIncrementFactor(0),
-      mResizerUsedCount(0),
-      mGrabberUsedCount(0),
-      mInlineTableEditorUsedCount(0),
       mInfoXIncrement(20),
       mInfoYIncrement(20),
       mPositionedObjectX(0),
@@ -203,37 +196,15 @@ HTMLEditor::~HTMLEditor() {
   mTypeInState = nullptr;
 
   if (mLinkHandler && IsInitialized()) {
-    nsCOMPtr<nsIPresShell> ps = GetPresShell();
-
-    if (ps && ps->GetPresContext()) {
-      ps->GetPresContext()->SetLinkHandler(mLinkHandler);
+    PresShell* presShell = GetPresShell();
+    if (presShell && presShell->GetPresContext()) {
+      presShell->GetPresContext()->SetLinkHandler(mLinkHandler);
     }
   }
 
   RemoveEventListeners();
 
   HideAnonymousEditingUIs();
-
-  Telemetry::Accumulate(Telemetry::HTMLEDITORS_WITH_RESIZERS,
-                        mHasShownResizers ? 1 : 0);
-  if (mHasShownResizers) {
-    Telemetry::Accumulate(Telemetry::HTMLEDITORS_WHOSE_RESIZERS_USED_BY_USER,
-                          mResizerUsedCount);
-  }
-  Telemetry::Accumulate(Telemetry::HTMLEDITORS_WITH_ABSOLUTE_POSITIONER,
-                        mHasShownGrabber ? 1 : 0);
-  if (mHasShownGrabber) {
-    Telemetry::Accumulate(
-        Telemetry::HTMLEDITORS_WHOSE_ABSOLUTE_POSITIONER_USED_BY_USER,
-        mGrabberUsedCount);
-  }
-  Telemetry::Accumulate(Telemetry::HTMLEDITORS_WITH_INLINE_TABLE_EDITOR,
-                        mHasShownInlineTableEditor ? 1 : 0);
-  if (mHasShownInlineTableEditor) {
-    Telemetry::Accumulate(
-        Telemetry::HTMLEDITORS_WHOSE_INLINE_TABLE_EDITOR_USED_BY_USER,
-        mInlineTableEditorUsedCount);
-  }
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLEditor)
@@ -329,8 +300,10 @@ nsresult HTMLEditor::Init(Document& aDoc, Element* aRoot,
     mCSSEditUtils = MakeUnique<CSSEditUtils>(this);
 
     // disable links
-    nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-    NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
+    PresShell* presShell = GetPresShell();
+    if (NS_WARN_IF(!presShell)) {
+      return NS_ERROR_FAILURE;
+    }
     nsPresContext* context = presShell->GetPresContext();
     NS_ENSURE_TRUE(context, NS_ERROR_NULL_POINTER);
     if (!IsPlaintextEditor() && !IsInteractionAllowed()) {
@@ -2950,6 +2923,10 @@ HTMLEditor::InsertLinkAroundSelection(Element* aAnchorElement) {
     return NS_OK;
   }
 
+  nsAutoString rawHref;
+  anchor->GetAttr(kNameSpaceID_None, nsGkAtoms::href, rawHref);
+  editActionData.SetData(rawHref);
+
   nsAutoString href;
   anchor->GetHref(href);
   if (href.IsEmpty()) {
@@ -3107,7 +3084,7 @@ nsresult HTMLEditor::AddOverrideStyleSheetInternal(const nsAString& aURL) {
   }
 
   // Make sure the pres shell doesn't disappear during the load.
-  nsCOMPtr<nsIPresShell> presShell = GetPresShell();
+  RefPtr<PresShell> presShell = GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -3208,7 +3185,7 @@ nsresult HTMLEditor::RemoveOverrideStyleSheetInternal(const nsAString& aURL) {
     return NS_OK;  // It's okay even if not found.
   }
 
-  nsCOMPtr<nsIPresShell> presShell = GetPresShell();
+  RefPtr<PresShell> presShell = GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -3670,8 +3647,8 @@ nsresult HTMLEditor::SelectAllInternal() {
     SelectionRefPtr()->SetAncestorLimiter(nullptr);
     rootContent = mRootElement;
   } else {
-    nsCOMPtr<nsIPresShell> ps = GetPresShell();
-    rootContent = anchorContent->GetSelectionRootContent(ps);
+    RefPtr<PresShell> presShell = GetPresShell();
+    rootContent = anchorContent->GetSelectionRootContent(presShell);
   }
 
   if (NS_WARN_IF(!rootContent)) {
@@ -4628,14 +4605,18 @@ nsresult HTMLEditor::GetElementOrigin(Element& aElement, int32_t& aX,
   if (NS_WARN_IF(!IsInitialized())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
-  nsCOMPtr<nsIPresShell> ps = GetPresShell();
-  NS_ENSURE_TRUE(ps, NS_ERROR_NOT_INITIALIZED);
+  PresShell* presShell = GetPresShell();
+  if (NS_WARN_IF(!presShell)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   nsIFrame* frame = aElement.GetPrimaryFrame();
   NS_ENSURE_TRUE(frame, NS_OK);
 
-  nsIFrame* container = ps->GetAbsoluteContainingBlock(frame);
-  NS_ENSURE_TRUE(container, NS_OK);
+  nsIFrame* container = presShell->GetAbsoluteContainingBlock(frame);
+  if (NS_WARN_IF(!container)) {
+    return NS_OK;
+  }
   nsPoint off = frame->GetOffsetTo(container);
   aX = nsPresContext::AppUnitsToIntCSSPixels(off.x);
   aY = nsPresContext::AppUnitsToIntCSSPixels(off.y);

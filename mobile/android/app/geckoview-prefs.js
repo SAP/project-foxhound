@@ -29,11 +29,16 @@ pref("geckoview.logging", "Debug");
 // Disable Web Push until we get it working
 pref("dom.push.enabled", false);
 
-// Unlike Fennec, GeckoView may have WebRender enabled, and with WebRender we're
-// going with containerless scrolling (because there are no layers at all with
-// WR, so why not go containerless). So we set this pref to pick up the value
-// in gfxPrefs.h from whether or not WR is enabled.
-pref("layout.scroll.root-frame-containers", 2);
+// Use containerless scrolling.
+pref("layout.scroll.root-frame-containers", 0);
 
 // Inherit locale from the OS, used for multi-locale builds
 pref("intl.locale.requested", "");
+
+// Enable Safe Browsing blocklist updates
+pref("browser.safebrowsing.features.phishing.update", true);
+pref("browser.safebrowsing.features.malware.update", true);
+
+// Enable Tracking Protection blocklist updates
+pref("browser.safebrowsing.features.trackingAnnotation.update", true);
+pref("browser.safebrowsing.features.trackingProtection.update", true);

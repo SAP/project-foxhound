@@ -1,11 +1,12 @@
 import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
 import {addLocaleData, injectIntl, IntlProvider} from "react-intl";
 import {ASRouterAdmin} from "content-src/components/ASRouterAdmin/ASRouterAdmin";
+import {ASRouterUISurface} from "../../asrouter/asrouter-content";
 import {ConfirmDialog} from "content-src/components/ConfirmDialog/ConfirmDialog";
 import {connect} from "react-redux";
+import {DarkModeMessage} from "content-src/components/DarkModeMessage/DarkModeMessage";
 import {DiscoveryStreamBase} from "content-src/components/DiscoveryStreamBase/DiscoveryStreamBase";
 import {ErrorBoundary} from "content-src/components/ErrorBoundary/ErrorBoundary";
-import {ManualMigration} from "content-src/components/ManualMigration/ManualMigration";
 import {PrerenderData} from "common/PrerenderData.jsm";
 import React from "react";
 import {Search} from "content-src/components/Search/Search";
@@ -74,6 +75,7 @@ export class _Base extends React.PureComponent {
       // we don't want to add them back to the Activity Stream view
       document.body.classList.contains("welcome") ? "welcome" : "",
       document.body.classList.contains("hide-main") ? "hide-main" : "",
+      document.body.classList.contains("inline-onboarding") ? "inline-onboarding" : "",
     ].filter(v => v).join(" ");
     global.document.body.className = bodyClassName;
   }
@@ -87,7 +89,10 @@ export class _Base extends React.PureComponent {
     if (prefs["asrouter.devtoolsEnabled"]) {
       if (window.location.hash.startsWith("#asrouter") ||
           window.location.hash.startsWith("#devtools")) {
-        return (<ASRouterAdmin />);
+        return (<div>
+          <ASRouterAdmin />
+          <ASRouterUISurface dispatch={this.props.dispatch} />
+        </div>);
       } else if (!didLogDevtoolsHelpText) {
         console.log("Activity Stream devtools enabled. To access visit %cabout:newtab#devtools", "font-weight: bold"); // eslint-disable-line no-console
         didLogDevtoolsHelpText = true;
@@ -136,15 +141,6 @@ export class BaseContent extends React.PureComponent {
     this.props.dispatch(ac.UserEvent({event: "OPEN_NEWTAB_PREFS"}));
   }
 
-  disableDarkTheme() {
-    // Dark themes are not supported in discovery stream view
-    // Add force-light-theme class to body tag to disable dark mode. See Bug 1519764
-    const bodyClassNames = global.document.body.classList;
-    if (!bodyClassNames.contains("force-light-theme")) {
-      bodyClassNames.add("force-light-theme");
-    }
-  }
-
   render() {
     const {props} = this;
     const {App} = props;
@@ -155,10 +151,6 @@ export class BaseContent extends React.PureComponent {
     const noSectionsEnabled = !prefs["feeds.topsites"] && props.Sections.filter(section => section.enabled).length === 0;
     const isDiscoveryStream = props.DiscoveryStream.config && props.DiscoveryStream.config.enabled;
     const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
-
-    if (isDiscoveryStream) {
-      this.disableDarkTheme();
-    }
 
     const outerClassName = [
       "outer-wrapper",
@@ -180,14 +172,11 @@ export class BaseContent extends React.PureComponent {
                 </ErrorBoundary>
               </div>
             }
+            <ASRouterUISurface fxaEndpoint={this.props.Prefs.values.fxa_endpoint} dispatch={this.props.dispatch} />
             <div className={`body-wrapper${(initialized ? " on" : "")}`}>
-              {!isDiscoveryStream && !prefs.migrationExpired &&
-                <div className="non-collapsible-section">
-                  <ManualMigration />
-                </div>
-                }
               {isDiscoveryStream ? (
                 <ErrorBoundary className="borderless-error">
+                  {prefs.darkModeMessage && <DarkModeMessage />}
                   <DiscoveryStreamBase />
                 </ErrorBoundary>) : <Sections />}
               <PrefsButton onClick={this.openPreferences} />

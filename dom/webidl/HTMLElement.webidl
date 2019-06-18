@@ -25,8 +25,8 @@ interface HTMLElement : Element {
   [Constant]
   readonly attribute DOMStringMap dataset;
 
-  [CEReactions, GetterThrows, Pure, TreatNullAs=EmptyString]
-           attribute DOMString innerText;
+  [CEReactions, GetterThrows, Pure]
+           attribute [TreatNullAs=EmptyString] DOMString innerText;
 
   // user interaction
   [CEReactions, SetterThrows, Pure]
@@ -82,13 +82,13 @@ partial interface HTMLElement {
 
 [NoInterfaceObject]
 interface TouchEventHandlers {
-  [Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
            attribute EventHandler ontouchstart;
-  [Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
            attribute EventHandler ontouchend;
-  [Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
            attribute EventHandler ontouchmove;
-  [Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
            attribute EventHandler ontouchcancel;
 };
 

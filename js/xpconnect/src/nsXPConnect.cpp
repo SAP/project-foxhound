@@ -180,6 +180,7 @@ void xpc::ErrorBase::Init(JSErrorBase* aReport) {
     CopyUTF8toUTF16(mozilla::MakeStringSpan(aReport->filename), mFileName);
   }
 
+  mSourceId = aReport->sourceId;
   mLineNumber = aReport->lineno;
   mColumn = aReport->column;
 }
@@ -240,6 +241,7 @@ void xpc::ErrorReport::Init(JSContext* aCx, mozilla::dom::Exception* aException,
   if (mFileName.IsEmpty()) {
     mFileName.SetIsVoid(true);
   }
+  mSourceId = aException->SourceId(aCx);
   mLineNumber = aException->LineNumber(aCx);
   mColumn = aException->ColumnNumber();
 
@@ -348,12 +350,15 @@ void xpc::ErrorReport::LogToConsoleWithStack(
                                               mCategory, mWindowID);
   NS_ENSURE_SUCCESS_VOID(rv);
 
+  rv = errorObject->InitSourceId(mSourceId);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
   for (size_t i = 0, len = mNotes.Length(); i < len; i++) {
     ErrorNote& note = mNotes[i];
 
     nsScriptErrorNote* noteObject = new nsScriptErrorNote();
-    noteObject->Init(note.mErrorMsg, note.mFileName, note.mLineNumber,
-                     note.mColumn);
+    noteObject->Init(note.mErrorMsg, note.mFileName, note.mSourceId,
+                     note.mLineNumber, note.mColumn);
     errorObject->AddNote(noteObject);
   }
 
@@ -412,11 +417,10 @@ void xpc::TraceXPCGlobal(JSTracer* trc, JSObject* obj) {
   }
 
   // We might be called from a GC during the creation of a global, before we've
-  // been able to set up the compartment private or the XPCWrappedNativeScope,
-  // so we need to null-check those.
-  xpc::CompartmentPrivate* compPrivate = xpc::CompartmentPrivate::Get(obj);
-  if (compPrivate && compPrivate->scope) {
-    compPrivate->scope->TraceInside(trc);
+  // been able to set up the compartment private.
+  if (xpc::CompartmentPrivate* priv = xpc::CompartmentPrivate::Get(obj)) {
+    MOZ_ASSERT(priv->GetScope());
+    priv->GetScope()->TraceInside(trc);
   }
 }
 
@@ -510,8 +514,7 @@ bool InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,
 
   if (!(aFlags & xpc::OMIT_COMPONENTS_OBJECT)) {
     // XPCCallContext gives us an active request needed to save/restore.
-    if (!CompartmentPrivate::Get(aGlobal)->scope->AttachComponentsObject(
-            aJSContext) ||
+    if (!ObjectScope(aGlobal)->AttachComponentsObject(aJSContext) ||
         !XPCNativeWrapper::AttachNewConstructorObject(aJSContext, aGlobal)) {
       return UnexpectedFailure(false);
     }
@@ -682,7 +685,8 @@ nsXPConnect::GetWrappedNativeOfJSObject(JSContext* aJSContext,
   MOZ_ASSERT(_retval, "bad param");
 
   RootedObject aJSObj(aJSContext, aJSObjArg);
-  aJSObj = js::CheckedUnwrap(aJSObj, /* stopAtWindowProxy = */ false);
+  aJSObj = js::CheckedUnwrapDynamic(aJSObj, aJSContext,
+                                    /* stopAtWindowProxy = */ false);
   if (!aJSObj || !IS_WN_REFLECTOR(aJSObj)) {
     *_retval = nullptr;
     return NS_ERROR_FAILURE;
@@ -693,10 +697,7 @@ nsXPConnect::GetWrappedNativeOfJSObject(JSContext* aJSContext,
   return NS_OK;
 }
 
-already_AddRefed<nsISupports> xpc::UnwrapReflectorToISupports(
-    JSObject* reflector) {
-  // Unwrap security wrappers, if allowed.
-  reflector = js::CheckedUnwrap(reflector, /* stopAtWindowProxy = */ false);
+static already_AddRefed<nsISupports> ReflectorToISupports(JSObject* reflector) {
   if (!reflector) {
     return nullptr;
   }
@@ -717,6 +718,20 @@ already_AddRefed<nsISupports> xpc::UnwrapReflectorToISupports(
   nsCOMPtr<nsISupports> canonical =
       do_QueryInterface(mozilla::dom::UnwrapDOMObjectToISupports(reflector));
   return canonical.forget();
+}
+
+already_AddRefed<nsISupports> xpc::ReflectorToISupportsStatic(
+    JSObject* reflector) {
+  // Unwrap security wrappers, if allowed.
+  return ReflectorToISupports(js::CheckedUnwrapStatic(reflector));
+}
+
+already_AddRefed<nsISupports> xpc::ReflectorToISupportsDynamic(
+    JSObject* reflector, JSContext* cx) {
+  // Unwrap security wrappers, if allowed.
+  return ReflectorToISupports(
+      js::CheckedUnwrapDynamic(reflector, cx,
+                               /* stopAtWindowProxy = */ false));
 }
 
 NS_IMETHODIMP

@@ -94,16 +94,28 @@ jobs:
           target-tasks-method: searchfox_index
       run-on-projects:
           - mozilla-central
+          - mozilla-beta
+          - mozilla-release
       when:
-          by-project:
-              mozilla-central: [{hour: 10, minute: 0}]
-              # No default
+          - {hour: 10, minute: 0}
 
     - name: customv8-update
       job:
           type: decision-task
           treeherder-symbol: customv8
           target-tasks-method: customv8_update
+          optimize-target-tasks: false
+      run-on-projects:
+          - mozilla-central
+      when:
+          by-project:
+              mozilla-central: [{hour: 10, minute: 30}]
+
+    - name: chromium-update
+      job:
+          type: decision-task
+          treeherder-symbol: Chromium
+          target-tasks-method: chromium_update
           optimize-target-tasks: false
       run-on-projects:
           - mozilla-central

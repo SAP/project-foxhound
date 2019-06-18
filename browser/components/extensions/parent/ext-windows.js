@@ -204,10 +204,9 @@ this.windows = class extends ExtensionAPI {
           }
 
           args.appendElement(null); // unused
-          args.appendElement(null); // referrer
+          args.appendElement(null); // referrerInfo
           args.appendElement(null); // postData
           args.appendElement(null); // allowThirdPartyFixup
-          args.appendElement(null); // referrerPolicy
 
           if (createData.cookieStoreId) {
             let userContextIdSupports = Cc["@mozilla.org/supports-PRUint32;1"].createInstance(Ci.nsISupportsPRUint32);
@@ -221,6 +220,8 @@ this.windows = class extends ExtensionAPI {
           args.appendElement(context.principal); // originPrincipal - not important.
           args.appendElement(principal); // triggeringPrincipal
           args.appendElement(Cc["@mozilla.org/supports-PRBool;1"].createInstance(Ci.nsISupportsPRBool)); // allowInheritPrincipal
+          // Bug 965637, query the CSP from the doc instead of the Principal
+          args.appendElement(principal.csp); // csp
 
           let features = ["chrome"];
 

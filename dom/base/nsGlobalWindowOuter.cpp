@@ -29,7 +29,6 @@
 #include "mozilla/dom/LocalStorage.h"
 #include "mozilla/dom/LSObject.h"
 #include "mozilla/dom/Storage.h"
-#include "mozilla/dom/IdleRequest.h"
 #include "mozilla/dom/MaybeCrossOriginObject.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/StorageEvent.h"
@@ -45,7 +44,6 @@
 #  include "mozilla/dom/WindowOrientationObserver.h"
 #endif
 #include "nsError.h"
-#include "nsIIdleService.h"
 #include "nsISizeOfEventTarget.h"
 #include "nsDOMJSUtils.h"
 #include "nsArrayUtils.h"
@@ -95,6 +93,7 @@
 #include "mozilla/dom/ToJSValue.h"
 #include "nsJSPrincipals.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Components.h"
 #include "mozilla/Debug.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
@@ -153,11 +152,6 @@
 #include "nsCSSProps.h"
 #include "nsIURIFixup.h"
 #include "nsIURIMutator.h"
-#ifndef DEBUG
-#  include "nsIAppStartup.h"
-#  include "nsToolkitCompsCID.h"
-#endif
-#include "nsCDefaultURIFixup.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
 #include "nsIObserverService.h"
@@ -319,6 +313,8 @@ static LazyLogModule gDOMLeakPRLogOuter("DOMLeakOuter");
 
 static int32_t gOpenPopupSpamCount = 0;
 
+static bool gSyncContentBlockingNotifications = false;
+
 nsGlobalWindowOuter::OuterWindowByIdTable*
     nsGlobalWindowOuter::sOuterWindowsById = nullptr;
 
@@ -458,19 +454,6 @@ class nsOuterWindowProxy : public MaybeCrossOriginObject<js::Wrapper> {
 
   // SpiderMonkey extensions
   /**
-   * Non-standard method we want to get rid of.
-   *
-   * "proxy" is the WindowProxy object involved.  It may not be same-compartment
-   * with cx.
-   *
-   * The only reason we implement this is because js::Wrapper does and we want
-   * different behavior from the js::Wrapper implementation.
-   */
-  bool getPropertyDescriptor(
-      JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc) const override;
-
-  /**
    * Implementation of SpiderMonkey extension which just checks whether this
    * object has the property.  Basically Object.getOwnPropertyDescriptor(obj,
    * prop) !== undefined. but does not require reifying the descriptor.
@@ -564,43 +547,6 @@ void nsOuterWindowProxy::finalize(JSFreeOp* fop, JSObject* proxy) const {
     // write a non-null value that will reliably crash when dereferenced.
     outerWindow->PoisonOuterWindowProxy(proxy);
   }
-}
-
-bool nsOuterWindowProxy::getPropertyDescriptor(
-    JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id,
-    JS::MutableHandle<JS::PropertyDescriptor> desc) const {
-  // In the same-origin case the only thing we can do differently from
-  // js::Wrapper is shadow stuff with our indexed properties, so we can just try
-  // getOwnPropertyDescriptor and if that gives us nothing call on through to
-  // js::Wrapper.
-  //
-  // In the cross-origin case, we can only have own properties, so don't even
-  // need to worry about the js::Proxy bit.
-  desc.object().set(nullptr);
-  if (!getOwnPropertyDescriptor(cx, proxy, id, desc)) {
-    return false;
-  }
-
-  if (desc.object()) {
-    return true;
-  }
-
-  if (!IsPlatformObjectSameOrigin(cx, proxy)) {
-    return true;
-  }
-
-  // When forwarding to js::Wrapper, we should just enter the Realm of proxy
-  // for now.  That's what js::Wrapper expects, and since we're same-origin
-  // anyway this is not changing any security behavior.
-  {
-    JSAutoRealm ar(cx, proxy);
-    JS_MarkCrossZoneId(cx, id);
-    if (!js::Wrapper::getPropertyDescriptor(cx, proxy, id, desc)) {
-      return false;
-    }
-  }
-
-  return JS_WrapPropertyDescriptor(cx, desc);
 }
 
 /**
@@ -1150,10 +1096,6 @@ static JSObject* NewOuterWindowProxy(JSContext* cx,
 
 nsGlobalWindowOuter::nsGlobalWindowOuter(uint64_t aWindowID)
     : nsPIDOMWindowOuter(aWindowID),
-      mIdleFuzzFactor(0),
-      mIdleCallbackIndex(-1),
-      mCurrentlyIdle(false),
-      mAddActiveEventFuzzTime(true),
       mFullscreen(false),
       mFullscreenMode(false),
       mIsClosed(false),
@@ -1316,10 +1258,6 @@ nsGlobalWindowOuter::~nsGlobalWindowOuter() {
   if (obs) {
     obs->RemoveObserver(this, PERM_CHANGE_NOTIFICATION);
   }
-  nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (prefBranch) {
-    prefBranch->RemoveObserver("network.cookie.cookieBehavior", this);
-  }
 
   nsLayoutStatics::Release();
 }
@@ -1376,11 +1314,6 @@ void nsGlobalWindowOuter::CleanUp() {
   mMessageManager = nullptr;
 
   mArguments = nullptr;
-
-  if (mIdleTimer) {
-    mIdleTimer->Cancel();
-    mIdleTimer = nullptr;
-  }
 }
 
 void nsGlobalWindowOuter::ClearControllers() {
@@ -1470,9 +1403,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowOuter)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSuspendedDoc)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDoc)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIdleService)
-
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIdleObservers)
 
   // Traverse stuff from nsPIDOMWindow
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChromeEventHandler)
@@ -1499,8 +1429,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowOuter)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSuspendedDoc)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDoc)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIdleService)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIdleObservers)
 
   // Unlink stuff from nsPIDOMWindow
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChromeEventHandler)
@@ -1838,8 +1766,45 @@ static bool InitializeLegacyNetscapeObject(JSContext* aCx,
   return JS_DefineFunctions(aCx, obj, EnablePrivilegeSpec);
 }
 
+struct MOZ_STACK_CLASS CompartmentFinderState {
+  explicit CompartmentFinderState(nsIPrincipal* aPrincipal)
+      : principal(aPrincipal), compartment(nullptr) {}
+
+  // Input: we look for a compartment which is same-origin with the
+  // given principal.
+  nsIPrincipal* principal;
+
+  // Output: We set this member if we find a compartment.
+  JS::Compartment* compartment;
+};
+
+static JS::CompartmentIterResult FindSameOriginCompartment(
+    JSContext* aCx, void* aData, JS::Compartment* aCompartment) {
+  auto* data = static_cast<CompartmentFinderState*>(aData);
+  MOZ_ASSERT(!data->compartment, "Why are we getting called?");
+
+  // If this compartment is not safe to share across globals, don't do
+  // anything with it; in particular we should not be getting a
+  // CompartmentPrivate from such a compartment, because it may be in
+  // the middle of being collected and its CompartmentPrivate may no
+  // longer be valid.
+  if (!js::IsSharableCompartment(aCompartment)) {
+    return JS::CompartmentIterResult::KeepGoing;
+  }
+
+  auto* compartmentPrivate = xpc::CompartmentPrivate::Get(aCompartment);
+  if (!compartmentPrivate->CanShareCompartmentWith(data->principal)) {
+    // Can't reuse this one, keep going.
+    return JS::CompartmentIterResult::KeepGoing;
+  }
+
+  // We have a winner!
+  data->compartment = aCompartment;
+  return JS::CompartmentIterResult::Stop;
+}
+
 static JS::RealmCreationOptions& SelectZone(
-    nsIPrincipal* aPrincipal, nsGlobalWindowInner* aNewInner,
+    JSContext* aCx, nsIPrincipal* aPrincipal, nsGlobalWindowInner* aNewInner,
     JS::RealmCreationOptions& aOptions) {
   // Use the shared system compartment for chrome windows.
   if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
@@ -1848,9 +1813,23 @@ static JS::RealmCreationOptions& SelectZone(
 
   if (aNewInner->GetOuterWindow()) {
     nsGlobalWindowOuter* top = aNewInner->GetTopInternal();
+    if (top == aNewInner->GetOuterWindow()) {
+      // We're a toplevel load.  Use a new zone.  This way, when we do
+      // zone-based compartment sharing we won't share compartments
+      // across navigations.
+      return aOptions.setNewCompartmentAndZone();
+    }
 
     // If we have a top-level window, use its zone.
     if (top && top->GetGlobalJSObject()) {
+      JS::Zone* zone = JS::GetObjectZone(top->GetGlobalJSObject());
+      // Now try to find an existing compartment that's same-origin
+      // with our principal.
+      CompartmentFinderState data(aPrincipal);
+      JS_IterateCompartmentsInZone(aCx, zone, &data, FindSameOriginCompartment);
+      if (data.compartment) {
+        return aOptions.setExistingCompartment(data.compartment);
+      }
       return aOptions.setNewCompartmentInExistingZone(top->GetGlobalJSObject());
     }
   }
@@ -1880,7 +1859,7 @@ static nsresult CreateNativeGlobalForInner(JSContext* aCx,
 
   JS::RealmOptions options;
 
-  SelectZone(aPrincipal, aNewInner, options.creationOptions());
+  SelectZone(aCx, aPrincipal, aNewInner, options.creationOptions());
 
   options.creationOptions().setSecureContext(aIsSecureContext);
 
@@ -1934,6 +1913,7 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
   }
 
   RefPtr<Document> oldDoc = mDoc;
+  MOZ_RELEASE_ASSERT(oldDoc != aDocument);
 
   AutoJSAPI jsapi;
   jsapi.Init();
@@ -2006,7 +1986,6 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
   NS_ASSERTION(!aState || wsh,
                "What kind of weird state are you giving me here?");
 
-  bool handleDocumentOpen = false;
   bool doomCurrentInner = false;
 
   JS::Rooted<JSObject*> newInnerGlobal(cx);
@@ -2017,9 +1996,7 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
     newInnerWindow = currentInner;
     newInnerGlobal = currentInner->GetWrapperPreserveColor();
 
-    if (aDocument != oldDoc) {
-      JS::ExposeObjectToActiveJS(newInnerGlobal);
-    }
+    JS::ExposeObjectToActiveJS(newInnerGlobal);
 
     // We're reusing the inner window, but this still counts as a navigation,
     // so all expandos and such defined on the outer window should go away.
@@ -2040,16 +2017,9 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
     nsIPrincipal* existing = nsJSPrincipals::get(JS::GetRealmPrincipals(realm));
     aDocument->NodePrincipal()->Equals(existing, &sameOrigin);
     MOZ_ASSERT(sameOrigin);
-    MOZ_ASSERT_IF(aDocument == oldDoc,
-                  xpc::GetRealmPrincipal(realm) == aDocument->NodePrincipal());
 #endif
-    if (aDocument != oldDoc) {
-      JS::SetRealmPrincipals(realm,
-                             nsJSPrincipals::get(aDocument->NodePrincipal()));
-      // Make sure we clear out the old content XBL scope, so the new one will
-      // get created with a principal that subsumes our new principal.
-      xpc::ClearContentXBLScope(newInnerGlobal);
-    }
+    JS::SetRealmPrincipals(realm,
+                           nsJSPrincipals::get(aDocument->NodePrincipal()));
   } else {
     if (aState) {
       newInnerWindow = wsh->GetInnerWindow();
@@ -2095,10 +2065,6 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
     }
 
     if (currentInner && currentInner->GetWrapperPreserveColor()) {
-      if (oldDoc == aDocument) {
-        handleDocumentOpen = true;
-      }
-
       // Don't free objects on our current inner window if it's going to be
       // held in the bfcache.
       if (!currentInner->IsFrozen()) {
@@ -2132,12 +2098,15 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
         return NS_ERROR_FAILURE;
       }
 
-      JS::Rooted<JSObject*> obj(cx, GetWrapperPreserveColor());
+      JS::Rooted<JSObject*> obj(cx, GetWrapper());
+
+      MOZ_ASSERT(js::IsWindowProxy(obj));
 
       js::SetProxyReservedSlot(obj, OUTER_WINDOW_SLOT,
                                js::PrivateValue(nullptr));
       js::SetProxyReservedSlot(outerObject, OUTER_WINDOW_SLOT,
                                js::PrivateValue(nullptr));
+      js::SetProxyReservedSlot(obj, HOLDER_WEAKMAP_SLOT, JS::UndefinedValue());
 
       outerObject = xpc::TransplantObject(cx, obj, outerObject);
       if (!outerObject) {
@@ -2222,26 +2191,25 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
 
   if (!aState) {
     if (reUseInnerWindow) {
-      if (newInnerWindow->mDoc != aDocument) {
-        newInnerWindow->mDoc = aDocument;
+      MOZ_RELEASE_ASSERT(newInnerWindow->mDoc != aDocument);
+      newInnerWindow->mDoc = aDocument;
 
-        // The storage objects contain the URL of the window. We have to
-        // recreate them when the innerWindow is reused.
-        newInnerWindow->mLocalStorage = nullptr;
-        newInnerWindow->mSessionStorage = nullptr;
-        newInnerWindow->mPerformance = nullptr;
+      // The storage objects contain the URL of the window. We have to
+      // recreate them when the innerWindow is reused.
+      newInnerWindow->mLocalStorage = nullptr;
+      newInnerWindow->mSessionStorage = nullptr;
+      newInnerWindow->mPerformance = nullptr;
 
-        // This must be called after nullifying the internal objects because
-        // here we could recreate them, calling the getter methods, and store
-        // them into the JS slots. If we nullify them after, the slot values and
-        // the objects will be out of sync.
-        newInnerWindow->ClearDocumentDependentSlots(cx);
+      // This must be called after nullifying the internal objects because
+      // here we could recreate them, calling the getter methods, and store
+      // them into the JS slots. If we nullify them after, the slot values and
+      // the objects will be out of sync.
+      newInnerWindow->ClearDocumentDependentSlots(cx);
 
-        // When replacing an initial about:blank document we call
-        // ExecutionReady again to update the client creation URL.
-        rv = newInnerWindow->ExecutionReady();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
+      // When replacing an initial about:blank document we call
+      // ExecutionReady again to update the client creation URL.
+      rv = newInnerWindow->ExecutionReady();
+      NS_ENSURE_SUCCESS(rv, rv);
     } else {
       newInnerWindow->InnerSetNewDocument(cx, aDocument);
 
@@ -2264,12 +2232,6 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
     newInnerWindow->mChromeEventHandler = mChromeEventHandler;
   }
 
-  // Handle any document.open() logic after we setup the new inner window
-  // so that any bound DETH objects can see the top window, document, etc.
-  if (handleDocumentOpen) {
-    newInnerWindow->MigrateStateForDocumentOpen(currentInner);
-  }
-
   // Tell the WindowGlobalParent that it should become the current window global
   // for our BrowsingContext if it isn't already.
   mInnerWindow->GetWindowGlobalChild()->SendBecomeCurrentWindowGlobal();
@@ -2277,7 +2239,7 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
   // We no longer need the old inner window.  Start its destruction if
   // its not being reused and clear our reference.
   if (doomCurrentInner) {
-    currentInner->FreeInnerObjects(handleDocumentOpen);
+    currentInner->FreeInnerObjects();
   }
   currentInner = nullptr;
 
@@ -2325,20 +2287,18 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
 
   mHasStorageAccess = false;
   nsIURI* uri = aDocument->GetDocumentURI();
-  if (newInnerWindow) {
-    if (StaticPrefs::network_cookie_cookieBehavior() ==
-            nsICookieService::BEHAVIOR_REJECT_TRACKER &&
-        nsContentUtils::IsThirdPartyWindowOrChannel(newInnerWindow, nullptr,
-                                                    uri) &&
-        nsContentUtils::IsTrackingResourceWindow(newInnerWindow)) {
-      // Grant storage access by default if the first-party storage access
-      // permission has been granted already.
-      // Don't notify in this case, since we would be notifying the user
-      // needlessly.
-      mHasStorageAccess =
-          AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-              newInnerWindow, uri, nullptr);
-    }
+  if (newInnerWindow &&
+      aDocument->CookieSettings()->GetCookieBehavior() ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER &&
+      nsContentUtils::IsThirdPartyWindowOrChannel(newInnerWindow, nullptr,
+                                                  uri) &&
+      nsContentUtils::IsTrackingResourceWindow(newInnerWindow)) {
+    // Grant storage access by default if the first-party storage access
+    // permission has been granted already.
+    // Don't notify in this case, since we would be notifying the user
+    // needlessly.
+    mHasStorageAccess = AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
+        newInnerWindow, uri, nullptr);
   }
 
   return NS_OK;
@@ -2415,7 +2375,7 @@ void nsGlobalWindowOuter::SetDocShell(nsDocShell* aDocShell) {
     return;
   }
 
-  mDocShell = aDocShell;  // Weak Reference
+  mDocShell = aDocShell;
   mBrowsingContext = aDocShell->GetBrowsingContext();
 
   nsCOMPtr<nsPIDOMWindowOuter> parentWindow = GetScriptableParentOrNull();
@@ -2508,7 +2468,7 @@ void nsGlobalWindowOuter::DetachFromDocShell() {
     mContext = nullptr;
   }
 
-  mDocShell = nullptr;  // Weak Reference
+  mDocShell = nullptr;
 
   if (mFrames) {
     mFrames->SetDocShell(nullptr);
@@ -2522,10 +2482,11 @@ void nsGlobalWindowOuter::SetOpenerWindow(nsPIDOMWindowOuter* aOpener,
                                           bool aOriginalOpener) {
   nsWeakPtr opener = do_GetWeakReference(aOpener);
   if (opener == mOpener) {
-    MOZ_DIAGNOSTIC_ASSERT(
-        !aOpener || !aOpener->GetDocShell() ||
-        (GetBrowsingContext() &&
-         GetBrowsingContext()->GetOpener() == aOpener->GetBrowsingContext()));
+    MOZ_DIAGNOSTIC_ASSERT(!aOpener || !aOpener->GetDocShell() ||
+                          (GetBrowsingContext() &&
+                           aOpener->GetBrowsingContext() &&
+                           aOpener->GetBrowsingContext()->Id() ==
+                               GetBrowsingContext()->GetOpenerId()));
     return;
   }
 
@@ -2548,7 +2509,8 @@ void nsGlobalWindowOuter::SetOpenerWindow(nsPIDOMWindowOuter* aOpener,
         // the window opener to a closed window. This needs to be
         // cleaned up, see Bug 1511353.
         nsGlobalWindowOuter::Cast(aOpener)->IsClosedOrClosing() ||
-        aOpener->GetBrowsingContext() == GetBrowsingContext()->GetOpener());
+        aOpener->GetBrowsingContext()->Id() ==
+            GetBrowsingContext()->GetOpenerId());
     // TODO(farre): Here we really wish to only consider the case
     // where 'aOriginalOpener'. See bug 1509016.
     GetBrowsingContext()->SetOpener(aOpener ? aOpener->GetBrowsingContext()
@@ -3982,7 +3944,7 @@ already_AddRefed<BrowsingContext> nsGlobalWindowOuter::GetChildWindow(
     const nsAString& aName) {
   NS_ENSURE_TRUE(mBrowsingContext, nullptr);
 
-  return mBrowsingContext->FindChildWithName(aName);
+  return do_AddRef(mBrowsingContext->FindChildWithName(aName));
 }
 
 bool nsGlobalWindowOuter::DispatchCustomEvent(const nsAString& aEventName) {
@@ -4476,8 +4438,8 @@ bool nsGlobalWindowOuter::SetWidgetFullscreen(FullscreenReason aReason,
   return NS_SUCCEEDED(rv);
 }
 
-/* virtual */ void nsGlobalWindowOuter::FullscreenWillChange(
-    bool aIsFullscreen) {
+/* virtual */
+void nsGlobalWindowOuter::FullscreenWillChange(bool aIsFullscreen) {
   if (aIsFullscreen) {
     DispatchCustomEvent(NS_LITERAL_STRING("willenterfullscreen"));
   } else {
@@ -4485,8 +4447,8 @@ bool nsGlobalWindowOuter::SetWidgetFullscreen(FullscreenReason aReason,
   }
 }
 
-/* virtual */ void nsGlobalWindowOuter::FinishFullscreenChange(
-    bool aIsFullscreen) {
+/* virtual */
+void nsGlobalWindowOuter::FinishFullscreenChange(bool aIsFullscreen) {
   if (aIsFullscreen != mFullscreen) {
     NS_WARNING("Failed to toggle fullscreen state of the widget");
     // We failed to make the widget enter fullscreen.
@@ -4612,7 +4574,7 @@ void nsGlobalWindowOuter::MakeScriptDialogTitle(
   if (NS_SUCCEEDED(rv) && uri) {
     // remove user:pass for privacy and spoof prevention
 
-    nsCOMPtr<nsIURIFixup> fixup(do_GetService(NS_URIFIXUP_CONTRACTID));
+    nsCOMPtr<nsIURIFixup> fixup(components::URIFixup::Service());
     if (fixup) {
       nsCOMPtr<nsIURI> fixedURI;
       rv = fixup->CreateExposableURI(uri, getter_AddRefs(fixedURI));
@@ -5414,110 +5376,161 @@ void nsGlobalWindowOuter::NotifyContentBlockingEvent(unsigned aEvent,
   nsCOMPtr<Document> doc = docShell->GetDocument();
   NS_ENSURE_TRUE_VOID(doc);
 
-  // This event might come after the user has navigated to another page.
-  // To prevent showing the TrackingProtection UI on the wrong page, we need to
-  // check that the loading URI for the channel is the same as the URI currently
-  // loaded in the document.
-  if (!SameLoadingURI(doc, aChannel) &&
-      aEvent == nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT) {
-    return;
+  nsCOMPtr<nsIURI> uri(aURIHint);
+  nsCOMPtr<nsIChannel> channel(aChannel);
+
+  static bool prefInitialized = false;
+  if (!prefInitialized) {
+    Preferences::AddBoolVarCache(
+        &gSyncContentBlockingNotifications,
+        "dom.testing.sync-content-blocking-notifications", false);
+    prefInitialized = true;
   }
 
-  // Notify nsIWebProgressListeners of this content blocking event.
-  // Can be used to change the UI state.
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsISecurityEventSink> eventSink = do_QueryInterface(docShell, &rv);
-  NS_ENSURE_SUCCESS_VOID(rv);
-  uint32_t event = 0;
-  nsCOMPtr<nsISecureBrowserUI> securityUI;
-  docShell->GetSecurityUI(getter_AddRefs(securityUI));
-  if (!securityUI) {
-    return;
-  }
-  securityUI->GetContentBlockingEvent(&event);
-  nsAutoCString origin;
-  nsContentUtils::GetASCIIOrigin(aURIHint, origin);
+  nsCOMPtr<nsIRunnable> func = NS_NewRunnableFunction(
+      "NotifyContentBlockingEventDelayed",
+      [doc, docShell, uri, channel, aEvent, aBlocked]() {
+        // This event might come after the user has navigated to another
+        // page. To prevent showing the TrackingProtection UI on the wrong
+        // page, we need to check that the loading URI for the channel is
+        // the same as the URI currently loaded in the document.
+        if (!SameLoadingURI(doc, channel) &&
+            aEvent == nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT) {
+          return;
+        }
 
-  bool blockedValue = aBlocked;
-  bool unblocked = false;
-  if (aEvent == nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT) {
-    doc->SetHasTrackingContentBlocked(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasTrackingContentBlocked();
-    }
-  } else if (aEvent == nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT) {
-    doc->SetHasTrackingContentLoaded(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasTrackingContentLoaded();
-    }
-  } else if (aEvent ==
-             nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION) {
-    doc->SetHasCookiesBlockedByPermission(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasCookiesBlockedByPermission();
-    }
-  } else if (aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) {
-    doc->SetHasTrackingCookiesBlocked(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasTrackingCookiesBlocked();
-    }
-  } else if (aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) {
-    doc->SetHasAllCookiesBlocked(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasAllCookiesBlocked();
-    }
-  } else if (aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN) {
-    doc->SetHasForeignCookiesBlocked(aBlocked, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasForeignCookiesBlocked();
-    }
-  } else if (aEvent == nsIWebProgressListener::STATE_COOKIES_LOADED) {
-    MOZ_ASSERT(!aBlocked,
-               "We don't expected to see blocked STATE_COOKIES_LOADED");
-    // Note that the logic in this branch is the logical negation of the logic
-    // in other branches, since the Document API we have is phrased in
-    // "loaded" terms as opposed to "blocked" terms.
-    blockedValue = !aBlocked;
-    doc->SetHasCookiesLoaded(blockedValue, origin);
-    if (!aBlocked) {
-      unblocked = !doc->GetHasCookiesLoaded();
-    }
-  } else {
-    // Ignore nsIWebProgressListener::STATE_BLOCKED_UNSAFE_CONTENT;
-  }
-  const uint32_t oldEvent = event;
-  if (blockedValue) {
-    event |= aEvent;
-  } else if (unblocked) {
-    event &= ~aEvent;
-  }
+        // Notify nsIWebProgressListeners of this content blocking event.
+        // Can be used to change the UI state.
+        uint32_t event = 0;
+        nsCOMPtr<nsISecureBrowserUI> securityUI;
+        docShell->GetSecurityUI(getter_AddRefs(securityUI));
+        if (!securityUI) {
+          return;
+        }
+        securityUI->GetContentBlockingEvent(&event);
+        nsAutoCString origin;
+        nsContentUtils::GetASCIIOrigin(uri, origin);
 
-  if (event == oldEvent
+        bool blockedValue = aBlocked;
+        bool unblocked = false;
+        if (aEvent == nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT) {
+          doc->SetHasTrackingContentBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasTrackingContentBlocked();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT) {
+          doc->SetHasTrackingContentLoaded(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasTrackingContentLoaded();
+          }
+        } else if (aEvent == nsIWebProgressListener::
+                                 STATE_BLOCKED_FINGERPRINTING_CONTENT) {
+          doc->SetHasFingerprintingContentBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasFingerprintingContentBlocked();
+          }
+        } else if (aEvent == nsIWebProgressListener::
+                                 STATE_LOADED_FINGERPRINTING_CONTENT) {
+          doc->SetHasFingerprintingContentLoaded(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasFingerprintingContentLoaded();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_BLOCKED_CRYPTOMINING_CONTENT) {
+          doc->SetHasCryptominingContentBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasCryptominingContentBlocked();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_LOADED_CRYPTOMINING_CONTENT) {
+          doc->SetHasCryptominingContentLoaded(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasCryptominingContentLoaded();
+          }
+        } else if (aEvent == nsIWebProgressListener::
+                                 STATE_COOKIES_BLOCKED_BY_PERMISSION) {
+          doc->SetHasCookiesBlockedByPermission(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasCookiesBlockedByPermission();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) {
+          doc->SetHasTrackingCookiesBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasTrackingCookiesBlocked();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) {
+          doc->SetHasAllCookiesBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasAllCookiesBlocked();
+          }
+        } else if (aEvent ==
+                   nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN) {
+          doc->SetHasForeignCookiesBlocked(aBlocked, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasForeignCookiesBlocked();
+          }
+        } else if (aEvent == nsIWebProgressListener::STATE_COOKIES_LOADED) {
+          MOZ_ASSERT(!aBlocked,
+                     "We don't expected to see blocked STATE_COOKIES_LOADED");
+          // Note that the logic in this branch is the logical negation of
+          // the logic in other branches, since the Document API we have is
+          // phrased in "loaded" terms as opposed to "blocked" terms.
+          blockedValue = !aBlocked;
+          doc->SetHasCookiesLoaded(blockedValue, origin);
+          if (!aBlocked) {
+            unblocked = !doc->GetHasCookiesLoaded();
+          }
+        } else {
+          // Ignore nsIWebProgressListener::STATE_BLOCKED_UNSAFE_CONTENT;
+        }
+        const uint32_t oldEvent = event;
+        if (blockedValue) {
+          event |= aEvent;
+        } else if (unblocked) {
+          event &= ~aEvent;
+        }
+
+        if (event == oldEvent
 #ifdef ANDROID
-      // GeckoView always needs to notify about blocked trackers, since the
-      // GeckoView API always needs to report the URI and type of any blocked
-      // tracker.
-      // We use a platform-dependent code path here because reporting this
-      // notification on desktop platforms isn't necessary and doing so can have
-      // a big performance cost.
-      && aEvent != nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT
+            // GeckoView always needs to notify about blocked trackers,
+            // since the GeckoView API always needs to report the URI and
+            // type of any blocked tracker. We use a platform-dependent code
+            // path here because reporting this notification on desktop
+            // platforms isn't necessary and doing so can have a big
+            // performance cost.
+            && aEvent != nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT
 #endif
-  ) {
-    // Avoid dispatching repeated notifications when nothing has changed
+        ) {
+          // Avoid dispatching repeated notifications when nothing has
+          // changed
+          return;
+        }
+
+        nsDocShell::Cast(docShell)->nsDocLoader::OnContentBlockingEvent(channel,
+                                                                        event);
+      });
+  nsresult rv;
+  if (gSyncContentBlockingNotifications) {
+    rv = func->Run();
+  } else {
+    rv = NS_DispatchToCurrentThreadQueue(func.forget(), 100,
+                                         EventQueuePriority::Idle);
+  }
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
-
-  eventSink->OnContentBlockingEvent(aChannel, event);
 }
 
 // static
 bool nsGlobalWindowOuter::SameLoadingURI(Document* aDoc, nsIChannel* aChannel) {
   nsCOMPtr<nsIURI> docURI = aDoc->GetDocumentURI();
-  nsCOMPtr<nsILoadInfo> channelLoadInfo = aChannel->GetLoadInfo();
-  if (!channelLoadInfo || !docURI) {
+  if (!docURI) {
     return false;
   }
-
+  nsCOMPtr<nsILoadInfo> channelLoadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsIPrincipal> channelLoadingPrincipal =
       channelLoadInfo->LoadingPrincipal();
   if (!channelLoadingPrincipal) {
@@ -5713,9 +5726,11 @@ nsresult nsGlobalWindowOuter::OpenDialog(const nsAString& aUrl,
 }
 
 // Like Open, but passes aNavigate=false.
-/* virtual */ nsresult nsGlobalWindowOuter::OpenNoNavigate(
-    const nsAString& aUrl, const nsAString& aName, const nsAString& aOptions,
-    nsPIDOMWindowOuter** _retval) {
+/* virtual */
+nsresult nsGlobalWindowOuter::OpenNoNavigate(const nsAString& aUrl,
+                                             const nsAString& aName,
+                                             const nsAString& aOptions,
+                                             nsPIDOMWindowOuter** _retval) {
   return OpenInternal(aUrl, aName, aOptions,
                       false,             // aDialog
                       false,             // aContentModal
@@ -5783,8 +5798,12 @@ nsGlobalWindowInner* nsGlobalWindowOuter::CallerInnerWindow(JSContext* aCx) {
     bool ok = JS_GetPrototype(aCx, scope, &scopeProto);
     NS_ENSURE_TRUE(ok, nullptr);
     if (scopeProto && xpc::IsSandboxPrototypeProxy(scopeProto) &&
-        (scopeProto =
-             js::CheckedUnwrap(scopeProto, /* stopAtWindowProxy = */ false))) {
+        // Our current Realm on aCx is the sandbox.  Using that for the
+        // CheckedUnwrapDynamic call makes sense: if the sandbox can unwrap the
+        // window, we can use it.  And we do want CheckedUnwrapDynamic, because
+        // the whole point is to unwrap windows.
+        (scopeProto = js::CheckedUnwrapDynamic(
+             scopeProto, aCx, /* stopAtWindowProxy = */ false))) {
       global = xpc::NativeGlobal(scopeProto);
       NS_ENSURE_TRUE(global, nullptr);
     }
@@ -6924,11 +6943,6 @@ NS_IMETHODIMP
 nsGlobalWindowOuter::Observe(nsISupports* aSupports, const char* aTopic,
                              const char16_t* aData) {
   if (!nsCRT::strcmp(aTopic, PERM_CHANGE_NOTIFICATION)) {
-    if (!nsCRT::strcmp(aData, u"cleared") && !aSupports) {
-      // All permissions have been cleared.
-      mHasStorageAccess = false;
-      return NS_OK;
-    }
     nsCOMPtr<nsIPermission> permission = do_QueryInterface(aSupports);
     if (!permission) {
       return NS_OK;
@@ -6960,10 +6974,6 @@ nsGlobalWindowOuter::Observe(nsISupports* aSupports, const char* aTopic,
         return NS_OK;
       }
     }
-  } else if (!nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
-    // Reset the storage access permission when our cookie policy changes.
-    mHasStorageAccess = false;
-    return NS_OK;
   }
   return NS_OK;
 }
@@ -7207,13 +7217,8 @@ nsresult nsGlobalWindowOuter::OpenInternal(
     MaybeAllowStorageForOpenedWindow(uri);
   }
 
-  NS_ENSURE_TRUE(domReturn, NS_OK);
-  nsCOMPtr<nsPIDOMWindowOuter> outerReturn =
-      nsPIDOMWindowOuter::From(domReturn);
-  outerReturn.swap(*aReturn);
-
-  if (aDoJSFixups) {
-    nsCOMPtr<nsIDOMChromeWindow> chrome_win(do_QueryInterface(*aReturn));
+  if (domReturn && aDoJSFixups) {
+    nsCOMPtr<nsIDOMChromeWindow> chrome_win(do_QueryInterface(domReturn));
     if (!chrome_win) {
       // A new non-chrome window was created from a call to
       // window.open() from JavaScript, make sure there's a document in
@@ -7223,12 +7228,13 @@ nsresult nsGlobalWindowOuter::OpenInternal(
       // XXXbz should this just use EnsureInnerWindow()?
 
       // Force document creation.
-      nsCOMPtr<Document> doc = (*aReturn)->GetDoc();
+      nsCOMPtr<Document> doc = nsPIDOMWindowOuter::From(domReturn)->GetDoc();
       Unused << doc;
     }
   }
 
-  return rv;
+  *aReturn = do_AddRef(nsPIDOMWindowOuter::From(domReturn)).take();
+  return NS_OK;
 }
 
 void nsGlobalWindowOuter::MaybeAllowStorageForOpenedWindow(nsIURI* aURI) {
@@ -7499,7 +7505,7 @@ void nsGlobalWindowOuter::SetCursorOuter(const nsAString& aCursor,
 
     // Call esm and set cursor.
     aError = presContext->EventStateManager()->SetCursor(
-        cursor, nullptr, false, 0.0f, 0.0f, widget, true);
+        cursor, nullptr, Nothing(), widget, true);
   }
 }
 
@@ -7745,7 +7751,8 @@ mozilla::dom::TabGroup* nsPIDOMWindowOuter::TabGroup() {
   return nsGlobalWindowOuter::Cast(this)->TabGroupOuter();
 }
 
-/* static */ already_AddRefed<nsGlobalWindowOuter> nsGlobalWindowOuter::Create(
+/* static */
+already_AddRefed<nsGlobalWindowOuter> nsGlobalWindowOuter::Create(
     nsDocShell* aDocShell, bool aIsChrome) {
   uint64_t outerWindowID = aDocShell->GetOuterWindowID();
   RefPtr<nsGlobalWindowOuter> window = new nsGlobalWindowOuter(outerWindowID);
@@ -7763,10 +7770,6 @@ mozilla::dom::TabGroup* nsPIDOMWindowOuter::TabGroup() {
         NS_NewRunnableFunction("PermChangeDelayRunnable", [obs, window] {
           obs->AddObserver(window, PERM_CHANGE_NOTIFICATION, true);
         }));
-  }
-  nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (prefBranch) {
-    prefBranch->AddObserver("network.cookie.cookieBehavior", window, true);
   }
   return window.forget();
 }
@@ -7808,7 +7811,6 @@ mozilla::dom::DocGroup* nsPIDOMWindowOuter::GetDocGroup() const {
 
 nsPIDOMWindowOuter::nsPIDOMWindowOuter(uint64_t aWindowID)
     : mFrameElement(nullptr),
-      mDocShell(nullptr),
       mModalStateDepth(0),
       mIsActive(false),
       mIsBackground(false),

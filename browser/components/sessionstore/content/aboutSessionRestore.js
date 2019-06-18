@@ -4,8 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "AppConstants",
   "resource://gre/modules/AppConstants.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionStore",
@@ -208,8 +207,9 @@ function onListClick(aEvent) {
         !treeView.isContainer(cell.row)) {
       restoreSingleTab(cell.row, aEvent.shiftKey);
       aEvent.stopPropagation();
-    } else if (cell.col.id == "restore")
+    } else if (cell.col.id == "restore") {
       toggleRowChecked(cell.row);
+    }
   }
 }
 

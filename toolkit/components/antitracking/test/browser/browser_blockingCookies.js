@@ -1,5 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 AntiTracking.runTest("Set/Get Cookies",
   // Blocking callback
   async _ => {
@@ -80,7 +78,11 @@ AntiTracking.runTest("Cookies and Storage Access API",
   // Non blocking callback
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */
-    await noStorageAccessInitially();
+    if (allowListed) {
+      await hasStorageAccessInitially();
+    } else {
+      await noStorageAccessInitially();
+    }
 
     is(document.cookie, "", "No cookies for me");
 

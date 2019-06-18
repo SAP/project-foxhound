@@ -37,7 +37,6 @@ class nsLeafBoxFrame : public nsLeafFrame {
 
   // nsIHTMLReflow overrides
 
-  virtual void MarkIntrinsicISizesDirty() override;
   virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
@@ -71,8 +70,9 @@ class nsLeafBoxFrame : public nsLeafFrame {
 
   virtual nscoord GetIntrinsicISize() override;
 
-  explicit nsLeafBoxFrame(ComputedStyle* aStyle, ClassID aID = kClassID)
-      : nsLeafFrame(aStyle, aID) {}
+  explicit nsLeafBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+                          ClassID aID = kClassID)
+      : nsLeafFrame(aStyle, aPresContext, aID) {}
 
  private:
   void UpdateMouseThrough();

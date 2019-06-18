@@ -97,8 +97,9 @@ var Harness = {
       this.waitingForFinish = true;
 
       Services.prefs.setBoolPref(PREF_INSTALL_REQUIRESECUREORIGIN, false);
-
       Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
+      Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+
       Services.obs.addObserver(this, "addon-install-started");
       Services.obs.addObserver(this, "addon-install-disabled");
       // XXX this breaks a bunch of stuff, see comment in onInstallCancelled
@@ -119,6 +120,8 @@ var Harness = {
       registerCleanupFunction(async function() {
         Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
         Services.prefs.clearUserPref(PREF_INSTALL_REQUIRESECUREORIGIN);
+        Services.prefs.clearUserPref("network.cookieSettings.unblocked_for_testing");
+
         Services.obs.removeObserver(self, "addon-install-started");
         Services.obs.removeObserver(self, "addon-install-disabled");
         // Services.obs.removeObserver(self, "addon-install-cancelled");
@@ -246,7 +249,7 @@ var Harness = {
       if (event.target == PanelUI.notificationPanel) {
         PanelUI.notificationPanel.hidePopup();
       } else if (event.target.firstElementChild) {
-        let popupId = event.target.getAttribute("popupid");
+        let popupId = event.target.firstElementChild.getAttribute("popupid");
         if (popupId === "addon-webext-permissions") {
           this.popupReady(event.target.firstElementChild);
         } else if (popupId === "addon-install-failed") {

@@ -5,9 +5,9 @@
 %endif
 
 %filter substitution
-%define urlbarViewPadding 5px
-%define urlbarViewIconMarginEnd .6em
-%define urlbarViewFaviconOffset (@urlbarViewPadding@ + 16px /* action icon width */ + @urlbarViewIconMarginEnd@)
+%define urlbarViewPadding 4px
+%define urlbarViewIconMarginEnd 8px
+%define urlbarViewFaviconOffset (@urlbarViewPadding@ + 16px /* type icon width */ + @urlbarViewIconMarginEnd@)
 
 :root {
   --autocomplete-popup-background: -moz-field;
@@ -32,28 +32,31 @@
   background: var(--autocomplete-popup-background);
   color: var(--autocomplete-popup-color);
   border: 1px solid var(--autocomplete-popup-border-color);
-  font: menu;
 }
 
 .urlbarView-body-inner {
   box-sizing: border-box;
 }
 
-.urlbarView-results {
+#urlbarView-results {
+  box-sizing: border-box;
   padding: @urlbarViewPadding@;
   white-space: nowrap;
 }
 
 .urlbarView-row {
   border-radius: 2px;
-  padding: 7px;
-  padding-inline-start: calc(var(--item-padding-start, calc(7px + @urlbarViewFaviconOffset@)) - @urlbarViewFaviconOffset@);
-  padding-inline-end: var(--item-padding-end, 7px);
+  fill: currentColor;
+  fill-opacity: .6;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-inline-start: calc(var(--item-padding-start, calc(5px + @urlbarViewFaviconOffset@)) - @urlbarViewFaviconOffset@);
+  padding-inline-end: var(--item-padding-end, 5px);
 }
 
 :root[uidensity=touch] .urlbarView-row {
-  padding-top: 17px;
-  padding-bottom: 17px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .urlbarView-row-inner {
@@ -65,6 +68,10 @@
   mask-image: linear-gradient(to left, transparent, black 2em);
 }
 
+.urlbarView-row-inner[overflow]:-moz-locale-dir(rtl) {
+  mask-image: linear-gradient(to right, transparent, black 2em);
+}
+
 .urlbarView-row:hover {
   background: var(--arrowpanel-dimmed);
 }
@@ -72,32 +79,45 @@
 .urlbarView-row[selected] {
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
+  fill-opacity: 1;
 }
 
 .urlbarView-type-icon,
 .urlbarView-favicon {
   display: inline-block;
   vertical-align: middle;
+  transform: translateY(-2px);
   width: 16px;
   height: 16px;
   margin-inline-end: @urlbarViewIconMarginEnd@;
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0.6;
+}
+
+@media (min-resolution: 2dppx) {
+  .urlbarView-type-icon,
+  .urlbarView-favicon {
+    transform: translateY(-1.5px);
+  }
 }
 
 .urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/bookmark.svg);
 }
 
-.urlbarView-row[type=tab] > .urlbarView-row-inner > .urlbarView-type-icon {
+.urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-type-icon,
+#urlbar-results:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/tab.svg);
 }
 
 .urlbarView-title {
-  font-size: 1.05em;
+  display: inline-block;
+  vertical-align: text-bottom;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: calc(var(--item-content-width) * .7 - 2 * (16px + @urlbarViewIconMarginEnd@));
 }
 
 .urlbarView-secondary::before {
@@ -106,13 +126,13 @@
   margin: 0 .4em;
 }
 
-.urlbarView-secondary {
-  color: var(--urlbar-popup-action-color);
-  font-size: 0.9em;
+.urlbarView-title:empty + .urlbarView-secondary::before {
+  display: none;
 }
 
-.urlbarView-url {
-  color: var(--urlbar-popup-url-color);
+.urlbarView-tags,
+.urlbarView-secondary {
+  font-size: .85em;
 }
 
 .urlbarView-title > strong,
@@ -121,9 +141,26 @@
   font-weight: 600;
 }
 
-.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-title::after,
+.urlbarView-secondary {
+  color: var(--urlbar-popup-action-color);
+}
+
+.urlbarView-url {
+  color: var(--urlbar-popup-url-color);
+}
+
+.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-secondary::before,
 .urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-secondary {
   color: inherit;
+}
+
+.urlbarView-row[type=remotetab][selected] > .urlbarView-row-inner > .urlbarView-action,
+.urlbarView-row[type=remotetab]:hover > .urlbarView-row-inner > .urlbarView-action,
+.urlbarView-row[type=remotetab]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-url,
+.urlbarView-row[type=search]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-action,
+#urlbar-results[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-action,
+#urlbar-results:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-url {
+  display: none;
 }
 
 .urlbarView-tags {

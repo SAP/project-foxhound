@@ -1,6 +1,6 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
+const {ExtensionParent} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
 
 const {
   // cookieBehavior constants.
@@ -90,9 +90,8 @@ add_task(async function test_content_script_on_cookieBehaviorReject() {
       /The operation is insecure/,
       "a content script can't use indexedDB from a page where it is disallowed");
 
-    browser.test.assertThrows(
-      () => localStorage,
-      /The operation is insecure/,
+    browser.test.assertTrue(
+      window.localStorage === null,
       "a content script can't use localStorage from a page where it is disallowed");
 
     browser.test.notifyPass("cs_disallowed_storage");
@@ -152,7 +151,7 @@ add_task(async function test_localStorage_on_session_lifetimePolicy() {
     domStorageLength,
     domStorageStoredValue,
   } = await ContentTask.spawn(addonBrowser, {uuid, isRemoteBrowser}, (params) => {
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
     let bgPageWindow;
 
     // Search the background page window in the process where the extension is running.

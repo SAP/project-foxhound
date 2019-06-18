@@ -8,13 +8,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-ChromeUtils.import("resource:///modules/PlacesUIUtils.jsm");
+const {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+const {PlacesUIUtils} = ChromeUtils.import("resource:///modules/PlacesUIUtils.jsm");
 
 let sandbox;
 
 add_task(function setup() {
-  sandbox = sinon.sandbox.create();
+  sandbox = sinon.createSandbox();
 });
 
 add_task(function test_addToUrlbarHistory() {

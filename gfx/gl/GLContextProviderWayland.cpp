@@ -29,13 +29,14 @@ already_AddRefed<GLContext> GLContextProviderWayland::CreateWrappingExisting(
 }
 
 already_AddRefed<GLContext> GLContextProviderWayland::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aForceAccelerated) {
+    CompositorWidget* aCompositorWidget, bool aWebRender,
+    bool aForceAccelerated) {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-    return sGLContextProviderGLX.CreateForCompositorWidget(aCompositorWidget,
-                                                           aForceAccelerated);
+    return sGLContextProviderGLX.CreateForCompositorWidget(
+        aCompositorWidget, aWebRender, aForceAccelerated);
   } else {
-    return sGLContextProviderEGL.CreateForCompositorWidget(aCompositorWidget,
-                                                           aForceAccelerated);
+    return sGLContextProviderEGL.CreateForCompositorWidget(
+        aCompositorWidget, aWebRender, aForceAccelerated);
   }
 }
 
@@ -50,7 +51,8 @@ already_AddRefed<GLContext> GLContextProviderWayland::CreateForWindow(
   }
 }
 
-/*static*/ already_AddRefed<GLContext> GLContextProviderWayland::CreateHeadless(
+/*static*/
+already_AddRefed<GLContext> GLContextProviderWayland::CreateHeadless(
     CreateContextFlags flags, nsACString* const out_failureId) {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
     return sGLContextProviderGLX.CreateHeadless(flags, out_failureId);
@@ -59,11 +61,10 @@ already_AddRefed<GLContext> GLContextProviderWayland::CreateForWindow(
   }
 }
 
-/*static*/ already_AddRefed<GLContext>
-GLContextProviderWayland::CreateOffscreen(const IntSize& size,
-                                          const SurfaceCaps& minCaps,
-                                          CreateContextFlags flags,
-                                          nsACString* const out_failureId) {
+/*static*/
+already_AddRefed<GLContext> GLContextProviderWayland::CreateOffscreen(
+    const IntSize& size, const SurfaceCaps& minCaps, CreateContextFlags flags,
+    nsACString* const out_failureId) {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
     return sGLContextProviderGLX.CreateOffscreen(size, minCaps, flags,
                                                  out_failureId);
@@ -73,7 +74,8 @@ GLContextProviderWayland::CreateOffscreen(const IntSize& size,
   }
 }
 
-/*static*/ GLContext* GLContextProviderWayland::GetGlobalContext() {
+/*static*/
+GLContext* GLContextProviderWayland::GetGlobalContext() {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
     return sGLContextProviderGLX.GetGlobalContext();
   } else {
@@ -81,7 +83,8 @@ GLContextProviderWayland::CreateOffscreen(const IntSize& size,
   }
 }
 
-/*static*/ void GLContextProviderWayland::Shutdown() {
+/*static*/
+void GLContextProviderWayland::Shutdown() {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
     sGLContextProviderGLX.Shutdown();
   } else {

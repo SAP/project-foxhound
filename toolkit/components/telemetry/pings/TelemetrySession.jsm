@@ -5,12 +5,12 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
@@ -88,21 +88,12 @@ function generateUUID() {
   return str.substring(1, str.length - 1);
 }
 
-function getMsSinceProcessStart() {
-  try {
-    return Telemetry.msSinceProcessStart();
-  } catch (ex) {
-    // If this fails return a special value.
-    return -1;
-  }
-}
-
 /**
  * This is a policy object used to override behavior for testing.
  */
 var Policy = {
   now: () => new Date(),
-  monotonicNow: getMsSinceProcessStart,
+  monotonicNow: Utils.monotonicNow,
   generateSessionUUID: () => generateUUID(),
   generateSubsessionUUID: () => generateUUID(),
   setSchedulerTickTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
@@ -157,7 +148,7 @@ var processInfo = {
   },
   getCounters_Windows() {
     if (!this._initialized) {
-      ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+      var {ctypes} = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
       this._IO_COUNTERS = new ctypes.StructType("IO_COUNTERS", [
         {"readOps": ctypes.unsigned_long_long},
         {"writeOps": ctypes.unsigned_long_long},
@@ -1610,7 +1601,6 @@ var Impl = {
         } else {
           prioParams.booleans[i] = false;
         }
-
       } catch (ex) {
         this._log.error(ex);
       }

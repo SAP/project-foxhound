@@ -1,5 +1,6 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Enable the Debugger
 pref("devtools.debugger.enabled", true);
@@ -26,6 +27,7 @@ pref("devtools.debugger.ui.variables-sorting-enabled", true);
 pref("devtools.debugger.ui.variables-only-enum-visible", false);
 pref("devtools.debugger.ui.variables-searchbox-visible", false);
 pref("devtools.debugger.ui.framework-grouping-on", true);
+pref("devtools.debugger.ui.editor-wrapping", false);
 pref("devtools.debugger.call-stack-visible", true);
 pref("devtools.debugger.scopes-visible", true);
 pref("devtools.debugger.component-visible", true);
@@ -50,11 +52,12 @@ pref("devtools.debugger.file-search-regex-match", false);
 pref("devtools.debugger.project-directory-root", "");
 pref("devtools.debugger.skip-pausing", false);
 pref("devtools.debugger.logging", false);
+pref("devtools.debugger.map-scopes-enabled", false);
 
 pref("devtools.debugger.features.wasm", true);
 pref("devtools.debugger.features.shortcuts", true);
 pref("devtools.debugger.features.root", true);
-pref("devtools.debugger.features.column-breakpoints", false);
+pref("devtools.debugger.features.column-breakpoints", true);
 pref("devtools.debugger.features.chrome-scopes", false);
 pref("devtools.debugger.features.map-scopes", true);
 pref("devtools.debugger.features.remove-command-bar-options", false);
@@ -62,7 +65,6 @@ pref("devtools.debugger.features.workers", true);
 pref("devtools.debugger.features.code-coverage", false);
 pref("devtools.debugger.features.code-folding", false);
 pref("devtools.debugger.features.outline", true);
-pref("devtools.debugger.features.pause-points", true);
 pref("devtools.debugger.features.component-pane", false);
 pref("devtools.debugger.features.async-stepping", true);
 pref("devtools.debugger.features.skip-pausing", true);
@@ -70,6 +72,6 @@ pref("devtools.debugger.features.autocomplete-expressions", false);
 pref("devtools.debugger.features.map-expression-bindings", true);
 pref("devtools.debugger.features.xhr-breakpoints", true);
 pref("devtools.debugger.features.original-blackbox", true);
-pref("devtools.debugger.features.windowless-workers", false);
+pref("devtools.debugger.features.windowless-workers", true);
 pref("devtools.debugger.features.event-listeners-breakpoints", false);
-pref("devtools.debugger.features.log-points", false);
+pref("devtools.debugger.features.log-points", true);

@@ -245,6 +245,9 @@ class nsWindow final : public nsBaseWidget {
 
   void DispatchContextMenuEventFromMouseEvent(uint16_t domButton,
                                               GdkEventButton* aEvent);
+#ifdef MOZ_WAYLAND
+  void WaylandEGLSurfaceForceRedraw();
+#endif
 
  public:
   void ThemeChanged(void);
@@ -430,6 +433,9 @@ class nsWindow final : public nsBaseWidget {
   bool mIsDragPopup;
   // Can we access X?
   bool mIsX11Display;
+#ifdef MOZ_WAYLAND
+  bool mNeedsUpdatingEGLSurface;
+#endif
 
  private:
   void DestroyChildWindows();

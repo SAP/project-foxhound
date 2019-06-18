@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.jsm",
@@ -15,8 +15,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-/* global debug:false, warn:false */
-GeckoViewUtils.initLogging("Startup", this);
+const {debug, warn} = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
 
 function GeckoViewStartup() {
 }
@@ -25,22 +24,6 @@ GeckoViewStartup.prototype = {
   classID: Components.ID("{8e993c34-fdd6-432c-967e-f995d888777f}"),
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
-
-  /**
-   * Register resource://android as the APK root.
-   *
-   * Consumers can access Android assets using resource://android/assets/FILENAME.
-   */
-  setResourceSubstitutions: function() {
-    let registry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
-    // Like jar:jar:file:///data/app/org.mozilla.geckoview.test.apk!/assets/omni.ja!/chrome/geckoview/content/geckoview.js
-    let url = registry.convertChromeURL(Services.io.newURI("chrome://geckoview/content/geckoview.js")).spec;
-    // Like jar:file:///data/app/org.mozilla.geckoview.test.apk!/
-    url = url.substring(4, url.indexOf("!/") + 2);
-
-    let protocolHandler = Services.io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
-    protocolHandler.setSubstitution("android", Services.io.newURI(url));
-  },
 
   /* ----------  nsIObserver  ---------- */
   observe: function(aSubject, aTopic, aData) {
@@ -64,6 +47,13 @@ GeckoViewStartup.prototype = {
           module: "resource://gre/modules/GeckoViewConsole.jsm",
         });
 
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
+          module: "resource://gre/modules/GeckoViewWebExtension.jsm",
+          ged: [
+            "GeckoView:RegisterWebExtension",
+          ],
+        });
+
         GeckoViewUtils.addLazyPrefObserver({
           name: "geckoview.console.enabled",
           default: false,
@@ -84,9 +74,6 @@ GeckoViewStartup.prototype = {
 
         if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT) {
           ActorManagerParent.flush();
-
-          // Parent process only.
-          this.setResourceSubstitutions();
 
           Services.mm.loadFrameScript(
               "chrome://geckoview/content/GeckoViewPromptChild.js", true);

@@ -14,7 +14,9 @@ mod boilerplate;
 use boilerplate::{Example, HandyDandyRectBuilder};
 use euclid::SideOffsets2D;
 use webrender::api::*;
+use webrender::api::units::*;
 use winit::dpi::LogicalPosition;
+
 
 struct App {
     cursor_position: WorldPoint,
@@ -26,7 +28,7 @@ impl Example for App {
         _api: &RenderApi,
         builder: &mut DisplayListBuilder,
         _txn: &mut Transaction,
-        _framebuffer_size: DeviceIntSize,
+        _framebuffer_size: FramebufferIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {
@@ -56,6 +58,7 @@ impl Example for App {
                 vec![],
                 None,
                 ScrollSensitivity::ScriptAndInputEvents,
+                LayoutVector2D::zero(),
             );
 
             // now put some content into it.
@@ -87,6 +90,7 @@ impl Example for App {
                 vec![],
                 None,
                 ScrollSensitivity::ScriptAndInputEvents,
+                LayoutVector2D::zero(),
             );
 
             // give it a giant gray background just to distinguish it and to easily

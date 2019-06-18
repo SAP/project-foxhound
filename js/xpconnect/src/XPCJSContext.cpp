@@ -146,6 +146,16 @@ class Watchdog {
     }
 
     {
+      // Make sure the debug service is instantiated before we create the
+      // watchdog thread, since we intentionally try to keep the thread's stack
+      // segment as small as possible. It isn't always large enough to
+      // instantiate a new service, and even when it is, we don't want fault in
+      // extra pages if we can avoid it.
+      nsCOMPtr<nsIDebug2> dbg = do_GetService("@mozilla.org/xpcom/debug;1");
+      Unused << dbg;
+    }
+
+    {
       AutoLockWatchdog lock(this);
 
       // Gecko uses thread private for accounting and has to clean up at thread
@@ -661,7 +671,8 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
       return false;
     }
     if (proto && xpc::IsSandboxPrototypeProxy(proto) &&
-        (proto = js::CheckedUnwrap(proto, /* stopAtWindowProxy = */ false))) {
+        (proto = js::CheckedUnwrapDynamic(proto, cx,
+                                          /* stopAtWindowProxy = */ false))) {
       win = WindowGlobalOrNull(proto);
     }
   }
@@ -750,17 +761,15 @@ bool xpc::ExtraWarningsForSystemJS() { return false; }
 
 static mozilla::Atomic<bool> sSharedMemoryEnabled(false);
 static mozilla::Atomic<bool> sStreamsEnabled(false);
-#ifdef ENABLE_BIGINT
 static mozilla::Atomic<bool> sBigIntEnabled(false);
-#endif
+static mozilla::Atomic<bool> sFieldsEnabled(false);
 
 void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(sSharedMemoryEnabled)
-#ifdef ENABLE_BIGINT
       .setBigIntEnabled(sBigIntEnabled)
-#endif
-      .setStreamsEnabled(sStreamsEnabled);
+      .setStreamsEnabled(sStreamsEnabled)
+      .setFieldsEnabled(sFieldsEnabled);
 }
 
 static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
@@ -777,7 +786,7 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
   bool useWasmCranelift =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_cranelift");
 #endif
-#ifdef ENABLE_WASM_REFTYPES
+#ifdef ENABLE_WASM_GC
   bool useWasmGc = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_gc");
 #endif
   bool useWasmVerbose = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_verbose");
@@ -801,8 +810,10 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
 
   int32_t baselineThreshold =
       Preferences::GetInt(JS_OPTIONS_DOT_STR "baselinejit.threshold", -1);
-  int32_t ionThreshold =
+  int32_t normalIonThreshold =
       Preferences::GetInt(JS_OPTIONS_DOT_STR "ion.threshold", -1);
+  int32_t fullIonThreshold =
+      Preferences::GetInt(JS_OPTIONS_DOT_STR "ion.full.threshold", -1);
   int32_t ionFrequentBailoutThreshold = Preferences::GetInt(
       JS_OPTIONS_DOT_STR "ion.frequent_bailout_threshold", -1);
 
@@ -811,9 +822,7 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
 
   bool useAsyncStack = Preferences::GetBool(JS_OPTIONS_DOT_STR "asyncstack");
 
-#ifdef ENABLE_BIGINT
   sBigIntEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "bigint");
-#endif
 
   bool throwOnDebuggeeWouldRun =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "throw_on_debuggee_would_run");
@@ -844,6 +853,8 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
   sSharedMemoryEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "shared_memory");
   sStreamsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "streams");
+  sFieldsEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.fields");
 
 #ifdef DEBUG
   sExtraWarningsForSystemJS =
@@ -873,7 +884,7 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
 #ifdef ENABLE_WASM_CRANELIFT
       .setWasmCranelift(useWasmCranelift)
 #endif
-#ifdef ENABLE_WASM_REFTYPES
+#ifdef ENABLE_WASM_GC
       .setWasmGc(useWasmGc)
 #endif
       .setWasmVerbose(useWasmVerbose)
@@ -901,8 +912,10 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
   JS_SetOffthreadIonCompilationEnabled(cx, offthreadIonCompilation);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_BASELINE_WARMUP_TRIGGER,
                                 useBaselineEager ? 0 : baselineThreshold);
-  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_WARMUP_TRIGGER,
-                                useIonEager ? 0 : ionThreshold);
+  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_NORMAL_WARMUP_TRIGGER,
+                                useIonEager ? 0 : normalIonThreshold);
+  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_FULL_WARMUP_TRIGGER,
+                                useIonEager ? 0 : fullIonThreshold);
   JS_SetGlobalJitCompilerOption(cx,
                                 JSJITCOMPILER_ION_FREQUENT_BAILOUT_THRESHOLD,
                                 ionFrequentBailoutThreshold);
@@ -991,7 +1004,8 @@ XPCJSContext::XPCJSContext()
   gTlsContext.set(this);
 }
 
-/* static */ XPCJSContext* XPCJSContext::Get() { return gTlsContext.get(); }
+/* static */
+XPCJSContext* XPCJSContext::Get() { return gTlsContext.get(); }
 
 #ifdef XP_WIN
 static size_t GetWindowsStackSize() {

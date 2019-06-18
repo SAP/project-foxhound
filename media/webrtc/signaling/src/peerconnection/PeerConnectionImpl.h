@@ -133,7 +133,7 @@ class RTCStatsQuery {
   RTCStatsQuery(RTCStatsQuery&& aOrig) = default;
   ~RTCStatsQuery();
 
-  nsAutoPtr<mozilla::dom::RTCStatsReportInternal> report;
+  std::unique_ptr<mozilla::dom::RTCStatsReportInternal> report;
   // A timestamp to help with telemetry.
   mozilla::TimeStamp iceStartTime;
 
@@ -203,6 +203,8 @@ class PeerConnectionImpl final
       // PeerConnectionImpl only inherits from mozilla::DataChannelConnection
       // inside libxul.
       override;
+
+  const RefPtr<MediaTransportHandler> GetTransportHandler() const;
 
   // Get the media object
   const RefPtr<PeerConnectionMedia>& media() const {
@@ -291,13 +293,16 @@ class PeerConnectionImpl final
   }
 
   NS_IMETHODIMP AddIceCandidate(const char* aCandidate, const char* aMid,
+                                const char* aUfrag,
                                 const dom::Nullable<unsigned short>& aLevel);
 
   void AddIceCandidate(const nsAString& aCandidate, const nsAString& aMid,
+                       const nsAString& aUfrag,
                        const dom::Nullable<unsigned short>& aLevel,
                        ErrorResult& rv) {
     rv = AddIceCandidate(NS_ConvertUTF16toUTF8(aCandidate).get(),
-                         NS_ConvertUTF16toUTF8(aMid).get(), aLevel);
+                         NS_ConvertUTF16toUTF8(aMid).get(),
+                         NS_ConvertUTF16toUTF8(aUfrag).get(), aLevel);
   }
 
   void UpdateNetworkState(bool online);
@@ -415,11 +420,9 @@ class PeerConnectionImpl final
     delete[] tmp;
   }
 
-  void GetLocalDescription(nsAString& aSDP);
   void GetCurrentLocalDescription(nsAString& aSDP);
   void GetPendingLocalDescription(nsAString& aSDP);
 
-  void GetRemoteDescription(nsAString& aSDP);
   void GetCurrentRemoteDescription(nsAString& aSDP);
   void GetPendingRemoteDescription(nsAString& aSDP);
 
@@ -549,9 +552,10 @@ class PeerConnectionImpl final
   void ShutdownMedia();
 
   void CandidateReady(const std::string& candidate,
-                      const std::string& transportId);
+                      const std::string& transportId, const std::string& ufrag);
   void SendLocalIceCandidateToContent(uint16_t level, const std::string& mid,
-                                      const std::string& candidate);
+                                      const std::string& candidate,
+                                      const std::string& ufrag);
 
   nsresult GetDatachannelParameters(uint32_t* channels, uint16_t* localport,
                                     uint16_t* remoteport,
@@ -631,6 +635,7 @@ class PeerConnectionImpl final
 
   bool mForceIceTcp;
   RefPtr<PeerConnectionMedia> mMedia;
+  RefPtr<MediaTransportHandler> mTransportHandler;
 
   // The JSEP negotiation session.
   mozilla::UniquePtr<PCUuidGenerator> mUuidGen;

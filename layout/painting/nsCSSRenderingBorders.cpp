@@ -38,6 +38,7 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
+using mozilla::dom::Document;
 
 #define MAX_COMPOSITE_BORDER_WIDTH LayoutDeviceIntCoord(10000)
 
@@ -101,8 +102,8 @@ static bool IsZeroSize(const Size& sz) {
   return sz.width == 0.0 || sz.height == 0.0;
 }
 
-/* static */ bool nsCSSBorderRenderer::AllCornersZeroSize(
-    const RectCornerRadii& corners) {
+/* static */
+bool nsCSSBorderRenderer::AllCornersZeroSize(const RectCornerRadii& corners) {
   return IsZeroSize(corners[eCornerTopLeft]) &&
          IsZeroSize(corners[eCornerTopRight]) &&
          IsZeroSize(corners[eCornerBottomRight]) &&
@@ -181,9 +182,10 @@ nsCSSBorderRenderer::nsCSSBorderRenderer(
   mAvoidStroke = false;
 }
 
-/* static */ void nsCSSBorderRenderer::ComputeInnerRadii(
-    const RectCornerRadii& aRadii, const Float* aBorderSizes,
-    RectCornerRadii* aInnerRadiiRet) {
+/* static */
+void nsCSSBorderRenderer::ComputeInnerRadii(const RectCornerRadii& aRadii,
+                                            const Float* aBorderSizes,
+                                            RectCornerRadii* aInnerRadiiRet) {
   RectCornerRadii& iRadii = *aInnerRadiiRet;
 
   iRadii[C_TL].width =
@@ -207,9 +209,10 @@ nsCSSBorderRenderer::nsCSSBorderRenderer(
       std::max(0.f, aRadii[C_BL].height - aBorderSizes[eSideBottom]);
 }
 
-/* static */ void nsCSSBorderRenderer::ComputeOuterRadii(
-    const RectCornerRadii& aRadii, const Float* aBorderSizes,
-    RectCornerRadii* aOuterRadiiRet) {
+/* static */
+void nsCSSBorderRenderer::ComputeOuterRadii(const RectCornerRadii& aRadii,
+                                            const Float* aBorderSizes,
+                                            RectCornerRadii* aOuterRadiiRet) {
   RectCornerRadii& oRadii = *aOuterRadiiRet;
 
   // default all corners to sharp corners
@@ -3328,7 +3331,8 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
                       wrsides, borderRadius);
 }
 
-/* static */ Maybe<nsCSSBorderImageRenderer>
+/* static */
+Maybe<nsCSSBorderImageRenderer>
 nsCSSBorderImageRenderer::CreateBorderImageRenderer(
     nsPresContext* aPresContext, nsIFrame* aForFrame, const nsRect& aBorderArea,
     const nsStyleBorder& aStyleBorder, const nsRect& aDirtyRect,
@@ -3441,12 +3445,9 @@ ImgDrawResult nsCSSBorderImageRenderer::DrawBorderImage(
 
       if (i == MIDDLE && j == MIDDLE) {
         // Discard the middle portion unless set to fill.
-        if (NS_STYLE_BORDER_IMAGE_SLICE_NOFILL == mFill) {
+        if (!mFill) {
           continue;
         }
-
-        NS_ASSERTION(NS_STYLE_BORDER_IMAGE_SLICE_FILL == mFill,
-                     "Unexpected border image fill");
 
         // css-background:
         //     The middle image's width is scaled by the same factor as the
@@ -3734,29 +3735,22 @@ nsCSSBorderImageRenderer::nsCSSBorderImageRenderer(
   nsMargin slice;
   nsMargin border;
   NS_FOR_CSS_SIDES(s) {
-    nsStyleCoord coord = aStyleBorder.mBorderImageSlice.Get(s);
+    const auto& slice = aStyleBorder.mBorderImageSlice.offsets.Get(s);
     int32_t imgDimension =
         SideIsVertical(s) ? mImageSize.width : mImageSize.height;
     nscoord borderDimension = SideIsVertical(s) ? mArea.width : mArea.height;
     double value;
-    switch (coord.GetUnit()) {
-      case eStyleUnit_Percent:
-        value = coord.GetPercentValue() * imgDimension;
-        break;
-      case eStyleUnit_Factor:
-        value = nsPresContext::CSSPixelsToAppUnits(
-            NS_lround(coord.GetFactorValue()));
-        break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("unexpected CSS unit for image slice");
-        value = 0;
-        break;
+    if (slice.IsNumber()) {
+      value = nsPresContext::CSSPixelsToAppUnits(NS_lround(slice.AsNumber()));
+    } else {
+      MOZ_ASSERT(slice.IsPercentage());
+      value = slice.AsPercentage()._0 * imgDimension;
     }
     if (value < 0) value = 0;
     if (value > imgDimension) value = imgDimension;
     mSlice.Side(s) = value;
 
-    coord = aStyleBorder.mBorderImageWidth.Get(s);
+    nsStyleCoord coord = aStyleBorder.mBorderImageWidth.Get(s);
     switch (coord.GetUnit()) {
       case eStyleUnit_Coord:  // absolute dimension
         value = coord.GetCoordValue();
@@ -3813,5 +3807,5 @@ nsCSSBorderImageRenderer::nsCSSBorderImageRenderer(
 
   mRepeatModeHorizontal = aStyleBorder.mBorderImageRepeatH;
   mRepeatModeVertical = aStyleBorder.mBorderImageRepeatV;
-  mFill = aStyleBorder.mBorderImageFill;
+  mFill = aStyleBorder.mBorderImageSlice.fill;
 }

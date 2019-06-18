@@ -20,8 +20,7 @@
 // 2. StopRequest callback called
 // 3. done
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // -1 then initialized with an actual port from the serversocket
 var socketserver_port = -1;
@@ -66,14 +65,14 @@ var transportAvailable = false;
 var listener = {
   expectedCode: -1, // uninitialized
 
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
   },
 
   onDataAvailable: function test_ODA() {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     if (state === STATE_COMPLETED) {
       Assert.equal(transportAvailable, false, 'transport available not called');
       Assert.equal(status, 0x80004005, 'error code matches');
@@ -283,11 +282,11 @@ function createProxy() {
 function test_connectonly() {
   Services.prefs.setCharPref("network.proxy.ssl", "localhost");
   Services.prefs.setIntPref("network.proxy.ssl_port", socketserver_port);
-  Services.prefs.setCharPref("network.proxy.no_proxies_on", "");
+  Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
   Services.prefs.setIntPref("network.proxy.type", 1);
 
   var chan = makeChan();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -295,7 +294,7 @@ function test_connectonly() {
 function test_connectonly_noproxy() {
   clearPrefs()
   var chan = makeChan();
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }
@@ -305,11 +304,11 @@ function test_connectonly_nonhttp() {
 
   Services.prefs.setCharPref("network.proxy.socks", "localhost")
   Services.prefs.setIntPref("network.proxy.socks_port", socketserver_port)
-  Services.prefs.setCharPref("network.proxy.no_proxies_on", "")
+  Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
   Services.prefs.setIntPref("network.proxy.type", 1)
 
   var chan = makeChan()
-  chan.asyncOpen2(listener)
+  chan.asyncOpen(listener)
 
   do_test_pending()
 }
@@ -337,7 +336,7 @@ function clearPrefs() {
   Services.prefs.clearUserPref("network.proxy.ssl_port");
   Services.prefs.clearUserPref("network.proxy.socks");
   Services.prefs.clearUserPref("network.proxy.socks_port");
-  Services.prefs.clearUserPref("network.proxy.no_proxies_on");
+  Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
   Services.prefs.clearUserPref("network.proxy.type");
 }
 

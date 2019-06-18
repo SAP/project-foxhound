@@ -24,6 +24,8 @@ namespace net {
 class WebSocketChannelParent : public PWebSocketParent,
                                public nsIWebSocketListener,
                                public nsIInterfaceRequestor {
+  friend class PWebSocketParent;
+
   ~WebSocketChannelParent() = default;
 
  public:
@@ -37,21 +39,21 @@ class WebSocketChannelParent : public PWebSocketParent,
 
  private:
   mozilla::ipc::IPCResult RecvAsyncOpen(
-      const OptionalURIParams& aURI, const nsCString& aOrigin,
+      const Maybe<URIParams>& aURI, const nsCString& aOrigin,
       const uint64_t& aInnerWindowID, const nsCString& aProtocol,
       const bool& aSecure, const uint32_t& aPingInterval,
       const bool& aClientSetPingInterval, const uint32_t& aPingTimeout,
       const bool& aClientSetPingTimeout,
-      const OptionalLoadInfoArgs& aLoadInfoArgs,
-      const OptionalTransportProvider& aTransportProvider,
-      const nsCString& aNegotiatedExtensions) override;
+      const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+      const Maybe<PTransportProviderParent*>& aTransportProvider,
+      const nsCString& aNegotiatedExtensions);
   mozilla::ipc::IPCResult RecvClose(const uint16_t& code,
-                                    const nsCString& reason) override;
-  mozilla::ipc::IPCResult RecvSendMsg(const nsCString& aMsg) override;
-  mozilla::ipc::IPCResult RecvSendBinaryMsg(const nsCString& aMsg) override;
-  mozilla::ipc::IPCResult RecvSendBinaryStream(
-      const IPCStream& aStream, const uint32_t& aLength) override;
-  mozilla::ipc::IPCResult RecvDeleteSelf() override;
+                                    const nsCString& reason);
+  mozilla::ipc::IPCResult RecvSendMsg(const nsCString& aMsg);
+  mozilla::ipc::IPCResult RecvSendBinaryMsg(const nsCString& aMsg);
+  mozilla::ipc::IPCResult RecvSendBinaryStream(const IPCStream& aStream,
+                                               const uint32_t& aLength);
+  mozilla::ipc::IPCResult RecvDeleteSelf();
 
   void ActorDestroy(ActorDestroyReason why) override;
 

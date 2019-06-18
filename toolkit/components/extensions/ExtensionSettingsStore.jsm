@@ -42,13 +42,15 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionSettingsStore"];
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AddonManager",
                                "resource://gre/modules/AddonManager.jsm");
 ChromeUtils.defineModuleGetter(this, "JSONFile",
                                "resource://gre/modules/JSONFile.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionParent",
+                               "resource://gre/modules/ExtensionParent.jsm");
 
 const JSON_FILE_NAME = "extension-settings.json";
 const JSON_FILE_VERSION = 2;
@@ -236,7 +238,7 @@ function alterSetting(id, type, key, action) {
   }
 
   _store.saveSoon();
-
+  ExtensionParent.apiManager.emit("extension-setting-changed", {action, id, type, key, item: returnItem});
   return returnItem;
 }
 
@@ -399,6 +401,7 @@ var ExtensionSettingsStore = {
     for (let item of precedenceList) {
       item.enabled = false;
     }
+    ExtensionParent.apiManager.emit("extension-setting-changed", {action: "disable", type, key});
 
     _store.saveSoon();
   },

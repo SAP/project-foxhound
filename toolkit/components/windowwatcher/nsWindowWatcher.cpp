@@ -71,6 +71,7 @@
 #include "nsIXULWindow.h"
 #include "nsIXULBrowserWindow.h"
 #include "nsGlobalWindow.h"
+#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1077,10 +1078,19 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       doc = parentWindow->GetExtantDoc();
     }
     if (doc) {
-      // Set the referrer
-      loadState->SetReferrer(doc->GetDocumentURI());
-      loadState->SetReferrerPolicy(doc->GetReferrerPolicy());
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
+      loadState->SetReferrerInfo(referrerInfo);
     }
+  }
+
+  // Currently we query the CSP from the subjectPrincipal. After Bug 965637
+  // we should query the CSP from the doc, similar to the referrerInfo above.
+  if (subjectPrincipal && loadState) {
+    nsCOMPtr<nsIContentSecurityPolicy> csp;
+    rv = subjectPrincipal->GetCsp(getter_AddRefs(csp));
+    NS_ENSURE_SUCCESS(rv, rv);
+    loadState->SetCsp(csp);
   }
 
   if (isNewToplevelWindow) {

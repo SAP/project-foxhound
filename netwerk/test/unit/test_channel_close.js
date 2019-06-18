@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -19,17 +19,17 @@ function run_test() {
 
   // Opened channel that has no remaining references on shutdown
   local_channel = setupChannel(testpath);
-  local_channel.asyncOpen2(new ChannelListener(checkRequest, local_channel));
+  local_channel.asyncOpen(new ChannelListener(checkRequest, local_channel));
 
   // Opened channel that has no remaining references after being opened
-  setupChannel(testpath).asyncOpen2(new ChannelListener(function() {}, null));
+  setupChannel(testpath).asyncOpen(new ChannelListener(function() {}, null));
   
   // Unopened channel that has remaining references on shutdown
   live_channels.push(setupChannel(testpath));
 
   // Opened channel that has remaining references on shutdown
   live_channels.push(setupChannel(testpath));
-  live_channels[1].asyncOpen2(new ChannelListener(checkRequestFinish, live_channels[1]));
+  live_channels[1].asyncOpen(new ChannelListener(checkRequestFinish, live_channels[1]));
 
   do_test_pending();
 }

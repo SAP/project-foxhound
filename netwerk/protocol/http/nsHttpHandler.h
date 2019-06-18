@@ -240,6 +240,16 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return mConnMgr->AddTransaction(trans, priority);
   }
 
+  // This function is also called to kick-off a new transaction. But the new
+  // transaction will take a sticky connection from |transWithStickyConn|
+  // and reuse it.
+  MOZ_MUST_USE nsresult
+  InitiateTransactionWithStickyConn(nsHttpTransaction *trans, int32_t priority,
+                                    nsHttpTransaction *transWithStickyConn) {
+    return mConnMgr->AddTransactionWithStickyConn(trans, priority,
+                                                  transWithStickyConn);
+  }
+
   // Called to change the priority of an existing transaction that has
   // already been initiated.
   MOZ_MUST_USE nsresult RescheduleTransaction(nsHttpTransaction *trans,
@@ -358,6 +368,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_CACHED_RESPONSE_TOPIC);
   }
 
+  void OnMayChangeProcess(nsIHttpChannel *chan) {
+    NotifyObservers(chan, NS_HTTP_ON_MAY_CHANGE_PROCESS_TOPIC);
+  }
+
   // Generates the host:port string for use in the Host: header as well as the
   // CONNECT line for proxies. This handles IPv6 literals correctly.
   static MOZ_MUST_USE nsresult GenerateHostPort(const nsCString &host,
@@ -423,6 +437,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   void EnsureUAOverridesInit();
 
+  // Checks if there are any user certs or active smart cards on a different
+  // thread. Updates mSpeculativeConnectEnabled when done.
+  void MaybeEnableSpeculativeConnect();
+
  private:
   // cached services
   nsMainThreadPtrHandle<nsIIOService> mIOService;
@@ -436,6 +454,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // the connection manager
   RefPtr<nsHttpConnectionMgr> mConnMgr;
+
+  // This thread is used for performing operations that should not block
+  // the main thread.
+  nsCOMPtr<nsIThread> mBackgroundThread;
 
   //
   // prefs
@@ -583,10 +605,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // when starting a new speculative connection.
   uint32_t mParallelSpeculativeConnectLimit;
 
-  // We may disable speculative connect if the browser has user certificates
-  // installed as that might randomly popup the certificate choosing window.
-  bool mSpeculativeConnectEnabled;
-
   // For Rate Pacing of HTTP/1 requests through a netwerk/base/EventTokenBucket
   // Active requests <= *MinParallelism are not subject to the rate pacing
   bool mRequestTokenBucketEnabled;
@@ -626,6 +644,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // The ratio for dispatching transactions from the focused window.
   float mFocusedWindowTransactionRatio;
+
+  // We may disable speculative connect if the browser has user certificates
+  // installed as that might randomly popup the certificate choosing window.
+  Atomic<bool, Relaxed> mSpeculativeConnectEnabled;
 
   Atomic<bool, Relaxed> mUseFastOpen;
   Atomic<bool, Relaxed> mFastOpenSupported;

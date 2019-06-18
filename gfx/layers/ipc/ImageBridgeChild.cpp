@@ -286,7 +286,8 @@ void ImageBridgeChild::ForgetImageContainer(const CompositableHandle& aHandle) {
 
 Thread* ImageBridgeChild::GetThread() const { return sImageBridgeChildThread; }
 
-/* static */ RefPtr<ImageBridgeChild> ImageBridgeChild::GetSingleton() {
+/* static */
+RefPtr<ImageBridgeChild> ImageBridgeChild::GetSingleton() {
   StaticMutexAutoLock lock(sImageBridgeSingletonLock);
   return sImageBridgeChildSingleton;
 }
@@ -500,7 +501,8 @@ void ImageBridgeChild::BindSameProcess(RefPtr<ImageBridgeParent> aParent) {
   mCanSend = true;
 }
 
-/* static */ void ImageBridgeChild::ShutDown() {
+/* static */
+void ImageBridgeChild::ShutDown() {
   MOZ_ASSERT(NS_IsMainThread());
 
   ShutdownSingleton();
@@ -509,7 +511,8 @@ void ImageBridgeChild::BindSameProcess(RefPtr<ImageBridgeParent> aParent) {
   sImageBridgeChildThread = nullptr;
 }
 
-/* static */ void ImageBridgeChild::ShutdownSingleton() {
+/* static */
+void ImageBridgeChild::ShutdownSingleton() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (RefPtr<ImageBridgeChild> child = GetSingleton()) {
@@ -570,7 +573,8 @@ void ImageBridgeChild::InitSameProcess(uint32_t aNamespace) {
   }
 }
 
-/* static */ void ImageBridgeChild::InitWithGPUProcess(
+/* static */
+void ImageBridgeChild::InitWithGPUProcess(
     Endpoint<PImageBridgeChild>&& aEndpoint, uint32_t aNamespace) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!sImageBridgeChildSingleton);
@@ -606,7 +610,8 @@ MessageLoop* ImageBridgeChild::GetMessageLoop() const {
                                  : nullptr;
 }
 
-/* static */ void ImageBridgeChild::IdentifyCompositorTextureHost(
+/* static */
+void ImageBridgeChild::IdentifyCompositorTextureHost(
     const TextureFactoryIdentifier& aIdentifier) {
   if (RefPtr<ImageBridgeChild> child = GetSingleton()) {
     child->UpdateTextureFactoryIdentifier(aIdentifier);
@@ -623,7 +628,16 @@ void ImageBridgeChild::UpdateTextureFactoryIdentifier(
   // D3DTexture might become obsolte. To prevent to use obsoleted D3DTexture,
   // drop all ImageContainers' ImageClients.
 
-  bool needsDrop = disablingWebRender;
+  // During re-creating GPU process, there was a period that ImageBridgeChild
+  // was re-created, but ImageBridgeChild::UpdateTextureFactoryIdentifier() was
+  // not called yet. In the period, if ImageBridgeChild::CreateImageClient() is
+  // called, ImageBridgeParent creates incompatible ImageHost than
+  // WebRenderImageHost.
+  bool initializingWebRender =
+      GetCompositorBackendType() != LayersBackend::LAYERS_WR &&
+      aIdentifier.mParentBackend == LayersBackend::LAYERS_WR;
+
+  bool needsDrop = disablingWebRender || initializingWebRender;
 
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();

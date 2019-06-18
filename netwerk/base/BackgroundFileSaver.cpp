@@ -309,7 +309,11 @@ nsresult BackgroundFileSaver::GetWorkerThreadAttention(
 // Called on the worker thread.
 // static
 void BackgroundFileSaver::AsyncCopyCallback(void *aClosure, nsresult aStatus) {
-  BackgroundFileSaver *self = (BackgroundFileSaver *)aClosure;
+  // We called NS_ADDREF_THIS when NS_AsyncCopy started, to keep the object
+  // alive even if other references disappeared.  At the end of this method,
+  // we've finished using the object and can safely release our reference.
+  RefPtr<BackgroundFileSaver> self =
+      dont_AddRef((BackgroundFileSaver *)aClosure);
   {
     MutexAutoLock lock(self->mLock);
 
@@ -325,11 +329,6 @@ void BackgroundFileSaver::AsyncCopyCallback(void *aClosure, nsresult aStatus) {
   }
 
   (void)self->ProcessAttention();
-
-  // We called NS_ADDREF_THIS when NS_AsyncCopy started, to keep the object
-  // alive even if other references disappeared.  At this point, we've finished
-  // using the object and can safely release our reference.
-  NS_RELEASE(self);
 }
 
 // Called on the worker thread.
@@ -966,8 +965,7 @@ BackgroundFileSaverStreamListener::GetProgressCallback() {
 }
 
 NS_IMETHODIMP
-BackgroundFileSaverStreamListener::OnStartRequest(nsIRequest *aRequest,
-                                                  nsISupports *aContext) {
+BackgroundFileSaverStreamListener::OnStartRequest(nsIRequest *aRequest) {
   NS_ENSURE_ARG(aRequest);
 
   return NS_OK;
@@ -975,7 +973,6 @@ BackgroundFileSaverStreamListener::OnStartRequest(nsIRequest *aRequest,
 
 NS_IMETHODIMP
 BackgroundFileSaverStreamListener::OnStopRequest(nsIRequest *aRequest,
-                                                 nsISupports *aContext,
                                                  nsresult aStatusCode) {
   // If an error occurred, cancel the operation immediately.  On success, wait
   // until the caller has determined whether the file should be renamed.
@@ -988,7 +985,6 @@ BackgroundFileSaverStreamListener::OnStopRequest(nsIRequest *aRequest,
 
 NS_IMETHODIMP
 BackgroundFileSaverStreamListener::OnDataAvailable(nsIRequest *aRequest,
-                                                   nsISupports *aContext,
                                                    nsIInputStream *aInputStream,
                                                    uint64_t aOffset,
                                                    uint32_t aCount) {

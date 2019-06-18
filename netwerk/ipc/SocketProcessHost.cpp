@@ -281,19 +281,14 @@ void SocketProcessHost::OnChannelClosed() {
   MOZ_ASSERT(!mSocketProcessParent);
 }
 
-static void DelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess) {
-  XRE_GetIOMessageLoop()->PostTask(
-      MakeAndAddRef<DeleteTask<GeckoChildProcessHost>>(aSubprocess));
-}
-
 void SocketProcessHost::DestroyProcess() {
   {
     MonitorAutoLock lock(mMonitor);
     mTaskFactory.RevokeAll();
   }
 
-  MessageLoop::current()->PostTask(NewRunnableFunction(
-      "DestroySocketProcessRunnable", DelayedDeleteSubprocess, this));
+  MessageLoop::current()->PostTask(NS_NewRunnableFunction(
+      "DestroySocketProcessRunnable", [this] { Destroy(); }));
 }
 
 //-----------------------------------------------------------------------------
@@ -312,7 +307,8 @@ bool SocketProcessMemoryReporter::IsAlive() const {
 
 bool SocketProcessMemoryReporter::SendRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
-    const bool& aMinimizeMemoryUsage, const dom::MaybeFileDesc& aDMDFile) {
+    const bool& aMinimizeMemoryUsage,
+    const Maybe<ipc::FileDescriptor>& aDMDFile) {
   MOZ_ASSERT(gIOService);
 
   if (!gIOService->mSocketProcess) {
@@ -330,15 +326,7 @@ bool SocketProcessMemoryReporter::SendRequestMemoryReport(
 
 int32_t SocketProcessMemoryReporter::Pid() const {
   MOZ_ASSERT(gIOService);
-
-  if (!gIOService->mSocketProcess) {
-    return 0;
-  }
-
-  if (SocketProcessParent* actor = gIOService->mSocketProcess->GetActor()) {
-    return (int32_t)actor->OtherPid();
-  }
-  return 0;
+  return gIOService->SocketProcessPid();
 }
 
 }  // namespace net

@@ -45,6 +45,7 @@
 #include "nsRect.h"                 // for mozilla::gfx::IntRect
 #include "nsServiceManagerUtils.h"  // for do_GetService
 #include "nsString.h"               // for nsString, nsAutoCString, etc
+#include "OGLShaderProgram.h"       // for ShaderProgramOGL, etc
 #include "ScopedGLHelpers.h"
 #include "GLReadTexImageHelper.h"
 #include "GLBlitTextureImageHelper.h"
@@ -152,6 +153,12 @@ bool AsyncReadbackBufferOGL::MapAndCopyInto(DataSourceSurface* aSurface,
   return true;
 }
 
+PerUnitTexturePoolOGL::PerUnitTexturePoolOGL(gl::GLContext* aGL)
+    : mTextureTarget(0),  // zero is never a valid texture target
+      mGL(aGL) {}
+
+PerUnitTexturePoolOGL::~PerUnitTexturePoolOGL() { DestroyTextures(); }
+
 static void BindMaskForProgram(ShaderProgramOGL* aProgram,
                                TextureSourceOGL* aSourceMask, GLenum aTexUnit,
                                const gfx::Matrix4x4& aTransform) {
@@ -220,8 +227,8 @@ already_AddRefed<mozilla::gl::GLContext> CompositorOGL::CreateContext() {
 #ifdef XP_WIN
   if (gfxEnv::LayersPreferEGL()) {
     printf_stderr("Trying GL layers...\n");
-    context =
-        gl::GLContextProviderEGL::CreateForCompositorWidget(mWidget, false);
+    context = gl::GLContextProviderEGL::CreateForCompositorWidget(
+        mWidget, /* aWebRender */ false, /* aForceAccelerated */ false);
   }
 #endif
 
@@ -239,7 +246,9 @@ already_AddRefed<mozilla::gl::GLContext> CompositorOGL::CreateContext() {
 
   if (!context) {
     context = gl::GLContextProvider::CreateForCompositorWidget(
-        mWidget, gfxVars::RequiresAcceleratedGLContextForCompositorOGL());
+        mWidget,
+        /* aWebRender */ false,
+        gfxVars::RequiresAcceleratedGLContextForCompositorOGL());
   }
 
   if (!context) {
@@ -656,12 +665,14 @@ void CompositorOGL::SetRenderTarget(CompositingRenderTarget* aSurface) {
   PrepareViewport(mCurrentRenderTarget);
 }
 
-CompositingRenderTarget* CompositorOGL::GetCurrentRenderTarget() const {
-  return mCurrentRenderTarget;
+already_AddRefed<CompositingRenderTarget>
+CompositorOGL::GetCurrentRenderTarget() const {
+  return do_AddRef(mCurrentRenderTarget);
 }
 
-CompositingRenderTarget* CompositorOGL::GetWindowRenderTarget() const {
-  return mWindowRenderTarget;
+already_AddRefed<CompositingRenderTarget> CompositorOGL::GetWindowRenderTarget()
+    const {
+  return do_AddRef(mWindowRenderTarget);
 }
 
 already_AddRefed<AsyncReadbackBuffer> CompositorOGL::CreateAsyncReadbackBuffer(

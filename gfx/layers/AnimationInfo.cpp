@@ -136,7 +136,8 @@ bool AnimationInfo::HasTransformAnimation() const {
   return false;
 }
 
-/* static */ Maybe<uint64_t> AnimationInfo::GetGenerationFromFrame(
+/* static */
+Maybe<uint64_t> AnimationInfo::GetGenerationFromFrame(
     nsIFrame* aFrame, DisplayItemType aDisplayItemKey) {
   MOZ_ASSERT(aFrame->IsPrimaryFrame() ||
              nsLayoutUtils::IsFirstContinuationOrIBSplitSibling(aFrame));
@@ -163,7 +164,8 @@ bool AnimationInfo::HasTransformAnimation() const {
   return Nothing();
 }
 
-/* static */ void AnimationInfo::EnumerateGenerationOnFrame(
+/* static */
+void AnimationInfo::EnumerateGenerationOnFrame(
     const nsIFrame* aFrame, const nsIContent* aContent,
     const CompositorAnimatableDisplayItemTypes& aDisplayItemTypes,
     const AnimationGenerationCallback& aCallback) {
@@ -201,8 +203,14 @@ bool AnimationInfo::HasTransformAnimation() const {
     }
 
     for (auto displayItem : LayerAnimationInfo::sDisplayItemTypes) {
+      // For transform animations, the animation is on the primary frame but
+      // |aFrame| is the style frame.
+      const nsIFrame* frameToQuery =
+          displayItem == DisplayItemType::TYPE_TRANSFORM
+              ? nsLayoutUtils::GetPrimaryFrameFromStyleFrame(aFrame)
+              : aFrame;
       RefPtr<WebRenderAnimationData> animationData =
-          GetWebRenderUserData<WebRenderAnimationData>(aFrame,
+          GetWebRenderUserData<WebRenderAnimationData>(frameToQuery,
                                                        (uint32_t)displayItem);
       Maybe<uint64_t> generation;
       if (animationData) {
@@ -213,8 +221,7 @@ bool AnimationInfo::HasTransformAnimation() const {
     return;
   }
 
-  FrameLayerBuilder::EnumerateGenerationForDedicatedLayers(
-      aFrame, LayerAnimationInfo::sDisplayItemTypes, aCallback);
+  FrameLayerBuilder::EnumerateGenerationForDedicatedLayers(aFrame, aCallback);
 }
 
 }  // namespace layers

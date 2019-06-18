@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var EXPORTED_SYMBOLS = ["BlockedSiteChild"];
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
-ChromeUtils.defineModuleGetter(this, "Utils",
-  "resource://gre/modules/sessionstore/Utils.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+ChromeUtils.defineModuleGetter(this, "E10SUtils",
+  "resource://gre/modules/E10SUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "SafeBrowsing",
                                "resource://gre/modules/SafeBrowsing.jsm");
@@ -31,7 +31,7 @@ function getSiteBlockedErrorDetails(docShell) {
                              .finalize();
       }
 
-      let triggeringPrincipal = docShell.failedChannel.loadInfo ? Utils.serializePrincipal(docShell.failedChannel.loadInfo.triggeringPrincipal) : null;
+      let triggeringPrincipal = docShell.failedChannel.loadInfo ? E10SUtils.serializePrincipal(docShell.failedChannel.loadInfo.triggeringPrincipal) : null;
       blockedInfo = { list: classifiedChannel.matchedList,
                       triggeringPrincipal,
                       provider: classifiedChannel.matchedProvider,

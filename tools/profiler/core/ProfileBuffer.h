@@ -6,12 +6,10 @@
 #ifndef MOZ_PROFILE_BUFFER_H
 #define MOZ_PROFILE_BUFFER_H
 
-#include "platform.h"
 #include "ProfileBufferEntry.h"
 #include "ProfilerMarker.h"
-#include "ProfileJSONWriter.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/RefCounted.h"
+
+#include "mozilla/Maybe.h"
 
 // A fixed-capacity circular buffer.
 // This class is used as a queue of entries which, after construction, never
@@ -46,7 +44,7 @@ class ProfileBuffer final {
       const char* aLabel, const char* aStr, uint32_t aFrameFlags,
       const mozilla::Maybe<uint32_t>& aLineNumber,
       const mozilla::Maybe<uint32_t>& aColumnNumber,
-      const mozilla::Maybe<js::ProfilingStackFrame::Category>& aCategory);
+      const mozilla::Maybe<JS::ProfilingCategoryPair>& aCategoryPair);
 
   // Maximum size of a frameKey string that we'll handle.
   static const size_t kMaxFrameKeyLength = 512;
@@ -76,6 +74,9 @@ class ProfileBuffer final {
                            UniqueStacks& aUniqueStacks) const;
   void StreamPausedRangesToJSON(SpliceableJSONWriter& aWriter,
                                 double aSinceTime) const;
+  void StreamProfilerOverheadToJSON(SpliceableJSONWriter& aWriter,
+                                    const mozilla::TimeStamp& aProcessStartTime,
+                                    double aSinceTime) const;
   void StreamCountersToJSON(SpliceableJSONWriter& aWriter,
                             const mozilla::TimeStamp& aProcessStartTime,
                             double aSinceTime) const;

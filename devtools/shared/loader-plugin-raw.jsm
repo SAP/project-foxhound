@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 /**
  * A function that can be used as part of a require hook for a
@@ -27,7 +27,7 @@ this.requireRawId = function(id, require) {
   const stream = NetUtil.newChannel({
     uri: NetUtil.newURI(uri, "UTF-8"),
     loadUsingSystemPrincipal: true,
-  }).open2();
+  }).open();
 
   const count = stream.available();
   const data = NetUtil.readInputStreamToString(stream, count, {

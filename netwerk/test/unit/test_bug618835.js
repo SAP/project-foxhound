@@ -11,8 +11,8 @@
 // "/redirect" and "/cl" are loaded from server the expected number of times.
 //
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserv;
 
@@ -24,14 +24,14 @@ function setupChannel(path) {
 // Verify that Content-Location-URI has been loaded once, load post_target
 function InitialListener() { }
 InitialListener.prototype = {
-    onStartRequest: function(request, context) { },
-    onStopRequest: function(request, context, status) {
+    onStartRequest: function(request) { },
+    onStopRequest: function(request, status) {
         Assert.equal(1, numberOfCLHandlerCalls);
         executeSoon(function() {
             var channel = setupChannel("http://localhost:" +
                                        httpserv.identity.primaryPort + "/post");
             channel.requestMethod = "POST";
-            channel.asyncOpen2(new RedirectingListener());
+            channel.asyncOpen(new RedirectingListener());
         });
     }
 };
@@ -39,14 +39,14 @@ InitialListener.prototype = {
 // Verify that Location-URI has been loaded once, reload post_target
 function RedirectingListener() { }
 RedirectingListener.prototype = {
-    onStartRequest: function(request, context) { },
-    onStopRequest: function(request, context, status) {
+    onStartRequest: function(request) { },
+    onStopRequest: function(request, status) {
         Assert.equal(1, numberOfHandlerCalls);
         executeSoon(function() {
             var channel = setupChannel("http://localhost:" +
                                        httpserv.identity.primaryPort + "/post");
             channel.requestMethod = "POST";
-            channel.asyncOpen2(new VerifyingListener());
+            channel.asyncOpen(new VerifyingListener());
         });
     }
 };
@@ -55,12 +55,12 @@ RedirectingListener.prototype = {
 // reload Content-Location-URI
 function VerifyingListener() { }
 VerifyingListener.prototype = {
-    onStartRequest: function(request, context) { },
-    onStopRequest: function(request, context, status) {
+    onStartRequest: function(request) { },
+    onStopRequest: function(request, status) {
         Assert.equal(2, numberOfHandlerCalls);
         var channel = setupChannel("http://localhost:" +
                                    httpserv.identity.primaryPort + "/cl");
-        channel.asyncOpen2(new FinalListener());
+        channel.asyncOpen(new FinalListener());
     }
 };
 
@@ -68,8 +68,8 @@ VerifyingListener.prototype = {
 // stop test
 function FinalListener() { }
 FinalListener.prototype = {
-    onStartRequest: function(request, context) { },
-    onStopRequest: function(request, context, status) {
+    onStartRequest: function(request) { },
+    onStopRequest: function(request, status) {
         Assert.equal(2, numberOfCLHandlerCalls);
         httpserv.stop(do_test_finished);
     }
@@ -88,7 +88,7 @@ function run_test() {
   // Load Content-Location URI into cache and start the chain of loads
   var channel = setupChannel("http://localhost:" +
                              httpserv.identity.primaryPort + "/cl");
-  channel.asyncOpen2(new InitialListener());
+  channel.asyncOpen(new InitialListener());
 
   do_test_pending();
 }

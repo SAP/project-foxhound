@@ -29,19 +29,6 @@ NS_INTERFACE_MAP_END
 Storage::Storage(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
     : mWindow(aWindow), mPrincipal(aPrincipal), mIsSessionOnly(false) {
   MOZ_ASSERT(aPrincipal);
-}
-
-Storage::~Storage() {}
-
-/* static */ bool Storage::StoragePrefIsEnabled() {
-  return mozilla::Preferences::GetBool(kStorageEnabled);
-}
-
-bool Storage::CanUseStorage(nsIPrincipal& aSubjectPrincipal) {
-  // This method is responsible for correct setting of mIsSessionOnly.
-  if (!StoragePrefIsEnabled()) {
-    return false;
-  }
 
   if (nsContentUtils::IsSystemPrincipal(mPrincipal)) {
     mIsSessionOnly = false;
@@ -50,21 +37,32 @@ bool Storage::CanUseStorage(nsIPrincipal& aSubjectPrincipal) {
     nsContentUtils::StorageAccess access =
         nsContentUtils::StorageAllowedForWindow(mWindow, &rejectedReason);
 
-    // Note that we allow StorageAccess::ePartitionedOrDeny because we want
-    // tracker to have access to their sessionStorage.
-    if (access == nsContentUtils::StorageAccess::eDeny &&
-        ShouldThrowWhenStorageAccessDenied(rejectedReason)) {
-      return false;
-    }
+    MOZ_ASSERT(access != nsContentUtils::StorageAccess::eDeny ||
+               rejectedReason ==
+                   nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
 
     mIsSessionOnly = access <= nsContentUtils::StorageAccess::eSessionScoped;
+  }
+}
+
+Storage::~Storage() {}
+
+/* static */
+bool Storage::StoragePrefIsEnabled() {
+  return mozilla::Preferences::GetBool(kStorageEnabled);
+}
+
+bool Storage::CanUseStorage(nsIPrincipal& aSubjectPrincipal) {
+  if (!StoragePrefIsEnabled()) {
+    return false;
   }
 
   return aSubjectPrincipal.Subsumes(mPrincipal);
 }
 
-/* virtual */ JSObject* Storage::WrapObject(JSContext* aCx,
-                                            JS::Handle<JSObject*> aGivenProto) {
+/* virtual */
+JSObject* Storage::WrapObject(JSContext* aCx,
+                              JS::Handle<JSObject*> aGivenProto) {
   return Storage_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -101,11 +99,13 @@ class StorageNotifierRunnable : public Runnable {
 
 }  // namespace
 
-/* static */ void Storage::NotifyChange(
-    Storage* aStorage, nsIPrincipal* aPrincipal, const nsAString& aKey,
-    const nsAString& aOldValue, const nsAString& aNewValue,
-    const char16_t* aStorageType, const nsAString& aDocumentURI,
-    bool aIsPrivate, bool aImmediateDispatch) {
+/* static */
+void Storage::NotifyChange(Storage* aStorage, nsIPrincipal* aPrincipal,
+                           const nsAString& aKey, const nsAString& aOldValue,
+                           const nsAString& aNewValue,
+                           const char16_t* aStorageType,
+                           const nsAString& aDocumentURI, bool aIsPrivate,
+                           bool aImmediateDispatch) {
   StorageEventInit dict;
   dict.mBubbles = false;
   dict.mCancelable = false;

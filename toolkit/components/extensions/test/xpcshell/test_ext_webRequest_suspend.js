@@ -181,7 +181,7 @@ add_task(async function test_set_responseHeaders() {
   let resolveHeaderPromise;
   let headerPromise = new Promise(resolve => { resolveHeaderPromise = resolve; });
   {
-    ChromeUtils.import("resource://gre/modules/Services.jsm");
+    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
     let ssm = Services.scriptSecurityManager;
 
@@ -192,10 +192,10 @@ add_task(async function test_set_responseHeaders() {
       securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
     });
 
-    channel.asyncOpen2({
+    channel.asyncOpen({
       QueryInterface: ChromeUtils.generateQI([Ci.nsIStreamListener]),
 
-      onStartRequest(request, context) {
+      onStartRequest(request) {
         request.QueryInterface(Ci.nsIHttpChannel);
 
         try {

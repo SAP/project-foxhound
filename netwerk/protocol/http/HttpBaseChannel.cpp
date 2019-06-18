@@ -26,6 +26,7 @@
 #include "nsIEncodedChannel.h"
 #include "nsIApplicationCacheChannel.h"
 #include "nsIMutableArray.h"
+#include "nsIURIMutator.h"
 #include "nsEscape.h"
 #include "nsStreamListenerWrapper.h"
 #include "nsISecurityConsoleMessage.h"
@@ -45,6 +46,7 @@
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Services.h"
 #include "mozIThirdPartyUtil.h"
@@ -63,7 +65,9 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Move.h"
 #include "mozilla/net/PartiallySeekableInputStream.h"
+#include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/InputStreamLengthHelper.h"
+#include "mozilla/Tokenizer.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIMIMEInputStream.h"
 #include "nsIXULRuntime.h"
@@ -167,8 +171,8 @@ HttpBaseChannel::HttpBaseChannel()
       mReqContentLength(0U),
       mStatus(NS_OK),
       mCanceled(false),
-      mIsFirstPartyTrackingResource(false),
-      mIsThirdPartyTrackingResource(false),
+      mFirstPartyClassificationFlags(0),
+      mThirdPartyClassificationFlags(0),
       mFlashPluginState(nsIHttpChannel::FlashPluginUnknown),
       mLoadFlags(LOAD_NORMAL),
       mCaps(0),
@@ -292,7 +296,6 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   arrayToRelease.AppendElement(mPrincipal.forget());
   arrayToRelease.AppendElement(mTopWindowURI.forget());
   arrayToRelease.AppendElement(mListener.forget());
-  arrayToRelease.AppendElement(mListenerContext.forget());
   arrayToRelease.AppendElement(mCompressListener.forget());
 
   if (mAddedAsNonTailRequest) {
@@ -308,16 +311,17 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   NS_DispatchToMainThread(new ProxyReleaseRunnable(std::move(arrayToRelease)));
 }
 
-void HttpBaseChannel::SetIsTrackingResource(bool aIsThirdParty) {
-  LOG(("HttpBaseChannel::SetIsTrackingResource thirdparty=%d %p",
-       static_cast<int>(aIsThirdParty), this));
+void HttpBaseChannel::AddClassificationFlags(uint32_t aClassificationFlags,
+                                             bool aIsThirdParty) {
+  LOG(
+      ("HttpBaseChannel::AddClassificationFlags classificationFlags=%d "
+       "thirdparty=%d %p",
+       aClassificationFlags, static_cast<int>(aIsThirdParty), this));
 
   if (aIsThirdParty) {
-    MOZ_ASSERT(!mIsFirstPartyTrackingResource);
-    mIsThirdPartyTrackingResource = true;
+    mThirdPartyClassificationFlags |= aClassificationFlags;
   } else {
-    MOZ_ASSERT(!mIsThirdPartyTrackingResource);
-    mIsFirstPartyTrackingResource = true;
+    mFirstPartyClassificationFlags |= aClassificationFlags;
   }
 }
 
@@ -558,6 +562,7 @@ HttpBaseChannel::SetOwner(nsISupports* aOwner) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   mLoadInfo = aLoadInfo;
   return NS_OK;
 }
@@ -740,19 +745,7 @@ HttpBaseChannel::SetContentLength(int64_t value) {
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::Open(nsIInputStream** aResult) {
-  NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_IN_PROGRESS);
-
-  if (!gHttpHandler->Active()) {
-    LOG(("HttpBaseChannel::Open after HTTP shutdown..."));
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  return NS_ImplementChannelOpen(this, aResult);
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::Open2(nsIInputStream** aStream) {
+HttpBaseChannel::Open(nsIInputStream** aStream) {
   if (!gHttpHandler->Active()) {
     LOG(("HttpBaseChannel::Open after HTTP shutdown..."));
     return NS_ERROR_NOT_AVAILABLE;
@@ -762,7 +755,15 @@ HttpBaseChannel::Open2(nsIInputStream** aStream) {
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return Open(aStream);
+
+  NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_IN_PROGRESS);
+
+  if (!gHttpHandler->Active()) {
+    LOG(("HttpBaseChannel::Open after HTTP shutdown..."));
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return NS_ImplementChannelOpen(this, aStream);
 }
 
 //-----------------------------------------------------------------------------
@@ -1086,7 +1087,6 @@ bool HttpBaseChannel::MaybeWaitForUploadStreamLength(
   }
 
   mListener = aListener;
-  mListenerContext = aContext;
   mAsyncOpenWaitingForStreamLength = true;
   return true;
 }
@@ -1102,12 +1102,9 @@ void HttpBaseChannel::MaybeResumeAsyncOpen() {
   nsCOMPtr<nsIStreamListener> listener;
   listener.swap(mListener);
 
-  nsCOMPtr<nsISupports> context;
-  context.swap(mListenerContext);
-
   mAsyncOpenWaitingForStreamLength = false;
 
-  nsresult rv = AsyncOpen(listener, context);
+  nsresult rv = AsyncOpen(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     DoAsyncAbort(rv);
   }
@@ -1133,8 +1130,7 @@ HttpBaseChannel::SetApplyConversion(bool value) {
 
 nsresult HttpBaseChannel::DoApplyContentConversions(
     nsIStreamListener* aNextListener, nsIStreamListener** aNewNextListener) {
-  return DoApplyContentConversions(aNextListener, aNewNextListener,
-                                   mListenerContext);
+  return DoApplyContentConversions(aNextListener, aNewNextListener, nullptr);
 }
 
 // create a listener chain that looks like this
@@ -1158,26 +1154,23 @@ class InterceptFailedOnStop : public nsIStreamListener {
       : mNext(arg), mChannel(chan) {}
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  NS_IMETHOD OnStartRequest(nsIRequest* aRequest,
-                            nsISupports* aContext) override {
-    return mNext->OnStartRequest(aRequest, aContext);
+  NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override {
+    return mNext->OnStartRequest(aRequest);
   }
 
-  NS_IMETHOD OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
+  NS_IMETHOD OnStopRequest(nsIRequest* aRequest,
                            nsresult aStatusCode) override {
     if (NS_FAILED(aStatusCode) && NS_SUCCEEDED(mChannel->mStatus)) {
       LOG(("HttpBaseChannel::InterceptFailedOnStop %p seting status %" PRIx32,
            mChannel, static_cast<uint32_t>(aStatusCode)));
       mChannel->mStatus = aStatusCode;
     }
-    return mNext->OnStopRequest(aRequest, aContext, aStatusCode);
+    return mNext->OnStopRequest(aRequest, aStatusCode);
   }
 
-  NS_IMETHOD OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
-                             nsIInputStream* aInputStream, uint64_t aOffset,
-                             uint32_t aCount) override {
-    return mNext->OnDataAvailable(aRequest, aContext, aInputStream, aOffset,
-                                  aCount);
+  NS_IMETHOD OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
+                             uint64_t aOffset, uint32_t aCount) override {
+    return mNext->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
   }
 };
 
@@ -1481,17 +1474,50 @@ NS_IMETHODIMP HttpBaseChannel::SetTopLevelContentWindowId(uint64_t aWindowId) {
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::GetIsTrackingResource(bool* aIsTrackingResource) {
-  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
-  *aIsTrackingResource =
-      mIsThirdPartyTrackingResource || mIsFirstPartyTrackingResource;
+HttpBaseChannel::IsTrackingResource(bool* aIsTrackingResource) {
+  MOZ_ASSERT(!mFirstPartyClassificationFlags ||
+             !mThirdPartyClassificationFlags);
+  *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
+                             mThirdPartyClassificationFlags) ||
+                         UrlClassifierCommon::IsTrackingClassificationFlag(
+                             mFirstPartyClassificationFlags);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::GetIsThirdPartyTrackingResource(bool* aIsTrackingResource) {
-  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
-  *aIsTrackingResource = mIsThirdPartyTrackingResource;
+HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
+  MOZ_ASSERT(
+      !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
+  *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
+      mThirdPartyClassificationFlags);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetClassificationFlags(uint32_t* aFlags) {
+  MOZ_ASSERT(!mFirstPartyClassificationFlags ||
+             !mThirdPartyClassificationFlags);
+  if (mThirdPartyClassificationFlags) {
+    *aFlags = mThirdPartyClassificationFlags;
+  } else {
+    *aFlags = mFirstPartyClassificationFlags;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetFirstPartyClassificationFlags(uint32_t* aFlags) {
+  MOZ_ASSERT(
+      !(mFirstPartyClassificationFlags && mFirstPartyClassificationFlags));
+  *aFlags = mFirstPartyClassificationFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetThirdPartyClassificationFlags(uint32_t* aFlags) {
+  MOZ_ASSERT(
+      !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
+  *aFlags = mThirdPartyClassificationFlags;
   return NS_OK;
 }
 
@@ -1505,23 +1531,21 @@ HttpBaseChannel::GetFlashPluginState(nsIHttpChannel::FlashPluginState* aState) {
 NS_IMETHODIMP
 HttpBaseChannel::OverrideTrackingFlagsForDocumentCookieAccessor(
     nsIHttpChannel* aDocumentChannel) {
-  LOG(
-      ("HttpBaseChannel::OverrideTrackingFlagsForDocumentCookieAccessor() %p "
-       "mIsFirstPartyTrackingResource=%d  mIsThirdPartyTrackingResource=%d",
-       this, static_cast<int>(mIsFirstPartyTrackingResource),
-       static_cast<int>(mIsThirdPartyTrackingResource)));
+  LOG(("HttpBaseChannel::OverrideTrackingFlagsForDocumentCookieAccessor() %p",
+       this));
 
   // The semantics we'd like to achieve here are that document.cookie
   // should follow the same rules that the document is subject to with
   // regards to content blocking. Therefore we need to propagate the
   // same flags from the document channel to the fake channel here.
-  if (aDocumentChannel->GetIsThirdPartyTrackingResource()) {
-    mIsThirdPartyTrackingResource = true;
-  } else {
-    mIsFirstPartyTrackingResource = true;
-  }
 
-  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
+  mThirdPartyClassificationFlags =
+      aDocumentChannel->GetThirdPartyClassificationFlags();
+  mFirstPartyClassificationFlags =
+      aDocumentChannel->GetFirstPartyClassificationFlags();
+
+  MOZ_ASSERT(
+      !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
   return NS_OK;
 }
 
@@ -1573,8 +1597,8 @@ HttpBaseChannel::GetReferrer(nsIURI** referrer) {
 NS_IMETHODIMP
 HttpBaseChannel::SetReferrer(nsIURI* referrer) {
   bool isPrivate = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-  return SetReferrerWithPolicy(referrer,
-                               NS_GetDefaultReferrerPolicy(isPrivate));
+  return SetReferrerWithPolicy(
+      referrer, NS_GetDefaultReferrerPolicy(this, mURI, isPrivate));
 }
 
 NS_IMETHODIMP
@@ -1620,6 +1644,8 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI* referrer,
                                        uint32_t referrerPolicy) {
   ENSURE_CALLED_BEFORE_CONNECT();
 
+  nsIURI* originalReferrer = referrer;
+
   mReferrerPolicy = referrerPolicy;
 
   // clear existing referrer, if any
@@ -1631,7 +1657,7 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI* referrer,
 
   if (mReferrerPolicy == REFERRER_POLICY_UNSET) {
     bool isPrivate = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-    mReferrerPolicy = NS_GetDefaultReferrerPolicy(isPrivate);
+    mReferrerPolicy = NS_GetDefaultReferrerPolicy(this, mURI, isPrivate);
   }
 
   if (!referrer) {
@@ -1674,39 +1700,6 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI* referrer,
 
   nsCOMPtr<nsIURI> referrerGrip;
   bool match;
-
-  //
-  // Strip off "wyciwyg://123/" from wyciwyg referrers.
-  //
-  // XXX this really belongs elsewhere since wyciwyg URLs aren't part of necko.
-  //   perhaps some sort of generic nsINestedURI could be used.  then, if an URI
-  //   fails the whitelist test, then we could check for an inner URI and try
-  //   that instead.  though, that might be too automatic.
-  //
-  rv = referrer->SchemeIs("wyciwyg", &match);
-  if (NS_FAILED(rv)) return rv;
-  if (match) {
-    nsAutoCString path;
-    rv = referrer->GetPathQueryRef(path);
-    if (NS_FAILED(rv)) return rv;
-
-    uint32_t pathLength = path.Length();
-    if (pathLength <= 2) return NS_ERROR_FAILURE;
-
-    // Path is of the form "//123/http://foo/bar", with a variable number of
-    // digits. To figure out where the "real" URL starts, search path for a
-    // '/', starting at the third character.
-    int32_t slashIndex = path.FindChar('/', 2);
-    if (slashIndex == kNotFound) return NS_ERROR_FAILURE;
-
-    // Replace |referrer| with a URI without wyciwyg://123/.
-    rv =
-        NS_NewURI(getter_AddRefs(referrerGrip),
-                  Substring(path, slashIndex + 1, pathLength - slashIndex - 1));
-    if (NS_FAILED(rv)) return rv;
-
-    referrer = referrerGrip.get();
-  }
 
   // Enforce Referrer whitelist
   if (!IsReferrerSchemeAllowed(referrer)) {
@@ -1934,6 +1927,7 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI* referrer,
   rv = SetRequestHeader(NS_LITERAL_CSTRING("Referer"), spec, false);
   if (NS_FAILED(rv)) return rv;
 
+  mOriginalReferrer = originalReferrer;
   mReferrer = clone;
   return NS_OK;
 }
@@ -2226,8 +2220,13 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::SwitchProcessTo(mozilla::dom::Promise *aTabParent,
+HttpBaseChannel::SwitchProcessTo(mozilla::dom::Promise* aTabParent,
                                  uint64_t aIdentifier) {
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::HasCrossOriginOpenerPolicyMismatch(bool* aMismatch) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
@@ -2326,6 +2325,16 @@ HttpBaseChannel::SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) {
 }
 
 NS_IMETHODIMP
+HttpBaseChannel::SetTopWindowPrincipal(nsIPrincipal* aTopWindowPrincipal) {
+  if (!aTopWindowPrincipal) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  mTopWindowPrincipal = aTopWindowPrincipal;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 HttpBaseChannel::GetTopWindowURI(nsIURI** aTopWindowURI) {
   nsCOMPtr<nsIURI> uriBeingLoaded =
       AntiTrackingCommon::MaybeGetDocumentURIBeingLoaded(this);
@@ -2361,6 +2370,18 @@ nsresult HttpBaseChannel::GetTopWindowURI(nsIURI* aURIBeingLoaded,
   }
   NS_IF_ADDREF(*aTopWindowURI = mTopWindowURI);
   return rv;
+}
+
+nsresult HttpBaseChannel::GetTopWindowPrincipal(
+    nsIPrincipal** aTopWindowPrincipal) {
+  nsCOMPtr<mozIThirdPartyUtil> util = services::GetThirdPartyUtil();
+  nsCOMPtr<mozIDOMWindowProxy> win;
+  nsresult rv =
+      util->GetTopWindowForChannel(this, nullptr, getter_AddRefs(win));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  return util->GetPrincipalFromWindow(win, getter_AddRefs(mTopWindowPrincipal));
 }
 
 NS_IMETHODIMP
@@ -2563,9 +2584,6 @@ nsresult HttpBaseChannel::AddSecurityMessage(
 
   nsCOMPtr<nsILoadInfo> loadInfo;
   GetLoadInfo(getter_AddRefs(loadInfo));
-  if (!loadInfo) {
-    return NS_ERROR_FAILURE;
-  }
 
   auto innerWindowID = loadInfo->GetInnerWindowID();
 
@@ -3262,7 +3280,6 @@ void HttpBaseChannel::ReleaseListeners() {
   MOZ_ASSERT(NS_IsMainThread(), "Should only be called on the main thread.");
 
   mListener = nullptr;
-  mListenerContext = nullptr;
   mCallbacks = nullptr;
   mProgressSink = nullptr;
   mCompressListener = nullptr;
@@ -3278,12 +3295,9 @@ void HttpBaseChannel::DoNotifyListener() {
     mAfterOnStartRequestBegun = true;
   }
 
-  if (mListener) {
-    MOZ_ASSERT(!mOnStartRequestCalled,
-               "We should not call OnStartRequest twice");
-
+  if (mListener && !mOnStartRequestCalled) {
     nsCOMPtr<nsIStreamListener> listener = mListener;
-    listener->OnStartRequest(this, mListenerContext);
+    listener->OnStartRequest(this);
 
     mOnStartRequestCalled = true;
   }
@@ -3293,11 +3307,9 @@ void HttpBaseChannel::DoNotifyListener() {
   // as not-pending.
   mIsPending = false;
 
-  if (mListener) {
-    MOZ_ASSERT(!mOnStopRequestCalled, "We should not call OnStopRequest twice");
-
+  if (mListener && !mOnStopRequestCalled) {
     nsCOMPtr<nsIStreamListener> listener = mListener;
-    listener->OnStopRequest(this, mListenerContext, mStatus);
+    listener->OnStopRequest(this, mStatus);
 
     mOnStopRequestCalled = true;
   }
@@ -3423,16 +3435,13 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   // If the protocol handler that created the channel wants to use
   // the originalURI of the channel as the principal URI, this fulfills
   // that request - newURI is the original URI of the channel.
-  nsCOMPtr<nsILoadInfo> newLoadInfo = newChannel->GetLoadInfo();
-  if (newLoadInfo) {
-    nsCOMPtr<nsIURI> resultPrincipalURI;
-    rv = newLoadInfo->GetResultPrincipalURI(getter_AddRefs(resultPrincipalURI));
+  nsCOMPtr<nsILoadInfo> newLoadInfo = newChannel->LoadInfo();
+  nsCOMPtr<nsIURI> resultPrincipalURI;
+  rv = newLoadInfo->GetResultPrincipalURI(getter_AddRefs(resultPrincipalURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!resultPrincipalURI) {
+    rv = newLoadInfo->SetResultPrincipalURI(newURI);
     NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!resultPrincipalURI) {
-      rv = newLoadInfo->SetResultPrincipalURI(newURI);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
   }
 
   uint32_t newLoadFlags = mLoadFlags | LOAD_REPLACE;
@@ -3745,9 +3754,9 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   // Pass the preferred alt-data type on to the new channel.
   nsCOMPtr<nsICacheInfoChannel> cacheInfoChan(do_QueryInterface(newChannel));
   if (cacheInfoChan) {
-    for (auto& pair : mPreferredCachedAltDataTypes) {
-      cacheInfoChan->PreferAlternativeDataType(mozilla::Get<0>(pair),
-                                               mozilla::Get<1>(pair));
+    for (auto& data : mPreferredCachedAltDataTypes) {
+      cacheInfoChan->PreferAlternativeDataType(data.type(), data.contentType(),
+                                               data.deliverAltData());
     }
   }
 
@@ -4475,9 +4484,9 @@ nsresult HttpBaseChannel::CheckRedirectLimit(uint32_t aRedirectFlags) const {
 
 // NOTE: This function duplicates code from nsBaseChannel. This will go away
 // once HTTP uses nsBaseChannel (part of bug 312760)
-/* static */ void HttpBaseChannel::CallTypeSniffers(void* aClosure,
-                                                    const uint8_t* aData,
-                                                    uint32_t aCount) {
+/* static */
+void HttpBaseChannel::CallTypeSniffers(void* aClosure, const uint8_t* aData,
+                                       uint32_t aCount) {
   nsIChannel* chan = static_cast<nsIChannel*>(aClosure);
 
   nsAutoCString newType;
@@ -4542,8 +4551,10 @@ HttpBaseChannel::GetNativeServerTiming(
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::CancelForTrackingProtection() {
-  return Cancel(NS_ERROR_TRACKING_URI);
+HttpBaseChannel::CancelByChannelClassifier(nsresult aErrorCode) {
+  MOZ_ASSERT(
+      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
+  return Cancel(aErrorCode);
 }
 
 void HttpBaseChannel::SetIPv4Disabled() { mCaps |= NS_HTTP_DISABLE_IPV4; }

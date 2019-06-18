@@ -28,8 +28,8 @@ FixedTableLayoutStrategy::FixedTableLayoutStrategy(nsTableFrame *aTableFrame)
 /* virtual */
 FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
 
-/* virtual */ nscoord FixedTableLayoutStrategy::GetMinISize(
-    gfxContext *aRenderingContext) {
+/* virtual */
+nscoord FixedTableLayoutStrategy::GetMinISize(gfxContext *aRenderingContext) {
   DISPLAY_MIN_INLINE_SIZE(mTableFrame, mMinISize);
   if (mMinISize != NS_INTRINSIC_WIDTH_UNKNOWN) {
     return mMinISize;
@@ -67,18 +67,16 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
       continue;
     }
     nscoord spacing = mTableFrame->GetColSpacing(col);
-    const nsStyleCoord *styleISize = &colFrame->StylePosition()->ISize(wm);
+    const auto *styleISize = &colFrame->StylePosition()->ISize(wm);
     if (styleISize->ConvertsToLength()) {
       result +=
           colFrame->ComputeISizeValue(aRenderingContext, 0, 0, 0, *styleISize);
-    } else if (styleISize->ConvertsToPercent()) {
+    } else if (styleISize->ConvertsToPercentage()) {
       // do nothing
     } else {
-      NS_ASSERTION(
-          styleISize->GetUnit() == eStyleUnit_Auto ||
-              styleISize->GetUnit() == eStyleUnit_Enumerated ||
-              (styleISize->IsCalcUnit() && !styleISize->ConvertsToPercent()),
-          "bad inline size");
+      NS_ASSERTION(styleISize->IsAuto() || styleISize->IsExtremumLength() ||
+                       styleISize->HasLengthAndPercentage(),
+                   "bad inline size");
 
       // The 'table-layout: fixed' algorithm considers only cells in the
       // first row.
@@ -89,9 +87,11 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
       if (cellFrame) {
         styleISize = &cellFrame->StylePosition()->ISize(wm);
         if (styleISize->ConvertsToLength() ||
-            (styleISize->GetUnit() == eStyleUnit_Enumerated &&
-             (styleISize->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
-              styleISize->GetIntValue() == NS_STYLE_WIDTH_MIN_CONTENT))) {
+            (styleISize->IsExtremumLength() &&
+             (styleISize->AsExtremumLength() ==
+                  StyleExtremumLength::MaxContent ||
+              styleISize->AsExtremumLength() ==
+                  StyleExtremumLength::MinContent))) {
           nscoord cellISize = nsLayoutUtils::IntrinsicForContainer(
               aRenderingContext, cellFrame, nsLayoutUtils::MIN_ISIZE);
           if (colSpan > 1) {
@@ -102,7 +102,7 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
             cellISize = ((cellISize + spacing) / colSpan) - spacing;
           }
           result += cellISize;
-        } else if (styleISize->ConvertsToPercent()) {
+        } else if (styleISize->ConvertsToPercentage()) {
           if (colSpan > 1) {
             // XXX Can this force columns to negative inline sizes?
             result -= spacing * (colSpan - 1);
@@ -117,8 +117,9 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
   return (mMinISize = result);
 }
 
-/* virtual */ nscoord FixedTableLayoutStrategy::GetPrefISize(
-    gfxContext *aRenderingContext, bool aComputingSize) {
+/* virtual */
+nscoord FixedTableLayoutStrategy::GetPrefISize(gfxContext *aRenderingContext,
+                                               bool aComputingSize) {
   // It's theoretically possible to do something much better here that
   // depends only on the columns and the first row (where we look at
   // intrinsic inline sizes inside the first row and then reverse the
@@ -130,7 +131,8 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy() {}
   return result;
 }
 
-/* virtual */ void FixedTableLayoutStrategy::MarkIntrinsicISizesDirty() {
+/* virtual */
+void FixedTableLayoutStrategy::MarkIntrinsicISizesDirty() {
   mMinISize = NS_INTRINSIC_WIDTH_UNKNOWN;
   mLastCalcISize = nscoord_MIN;
 }
@@ -146,7 +148,8 @@ static inline nscoord AllocateUnassigned(nscoord aUnassignedSpace,
   return NSToCoordRound(float(aUnassignedSpace) * aShare);
 }
 
-/* virtual */ void FixedTableLayoutStrategy::ComputeColumnISizes(
+/* virtual */
+void FixedTableLayoutStrategy::ComputeColumnISizes(
     const ReflowInput &aReflowInput) {
   nscoord tableISize = aReflowInput.ComputedISize();
 
@@ -203,23 +206,22 @@ static inline nscoord AllocateUnassigned(nscoord aUnassignedSpace,
     }
     oldColISizes.AppendElement(colFrame->GetFinalISize());
     colFrame->ResetPrefPercent();
-    const nsStyleCoord *styleISize = &colFrame->StylePosition()->ISize(wm);
+    const auto *styleISize = &colFrame->StylePosition()->ISize(wm);
     nscoord colISize;
     if (styleISize->ConvertsToLength()) {
       colISize = colFrame->ComputeISizeValue(aReflowInput.mRenderingContext, 0,
                                              0, 0, *styleISize);
       specTotal += colISize;
-    } else if (styleISize->ConvertsToPercent()) {
-      float pct = styleISize->ToPercent();
+    } else if (styleISize->ConvertsToPercentage()) {
+      float pct = styleISize->ToPercentage();
       colISize = NSToCoordFloor(pct * float(tableISize));
       colFrame->AddPrefPercent(pct);
       pctTotal += pct;
     } else {
-      NS_ASSERTION(
-          styleISize->GetUnit() == eStyleUnit_Auto ||
-              styleISize->GetUnit() == eStyleUnit_Enumerated ||
-              (styleISize->IsCalcUnit() && !styleISize->ConvertsToPercent()),
-          "bad inline size");
+      NS_ASSERTION(styleISize->IsAuto() || styleISize->IsExtremumLength() ||
+                       (styleISize->IsLengthPercentage() &&
+                        !styleISize->ConvertsToLength()),
+                   "bad inline size");
 
       // The 'table-layout: fixed' algorithm considers only cells in the
       // first row.
@@ -231,9 +233,11 @@ static inline nscoord AllocateUnassigned(nscoord aUnassignedSpace,
         const nsStylePosition *cellStylePos = cellFrame->StylePosition();
         styleISize = &cellStylePos->ISize(wm);
         if (styleISize->ConvertsToLength() ||
-            (styleISize->GetUnit() == eStyleUnit_Enumerated &&
-             (styleISize->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
-              styleISize->GetIntValue() == NS_STYLE_WIDTH_MIN_CONTENT))) {
+            (styleISize->IsExtremumLength() &&
+             (styleISize->AsExtremumLength() ==
+                  StyleExtremumLength::MaxContent ||
+              styleISize->AsExtremumLength() ==
+                  StyleExtremumLength::MinContent))) {
           // XXX This should use real percentage padding
           // Note that the difference between MIN_ISIZE and PREF_ISIZE
           // shouldn't matter for any of these values of styleISize; use
@@ -242,9 +246,9 @@ static inline nscoord AllocateUnassigned(nscoord aUnassignedSpace,
           colISize = nsLayoutUtils::IntrinsicForContainer(
               aReflowInput.mRenderingContext, cellFrame,
               nsLayoutUtils::MIN_ISIZE);
-        } else if (styleISize->ConvertsToPercent()) {
+        } else if (styleISize->ConvertsToPercentage()) {
           // XXX This should use real percentage padding
-          float pct = styleISize->ToPercent();
+          float pct = styleISize->ToPercentage();
           colISize = NSToCoordFloor(pct * float(tableISize));
 
           if (cellStylePos->mBoxSizing == StyleBoxSizing::Content) {
@@ -273,7 +277,7 @@ static inline nscoord AllocateUnassigned(nscoord aUnassignedSpace,
               colISize = 0;
             }
           }
-          if (!styleISize->ConvertsToPercent()) {
+          if (!styleISize->ConvertsToPercentage()) {
             specTotal += colISize;
           }
         }

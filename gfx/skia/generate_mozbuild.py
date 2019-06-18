@@ -24,7 +24,7 @@ header = """
 skia_opt_flags = []
 
 if CONFIG['MOZ_OPTIMIZE']:
-    if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
+    if CONFIG['CC_TYPE'] == 'clang-cl':
         skia_opt_flags += ['-O2']
     elif CONFIG['CC_TYPE'] in ('clang', 'gcc'):
         skia_opt_flags += ['-O3']
@@ -53,10 +53,6 @@ LOCAL_INCLUDES += [
     'skia/include/utils/mac',
     'skia/src/codec',
     'skia/src/core',
-    'skia/src/gpu',
-    'skia/src/gpu/effects',
-    'skia/src/gpu/gl',
-    'skia/src/gpu/glsl',
     'skia/src/image',
     'skia/src/lazy',
     'skia/src/opts',
@@ -79,7 +75,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
 
 # We should autogenerate these SSE related flags.
 
-if CONFIG['INTEL_ARCHITECTURE'] and (CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc')):
+if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES['skia/src/opts/SkBitmapProcState_opts_SSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
     SOURCES['skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp'].flags += ['-mssse3']
     SOURCES['skia/src/opts/SkBlitRow_opts_SSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
@@ -88,17 +84,6 @@ if CONFIG['INTEL_ARCHITECTURE'] and (CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 
     SOURCES['skia/src/opts/SkOpts_sse42.cpp'].flags += ['-msse4.2']
     SOURCES['skia/src/opts/SkOpts_avx.cpp'].flags += ['-mavx']
     SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += ['-mavx2', '-mf16c', '-mfma']
-elif CONFIG['CC_TYPE'] in ('msvc', 'clang-cl') and CONFIG['INTEL_ARCHITECTURE']:
-    # MSVC doesn't need special compiler flags, but Skia needs to be told that these files should
-    # be built with the required SSE level or it will simply compile in stubs and cause runtime crashes
-    SOURCES['skia/src/opts/SkBitmapProcState_opts_SSE2.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=20']
-    SOURCES['skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=31']
-    SOURCES['skia/src/opts/SkBlitRow_opts_SSE2.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=20']
-    SOURCES['skia/src/opts/SkOpts_ssse3.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=31']
-    SOURCES['skia/src/opts/SkOpts_sse41.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=41']
-    SOURCES['skia/src/opts/SkOpts_sse42.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=42']
-    SOURCES['skia/src/opts/SkOpts_avx.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=51']
-    SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += ['-DSK_CPU_SSE_LEVEL=52']
 elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += CONFIG['NEON_FLAGS']
 elif CONFIG['CPU_ARCH'] == 'aarch64' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):
@@ -109,22 +94,18 @@ DEFINES['SKIA_IMPLEMENTATION'] = 1
 if CONFIG['MOZ_ENABLE_SKIA_PDF_SFNTLY']:
     DEFINES['SK_PDF_USE_SFNTLY'] = 1
 
-if not CONFIG['MOZ_ENABLE_SKIA_GPU']:
-    DEFINES['SK_SUPPORT_GPU'] = 0
-
 if CONFIG['MOZ_TREE_FREETYPE']:
     DEFINES['SK_CAN_USE_DLOPEN'] = 0
 
 # Suppress warnings in third-party code.
-if CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc'):
-    CXXFLAGS += [
-        '-Wno-deprecated-declarations',
-        '-Wno-overloaded-virtual',
-        '-Wno-shadow',
-        '-Wno-sign-compare',
-        '-Wno-unreachable-code',
-        '-Wno-unused-function',
-    ]
+CXXFLAGS += [
+    '-Wno-deprecated-declarations',
+    '-Wno-overloaded-virtual',
+    '-Wno-shadow',
+    '-Wno-sign-compare',
+    '-Wno-unreachable-code',
+    '-Wno-unused-function',
+]
 if CONFIG['CC_TYPE'] == 'gcc':
     CXXFLAGS += [
         '-Wno-logical-op',
@@ -184,7 +165,7 @@ def generate_platform_sources():
     if output:
       sources[plat] = parse_sources(output)
 
-  deps = {':effects' : 'common', ':gpu' : 'gpu', ':pdf' : 'pdf'}
+  deps = {':effects' : 'common', ':pdf' : 'pdf'}
   for dep, key in deps.items():
     output = subprocess.check_output('cd skia && bin/gn desc out/linux {} sources'.format(dep), shell=True)
     if output:
@@ -195,10 +176,6 @@ def generate_platform_sources():
 
 def generate_separated_sources(platform_sources):
   blacklist = [
-    'GrGLMakeNativeInterface',
-    'GrGLCreateNullInterface',
-    'GrGLAssembleInterface',
-    'GrGLTestInterface',
     'skia/src/android/',
     'skia/src/atlastext/',
     'skia/src/c/',
@@ -206,13 +183,11 @@ def generate_separated_sources(platform_sources):
     'skia/src/fonts/',
     'skia/src/ports/SkImageEncoder',
     'skia/src/ports/SkImageGenerator',
-    'skia/src/gpu/vk/',
     'SkBitmapRegion',
     'SkLite',
     'SkLight',
     'SkNormal',
     'codec',
-    'SkWGL',
     'SkMemory_malloc',
     'third_party',
     'Sk3D',
@@ -248,7 +223,6 @@ def generate_separated_sources(platform_sources):
       'skia/src/codec/SkMasks.cpp',
       'skia/src/effects/imagefilters/SkBlurImageFilter.cpp',
       'skia/src/effects/SkDashPathEffect.cpp',
-      'skia/src/gpu/gl/GrGLMakeNativeInterface_none.cpp',
       'skia/src/ports/SkDiscardableMemory_none.cpp',
       'skia/src/ports/SkGlobalInitialization_default.cpp',
       'skia/src/ports/SkGlobalInitialization_default_imagefilters.cpp',
@@ -272,8 +246,7 @@ def generate_separated_sources(platform_sources):
     'arm': set(),
     'arm64': set(),
     'none': set(),
-    'pdf': set(),
-    'gpu': set()
+    'pdf': set()
   })
 
   for plat in platform_sources.keys():
@@ -353,18 +326,6 @@ unified_blacklist = [
   'SkParse.cpp',
   'SkPDFFont.cpp',
   'SkPictureData.cpp',
-  'skia/src/gpu/effects/',
-  'skia/src/gpu/gradients/',
-  'GrResourceCache',
-  'GrResourceProvider',
-  'GrAA',
-  'GrGL',
-  'GrCCPathProcessor',
-  'GrCCStrokeGeometry',
-  'GrMSAAPathRenderer.cpp',
-  'GrNonAAFillRect',
-  'GrPathUtils',
-  'GrShadowRRectOp',
   'SkColorSpace',
   'SkImage_Gpu.cpp',
   'SkPathOpsDebug.cpp',
@@ -433,9 +394,6 @@ def write_mozbuild(sources):
   f.write("if CONFIG['MOZ_ENABLE_SKIA_PDF']:\n")
   write_sources(f, sources['pdf'], 4)
 
-  f.write("if CONFIG['MOZ_ENABLE_SKIA_GPU']:\n")
-  write_sources(f, sources['gpu'], 4)
-
   f.write("if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':\n")
   write_sources(f, sources['android'], 4)
 
@@ -456,7 +414,7 @@ def write_mozbuild(sources):
   write_sources(f, sources['arm'], 4)
   write_cflags(f, sources['arm'], opt_whitelist, 'skia_opt_flags', 4)
 
-  f.write("elif CONFIG['CPU_ARCH'] == 'aarch64' and CONFIG['CC_TYPE'] in ('clang-cl', 'clang', 'gcc'):\n")
+  f.write("elif CONFIG['CPU_ARCH'] == 'aarch64':\n")
   write_sources(f, sources['arm64'], 4)
   write_cflags(f, sources['arm64'], opt_whitelist, 'skia_opt_flags', 4)
 

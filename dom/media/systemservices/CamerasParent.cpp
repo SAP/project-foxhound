@@ -278,14 +278,15 @@ int CamerasParent::DeliverFrameOverIPC(CaptureEngine capEng, uint32_t aStreamId,
     // get() and Size() check for proper alignment of the segment
     memcpy(shMemBuff.GetBytes(), altbuffer, aProps.bufferSize());
 
-    if (!SendDeliverFrame(capEng, aStreamId, shMemBuff.Get(), aProps)) {
+    if (!SendDeliverFrame(capEng, aStreamId, std::move(shMemBuff.Get()),
+                          aProps)) {
       return -1;
     }
   } else {
     MOZ_ASSERT(buffer.Valid());
     // ShmemBuffer was available, we're all good. A single copy happened
     // in the original webrtc callback.
-    if (!SendDeliverFrame(capEng, aStreamId, buffer.Get(), aProps)) {
+    if (!SendDeliverFrame(capEng, aStreamId, std::move(buffer.Get()), aProps)) {
       return -1;
     }
   }
@@ -686,7 +687,8 @@ static bool HasCameraPermission(const ipc::PrincipalInfo& aPrincipalInfo) {
   }
 
   // Name used with nsIPermissionManager
-  static const char* cameraPermission = "MediaManagerVideo";
+  static const nsLiteralCString cameraPermission =
+      NS_LITERAL_CSTRING("MediaManagerVideo");
   nsCOMPtr<nsIPermissionManager> mgr =
       do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {

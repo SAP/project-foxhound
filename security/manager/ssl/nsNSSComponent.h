@@ -9,6 +9,7 @@
 
 #include "nsINSSComponent.h"
 
+#include "EnterpriseRoots.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
 #include "mozilla/Attributes.h"
@@ -55,6 +56,9 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   // LoadLoadableRootsTask updates mLoadableRootsLoaded and
   // mLoadableRootsLoadedResult and then signals mLoadableRootsLoadedMonitor.
   friend class LoadLoadableRootsTask;
+  // BackgroundImportEnterpriseCertsTask calls ImportEnterpriseRoots and
+  // UpdateCertVerifierWithEnterpriseRoots.
+  friend class BackgroundImportEnterpriseCertsTask;
 
   nsNSSComponent();
 
@@ -79,23 +83,17 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
 
   void setValidationOptions(bool isInitialSetting,
                             const mozilla::MutexAutoLock& proofOfLock);
+  void UpdateCertVerifierWithEnterpriseRoots();
   nsresult setEnabledTLSVersions();
   nsresult RegisterObservers();
 
   void MaybeImportEnterpriseRoots();
   void ImportEnterpriseRoots();
   void UnloadEnterpriseRoots();
+  nsresult CommonGetEnterpriseCerts(
+      nsTArray<nsTArray<uint8_t>>& enterpriseCerts, bool getRoots);
 
-  void MaybeEnableFamilySafetyCompatibility(uint32_t familySafetyMode);
-  void UnloadFamilySafetyRoot();
-
-  nsresult TrustLoaded3rdPartyRoots();
-
-#ifdef XP_WIN
-  nsresult MaybeImportFamilySafetyRoot(PCCERT_CONTEXT certificate,
-                                       bool& wasFamilySafetyRoot);
-  nsresult LoadFamilySafetyRoot();
-#endif  // XP_WIN
+  bool ShouldEnableEnterpriseRootsForFamilySafety(uint32_t familySafetyMode);
 
   // mLoadableRootsLoadedMonitor protects mLoadableRootsLoaded.
   mozilla::Monitor mLoadableRootsLoadedMonitor;
@@ -114,8 +112,7 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   RefPtr<mozilla::psm::SharedCertVerifier> mDefaultCertVerifier;
   nsString mMitmCanaryIssuer;
   bool mMitmDetecionEnabled;
-  mozilla::UniqueCERTCertList mEnterpriseRoots;
-  mozilla::UniqueCERTCertificate mFamilySafetyRoot;
+  mozilla::Vector<EnterpriseCert> mEnterpriseCerts;
 
   // The following members are accessed only on the main thread:
   static int mInstanceCount;

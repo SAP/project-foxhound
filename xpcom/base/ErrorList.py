@@ -674,6 +674,12 @@ with modules["IMGLIB"]:
 with modules["EDITOR"]:
     errors["NS_ERROR_EDITOR_DESTROYED"] = FAILURE(1)
 
+    # A error code that indicates that the DOM tree has been modified by
+    # web app or add-on while the editor modifying the tree.  However,
+    # this shouldn't be exposed to the web because the result should've
+    # been expected by the web app.
+    errors["NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE"] = FAILURE(2)
+
     errors["NS_SUCCESS_EDITOR_ELEMENT_NOT_FOUND"] = SUCCESS(1)
     errors["NS_SUCCESS_EDITOR_FOUND_TARGET"] = SUCCESS(2)
 
@@ -745,6 +751,7 @@ with modules["XPCONNECT"]:
 with modules["PROFILE"]:
     errors["NS_ERROR_LAUNCHED_CHILD_PROCESS"] = FAILURE(200)
     errors["NS_ERROR_SHOW_PROFILE_MANAGER"] = FAILURE(201)
+    errors["NS_ERROR_DATABASE_CHANGED"] = FAILURE(202)
 
 
 # =======================================================================
@@ -807,6 +814,8 @@ with modules["URILOADER"]:
     errors["NS_ERROR_HARMFUL_URI"] = FAILURE(38)
     errors["NS_ERROR_MAYBE_TRACKING_URI"] = FAILURE(39)
     errors["NS_ERROR_TRACKING_ANNOTATION_URI"] = FAILURE(40)
+    errors["NS_ERROR_FINGERPRINTING_URI"] = FAILURE(41)
+    errors["NS_ERROR_CRYPTOMINING_URI"] = FAILURE(42)
     # Used when "Save Link As..." doesn't see the headers quickly enough to
     # choose a filename.  See nsContextMenu.js.
     errors["NS_ERROR_SAVE_LINK_AS_TIMEOUT"] = FAILURE(32)

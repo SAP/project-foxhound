@@ -4,8 +4,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
@@ -13,7 +13,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
 });
 
-GeckoViewUtils.initLogging("GeckoView.TelemetryController", this);
+const {debug, warn} = GeckoViewUtils.initLogging("GeckoView.TelemetryController"); // eslint-disable-line no-unused-vars
 
 var EXPORTED_SYMBOLS = ["GeckoViewTelemetryController"];
 

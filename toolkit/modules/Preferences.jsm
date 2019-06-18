@@ -4,7 +4,7 @@
 
 var EXPORTED_SYMBOLS = ["Preferences"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // The minimum and maximum integers that can be set as preferences.
 // The range of valid values is narrower than the range of valid JS values
@@ -22,8 +22,9 @@ function Preferences(args) {
       this._defaultBranch = args.defaultBranch;
     if (args.privacyContext)
       this._privacyContext = args.privacyContext;
-  } else if (args)
+  } else if (args) {
     this._branchStr = args;
+  }
 }
 
 /**
@@ -406,8 +407,9 @@ PrefObserver.prototype = {
         this.callback.call(this.thisObject, prefValue);
       else
         this.callback(prefValue);
-    } else // typeof this.callback == "object" (nsIObserver)
+    } else { // typeof this.callback == "object" (nsIObserver)
       this.callback.observe(subject, topic, data);
+    }
   },
 };
 

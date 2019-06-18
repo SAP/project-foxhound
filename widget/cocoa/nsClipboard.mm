@@ -30,8 +30,6 @@ using mozilla::LogLevel;
 
 extern mozilla::LazyLogModule sCocoaLog;
 
-extern void EnsureLogInitialized();
-
 mozilla::StaticRefPtr<nsITransferable> nsClipboard::sSelectionCache;
 
 @implementation UTIHelper
@@ -61,9 +59,7 @@ mozilla::StaticRefPtr<nsITransferable> nsClipboard::sSelectionCache;
 @end  // UTIHelper
 
 nsClipboard::nsClipboard()
-    : mCachedClipboard(-1), mChangeCount(0), mIgnoreEmptyNotification(false) {
-  EnsureLogInitialized();
-}
+    : mCachedClipboard(-1), mChangeCount(0), mIgnoreEmptyNotification(false) {}
 
 nsClipboard::~nsClipboard() {
   EmptyClipboard(kGlobalClipboard);

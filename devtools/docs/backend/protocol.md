@@ -101,7 +101,7 @@ If an actor receives a packet whose type it does not recognize, it sends an erro
 
 where *message* provides details to help debugger developers understand what went wrong: what kind of actor actor is; the packet received; and so on.
 
-If an actor recieves a packet which is missing needed parameters (say, a `"releaseMany"` packet with no `"actors"` parameter), it sends an error reply of the form:
+If an actor receives a packet which is missing needed parameters (say, an `"autocomplete"` packet with no `"text"` parameter), it sends an error reply of the form:
 
 ```
 { "from":actor, "error":"missingParameter", "message":message }
@@ -109,7 +109,7 @@ If an actor recieves a packet which is missing needed parameters (say, a `"relea
 
 where *message* provides details to help debugger developers fix the problem.
 
-If an actor recieves a packet with a parameter whose value is inappropriate for the operation, it sends an error reply of the form:
+If an actor receives a packet with a parameter whose value is inappropriate for the operation, it sends an error reply of the form:
 
 ```
 { "from":actor, "error":"badParameterType", "message":message }
@@ -549,14 +549,6 @@ This closes the grip actor. The `"release"` packet may only be sent to thread-li
 { "from":<gripActor>, "error":"notReleasable", "message":<message> }
 ```
 
-where *message* includes whatever further information would be useful to the debugger developers.
-
-The client can release many thread-lifetime grips in a single operation by sending the thread actor a request of the form:
-
-```
-{ "to":<thread>, "type":"releaseMany", "actors":[ <gripActor>, ... ] }
-```
-
 where each *gripActor* is the name of a child of *thread* that should be freed. The thread actor will reply, simply:
 
 ```
@@ -748,7 +740,7 @@ A thread is always in one of the following states:
 These interactions are meant to have certain properties:
 
 * At no point may either client or server send an unbounded number of packets without receiving a packet from its counterpart. This avoids deadlock without requiring either side to buffer an arbitrary number of packets per actor.
-* In states where a transition can be initiated by either the debugger or the thread, it is always clear to the debugger which state the thread actually entered, and for what reason.<br>For example, if the debugger interrupts a running thread, it cannot be sure whether the thread stopped because of the interruption, paused of its own accord (to report a watchpoint hit, say), or exited. However, the next packet the debugger receives will either be "paused", or "exited", resolving the ambiguity.<br>Similarly, when the debugger attaches to a thread, it cannot be sure whether it has succeeded in attaching to the thread, or whether the thread exited before the "attach" packet arrived. However, in either case the debugger can expect a disambiguating response: if the attach suceeded, it receives an "attached" packet; and in the second case, it receives an "exit" packet.<br>To support this property, the thread ignores certain debugger packets in some states (the "interrupt" packet in the **Paused** and **Exited** states, for example). These cases all handle situations where the ignored packet was preempted by some thread action.
+* In states where a transition can be initiated by either the debugger or the thread, it is always clear to the debugger which state the thread actually entered, and for what reason.<br>For example, if the debugger interrupts a running thread, it cannot be sure whether the thread stopped because of the interruption, paused of its own accord (to report a watchpoint hit, say), or exited. However, the next packet the debugger receives will either be "paused", or "exited", resolving the ambiguity.<br>Similarly, when the debugger attaches to a thread, it cannot be sure whether it has succeeded in attaching to the thread, or whether the thread exited before the "attach" packet arrived. However, in either case the debugger can expect a disambiguating response: if the attach succeeded, it receives an "attached" packet; and in the second case, it receives an "exit" packet.<br>To support this property, the thread ignores certain debugger packets in some states (the "interrupt" packet in the **Paused** and **Exited** states, for example). These cases all handle situations where the ignored packet was preempted by some thread action.
 
 Note that the rules here apply to the client's interactions with each thread actor separately. A client may send an "interrupt" to one thread actor while awaiting a reply to a request sent to a different thread actor.
 
@@ -905,12 +897,6 @@ The thread stopped at the watchpoints represented by the given actors.
 
 The expression given in the client's prior `clientEvaluate` command has completed execution; *completion* is a [completion value](#completion-values) describing how it completed. The frame created for the `clientEvaluate` resumption has been popped from the stack. See [Evaluating Source-Language Expressions](#evaluating-source-language-expressions) for details.
 
-```
-{ "type":"pauseOnDOMEvents" }
-```
-
-The client resumed the thread with a `"resume"` packet that included a `pauseOnDOMEvents` property, and the thread stopped because it executed an event in that list.
-
 ### Resuming a Thread
 
 If a thread is in the **Paused** state, the client can resume it by sending a packet of the following form:
@@ -990,23 +976,7 @@ where *exception* is a grip on the exception object.
 
 To request that execution pause on a DOM event, the client may send a request of the form:
 
-```
-{ "to":<thread>, "type":"resume", "pauseOnDOMEvents": [<event-type>, ... ] }
-```
-
-The `pauseOnDOMEvents` property contains an array of the types of DOM events that should pause execution. Execution pauses immediately after the frame for the call to the listener has been pushed, and before the listener has begun execution.
-
-A request to pause on all kinds of events can be made using the "*" wildcard event type:
-
-```
-{ "to":<thread>, "type":"resume", "pauseOnDOMEvents": "*" }
-```
-
-A `pauseOnDOMEvents` applies only until the next pause. In order to change the types of events that should pause execution, a new array of event types should be sent to the server. Any events not present in the new list will no longer trigger pauses. Consequently, sending an empty array or simply omitting the `pauseOnDOMEvents` property disables pausing on DOM events.
-
-When a thread pauses because a DOM event was triggered, the "paused" packet's *reason* will have a type of `"pauseOnDOMEvents"`.
-
-If a `"forceCompletion"` property is present in a `"resume"` packet, along with `"resumeLimit"`, `"pauseOnExceptions"` or `"pauseOnDOMEvents"`, the thread will respond with an error:
+If a `"forceCompletion"` property is present in a `"resume"` packet, along with `"resumeLimit"`, or `"pauseOnExceptions"`, the thread will respond with an error:
 
 ```
 { "from":<thread>, "error":"badParameterType", "message":<message> }

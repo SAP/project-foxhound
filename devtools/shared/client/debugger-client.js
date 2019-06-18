@@ -4,9 +4,7 @@
 
 "use strict";
 
-const Services = require("Services");
 const promise = require("devtools/shared/deprecated-sync-thenables");
-const {AppConstants} = require("resource://gre/modules/AppConstants.jsm");
 
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { getStack, callFunctionWithAsyncStack } = require("devtools/shared/platform/stack");
@@ -21,24 +19,10 @@ loader.lazyRequireGetter(this, "Authentication", "devtools/shared/security/auth"
 loader.lazyRequireGetter(this, "DebuggerSocket", "devtools/shared/security/socket", true);
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 
-loader.lazyRequireGetter(this, "WebConsoleClient", "devtools/shared/webconsole/client", true);
 loader.lazyRequireGetter(this, "RootFront", "devtools/shared/fronts/root", true);
-loader.lazyRequireGetter(this, "BrowsingContextTargetFront", "devtools/shared/fronts/targets/browsing-context", true);
 loader.lazyRequireGetter(this, "ThreadClient", "devtools/shared/client/thread-client");
 loader.lazyRequireGetter(this, "ObjectClient", "devtools/shared/client/object-client");
-loader.lazyRequireGetter(this, "Pool", "devtools/shared/protocol", true);
 loader.lazyRequireGetter(this, "Front", "devtools/shared/protocol", true);
-
-// Retrieve the major platform version, i.e. if we are on Firefox 64.0a1, it will be 64.
-const PLATFORM_MAJOR_VERSION = AppConstants.MOZ_APP_VERSION.match(/\d+/)[0];
-
-// Define the minimum officially supported version of Firefox when connecting to a remote
-// runtime. (Use ".0a1" to support the very first nightly version)
-// This matches the release channel's version when we are on nightly,
-// or 2 versions before when we are on other channels.
-const MIN_SUPPORTED_PLATFORM_VERSION = (PLATFORM_MAJOR_VERSION - 2) + ".0a1";
-
-const MS_PER_DAY = 86400000;
 
 /**
  * Creates a client for the remote debugging protocol server. This client
@@ -52,16 +36,6 @@ function DebuggerClient(transport) {
   // Map actor ID to client instance for each actor type.
   // To be removed once all clients are refactored to protocol.js
   this._clients = new Map();
-
-  // Pool of fronts instanciated by this class.
-  // This is useful for actors that have already been transitioned to protocol.js
-  // Once RootClient becomes a protocol.js actor, these actors can be attached to it
-  // instead of this pool.
-  // This Pool will automatically be added to this._pools via addActorPool once the first
-  // Front will be added to it (in attachTarget, ...).
-  // And it does not need to destroyed explicitly as all Pools are destroyed on client
-  // closing.
-  this._frontPool = new Pool(this);
 
   this._pendingRequests = new Map();
   this._activeRequests = new Map();
@@ -79,7 +53,11 @@ function DebuggerClient(transport) {
   this.mainRoot = null;
   this.expectReply("root", (packet) => {
     this.mainRoot = new RootFront(this, packet);
-    this._frontPool.manage(this.mainRoot);
+
+    // Root Front is a special case, managing itself as it doesn't have any parent.
+    // It will register itself to DebuggerClient as a Pool via Front._poolMap.
+    this.mainRoot.manage(this.mainRoot);
+
     this.emit("connected", packet.applicationType, packet.traits);
   });
 }
@@ -202,80 +180,6 @@ DebuggerClient.prototype = {
   },
 
   /**
-   * Tells if the remote device is using a supported version of Firefox.
-   *
-   * @return Object with the following attributes:
-   *   * String incompatible
-   *            null if the runtime is compatible,
-   *            "too-recent" if the runtime uses a too recent version,
-   *            "too-old" if the runtime uses a too old version.
-   *   * String minVersion
-   *            The minimum supported version.
-   *   * String runtimeVersion
-   *            The remote runtime version.
-   *   * String localID
-   *            Build ID of local runtime. A date with like this: YYYYMMDD.
-   *   * String deviceID
-   *            Build ID of remote runtime. A date with like this: YYYYMMDD.
-   */
-  async checkRuntimeVersion() {
-    const localID = Services.appinfo.appBuildID.substr(0, 8);
-
-    let deviceFront;
-    try {
-      deviceFront = await this.mainRoot.getFront("device");
-    } catch (e) {
-      // On <FF55, getFront is going to call RootActor.getRoot and fail
-      // because this method doesn't exists.
-      if (e.error == "unrecognizedPacketType") {
-        return {
-          incompatible: "too-old",
-          minVersion: MIN_SUPPORTED_PLATFORM_VERSION,
-          runtimeVersion: "<55",
-          localID,
-          runtimeID: "?",
-        };
-      }
-      throw e;
-    }
-    const desc = await deviceFront.getDescription();
-    let incompatible = null;
-
-    // 1) Check for Firefox too recent on device.
-    // Compare device and firefox build IDs
-    // and only compare by day (strip hours/minutes) to prevent
-    // warning against builds of the same day.
-    const runtimeID = desc.appbuildid.substr(0, 8);
-    function buildIDToDate(buildID) {
-      const fields = buildID.match(/(\d{4})(\d{2})(\d{2})/);
-      // Date expects 0 - 11 for months
-      return new Date(fields[1], Number.parseInt(fields[2], 10) - 1, fields[3]);
-    }
-    const runtimeDate = buildIDToDate(runtimeID);
-    const localDate = buildIDToDate(localID);
-    // Allow device to be newer by up to a week.  This accommodates those with
-    // local device builds, since their devices will almost always be newer
-    // than the client.
-    if (runtimeDate - localDate > 7 * MS_PER_DAY) {
-      incompatible = "too-recent";
-    }
-
-    // 2) Check for too old Firefox on device
-    const platformversion = desc.platformversion;
-    if (Services.vc.compare(platformversion, MIN_SUPPORTED_PLATFORM_VERSION) < 0) {
-      incompatible = "too-old";
-    }
-
-    return {
-      incompatible,
-      minVersion: MIN_SUPPORTED_PLATFORM_VERSION,
-      runtimeVersion: platformversion,
-      localID,
-      runtimeID,
-    };
-  },
-
-  /**
    * Shut down communication with the debugging server.
    *
    * @param onClosed function
@@ -329,84 +233,11 @@ DebuggerClient.prototype = {
         client.detach(detachClients);
         return;
       }
-      if (client.destroy) {
-        client.destroy();
-        detachClients();
-        return;
-      }
       detachClients();
     };
     detachClients();
 
     return deferred.promise;
-  },
-
-  /**
-   * Attach to a target actor:
-   *
-   *  - start watching for new documents (emits `tabNativated` messages)
-   *  - start watching for inner iframe updates (emits `frameUpdate` messages)
-   *  - retrieve the thread actor:
-   *    Instantiates a new ThreadActor that can be later attached to in order to
-   *    debug JS sources in the document.
-   *
-   * @param string targetActorForm
-   *        The target actor form for the tab to attach.
-   */
-  attachTarget: async function(targetActorForm) {
-    const actorID = targetActorForm.actor;
-    let front = this._frontPool.actor(actorID);
-    if (!front) {
-      front = new BrowsingContextTargetFront(this, targetActorForm);
-      this._frontPool.manage(front);
-    }
-
-    const response = await front.attach();
-    return [response, front];
-  },
-
-  /**
-   * Attach to a Web Console actor. Depending on the listeners being passed as second
-   * arguments, starts listening for:
-   * - PageError:
-   *   Javascript error happening in the debugged context
-   * - ConsoleAPI:
-   *   Calls made to console.* API
-   * - NetworkActivity:
-   *   Http requests made in the debugged context
-   * - FileActivity:
-   *   Any requests made for a file:// or ftp:// URL. It can be the document or any of
-   *   its resources, like images.
-   * - ReflowActivity:
-   *   Any reflow made by the document being debugged.
-   * - ContentProcessMessages:
-   *   When the console actor runs in the parent process, also fetch calls made to
-   *   console.* API in all the content processes.
-   * - DocumentEvents:
-   *   Listen for DOMContentLoaded and load events.
-   *
-   * @param string consoleActor
-   *        The ID for the console actor to attach to.
-   * @param array listeners
-   *        The console listeners you want to start.
-   */
-  attachConsole: function(consoleActor, listeners) {
-    const packet = {
-      to: consoleActor,
-      type: "startListeners",
-      listeners: listeners,
-    };
-
-    return this.request(packet).then(response => {
-      let consoleClient;
-      if (this._clients.has(consoleActor)) {
-        consoleClient = this._clients.get(consoleActor);
-      } else {
-        consoleClient = new WebConsoleClient(this, response);
-        this.registerClient(consoleClient);
-      }
-      return [response, consoleClient];
-    });
   },
 
   /**

@@ -5,6 +5,7 @@
 // Constants
 
 const EVENT_ALERT = nsIAccessibleEvent.EVENT_ALERT;
+const EVENT_ANNOUNCEMENT = nsIAccessibleEvent.EVENT_ANNOUNCEMENT;
 const EVENT_DESCRIPTION_CHANGE = nsIAccessibleEvent.EVENT_DESCRIPTION_CHANGE;
 const EVENT_DOCUMENT_LOAD_COMPLETE = nsIAccessibleEvent.EVENT_DOCUMENT_LOAD_COMPLETE;
 const EVENT_DOCUMENT_RELOAD = nsIAccessibleEvent.EVENT_DOCUMENT_RELOAD;
@@ -40,7 +41,7 @@ const kFromUserInput = 1;
 // //////////////////////////////////////////////////////////////////////////////
 // General
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * Set up this variable to dump events into DOM.
@@ -89,7 +90,6 @@ function isXULElement(aNode) {
 function waitForEvent(aEventType, aTargetOrFunc, aFunc, aContext, aArg1, aArg2) {
   var handler = {
     handleEvent: function handleEvent(aEvent) {
-
       var target = aTargetOrFunc;
       if (typeof aTargetOrFunc == "function")
         target = aTargetOrFunc.call();
@@ -157,8 +157,10 @@ function waitForImageMap(aImageMapID, aTestFunc) {
   waveOverImageMap(aImageMapID);
 
   var imageMapAcc = getAccessible(aImageMapID);
-  if (imageMapAcc.firstChild)
-    return aTestFunc();
+  if (imageMapAcc.firstChild) {
+    aTestFunc();
+    return;
+  }
 
   waitForEvent(EVENT_REORDER, imageMapAcc, aTestFunc);
 }
@@ -319,6 +321,7 @@ function eventQueue(aEventType) {
   /**
    * Process next invoker.
    */
+  // eslint-disable-next-line complexity
   this.processNextInvoker = function eventQueue_processNextInvoker() {
     // Some scenario was matched, we wait on next invoker processing.
     if (this.mNextInvokerStatus == kInvokerCanceled) {
@@ -486,6 +489,7 @@ function eventQueue(aEventType) {
   /**
    * Handle events for the current invoker.
    */
+  // eslint-disable-next-line complexity
   this.handleEvent = function eventQueue_handleEvent(aEvent) {
     var invoker = this.getInvoker();
     if (!invoker) // skip events before test was started
@@ -596,7 +600,6 @@ function eventQueue(aEventType) {
     if (this.hasMatchedScenario()) {
       if (this.mNextInvokerStatus == kInvokerNotScheduled) {
         this.processNextInvokerInTimeout();
-
       } else if (this.mNextInvokerStatus == kInvokerCanceled) {
         this.setInvokerStatus(kInvokerPending,
                               "Full match. Void the cancelation of next invoker processing");
@@ -789,7 +792,6 @@ function eventQueue(aEventType) {
           }
           var phase = eventQueue.getEventPhase(eventSeq[idx]);
           target.addEventListener(eventType, this, phase);
-
         } else {
           // A11y event
           addA11yEventListener(eventType, this);
@@ -813,7 +815,6 @@ function eventQueue(aEventType) {
           var target = eventQueue.getEventTarget(eventSeq[idx]);
           var phase = eventQueue.getEventPhase(eventSeq[idx]);
           target.removeEventListener(eventType, this, phase);
-
         } else {
           // A11y event
           removeA11yEventListener(eventType, this);
@@ -1107,7 +1108,7 @@ function synthClick(aNodeOrID, aCheckerOrEventSeq, aArgs) {
       if (isHTMLElement(targetNode)) {
         x = targetNode.offsetWidth - 1;
       } else if (isXULElement(targetNode)) {
-        x = targetNode.boxObject.width - 1;
+        x = targetNode.getBoundingClientRect().width - 1;
       }
     }
     synthesizeMouse(targetNode, x, y, aArgs ? aArgs : {});
@@ -1452,7 +1453,6 @@ function synthSelectAll(aNodeOrID, aCheckerOrEventSeq) {
     if (ChromeUtils.getClassName(this.DOMNode) === "HTMLInputElement" ||
         this.DOMNode.localName == "textbox") {
       this.DOMNode.select();
-
     } else {
       window.getSelection().selectAllChildren(this.DOMNode);
     }
@@ -1957,6 +1957,7 @@ var gA11yEventApplicantsCount = 0;
 
 var gA11yEventObserver =
 {
+  // eslint-disable-next-line complexity
   observe: function observe(aSubject, aTopic, aData) {
     if (aTopic != "accessible-event")
       return;
@@ -1995,7 +1996,6 @@ var gA11yEventObserver =
           var stateStr = statesToString(event.isExtraState ? 0 : event.state,
                                         event.isExtraState ? event.state : 0);
           info += ", state: " + stateStr + ", is enabled: " + event.isEnabled;
-
         } else if (event instanceof nsIAccessibleTextChangeEvent) {
           info += ", start: " + event.start + ", length: " + event.length +
             ", " + (event.isInserted ? "inserted" : "removed") +

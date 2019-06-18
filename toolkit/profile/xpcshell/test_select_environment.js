@@ -1,3 +1,6 @@
+/* Any copyright is dedicated to the Public Domain.
+   http://creativecommons.org/publicdomain/zero/1.0/ */
+
 /*
  * Tests that the environment variables are used to select a profile.
  */
@@ -31,6 +34,7 @@ add_task(async () => {
   env.set("XRE_PROFILE_LOCAL_PATH", dir.path);
 
   let { rootDir, localDir, profile, didCreate } = selectStartupProfile();
+  checkStartupReason("restart");
 
   Assert.ok(!didCreate, "Should not have created a new profile.");
   Assert.ok(rootDir.equals(dir), "Should have selected the right root dir.");

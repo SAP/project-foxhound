@@ -511,26 +511,8 @@ class ImageSurfaceCache {
   IntSize SuggestedSize(const IntSize& aSize) const {
     IntSize suggestedSize = SuggestedSizeInternal(aSize);
     if (mIsVectorImage) {
-      // Whether or not we are in factor of 2 mode, vector image rasterization
-      // is clamped at a configured maximum if the caller is willing to accept
-      // substitutes.
-      MOZ_ASSERT(SurfaceCache::IsLegalSize(suggestedSize));
-
-      // If we exceed the maximum, we need to scale the size downwards to fit.
-      // It shouldn't get here if it is significantly larger because
-      // VectorImage::UseSurfaceCacheForSize should prevent us from requesting
-      // a rasterized version of a surface greater than 4x the maximum.
-      int32_t maxSizeKB = gfxPrefs::ImageCacheMaxRasterizedSVGThresholdKB();
-      int32_t proposedKB = suggestedSize.width * suggestedSize.height / 256;
-      if (maxSizeKB >= proposedKB) {
-        return suggestedSize;
-      }
-
-      double scale = sqrt(double(maxSizeKB) / proposedKB);
-      suggestedSize.width = int32_t(scale * suggestedSize.width);
-      suggestedSize.height = int32_t(scale * suggestedSize.height);
+      suggestedSize = SurfaceCache::ClampVectorSize(suggestedSize);
     }
-
     return suggestedSize;
   }
 
@@ -964,7 +946,9 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
     RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       // No cached surfaces for this image.
-      return LookupResult(MatchType::NOT_FOUND);
+      return LookupResult(
+          MatchType::NOT_FOUND,
+          SurfaceCache::ClampSize(aImageKey, aSurfaceKey.Size()));
     }
 
     // Repeatedly look up the best match, trying again if the resulting surface
@@ -983,7 +967,7 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
 
       if (!surface) {
         return LookupResult(
-            matchType);  // Lookup in the per-image cache missed.
+            matchType, suggestedSize);  // Lookup in the per-image cache missed.
       }
 
       drawableSurface = surface->GetDrawableSurface();
@@ -1382,7 +1366,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
 // Public API
 ///////////////////////////////////////////////////////////////////////////////
 
-/* static */ void SurfaceCache::Initialize() {
+/* static */
+void SurfaceCache::Initialize() {
   // Initialize preferences.
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!sInstance, "Shouldn't initialize more than once");
@@ -1436,7 +1421,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   sInstance->InitMemoryReporter();
 }
 
-/* static */ void SurfaceCache::Shutdown() {
+/* static */
+void SurfaceCache::Shutdown() {
   RefPtr<SurfaceCacheImpl> cache;
   {
     StaticMutexAutoLock lock(sInstanceMutex);
@@ -1446,9 +1432,10 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   }
 }
 
-/* static */ LookupResult SurfaceCache::Lookup(const ImageKey aImageKey,
-                                               const SurfaceKey& aSurfaceKey,
-                                               bool aMarkUsed) {
+/* static */
+LookupResult SurfaceCache::Lookup(const ImageKey aImageKey,
+                                  const SurfaceKey& aSurfaceKey,
+                                  bool aMarkUsed) {
   nsTArray<RefPtr<CachedSurface>> discard;
   LookupResult rv(MatchType::NOT_FOUND);
 
@@ -1465,8 +1452,10 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return rv;
 }
 
-/* static */ LookupResult SurfaceCache::LookupBestMatch(
-    const ImageKey aImageKey, const SurfaceKey& aSurfaceKey, bool aMarkUsed) {
+/* static */
+LookupResult SurfaceCache::LookupBestMatch(const ImageKey aImageKey,
+                                           const SurfaceKey& aSurfaceKey,
+                                           bool aMarkUsed) {
   nsTArray<RefPtr<CachedSurface>> discard;
   LookupResult rv(MatchType::NOT_FOUND);
 
@@ -1483,8 +1472,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return rv;
 }
 
-/* static */ InsertOutcome SurfaceCache::Insert(
-    NotNull<ISurfaceProvider*> aProvider) {
+/* static */
+InsertOutcome SurfaceCache::Insert(NotNull<ISurfaceProvider*> aProvider) {
   nsTArray<RefPtr<CachedSurface>> discard;
   InsertOutcome rv(InsertOutcome::FAILURE);
 
@@ -1501,8 +1490,9 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return rv;
 }
 
-/* static */ bool SurfaceCache::CanHold(const IntSize& aSize,
-                                        uint32_t aBytesPerPixel /* = 4 */) {
+/* static */
+bool SurfaceCache::CanHold(const IntSize& aSize,
+                           uint32_t aBytesPerPixel /* = 4 */) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (!sInstance) {
     return false;
@@ -1512,7 +1502,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return sInstance->CanHold(cost);
 }
 
-/* static */ bool SurfaceCache::CanHold(size_t aSize) {
+/* static */
+bool SurfaceCache::CanHold(size_t aSize) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (!sInstance) {
     return false;
@@ -1521,8 +1512,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return sInstance->CanHold(aSize);
 }
 
-/* static */ void SurfaceCache::SurfaceAvailable(
-    NotNull<ISurfaceProvider*> aProvider) {
+/* static */
+void SurfaceCache::SurfaceAvailable(NotNull<ISurfaceProvider*> aProvider) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (!sInstance) {
     return;
@@ -1531,28 +1522,32 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   sInstance->SurfaceAvailable(aProvider, lock);
 }
 
-/* static */ void SurfaceCache::LockImage(const ImageKey aImageKey) {
+/* static */
+void SurfaceCache::LockImage(const ImageKey aImageKey) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (sInstance) {
     return sInstance->LockImage(aImageKey);
   }
 }
 
-/* static */ void SurfaceCache::UnlockImage(const ImageKey aImageKey) {
+/* static */
+void SurfaceCache::UnlockImage(const ImageKey aImageKey) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (sInstance) {
     return sInstance->UnlockImage(aImageKey, lock);
   }
 }
 
-/* static */ void SurfaceCache::UnlockEntries(const ImageKey aImageKey) {
+/* static */
+void SurfaceCache::UnlockEntries(const ImageKey aImageKey) {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (sInstance) {
     return sInstance->UnlockEntries(aImageKey, lock);
   }
 }
 
-/* static */ void SurfaceCache::RemoveImage(const ImageKey aImageKey) {
+/* static */
+void SurfaceCache::RemoveImage(const ImageKey aImageKey) {
   RefPtr<ImageSurfaceCache> discard;
   {
     StaticMutexAutoLock lock(sInstanceMutex);
@@ -1562,7 +1557,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   }
 }
 
-/* static */ void SurfaceCache::PruneImage(const ImageKey aImageKey) {
+/* static */
+void SurfaceCache::PruneImage(const ImageKey aImageKey) {
   nsTArray<RefPtr<CachedSurface>> discard;
   {
     StaticMutexAutoLock lock(sInstanceMutex);
@@ -1573,7 +1569,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   }
 }
 
-/* static */ void SurfaceCache::DiscardAll() {
+/* static */
+void SurfaceCache::DiscardAll() {
   nsTArray<RefPtr<CachedSurface>> discard;
   {
     StaticMutexAutoLock lock(sInstanceMutex);
@@ -1584,7 +1581,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   }
 }
 
-/* static */ void SurfaceCache::CollectSizeOfSurfaces(
+/* static */
+void SurfaceCache::CollectSizeOfSurfaces(
     const ImageKey aImageKey, nsTArray<SurfaceMemoryCounter>& aCounters,
     MallocSizeOf aMallocSizeOf) {
   nsTArray<RefPtr<CachedSurface>> discard;
@@ -1599,7 +1597,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   }
 }
 
-/* static */ size_t SurfaceCache::MaximumCapacity() {
+/* static */
+size_t SurfaceCache::MaximumCapacity() {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (!sInstance) {
     return 0;
@@ -1608,7 +1607,8 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
   return sInstance->MaximumCapacity();
 }
 
-/* static */ bool SurfaceCache::IsLegalSize(const IntSize& aSize) {
+/* static */
+bool SurfaceCache::IsLegalSize(const IntSize& aSize) {
   // reject over-wide or over-tall images
   const int32_t k64KLimit = 0x0000FFFF;
   if (MOZ_UNLIKELY(aSize.width > k64KLimit || aSize.height > k64KLimit)) {
@@ -1629,6 +1629,33 @@ NS_IMPL_ISUPPORTS(SurfaceCacheImpl::MemoryPressureObserver, nsIObserver)
     return false;
   }
   return true;
+}
+
+IntSize SurfaceCache::ClampVectorSize(const IntSize& aSize) {
+  // If we exceed the maximum, we need to scale the size downwards to fit.
+  // It shouldn't get here if it is significantly larger because
+  // VectorImage::UseSurfaceCacheForSize should prevent us from requesting
+  // a rasterized version of a surface greater than 4x the maximum.
+  int32_t maxSizeKB = gfxPrefs::ImageCacheMaxRasterizedSVGThresholdKB();
+  if (maxSizeKB <= 0) {
+    return aSize;
+  }
+
+  int32_t proposedKB = int32_t(int64_t(aSize.width) * aSize.height / 256);
+  if (maxSizeKB >= proposedKB) {
+    return aSize;
+  }
+
+  double scale = sqrt(double(maxSizeKB) / proposedKB);
+  return IntSize(int32_t(scale * aSize.width), int32_t(scale * aSize.height));
+}
+
+IntSize SurfaceCache::ClampSize(ImageKey aImageKey, const IntSize& aSize) {
+  if (aImageKey->GetType() != imgIContainer::TYPE_VECTOR) {
+    return aSize;
+  }
+
+  return ClampVectorSize(aSize);
 }
 
 }  // namespace image

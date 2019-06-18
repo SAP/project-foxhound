@@ -12,8 +12,7 @@
 
 var EXPORTED_SYMBOLS = ["SpecialPowersAPI", "bindDOMWindowUtils"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 Services.scriptloader.loadSubScript("resource://specialpowers/MozillaLogger.js", this);
 
@@ -137,7 +136,6 @@ function doApply(fun, invocant, args) {
 }
 
 function wrapPrivileged(obj) {
-
   // Primitives pass straight through.
   if (!isWrappable(obj))
     return obj;
@@ -156,7 +154,6 @@ function wrapPrivileged(obj) {
 }
 
 function unwrapPrivileged(x) {
-
   // We don't wrap primitives, so sometimes we have a primitive where we'd
   // expect to have a wrapper. The proxy pretends to be the type that it's
   // emulating, so we can just as easily check isWrappable() on a proxy as
@@ -645,7 +642,6 @@ SpecialPowersAPI.prototype = {
     if (message.hadError) {
       throw "SpecialPowers.importInMainProcess failed with error " + message.errorMessage;
     }
-
   },
 
   get Services() {
@@ -1260,6 +1256,10 @@ SpecialPowersAPI.prototype = {
       let uri = aMessage.json.uri;
       Services.obs.notifyObservers(null, "specialpowers-http-notify-request", uri);
     },
+
+    "specialpowers-service-worker-shutdown": function(aMessage) {
+      Services.obs.notifyObservers(null, "specialpowers-service-worker-shutdown");
+    },
   },
 
   _addObserverProxy(notification) {
@@ -1443,8 +1443,8 @@ SpecialPowersAPI.prototype = {
   },
   attachFormFillControllerTo(window) {
     this.getFormFillController()
-        .attachToBrowser(this._getDocShell(window),
-                         this._getAutoCompletePopup(window));
+        .attachPopupElementToBrowser(this._getDocShell(window),
+                                     this._getAutoCompletePopup(window));
   },
   detachFormFillControllerFrom(window) {
     this.getFormFillController().detachFromBrowser(this._getDocShell(window));
@@ -1798,36 +1798,28 @@ SpecialPowersAPI.prototype = {
     return Services.clipboard.supportsSelectionClipboard();
   },
 
-  swapFactoryRegistration(cid, contractID, newFactory, oldFactory) {
+  swapFactoryRegistration(cid, contractID, newFactory) {
     newFactory = Cu.waiveXrays(newFactory);
-    oldFactory = Cu.waiveXrays(oldFactory);
 
     var componentRegistrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
-    var unregisterFactory = newFactory;
-    var registerFactory = oldFactory;
-
-    if (cid == null) {
-      if (contractID != null) {
-        cid = componentRegistrar.contractIDToCID(contractID);
-        oldFactory = Components.manager.getClassObject(Cc[contractID],
-                                                            Ci.nsIFactory);
-      } else {
-        return {"error": "trying to register a new contract ID: Missing contractID"};
-      }
-
-      unregisterFactory = oldFactory;
-      registerFactory = newFactory;
+    var currentCID = componentRegistrar.contractIDToCID(contractID);
+    var currentFactory = Components.manager.getClassObject(Cc[contractID],
+                                                           Ci.nsIFactory);
+    if (cid) {
+      componentRegistrar.unregisterFactory(currentCID, currentFactory);
+    } else {
+      let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
+                            .getService(Ci.nsIUUIDGenerator);
+      cid = uuidGenerator.generateUUID();
     }
-    componentRegistrar.unregisterFactory(cid,
-                                         unregisterFactory);
 
     // Restore the original factory.
     componentRegistrar.registerFactory(cid,
                                        "",
                                        contractID,
-                                       registerFactory);
-    return {"cid": cid, "originalFactory": oldFactory};
+                                       newFactory);
+    return {"originalCID": currentCID};
   },
 
   _getElement(aWindow, id) {
@@ -2127,16 +2119,16 @@ SpecialPowersAPI.prototype = {
       let listener = {
         httpStatus: 0,
 
-        onStartRequest(request, context) {
+        onStartRequest(request) {
           request.QueryInterface(Ci.nsIHttpChannel);
           this.httpStatus = request.responseStatus;
         },
 
-        onDataAvailable(request, context, stream, offset, count) {
+        onDataAvailable(request, stream, offset, count) {
           new BinaryInputStream(stream).readByteArray(count);
         },
 
-        onStopRequest(request, context, status) {
+        onStopRequest(request, status) {
          /* testing here that the redirect was not followed. If it was followed
             we would see a http status of 200 and status of NS_OK */
 
@@ -2150,7 +2142,7 @@ SpecialPowersAPI.prototype = {
       channel.loadFlags |= Ci.nsIChannel.LOAD_DOCUMENT_URI;
       channel.QueryInterface(Ci.nsIHttpChannelInternal);
       channel.documentURI = uri;
-      channel.asyncOpen2(listener);
+      channel.asyncOpen(listener);
     });
   },
 

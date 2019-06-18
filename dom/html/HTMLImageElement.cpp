@@ -657,6 +657,16 @@ already_AddRefed<HTMLImageElement> HTMLImageElement::Image(
   return img.forget();
 }
 
+uint32_t HTMLImageElement::Height() {
+  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
+  return GetWidthHeightForImage(currentRequest).height;
+}
+
+uint32_t HTMLImageElement::Width() {
+  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
+  return GetWidthHeightForImage(currentRequest).width;
+}
+
 uint32_t HTMLImageElement::NaturalHeight() {
   uint32_t height = nsImageLoadingContent::NaturalHeight();
 
@@ -1041,8 +1051,8 @@ bool HTMLImageElement::UpdateResponsiveSource() {
   return hadSelector || mResponsiveSelector;
 }
 
-/*static */ bool HTMLImageElement::SupportedPictureSourceType(
-    const nsAString& aType) {
+/*static */
+bool HTMLImageElement::SupportedPictureSourceType(const nsAString& aType) {
   nsAutoString type;
   nsAutoString params;
 
@@ -1130,7 +1140,8 @@ bool HTMLImageElement::TryCreateResponsiveSelector(Element* aSourceElement) {
   return true;
 }
 
-/* static */ bool HTMLImageElement::SelectSourceForTagWithAttrs(
+/* static */
+bool HTMLImageElement::SelectSourceForTagWithAttrs(
     Document* aDocument, bool aIsSourceTag, const nsAString& aSrcAttr,
     const nsAString& aSrcsetAttr, const nsAString& aSizesAttr,
     const nsAString& aTypeAttr, const nsAString& aMediaAttr,

@@ -5,8 +5,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
                                "resource://gre/modules/BrowserUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "PageActions",
@@ -33,7 +33,7 @@ var PocketPageAction = {
         wantsIframe: true,
         urlbarIDOverride: "pocket-button-box",
         anchorIDOverride: "pocket-button",
-        _insertBeforeActionID: PageActions.ACTION_ID_BOOKMARK_SEPARATOR,
+        _insertBeforeActionID: PageActions.ACTION_ID_PIN_TAB,
         _urlbarNodeInMarkup: true,
         onBeforePlacedInWindow(window) {
           let action = PageActions.actionForID("pocket");

@@ -17,6 +17,7 @@
 #include "mozilla/StyleSheet.h"          // for StyleSheet
 #include "mozilla/TransactionManager.h"  // for TransactionManager
 #include "mozilla/WeakPtr.h"             // for WeakPtr
+#include "mozilla/dom/DataTransfer.h"    // for dom::DataTransfer
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "nsCOMPtr.h"  // for already_AddRefed, nsCOMPtr
@@ -39,13 +40,14 @@
 
 class mozInlineSpellChecker;
 class nsAtom;
+class nsCaret;
 class nsIContent;
 class nsIDocumentStateListener;
 class nsIEditActionListener;
 class nsIEditorObserver;
 class nsINode;
-class nsIPresShell;
 class nsISupports;
+class nsITransferable;
 class nsITransaction;
 class nsITransactionListener;
 class nsIWidget;
@@ -75,6 +77,7 @@ class InsertNodeTransaction;
 class InsertTextTransaction;
 class JoinNodeTransaction;
 class PlaceholderTransaction;
+class PresShell;
 class SplitNodeResult;
 class SplitNodeTransaction;
 class TextComposition;
@@ -96,64 +99,6 @@ class Text;
 namespace widget {
 struct IMEState;
 }  // namespace widget
-
-/**
- * CachedWeakPtr stores a pointer to a class which inherits nsIWeakReference.
- * If the instance of the class has already been destroyed, this returns
- * nullptr.  Otherwise, returns cached pointer.
- * If class T inherits nsISupports a lot, specify Base explicitly for avoiding
- * ambiguous conversion to nsISupports.
- */
-template <class T, class Base = nsISupports>
-class CachedWeakPtr final {
- public:
-  CachedWeakPtr<T, Base>() : mCache(nullptr) {}
-  explicit CachedWeakPtr<T, Base>(T* aObject) {
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(aObject));
-    mCache = aObject;
-  }
-  explicit CachedWeakPtr<T, Base>(const nsCOMPtr<T>& aOther) {
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(aOther.get()));
-    mCache = aOther;
-  }
-  explicit CachedWeakPtr<T, Base>(already_AddRefed<T>& aOther) {
-    RefPtr<T> other = aOther;
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(other.get()));
-    mCache = other;
-  }
-
-  CachedWeakPtr<T, Base>& operator=(T* aObject) {
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(aObject));
-    mCache = aObject;
-    return *this;
-  }
-  CachedWeakPtr<T, Base>& operator=(const nsCOMPtr<T>& aOther) {
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(aOther.get()));
-    mCache = aOther;
-    return *this;
-  }
-  CachedWeakPtr<T, Base>& operator=(already_AddRefed<T>& aOther) {
-    RefPtr<T> other = aOther;
-    mWeakPtr = do_GetWeakReference(static_cast<Base*>(other.get()));
-    mCache = other;
-    return *this;
-  }
-
-  bool IsAlive() const { return mWeakPtr && mWeakPtr->IsAlive(); }
-
-  explicit operator bool() const { return mWeakPtr; }
-  operator T*() const { return get(); }
-  T* get() const {
-    if (mCache && !mWeakPtr->IsAlive()) {
-      const_cast<CachedWeakPtr<T, Base>*>(this)->mCache = nullptr;
-    }
-    return mCache;
-  }
-
- private:
-  nsWeakPtr mWeakPtr;
-  T* MOZ_NON_OWNING_REF mCache;
-};
 
 #define kMOZEditorBogusNodeAttrAtom nsGkAtoms::mozeditorbogusnode
 #define kMOZEditorBogusNodeValue NS_LITERAL_STRING("TRUE")
@@ -250,12 +195,19 @@ class EditorBase : public nsIEditor,
 
   Document* GetDocument() const { return mDocument; }
 
-  nsIPresShell* GetPresShell() const {
-    return mDocument ? mDocument->GetShell() : nullptr;
+  PresShell* GetPresShell() const {
+    return mDocument ? static_cast<PresShell*>(mDocument->GetShell()) : nullptr;
   }
   nsPresContext* GetPresContext() const {
-    nsIPresShell* presShell = GetPresShell();
+    PresShell* presShell = GetPresShell();
     return presShell ? presShell->GetPresContext() : nullptr;
+  }
+  already_AddRefed<nsCaret> GetCaret() const {
+    PresShell* presShell = GetPresShell();
+    if (NS_WARN_IF(!presShell)) {
+      return nullptr;
+    }
+    return presShell->GetCaret();
   }
 
   already_AddRefed<nsIWidget> GetWidget();
@@ -267,12 +219,7 @@ class EditorBase : public nsIEditor,
     if (!mDocument) {
       return nullptr;
     }
-    nsIPresShell* presShell = mDocument->GetShell();
-    if (!presShell) {
-      return nullptr;
-    }
-    nsISelectionController* sc = static_cast<PresShell*>(presShell);
-    return sc;
+    return static_cast<PresShell*>(mDocument->GetShell());
   }
 
   nsresult GetSelection(SelectionType aSelectionType,
@@ -336,7 +283,7 @@ class EditorBase : public nsIEditor,
   /**
    * ToggleTextDirection() toggles text-direction of the root element.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  MOZ_CAN_RUN_SCRIPT
   nsresult ToggleTextDirection();
 
   /**
@@ -631,6 +578,17 @@ class EditorBase : public nsIEditor,
 
  protected:  // AutoEditActionDataSetter, this shouldn't be accessed by friends.
   /**
+   * SettingDataTransfer enum class is used to specify whether DataTransfer
+   * should be initialized with or without format.  For example, when user
+   * uses Accel + Shift + V to paste text without format, DataTransfer should
+   * have only plain/text data to make web apps treat it without format.
+   */
+  enum class SettingDataTransfer {
+    eWithFormat,
+    eWithoutFormat,
+  };
+
+  /**
    * AutoEditActionDataSetter grabs some necessary objects for handling any
    * edit actions and store the edit action what we're handling.  When this is
    * created, its pointer is set to the mEditActionData, and this guarantees
@@ -648,6 +606,37 @@ class EditorBase : public nsIEditor,
 
     const RefPtr<Selection>& SelectionRefPtr() const { return mSelection; }
     EditAction GetEditAction() const { return mEditAction; }
+
+    void SetData(const nsAString& aData) { mData = aData; }
+    const nsString& GetData() const { return mData; }
+
+    void SetColorData(const nsAString& aData);
+
+    /**
+     * InitializeDataTransfer(DataTransfer*) sets mDataTransfer to
+     * aDataTransfer.  In this case, aDataTransfer should not be read/write
+     * because it'll be set to InputEvent.dataTransfer and which should be
+     * read-only.
+     */
+    void InitializeDataTransfer(dom::DataTransfer* aDataTransfer);
+    /**
+     * InitializeDataTransfer(nsITransferable*) creates new DataTransfer
+     * instance, initializes it with aTransferable and sets mDataTransfer to
+     * it.
+     */
+    void InitializeDataTransfer(nsITransferable* aTransferable);
+    /**
+     * InitializeDataTransfer(const nsAString&) creates new DataTransfer
+     * instance, initializes it with aString and sets mDataTransfer to it.
+     */
+    void InitializeDataTransfer(const nsAString& aString);
+    /**
+     * InitializeDataTransferWithClipboard() creates new DataTransfer instance,
+     * initializes it with clipboard and sets mDataTransfer to it.
+     */
+    void InitializeDataTransferWithClipboard(
+        SettingDataTransfer aSettingDataTransfer, int32_t aClipboardType);
+    dom::DataTransfer* GetDataTransfer() const { return mDataTransfer; }
 
     void SetTopLevelEditSubAction(EditSubAction aEditSubAction,
                                   EDirection aDirection = eNone) {
@@ -756,6 +745,12 @@ class EditorBase : public nsIEditor,
     // Utility class object for maintaining preserved ranges.
     RangeUpdater mRangeUpdater;
 
+    // The data should be set to InputEvent.data.
+    nsString mData;
+
+    // The dataTransfer should be set to InputEvent.dataTransfer.
+    RefPtr<dom::DataTransfer> mDataTransfer;
+
     EditAction mEditAction;
     EditSubAction mTopLevelEditSubAction;
     EDirection mDirectionOfTopLevelEditSubAction;
@@ -763,6 +758,10 @@ class EditorBase : public nsIEditor,
     AutoEditActionDataSetter() = delete;
     AutoEditActionDataSetter(const AutoEditActionDataSetter& aOther) = delete;
   };
+
+  void UpdateEditActionData(const nsAString& aData) {
+    mEditActionData->SetData(aData);
+  }
 
  protected:  // May be called by friends.
   /****************************************************************************
@@ -798,6 +797,23 @@ class EditorBase : public nsIEditor,
   EditAction GetEditAction() const {
     return mEditActionData ? mEditActionData->GetEditAction()
                            : EditAction::eNone;
+  }
+
+  /**
+   * GetInputEventData() returns inserting or inserted text value with
+   * current edit action.  The result is proper for InputEvent.data value.
+   */
+  const nsString& GetInputEventData() const {
+    return mEditActionData ? mEditActionData->GetData() : VoidString();
+  }
+
+  /**
+   * GetInputEventDataTransfer() returns inserting or inserted transferable
+   * content with current edit action.  The result is proper for
+   * InputEvent.dataTransfer value.
+   */
+  dom::DataTransfer* GetInputEventDataTransfer() const {
+    return mEditActionData ? mEditActionData->GetDataTransfer() : nullptr;
   }
 
   /**
@@ -1768,6 +1784,29 @@ class EditorBase : public nsIEditor,
   virtual ~EditorBase();
 
   /**
+   * ToGenericNSResult() computes proper nsresult value for the editor users.
+   * This should be used only when public methods return result of internal
+   * methods.
+   */
+  static inline nsresult ToGenericNSResult(nsresult aRv) {
+    switch (aRv) {
+      // If the editor is destroyed while handling an edit action, editor needs
+      // to stop handling it.  However, editor throw exception in this case
+      // because Chrome does not throw exception even in this case.
+      case NS_ERROR_EDITOR_DESTROYED:
+        return NS_OK;
+      // If editor meets unexpected DOM tree due to modified by mutation event
+      // listener, editor needs to stop handling it.  However, editor shouldn't
+      // return error for the users because Chrome does not throw exception in
+      // this case.
+      case NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE:
+        return NS_OK;
+      default:
+        return aRv;
+    }
+  }
+
+  /**
    * GetDocumentCharsetInternal() returns charset of the document.
    */
   nsresult GetDocumentCharsetInternal(nsACString& aCharset) const;
@@ -1786,9 +1825,10 @@ class EditorBase : public nsIEditor,
    * asynchronously if it's not safe to dispatch.
    */
   MOZ_CAN_RUN_SCRIPT
-  void FireInputEvent() { FireInputEvent(GetEditAction()); }
+  void FireInputEvent();
   MOZ_CAN_RUN_SCRIPT
-  void FireInputEvent(EditAction aEditAction);
+  void FireInputEvent(EditAction aEditAction, const nsAString& aData,
+                      dom::DataTransfer* aDataTransfer);
 
   /**
    * Called after a transaction is done successfully.

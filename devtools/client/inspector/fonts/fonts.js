@@ -53,8 +53,6 @@ const REGISTERED_AXES_TO_FONT_PROPERTIES = {
 };
 const REGISTERED_AXES = Object.keys(REGISTERED_AXES_TO_FONT_PROPERTIES);
 
-const HISTOGRAM_N_FONT_AXES = "DEVTOOLS_FONTEDITOR_N_FONT_AXES";
-const HISTOGRAM_N_FONTS_RENDERED = "DEVTOOLS_FONTEDITOR_N_FONTS_RENDERED";
 const HISTOGRAM_FONT_TYPE_DISPLAYED = "DEVTOOLS_FONTEDITOR_FONT_TYPE_DISPLAYED";
 
 class FontInspector {
@@ -554,12 +552,6 @@ class FontInspector {
     const { fontEditor } = this.store.getState();
     const { telemetry } = this.inspector;
 
-    // Log the number of font faces used to render content of the element.
-    const nbOfFontsRendered = fontEditor.fonts.length;
-    if (nbOfFontsRendered) {
-      telemetry.getHistogramById(HISTOGRAM_N_FONTS_RENDERED).add(nbOfFontsRendered);
-    }
-
     // Log data about the currently edited font (if any).
     // Note that the edited font is always the first one from the fontEditor.fonts array.
     const editedFont = fontEditor.fonts[0];
@@ -570,9 +562,6 @@ class FontInspector {
     const nbOfAxes = editedFont.variationAxes ? editedFont.variationAxes.length : 0;
     telemetry.getHistogramById(HISTOGRAM_FONT_TYPE_DISPLAYED).add(
       !nbOfAxes ? "nonvariable" : "variable");
-    if (nbOfAxes) {
-      telemetry.getHistogramById(HISTOGRAM_N_FONT_AXES).add(nbOfAxes);
-    }
   }
 
   /**
@@ -610,7 +599,7 @@ class FontInspector {
    *
    * @param  {String} tag
    *         Tag name of the font axis.
-   * @param  {String} value
+   * @param  {Number} value
    *         Value of the font axis.
    */
   onAxisUpdate(tag, value) {
@@ -619,7 +608,7 @@ class FontInspector {
     this.snapshotChanges();
 
     const writer = this.getWriterForProperty(tag);
-    writer(value);
+    writer(value.toString());
   }
 
   /**
@@ -627,7 +616,7 @@ class FontInspector {
    *
    * @param  {String} property
    *         CSS font property name.
-   * @param  {String} value
+   * @param  {Number} value
    *         CSS font property numeric value.
    * @param  {String|null} unit
    *         CSS unit or null
@@ -636,7 +625,7 @@ class FontInspector {
     value = (unit !== null) ? value + unit : value;
     this.store.dispatch(updateFontProperty(property, value));
     const writer = this.getWriterForProperty(property);
-    writer(value);
+    writer(value.toString());
   }
 
   /**
@@ -707,7 +696,7 @@ class FontInspector {
    *
    * @param  {String} property
    *         CSS font property name or axis name
-   * @param  {String|Number} value
+   * @param  {Number} value
    *         CSS font property value or axis value
    * @param  {String|undefined} fromUnit
    *         Optional CSS unit to convert from
@@ -724,11 +713,9 @@ class FontInspector {
         unit = toUnit;
       }
 
-      // Cast value to string.
-      this.onFontPropertyUpdate(property, value + "", unit);
+      this.onFontPropertyUpdate(property, value, unit);
     } else {
-      // Cast axis value to string.
-      this.onAxisUpdate(property, value + "");
+      this.onAxisUpdate(property, value);
     }
   }
 

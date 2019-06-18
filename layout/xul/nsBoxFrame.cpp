@@ -88,11 +88,12 @@ using namespace mozilla::gfx;
 nsIFrame* NS_NewBoxFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle,
                          bool aIsRoot, nsBoxLayout* aLayoutManager) {
   return new (aPresShell)
-      nsBoxFrame(aStyle, nsBoxFrame::kClassID, aIsRoot, aLayoutManager);
+      nsBoxFrame(aStyle, aPresShell->GetPresContext(), nsBoxFrame::kClassID,
+                 aIsRoot, aLayoutManager);
 }
 
 nsIFrame* NS_NewBoxFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsBoxFrame(aStyle);
+  return new (aPresShell) nsBoxFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsBoxFrame)
@@ -103,9 +104,9 @@ NS_QUERYFRAME_HEAD(nsBoxFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 #endif
 
-nsBoxFrame::nsBoxFrame(ComputedStyle* aStyle, ClassID aID, bool aIsRoot,
-                       nsBoxLayout* aLayoutManager)
-    : nsContainerFrame(aStyle, aID), mFlex(0), mAscent(0) {
+nsBoxFrame::nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+                       ClassID aID, bool aIsRoot, nsBoxLayout* aLayoutManager)
+    : nsContainerFrame(aStyle, aPresContext, aID), mFlex(0), mAscent(0) {
   AddStateBits(NS_STATE_IS_HORIZONTAL | NS_STATE_AUTO_STRETCH);
 
   if (aIsRoot) AddStateBits(NS_STATE_IS_ROOT);
@@ -137,8 +138,8 @@ void nsBoxFrame::SetInitialChildList(ChildListID aListID,
   }
 }
 
-/* virtual */ void nsBoxFrame::DidSetComputedStyle(
-    ComputedStyle* aOldComputedStyle) {
+/* virtual */
+void nsBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   nsContainerFrame::DidSetComputedStyle(aOldComputedStyle);
 
   // The values that CacheAttributes() computes depend on our style,
@@ -510,7 +511,8 @@ static void printSize(char* aDesc, nscoord aSize) {
 }
 #endif
 
-/* virtual */ nscoord nsBoxFrame::GetMinISize(gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsBoxFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_MIN_INLINE_SIZE(this, result);
 
@@ -530,7 +532,8 @@ static void printSize(char* aDesc, nscoord aSize) {
   return result;
 }
 
-/* virtual */ nscoord nsBoxFrame::GetPrefISize(gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsBoxFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_PREF_INLINE_SIZE(this, result);
 
@@ -840,7 +843,8 @@ void nsBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-/* virtual */ void nsBoxFrame::MarkIntrinsicISizesDirty() {
+/* virtual */
+void nsBoxFrame::MarkIntrinsicISizesDirty() {
   SizeNeedsRecalc(mPrefSize);
   SizeNeedsRecalc(mMinSize);
   SizeNeedsRecalc(mMaxSize);
@@ -852,8 +856,7 @@ void nsBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
     mLayoutManager->IntrinsicISizesDirty(this, state);
   }
 
-  // Don't call base class method, since everything it does is within an
-  // IsXULBoxWrapped check.
+  nsContainerFrame::MarkIntrinsicISizesDirty();
 }
 
 void nsBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
@@ -928,7 +931,8 @@ void nsBoxFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
   }
 }
 
-/* virtual */ nsContainerFrame* nsBoxFrame::GetContentInsertionFrame() {
+/* virtual */
+nsContainerFrame* nsBoxFrame::GetContentInsertionFrame() {
   if (GetStateBits() & NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK)
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   return nsContainerFrame::GetContentInsertionFrame();

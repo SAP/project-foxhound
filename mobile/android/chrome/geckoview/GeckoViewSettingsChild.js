@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewChildModule} = ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
@@ -152,5 +152,5 @@ class GeckoViewSettingsChild extends GeckoViewChildModule {
   }
 }
 
-let {debug, warn} = GeckoViewSettingsChild.initLogging("GeckoViewSettings");
-let module = GeckoViewSettingsChild.create(this);
+const {debug, warn} = GeckoViewSettingsChild.initLogging("GeckoViewSettings"); // eslint-disable-line no-unused-vars
+const module = GeckoViewSettingsChild.create(this);

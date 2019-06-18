@@ -42,7 +42,6 @@ function closeAllNotifications() {
       });
       notification.close();
     }
-
   });
 }
 
@@ -213,7 +212,6 @@ function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
         Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
         resolve(win);
       }, "browser-delayed-startup-finished");
-
     } else {
       win.addEventListener("load", function() {
         resolve(win);
@@ -394,7 +392,7 @@ function promiseTabLoadEvent(tab, url) {
  * @rejects Never.
  */
 function waitForNewTabEvent(aTabBrowser) {
-  return promiseWaitForEvent(aTabBrowser.tabContainer, "TabOpen");
+  return BrowserTestUtils.waitForEvent(aTabBrowser.tabContainer, "TabOpen");
 }
 
 function is_hidden(element) {
@@ -511,4 +509,19 @@ function getCertExceptionDialog(aLocation) {
     }
   }
   return undefined;
+}
+
+/**
+ * Waits for the message from content to update the Page Style menu.
+ *
+ * @param browser
+ *        The <xul:browser> to wait for.
+ * @return Promise
+ */
+async function promiseStylesheetsUpdated(browser) {
+  await BrowserTestUtils.waitForMessage(browser.messageManager,
+                                        "PageStyle:StyleSheets");
+  // Resolve on the next tick of the event loop to give the Page Style
+  // menu code an opportunity to update.
+  await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
 }

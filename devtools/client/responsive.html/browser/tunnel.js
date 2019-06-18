@@ -175,8 +175,15 @@ function tunnelToInnerBrowser(outer, inner) {
       // different browser properties.
       // The content within is not reloaded.
       outer.setAttribute("remote", "true");
-      outer.setAttribute("remoteType", inner.remoteType);
       outer.construct();
+
+      Object.defineProperty(outer, "remoteType", {
+        get() {
+          return inner.remoteType;
+        },
+        configurable: true,
+        enumerable: true,
+      });
 
       // Verify that we indeed have the correct binding.
       if (!outer.isRemoteBrowser) {
@@ -311,6 +318,10 @@ function tunnelToInnerBrowser(outer, inner) {
       // Reset @remote since this is now back to a regular, non-remote browser
       outer.setAttribute("remote", "false");
       outer.removeAttribute("remoteType");
+
+      // Stop forwarding remoteType to the inner browser
+      delete outer.remoteType;
+
       outer.construct();
 
       // Delete browser window properties exposed on content's owner global
@@ -598,6 +609,10 @@ MessageManagerTunnel.prototype = {
    */
   get processMessageManager() {
     return this.innerParentMM.processMessageManager;
+  },
+
+  get remoteType() {
+    return this.innerParentMM.remoteType;
   },
 
   loadFrameScript(url, ...args) {

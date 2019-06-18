@@ -1,8 +1,13 @@
+/* Any copyright is dedicated to the Public Domain.
+   http://creativecommons.org/publicdomain/zero/1.0/ */
+
 /*
  * Tests that from a database of profiles the default profile is selected.
  */
 
 add_task(async () => {
+  let hash = xreDirProvider.getInstallHash();
+
   let profileData = {
     options: {
       startWithLastProfile: true,
@@ -14,6 +19,11 @@ add_task(async () => {
       name: "Profile3",
       path: "Path3",
     }],
+    installs: {
+      [hash]: {
+        default: "Path2",
+      },
+    },
   };
 
   if (AppConstants.MOZ_DEV_EDITION) {
@@ -35,12 +45,14 @@ add_task(async () => {
 
   writeProfilesIni(profileData);
 
+  let { profile, didCreate } = selectStartupProfile();
+  checkStartupReason("default");
+
   let service = getProfileService();
   checkProfileService(profileData);
 
-  let { profile, didCreate } = selectStartupProfile();
-
   Assert.ok(!didCreate, "Should not have created a new profile.");
-  Assert.equal(profile, service.selectedProfile, "Should have returned the selected profile.");
-  Assert.equal(profile.name, PROFILE_DEFAULT, "Should have selected the right profile");
+  Assert.equal(profile, service.defaultProfile, "Should have returned the default profile.");
+  Assert.equal(profile.name, "default", "Should have selected the right profile");
+  Assert.ok(!service.createdAlternateProfile, "Should not have created an alternate profile.");
 });

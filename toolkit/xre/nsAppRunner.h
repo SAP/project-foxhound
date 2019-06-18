@@ -51,6 +51,18 @@ extern nsString gAbsoluteArgv0Path;
 
 extern bool gIsGtest;
 
+namespace mozilla {
+nsresult AppInfoConstructor(nsISupports* aOuter, const nsID& aIID,
+                            void** aResult);
+}  // namespace mozilla
+
+// Exported for gtests.
+void BuildCompatVersion(const char* aAppVersion, const char* aAppBuildID,
+                        const char* aToolkitBuildID, nsACString& aBuf);
+bool CheckCompatVersions(const nsACString& aOldCompatVersion,
+                         const nsACString& aNewCompatVersion,
+                         bool* aIsDowngrade);
+
 /**
  * Create the nativeappsupport implementation.
  *

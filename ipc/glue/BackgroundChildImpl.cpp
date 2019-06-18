@@ -428,7 +428,7 @@ bool BackgroundChildImpl::DeallocPVsyncChild(PVsyncChild* aActor) {
 }
 
 PUDPSocketChild* BackgroundChildImpl::AllocPUDPSocketChild(
-    const OptionalPrincipalInfo& aPrincipalInfo, const nsCString& aFilter) {
+    const Maybe<PrincipalInfo>& aPrincipalInfo, const nsCString& aFilter) {
   MOZ_CRASH("AllocPUDPSocket should not be called");
   return nullptr;
 }
@@ -754,23 +754,6 @@ BackgroundChildImpl::AllocPServiceWorkerRegistrationChild(
 bool BackgroundChildImpl::DeallocPServiceWorkerRegistrationChild(
     PServiceWorkerRegistrationChild* aActor) {
   return dom::DeallocServiceWorkerRegistrationChild(aActor);
-}
-
-bool BackgroundChildImpl::GetMessageSchedulerGroups(
-    const Message& aMsg, SchedulerGroupSet& aGroups) {
-  if (aMsg.type() == layout::PVsync::MessageType::Msg_Notify__ID) {
-    MOZ_ASSERT(NS_IsMainThread());
-    aGroups.Clear();
-    if (dom::TabChild::HasVisibleTabs()) {
-      for (auto iter = dom::TabChild::GetVisibleTabs().ConstIter();
-           !iter.Done(); iter.Next()) {
-        aGroups.Put(iter.Get()->GetKey()->TabGroup());
-      }
-    }
-    return true;
-  }
-
-  return false;
 }
 
 dom::PEndpointForReportChild* BackgroundChildImpl::AllocPEndpointForReportChild(

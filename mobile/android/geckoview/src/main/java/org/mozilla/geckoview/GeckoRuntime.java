@@ -11,6 +11,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -20,7 +21,6 @@ import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
-import android.text.TextUtils;
 import android.util.Log;
 
 import org.mozilla.gecko.EventDispatcher;
@@ -32,7 +32,6 @@ import org.mozilla.gecko.PrefsHelper;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
-import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import java.io.File;
@@ -163,7 +162,7 @@ public final class GeckoRuntime implements Parcelable {
         }
     };
 
-    private static final String getProcessName(Context context) {
+    private static String getProcessName(final Context context) {
         final ActivityManager manager = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
         for (final ActivityManager.RunningAppProcessInfo info : manager.getRunningAppProcesses()) {
             if (info.pid == Process.myPid()) {
@@ -208,6 +207,7 @@ public final class GeckoRuntime implements Parcelable {
         GeckoAppShell.setDisplayDpiOverride(settings.getDisplayDpiOverride());
         GeckoAppShell.setScreenSizeOverride(settings.getScreenSizeOverride());
         GeckoAppShell.setCrashHandlerService(settings.getCrashHandler());
+        GeckoFontScaleListener.getInstance().attachToContext(context, settings);
 
         final GeckoThread.InitInfo info = new GeckoThread.InitInfo();
         info.args = settings.getArguments();
@@ -230,15 +230,15 @@ public final class GeckoRuntime implements Parcelable {
         // Bug 1453062 -- the EventDispatcher should really live here (or in GeckoThread)
         EventDispatcher.getInstance().registerUiThreadListener(mEventListener, "Gecko:Exited");
 
-        mSettings.runtime = this;
-        mSettings.flush();
+        // Attach and commit settings.
+        mSettings.attachTo(this);
 
         // Initialize the system ClipboardManager by accessing it on the main thread.
         GeckoAppShell.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
         return true;
     }
 
-    /* package */ void setDefaultPrefs(GeckoBundle prefs) {
+    /* package */ void setDefaultPrefs(final GeckoBundle prefs) {
         EventDispatcher.getInstance().dispatch("GeckoView:SetDefaultPrefs", prefs);
     }
 
@@ -257,6 +257,53 @@ public final class GeckoRuntime implements Parcelable {
     public static @NonNull GeckoRuntime create(final @NonNull Context context) {
         ThreadUtils.assertOnUiThread();
         return create(context, new GeckoRuntimeSettings());
+    }
+
+    /**
+     * Register a {@link WebExtension} that will be run with this GeckoRuntime.
+     *
+     * <p>At this time, WebExtensions don't have access to any UI element and
+     * cannot communicate with the application. Any UI element will be
+     * ignored.</p>
+     *
+     * Example:
+     * <pre><code>
+     *     runtime.registerWebExtension(new WebExtension(
+     *              "resource://android/assets/web_extensions/my_webextension/"));
+     *
+     *     runtime.registerWebExtension(new WebExtension(
+     *              "file:///path/to/web_extension/my_webextension2.xpi",
+     *              "mywebextension2@example.com"));
+     * </code></pre>
+     *
+     * To learn more about WebExtensions refer to
+     * <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions">
+     *    Mozilla/Add-ons/WebExtensions
+     * </a>.
+     *
+     * @param webExtension {@link WebExtension} to register
+     *
+     * @return A {@link GeckoResult} that will complete when the WebExtension
+     * has been installed.
+     */
+    @UiThread
+    public @NonNull GeckoResult<Void> registerWebExtension(
+            final @NonNull WebExtension webExtension) {
+        final GeckoSession.CallbackResult<Void> result = new GeckoSession.CallbackResult<Void>() {
+            @Override
+            public void sendSuccess(final Object response) {
+                complete(null);
+            }
+        };
+
+        final GeckoBundle bundle = new GeckoBundle(1);
+        bundle.putString("locationUri", webExtension.location.toString());
+        bundle.putString("id", webExtension.id);
+
+        EventDispatcher.getInstance().dispatch("GeckoView:RegisterWebExtension",
+                bundle, result);
+
+        return result;
     }
 
     /**
@@ -338,7 +385,7 @@ public final class GeckoRuntime implements Parcelable {
     }
 
     /* package */ void setPref(final String name, final Object value,
-                               boolean override) {
+                               final boolean override) {
         if (override || !GeckoAppShell.isFennec()) {
             // Override pref on Fennec only when requested to prevent
             // overriding of persistent prefs.
@@ -384,12 +431,23 @@ public final class GeckoRuntime implements Parcelable {
     }
 
     /**
+     * Notify Gecko that the device configuration has changed.
+     * @param newConfig The new Configuration object,
+     *                  {@link android.content.res.Configuration}.
+     */
+    @UiThread
+    public void configurationChanged(final @NonNull Configuration newConfig) {
+        ThreadUtils.assertOnUiThread();
+        GeckoSystemStateListener.getInstance().updateNightMode(newConfig.uiMode);
+    }
+
+    /**
      * Notify Gecko that the screen orientation has changed.
      * @param newOrientation The new screen orientation, as retrieved e.g. from the current
      *                       {@link android.content.res.Configuration}.
      */
     @UiThread
-    public void orientationChanged(int newOrientation) {
+    public void orientationChanged(final int newOrientation) {
         ThreadUtils.assertOnUiThread();
         GeckoScreenOrientation.getInstance().update(newOrientation);
     }
@@ -402,7 +460,7 @@ public final class GeckoRuntime implements Parcelable {
 
     @Override // Parcelable
     @AnyThread
-    public void writeToParcel(Parcel out, int flags) {
+    public void writeToParcel(final Parcel out, final int flags) {
         out.writeParcelable(mSettings, flags);
     }
 
@@ -412,8 +470,8 @@ public final class GeckoRuntime implements Parcelable {
         mSettings = source.readParcelable(getClass().getClassLoader());
     }
 
-    public static final Parcelable.Creator<GeckoRuntime> CREATOR
-        = new Parcelable.Creator<GeckoRuntime>() {
+    public static final Parcelable.Creator<GeckoRuntime> CREATOR =
+            new Parcelable.Creator<GeckoRuntime>() {
         @Override
         @AnyThread
         public GeckoRuntime createFromParcel(final Parcel in) {

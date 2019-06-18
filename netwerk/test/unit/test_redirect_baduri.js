@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 /*
  * Test whether we fail bad URIs in HTTP redirect as CORRUPTED_CONTENT.
@@ -37,6 +37,6 @@ function run_test()
   httpServer.start(-1);
 
   var chan = make_channel(BadRedirectURI);
-  chan.asyncOpen2(new ChannelListener(checkFailed, null, CL_EXPECT_FAILURE));
+  chan.asyncOpen(new ChannelListener(checkFailed, null, CL_EXPECT_FAILURE));
   do_test_pending();
 }

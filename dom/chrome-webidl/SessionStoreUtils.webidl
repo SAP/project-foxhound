@@ -77,7 +77,7 @@ namespace SessionStoreUtils {
    *         Returns null when there is no scroll data we want to store for the
    *         given |frame|.
    */
-  SSScrollPositionDict collectScrollPosition(Document document);
+  CollectedData? collectScrollPosition(WindowProxy window);
 
   /**
    * Restores scroll position data for any given |frame| in the frame hierarchy.
@@ -85,7 +85,7 @@ namespace SessionStoreUtils {
    * @param frame (DOMWindow)
    * @param value (object, see collectScrollPosition())
    */
-  void restoreScrollPosition(Window frame, optional SSScrollPositionDict data);
+  void restoreScrollPosition(Window frame, optional CollectedData data);
 
   /**
    * Collect form data for a given |frame| *not* including any subframes.
@@ -105,16 +105,33 @@ namespace SessionStoreUtils {
    *     }
    *   }
    *
-   * @param  doc
-   *         DOMDocument instance to obtain form data for.
    * @return object
-   *         Form data encoded in an object.
+   *         Returns null when there is no scroll data
    */
-  CollectedFormData collectFormData(Document document);
-};
+  CollectedData? collectFormData(WindowProxy window);
 
-dictionary SSScrollPositionDict {
-  ByteString scroll;
+  boolean restoreFormData(Document document, optional CollectedData data);
+
+  /**
+   * Updates all sessionStorage "super cookies"
+   * @param content
+   *        A tab's global, i.e. the root frame we want to collect for.
+   * @return Returns a nested object that will have hosts as keys and per-origin
+   *         session storage data as strings. For example:
+   *         {"https://example.com^userContextId=1": {"key": "value", "my_number": "123"}}
+   */
+  record<DOMString, record<DOMString, DOMString>> collectSessionStorage(WindowProxy window);
+
+  /**
+   * Restores all sessionStorage "super cookies".
+   * @param aDocShell
+   *        A tab's docshell (containing the sessionStorage)
+   * @param aStorageData
+   *        A nested object with storage data to be restored that has hosts as
+   *        keys and per-origin session storage data as strings. For example:
+   *        {"https://example.com^userContextId=1": {"key": "value", "my_number": "123"}}
+   */
+   void restoreSessionStorage(nsIDocShell docShell, record<DOMString, record<DOMString, DOMString>> data);
 };
 
 dictionary CollectedFileListValue
@@ -130,12 +147,15 @@ dictionary CollectedNonMultipleSelectValue
 };
 
 // object contains either a CollectedFileListValue or a CollectedNonMultipleSelectValue or Sequence<DOMString>
-typedef (DOMString or boolean or long or object) CollectedFormDataValue;
+typedef (DOMString or boolean or object) CollectedFormDataValue;
 
-dictionary CollectedFormData
+dictionary CollectedData
 {
+  ByteString scroll;
   record<DOMString, CollectedFormDataValue> id;
   record<DOMString, CollectedFormDataValue> xpath;
   DOMString innerHTML;
   ByteString url;
+  // mChildren contains CollectedData instances
+  sequence<object?> children;
 };

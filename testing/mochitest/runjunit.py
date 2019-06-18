@@ -15,7 +15,7 @@ import mozcrash
 import mozinfo
 import mozlog
 import moznetwork
-from mozdevice import ADBDevice, ADBError
+from mozdevice import ADBDevice, ADBError, ADBTimeoutError
 from mozprofile import Profile, DEFAULT_PORTS
 from mozprofile.permissions import ServerLocations
 from runtests import MochitestDesktop, update_mozinfo
@@ -333,12 +333,14 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           type=str,
                           dest="adbPath",
                           default=None,
-                          help="Path to adb executable.")
+                          help="Path to adb binary.")
         self.add_argument("--deviceSerial",
                           action="store",
                           type=str,
                           dest="deviceSerial",
-                          help="adb serial number of remote device.")
+                          help="adb serial number of remote device. This is required "
+                               "when more than one device is connected to the host. "
+                               "Use 'adb devices' to see connected devices. ")
         self.add_argument("--remoteTestRoot",
                           action="store",
                           type=str,
@@ -410,18 +412,18 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           type=str,
                           dest="httpPort",
                           default=DEFAULT_PORTS['http'],
-                          help="Port of the web server for http traffic.")
+                          help="http port of the remote web server.")
         self.add_argument("--remote-webserver",
                           action="store",
                           type=str,
                           dest="remoteWebServer",
-                          help="IP address of the webserver.")
+                          help="IP address of the remote web server.")
         self.add_argument("--ssl-port",
                           action="store",
                           type=str,
                           dest="sslPort",
                           default=DEFAULT_PORTS['https'],
-                          help="Port of the web server for https traffic.")
+                          help="ssl port of the remote web server.")
         # Remaining arguments are test filters.
         self.add_argument("test_filters",
                           nargs="*",
@@ -439,17 +441,21 @@ def run_test_harness(parser, options):
     runner = JUnitTestRunner(log, options)
     result = -1
     try:
+        device_exception = False
         result = runner.run_tests(options.test_filters)
     except KeyboardInterrupt:
         log.info("runjunit.py | Received keyboard interrupt")
         result = -1
-    except Exception:
+    except Exception as e:
         traceback.print_exc()
         log.error(
             "runjunit.py | Received unexpected exception while running tests")
         result = 1
+        if isinstance(e, ADBTimeoutError):
+            device_exception = True
     finally:
-        runner.cleanup()
+        if not device_exception:
+            runner.cleanup()
     return result
 
 

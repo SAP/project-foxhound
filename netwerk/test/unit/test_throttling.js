@@ -1,7 +1,7 @@
 // Test nsIThrottledInputChannel interface.
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function test_handler(metadata, response) {
   const originalBody = "the response";
@@ -46,7 +46,7 @@ function run_test() {
   tic.throttleQueue = tq;
 
   let startTime = Date.now();
-  channel.asyncOpen2(new ChannelListener(() => {
+  channel.asyncOpen(new ChannelListener(() => {
     ok(Date.now() - startTime > 1000, "request took more than one second");
 
     httpserver.stop(do_test_finished);

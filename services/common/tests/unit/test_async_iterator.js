@@ -1,11 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://services-common/async.js");
-// Sinon seems to require setTimeout.
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js", this);
-/* globals sinon */
+const {Async} = ChromeUtils.import("resource://services-common/async.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {sinon} = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 function makeArray(length) {
   // Start at 1 so that we can just divide by yieldEvery to get the expected

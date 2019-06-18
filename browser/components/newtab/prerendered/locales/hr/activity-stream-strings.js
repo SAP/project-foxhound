@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "U redu, razumijem",
   "prefs_home_header": "Firefox početni sadržaj",
   "prefs_home_description": "Odaberite koji sadržaj želite na vašoj Firefox početnoj stranici.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Firefox početna stranica",
+  "prefs_content_discovery_description": "Otkrivanje sadržaja u Firefox početnoj stranici pomaže vam u otkrivanju visoko kvalitenih, relevantnih članaka diljem interneta.",
+  "prefs_content_discovery_button": "Uključite otkrivanje sadržaja",
   "prefs_section_rows_option": "{num} red;{num} reda;{num} reda",
   "prefs_search_header": "Web pretraživanje",
   "prefs_topsites_description": "Stranice koje najviše posjećujete",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Spremite priče koje vam se sviđaju u Pocket i napajajte vaš um s vrhunskim štivom.",
   "highlights_empty_state": "Započnite pretraživati i pokazat ćemo vam neke od izvrsnih članaka, videa i drugih web stranica prema vašim nedavno posjećenim stranicama ili zabilješkama.",
   "topstories_empty_state": "Provjerite kasnije za više najpopularnijih priča od {provider}. Ne možete čekati? Odaberite popularne teme kako biste pronašli više kvalitetnih priča s cijelog weba.",
-  "manual_migration_explanation2": "Probajte Firefox s zabilješkama, povijesti i lozinkama iz drugog pretraživača.",
-  "manual_migration_cancel_button": "Ne hvala",
-  "manual_migration_import_button": "Uvezi sada",
   "error_fallback_default_info": "Došlo je do greške prilikom učitavanja ovog sadržaja.",
   "error_fallback_default_refresh_suggestion": "Osvježite stranicu da biste pokušali ponovno.",
   "section_menu_action_remove_section": "Ukloni odjel",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Politiku privatnosti",
   "firstrun_continue_to_login": "Nastavi",
   "firstrun_skip_login": "Preskočite ovaj korak",
-  "context_menu_title": "Otvori izbornik"
+  "context_menu_title": "Otvori izbornik",
+  "manual_migration_explanation2": "Probajte Firefox s zabilješkama, povijesti i lozinkama iz drugog pretraživača.",
+  "manual_migration_cancel_button": "Ne hvala",
+  "manual_migration_import_button": "Uvezi sada"
 };

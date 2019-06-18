@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewChildModule} = ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
@@ -51,6 +51,16 @@ class GeckoViewNavigationChild extends GeckoViewChildModule {
                              uri2=${aUri && aUri.displaySpec}
                              error=${aError}`;
 
+    if (aUri && LoadURIDelegate.isSafeBrowsingError(aError)) {
+      const message = {
+        type: "GeckoView:ContentBlocked",
+        uri: aUri.spec,
+        error: aError,
+      };
+
+      this.eventDispatcher.sendRequest(message);
+    }
+
     if (!this.enabled) {
       Components.returnCode = Cr.NS_ERROR_ABORT;
       return null;
@@ -67,19 +77,11 @@ class GeckoViewNavigationChild extends GeckoViewChildModule {
   }
 
   // nsIWebBrowserChrome
-  shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData, aTriggeringPrincipal) {
+  shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData, aTriggeringPrincipal, aCsp) {
     debug `shouldLoadURI ${aURI.displaySpec}`;
 
-    // We currently only support one remoteType, "web", so we only need to bail out
-    // if we want to load this URI in the parent.
-    // const remoteType = E10SUtils.getRemoteTypeForURIObject(aURI, true);
-    // if (!remoteType) {
-    //   E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, false);
-    //   return false;
-    // }
-
     if (!E10SUtils.shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData)) {
-      E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, false);
+      E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, false, null, aCsp);
       return false;
     }
 
@@ -93,9 +95,9 @@ class GeckoViewNavigationChild extends GeckoViewChildModule {
   }
 
   // nsIWebBrowserChrome
-  reloadInFreshProcess(aDocShell, aURI, aReferrer, aTriggeringPrincipal, aLoadFlags) {
+  reloadInFreshProcess(aDocShell, aURI, aReferrer, aTriggeringPrincipal, aLoadFlags, aCsp) {
     debug `reloadInFreshProcess ${aURI.displaySpec}`;
-    E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, true, aLoadFlags);
+    E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, true, aLoadFlags, aCsp);
     return true;
   }
 
@@ -127,5 +129,5 @@ class GeckoViewNavigationChild extends GeckoViewChildModule {
   }
 }
 
-let {debug, warn} = GeckoViewNavigationChild.initLogging("GeckoViewNavigation");
-let module = GeckoViewNavigationChild.create(this);
+const {debug, warn} = GeckoViewNavigationChild.initLogging("GeckoViewNavigation"); // eslint-disable-line no-unused-vars
+const module = GeckoViewNavigationChild.create(this);

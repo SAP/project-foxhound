@@ -94,6 +94,8 @@ static JSFlatString* FinishStringFlat(JSContext* cx, StringBuffer& sb,
 
   // TaintFox: Propagate taint to newly created string.
   str->setTaint(sb.taint());
+  // Taintfox: clear the stringbuffer taint information
+  sb.clearTaint();
 
   return str;
 }
@@ -149,7 +151,10 @@ JSAtom* StringBuffer::finishAtom() {
 
   JSAtom* atom = AtomizeChars(cx, twoByteChars().begin(), len);
   twoByteChars().clear();
+
   // TaintFox: We loose taint here, can't taint atoms..
+  this->clearTaint();
+
   return atom;
 }
 
@@ -177,16 +182,14 @@ bool js::ValueToStringBufferSlow(JSContext* cx, const Value& arg,
                               JSMSG_SYMBOL_TO_STRING);
     return false;
   }
-#ifdef ENABLE_BIGINT
   if (v.isBigInt()) {
     RootedBigInt i(cx, v.toBigInt());
-    JSLinearString* str = BigInt::toString(cx, i, 10);
+    JSLinearString* str = BigInt::toString<CanGC>(cx, i, 10);
     if (!str) {
       return false;
     }
     return sb.append(str);
   }
-#endif
   MOZ_ASSERT(v.isUndefined());
   return sb.append(cx->names().undefined);
 }

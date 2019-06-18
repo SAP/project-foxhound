@@ -108,16 +108,17 @@ class GainNodeEngine final : public AudioNodeEngine {
 
 GainNode::GainNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Max,
-                ChannelInterpretation::Speakers),
-      mGain(new AudioParam(this, GainNodeEngine::GAIN, "gain", 1.0f)) {
+                ChannelInterpretation::Speakers) {
+  CreateAudioParam(mGain, GainNodeEngine::GAIN, "gain", 1.0f);
   GainNodeEngine* engine = new GainNodeEngine(this, aContext->Destination());
   mStream = AudioNodeStream::Create(
       aContext, engine, AudioNodeStream::NO_STREAM_FLAGS, aContext->Graph());
 }
 
-/* static */ already_AddRefed<GainNode> GainNode::Create(
-    AudioContext& aAudioContext, const GainOptions& aOptions,
-    ErrorResult& aRv) {
+/* static */
+already_AddRefed<GainNode> GainNode::Create(AudioContext& aAudioContext,
+                                            const GainOptions& aOptions,
+                                            ErrorResult& aRv) {
   if (aAudioContext.CheckClosed(aRv)) {
     return nullptr;
   }

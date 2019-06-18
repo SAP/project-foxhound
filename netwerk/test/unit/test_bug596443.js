@@ -1,6 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -35,13 +34,13 @@ Listener.prototype = {
         throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
-    onStartRequest: function (request, ctx) {
+    onStartRequest: function (request) {
         this._buffer = "";
     },
-    onDataAvailable: function (request, ctx, stream, offset, count) {
+    onDataAvailable: function (request, stream, offset, count) {
         this._buffer = this._buffer.concat(read_stream(stream, count));
     },
-    onStopRequest: function (request, ctx, status) {
+    onStopRequest: function (request, status) {
         Assert.equal(this._buffer, this._response);
         if (--expectedOnStopRequests == 0)
             do_timeout(10, function() {
@@ -63,13 +62,13 @@ function run_test() {
     evict_cache_entries();
 
     var ch0 = setupChannel("/bug596443", "Response0", Ci.nsIRequest.LOAD_BYPASS_CACHE);
-    ch0.asyncOpen2(new Listener("Response0"));
+    ch0.asyncOpen(new Listener("Response0"));
 
     var ch1 = setupChannel("/bug596443", "Response1", Ci.nsIRequest.LOAD_BYPASS_CACHE);
-    ch1.asyncOpen2(new Listener("Response1"));
+    ch1.asyncOpen(new Listener("Response1"));
 
     var ch2 = setupChannel("/bug596443", "Should not be used");
-    ch2.asyncOpen2(new Listener("Response1")); // Note param: we expect this to come from cache
+    ch2.asyncOpen(new Listener("Response1")); // Note param: we expect this to come from cache
 
     do_test_pending();
 }

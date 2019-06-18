@@ -29,7 +29,7 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 
 nsPageFrame* NS_NewPageFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) nsPageFrame(aStyle);
+  return new (aPresShell) nsPageFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsPageFrame)
@@ -38,8 +38,8 @@ NS_QUERYFRAME_HEAD(nsPageFrame)
   NS_QUERYFRAME_ENTRY(nsPageFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
-nsPageFrame::nsPageFrame(ComputedStyle* aStyle)
-    : nsContainerFrame(aStyle, kClassID) {}
+nsPageFrame::nsPageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+    : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
 nsPageFrame::~nsPageFrame() {}
 
@@ -94,9 +94,9 @@ void nsPageFrame::Reflow(nsPresContext* aPresContext,
     // Use the margins given in the @page rule.
     // If a margin is 'auto', use the margin from the print settings for that
     // side.
-    const nsStyleSides& marginStyle = kidReflowInput.mStyleMargin->mMargin;
+    const auto& marginStyle = kidReflowInput.mStyleMargin->mMargin;
     NS_FOR_CSS_SIDES(side) {
-      if (marginStyle.GetUnit(side) == eStyleUnit_Auto) {
+      if (marginStyle.Get(side).IsAuto()) {
         mPageContentMargin.Side(side) = mPD->mReflowMargin.Side(side);
       } else {
         mPageContentMargin.Side(side) =
@@ -510,8 +510,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
     nsRect visibleRect = child->GetVisualOverflowRectRelativeToSelf();
     nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
-        aBuilder, child, visibleRect, visibleRect,
-        aBuilder->IsAtRootOfPseudoStackingContext());
+        aBuilder, child, visibleRect, visibleRect);
     child->BuildDisplayListForStackingContext(aBuilder, &content);
 
     // We may need to paint out-of-flow frames whose placeholders are
@@ -526,8 +525,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       nsRect childVisible = visibleRect + child->GetOffsetTo(page);
 
       nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
-          aBuilder, page, childVisible, childVisible,
-          aBuilder->IsAtRootOfPseudoStackingContext());
+          aBuilder, page, childVisible, childVisible);
       BuildDisplayListForExtraPage(aBuilder, this, page, &content);
     }
 
@@ -535,7 +533,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // is used to compute the visible rect if AddCanvasBackgroundColorItem
     // creates a display item.
     nsDisplayListBuilder::AutoBuildingDisplayList building(
-        aBuilder, child, visibleRect, visibleRect, true);
+        aBuilder, child, visibleRect, visibleRect);
 
     // Add the canvas background color to the bottom of the list. This
     // happens after we've built the list so that AddCanvasBackgroundColorItem
@@ -548,7 +546,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   content.AppendToTop(MakeDisplayItem<nsDisplayTransform>(
-      aBuilder, child, &content, content.GetBuildingRect(),
+      aBuilder, child, &content, content.GetBuildingRect(), 0,
       ::ComputePageTransform));
 
   set.Content()->AppendToTop(&content);
@@ -587,6 +585,7 @@ void nsPageFrame::PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
   nsFontMetrics::Params params;
   params.userFontSet = pc->GetUserFontSet();
   params.textPerf = pc->GetTextPerfMetrics();
+  params.featureValueLookup = pc->GetFontFeatureValuesLookup();
   RefPtr<nsFontMetrics> fontMet =
       pc->DeviceContext()->GetMetricsFor(mPD->mHeadFootFont, params);
 
@@ -637,13 +636,15 @@ nsIFrame* NS_NewPageBreakFrame(nsIPresShell* aPresShell,
   NS_ASSERTION(aPresShell->GetPresContext()->IsPaginated(),
                "created a page break frame while not printing");
 
-  return new (aPresShell) nsPageBreakFrame(aStyle);
+  return new (aPresShell)
+      nsPageBreakFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsPageBreakFrame)
 
-nsPageBreakFrame::nsPageBreakFrame(ComputedStyle* aStyle)
-    : nsLeafFrame(aStyle, kClassID), mHaveReflowed(false) {}
+nsPageBreakFrame::nsPageBreakFrame(ComputedStyle* aStyle,
+                                   nsPresContext* aPresContext)
+    : nsLeafFrame(aStyle, aPresContext, kClassID), mHaveReflowed(false) {}
 
 nsPageBreakFrame::~nsPageBreakFrame() {}
 

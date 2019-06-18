@@ -210,8 +210,6 @@ def main():
                         'minification verification will not be performed.')
     parser.add_argument('--jarlog', default='', help='File containing jar ' +
                         'access logs')
-    parser.add_argument('--optimizejars', action='store_true', default=False,
-                        help='Enable jar optimizations')
     parser.add_argument('--compress', choices=('none', 'deflate', 'brotli'),
                         default='deflate',
                         help='Use given jar compression (default: deflate)')
@@ -242,12 +240,11 @@ def main():
     if args.format == 'flat':
         formatter = FlatFormatter(copier)
     elif args.format == 'jar':
-        formatter = JarFormatter(copier, compress=compress, optimize=args.optimizejars)
+        formatter = JarFormatter(copier, compress=compress)
     elif args.format == 'omni':
         formatter = OmniJarFormatter(copier,
                                      buildconfig.substs['OMNIJAR_NAME'],
                                      compress=compress,
-                                     optimize=args.optimizejars,
                                      non_resources=args.non_resource)
     else:
         errors.fatal('Unknown format: %s' % args.format)
@@ -321,15 +318,25 @@ def main():
                     copier.add(os.path.basename(pdbname), File(pdbname))
 
     # Setup preloading
-    if args.jarlog and os.path.exists(args.jarlog):
+    if args.jarlog:
+        if not os.path.exists(args.jarlog):
+            raise Exception('Cannot find jar log: %s' % args.jarlog)
+        omnijars = []
+        if isinstance(formatter, OmniJarFormatter):
+            omnijars = [mozpath.join(base, buildconfig.substs['OMNIJAR_NAME'])
+                        for base in sink.packager.get_bases(addons=False)]
+
         from mozpack.mozjar import JarLog
         log = JarLog(args.jarlog)
         for p, f in copier:
             if not isinstance(f, Jarrer):
                 continue
-            key = JarLog.canonicalize(os.path.join(args.destination, p))
-            if key in log:
-                f.preload(log[key])
+            if respath:
+                p = mozpath.relpath(p, respath)
+            if p in log:
+                f.preload(log[p])
+            elif p in omnijars:
+                raise Exception('No jar log data for %s' % p)
 
     copier.copy(args.destination)
     generate_precomplete(os.path.normpath(os.path.join(args.destination,

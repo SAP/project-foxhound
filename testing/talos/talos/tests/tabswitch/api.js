@@ -2,9 +2,8 @@
 
 /* globals ExtensionAPI */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {RemotePages} = ChromeUtils.import("resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm");
 
 let context = {};
 let TalosParentProfiler;
@@ -59,7 +58,6 @@ function loadTabs(gBrowser, urls) {
             !aWebProgress.isLoadingDocument &&
             aWebProgress.isTopLevel &&
             Components.isSuccessCode(aStatus)) {
-
           dump(`Loaded: ${aBrowser.currentURI.spec}\n`);
           waitingToLoad.delete(aBrowser.currentURI.spec);
 
@@ -137,7 +135,7 @@ function waitForContentPresented(browser) {
   return new Promise((resolve) => {
     browser.addEventListener("MozLayerTreeReady", function onLayersReady(event) {
       let now = Cu.now();
-      TalosParentProfiler.mark("MozLayerTreeReady seen by tps");
+      TalosParentProfiler.mark("MozLayerTreeReady seen by tabswitch");
       resolve(now);
     }, { once: true });
   });
@@ -185,7 +183,7 @@ function forceGC(win, browser) {
  */
 async function test(window) {
   if (!window.gMultiProcessBrowser) {
-    dump("** The TPS Talos test does not support running in non-e10s mode " +
+    dump("** The tabswitch Talos test does not support running in non-e10s mode " +
          "anymore! Bailing out!\n");
     return;
   }
@@ -316,10 +314,10 @@ function handleFile(win, file) {
 
 var remotePage;
 
-this.tps = class extends ExtensionAPI {
+this.tabswitch = class extends ExtensionAPI {
   getAPI(context) {
     return {
-      tps: {
+      tabswitch: {
         setup({ processScriptPath }) {
           const AboutNewTabService = Cc["@mozilla.org/browser/aboutnewtab-service;1"]
                                        .getService(Ci.nsIAboutNewTabService);
@@ -333,7 +331,7 @@ this.tps = class extends ExtensionAPI {
           });
 
           return () => {
-            Services.ppmm.sendAsyncMessage("TPS:Teardown");
+            Services.ppmm.sendAsyncMessage("Tabswitch:Teardown");
             remotePage.destroy();
             AboutNewTabService.resetNewTabURL();
           };

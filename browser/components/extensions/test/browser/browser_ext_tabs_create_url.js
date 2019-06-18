@@ -6,7 +6,7 @@ async function runWithDisabledPrivateBrowsing(callback) {
   const {
     EnterprisePolicyTesting,
     PoliciesPrefTracker,
-  } = ChromeUtils.import("resource://testing-common/EnterprisePolicyTesting.jsm", {});
+  } = ChromeUtils.import("resource://testing-common/EnterprisePolicyTesting.jsm", null);
 
   PoliciesPrefTracker.start();
   await EnterprisePolicyTesting.setupPolicyEngineWithJson({
@@ -83,6 +83,7 @@ add_task(async function test_urlbar_focus() {
 
 add_task(async function default_url() {
   const extension = ExtensionTestUtils.loadExtension({
+    incognitoOverride: "spanning",
     manifest: {
       permissions: ["tabs"],
     },

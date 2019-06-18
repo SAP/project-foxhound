@@ -1,4 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
 const SYSTEMPRINCIPAL = Services.scriptSecurityManager.getSystemPrincipal();
 const DUMMY1 = "http://example.com/browser/toolkit/modules/tests/browser/dummy_page.html";
 const DUMMY2 = "http://example.org/browser/toolkit/modules/tests/browser/dummy_page.html";
@@ -16,9 +15,14 @@ function waitForPageShow(browser = gBrowser.selectedBrowser) {
 add_task(async function test_referrer() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   let browser = gBrowser.selectedBrowser;
+  let ReferrerInfo = Components.Constructor("@mozilla.org/referrer-info;1",
+                                            "nsIReferrerInfo",
+                                            "init");
+
   let loadURIOptionsWithReferrer = {
     triggeringPrincipal: SYSTEMPRINCIPAL,
-    referrerURI: Services.io.newURI(DUMMY2),
+    referrerInfo: new ReferrerInfo(
+      Ci.nsIHttpChannel.REFERRER_POLICY_UNSET, true, Services.io.newURI(DUMMY2)),
   };
   browser.webNavigation.loadURI(DUMMY1, loadURIOptionsWithReferrer);
   await waitForLoad(DUMMY1);

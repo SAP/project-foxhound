@@ -170,6 +170,8 @@ class WorkerPrivate : public RelativeTimeline {
     }
   }
 
+  nsresult SetIsDebuggerReady(bool aReady);
+
   WorkerDebugger* Debugger() const {
     AssertIsOnMainThread();
 
@@ -399,6 +401,15 @@ class WorkerPrivate : public RelativeTimeline {
   // Get the event target to use when dispatching to the main thread
   // from this Worker thread.  This may be the main thread itself or
   // a ThrottledEventQueue to the main thread.
+  nsIEventTarget* MainThreadEventTargetForMessaging();
+
+  nsresult DispatchToMainThreadForMessaging(
+      nsIRunnable* aRunnable, uint32_t aFlags = NS_DISPATCH_NORMAL);
+
+  nsresult DispatchToMainThreadForMessaging(
+      already_AddRefed<nsIRunnable> aRunnable,
+      uint32_t aFlags = NS_DISPATCH_NORMAL);
+
   nsIEventTarget* MainThreadEventTarget();
 
   nsresult DispatchToMainThread(nsIRunnable* aRunnable,
@@ -728,6 +739,12 @@ class WorkerPrivate : public RelativeTimeline {
            mLoadInfo.mFirstPartyStorageAccessGranted;
   }
 
+  nsICookieSettings* CookieSettings() const {
+    // Any thread.
+    MOZ_ASSERT(mLoadInfo.mCookieSettings);
+    return mLoadInfo.mCookieSettings;
+  }
+
   const OriginAttributes& GetOriginAttributes() const {
     return mLoadInfo.mOriginAttributes;
   }
@@ -907,6 +924,12 @@ class WorkerPrivate : public RelativeTimeline {
              data->mHolders.IsEmpty());
   }
 
+  // Internal logic to dispatch a runnable. This is separate from Dispatch()
+  // to allow runnables to be atomically dispatched in bulk.
+  nsresult DispatchLockHeld(already_AddRefed<WorkerRunnable> aRunnable,
+                            nsIEventTarget* aSyncLoopTarget,
+                            const MutexAutoLock& aProofOfLock);
+
   class EventTarget;
   friend class EventTarget;
   friend class mozilla::dom::WorkerHolder;
@@ -965,6 +988,7 @@ class WorkerPrivate : public RelativeTimeline {
   PRThread* mPRThread;
 
   // Accessed from main thread
+  RefPtr<ThrottledEventQueue> mMainThreadEventTargetForMessaging;
   RefPtr<ThrottledEventQueue> mMainThreadEventTarget;
 
   // Accessed from worker thread and destructing thread
@@ -1074,12 +1098,17 @@ class WorkerPrivate : public RelativeTimeline {
 
   bool mDebuggerRegistered;
 
+  // During registration, this worker may be marked as not being ready to
+  // execute debuggee runnables or content.
+  //
+  // Protected by mMutex.
+  bool mDebuggerReady;
+  nsTArray<RefPtr<WorkerRunnable>> mDelayedDebuggeeRunnables;
+
   // mIsInAutomation is true when we're running in test automation.
   // We expose some extra testing functions in that case.
   bool mIsInAutomation;
 
-  // This pointer will be null if dom.performance.enable_scheduler_timing is
-  // false (default value)
   RefPtr<mozilla::PerformanceCounter> mPerformanceCounter;
 };
 

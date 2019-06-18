@@ -25,6 +25,10 @@ struct FeatureMap {
  * DOM Security peer!
  */
 static FeatureMap sSupportedFeatures[] = {
+    // We don't support 'autoplay' for now, because it would be overwrote by
+    // 'user-gesture-activation' policy. However, we can still keep it in the
+    // list as we might start supporting it after we use different autoplay
+    // policy.
     {"autoplay", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"camera", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"encrypted-media", FeaturePolicyUtils::FeaturePolicyValue::eAll},
@@ -34,13 +38,14 @@ static FeatureMap sSupportedFeatures[] = {
     {"midi", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"payment", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"document-domain", FeaturePolicyUtils::FeaturePolicyValue::eAll},
+    {"display-capture", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     // TODO: not supported yet!!!
     {"speaker", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"vr", FeaturePolicyUtils::FeaturePolicyValue::eAll},
 };
 
-/* static */ bool FeaturePolicyUtils::IsSupportedFeature(
-    const nsAString& aFeatureName) {
+/* static */
+bool FeaturePolicyUtils::IsSupportedFeature(const nsAString& aFeatureName) {
   uint32_t numFeatures =
       (sizeof(sSupportedFeatures) / sizeof(sSupportedFeatures[0]));
   for (uint32_t i = 0; i < numFeatures; ++i) {
@@ -51,7 +56,8 @@ static FeatureMap sSupportedFeatures[] = {
   return false;
 }
 
-/* static */ void FeaturePolicyUtils::ForEachFeature(
+/* static */
+void FeaturePolicyUtils::ForEachFeature(
     const std::function<void(const char*)>& aCallback) {
   uint32_t numFeatures =
       (sizeof(sSupportedFeatures) / sizeof(sSupportedFeatures[0]));
@@ -73,8 +79,9 @@ FeaturePolicyUtils::DefaultAllowListFeature(const nsAString& aFeatureName) {
   return FeaturePolicyValue::eNone;
 }
 
-/* static */ bool FeaturePolicyUtils::IsFeatureAllowed(
-    Document* aDocument, const nsAString& aFeatureName) {
+/* static */
+bool FeaturePolicyUtils::IsFeatureAllowed(Document* aDocument,
+                                          const nsAString& aFeatureName) {
   MOZ_ASSERT(aDocument);
 
   if (!StaticPrefs::dom_security_featurePolicy_enabled()) {
@@ -96,8 +103,9 @@ FeaturePolicyUtils::DefaultAllowListFeature(const nsAString& aFeatureName) {
   return false;
 }
 
-/* static */ void FeaturePolicyUtils::ReportViolation(
-    Document* aDocument, const nsAString& aFeatureName) {
+/* static */
+void FeaturePolicyUtils::ReportViolation(Document* aDocument,
+                                         const nsAString& aFeatureName) {
   MOZ_ASSERT(aDocument);
 
   nsCOMPtr<nsIURI> uri = aDocument->GetDocumentURI();

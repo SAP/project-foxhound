@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorU, ColorF, ImageFormat, TextureTarget};
-use api::{DeviceIntRect, DeviceRect, DevicePoint, DeviceSize, DeviceIntSize};
+use api::units::*;
 use debug_font_data;
 use device::{Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
 use device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
@@ -312,7 +312,8 @@ impl DebugRenderer {
     pub fn render(
         &mut self,
         device: &mut Device,
-        viewport_size: Option<DeviceIntSize>,
+        viewport_size: Option<FramebufferIntSize>,
+        scale: f32,
     ) {
         if let Some(viewport_size) = viewport_size {
             device.disable_depth();
@@ -321,8 +322,8 @@ impl DebugRenderer {
 
             let projection = Transform3D::ortho(
                 0.0,
-                viewport_size.width as f32,
-                viewport_size.height as f32,
+                viewport_size.width as f32 * scale,
+                viewport_size.height as f32 * scale,
                 0.0,
                 ORTHO_NEAR_PLANE,
                 ORTHO_FAR_PLANE,

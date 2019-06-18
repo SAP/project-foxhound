@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Gorde gogoko dituzun istorioak Pocket-en eta piztu zure gogoa irakurgai erakargarriekin.",
   "highlights_empty_state": "Hasi nabigatzen eta azkenaldian bisitatutako edo laster-marka egindako aparteko artikulu, bideo eta orriak erakutsiko ditugu.",
   "topstories_empty_state": "Egunean zaude jada. Etorri berriro geroago {provider} hornitzailearen istorio ezagun gehiagorako. Ezin duzu itxaron? Hautatu gai ezagun bat webeko istorio gehiago aurkitzeko.",
-  "manual_migration_explanation2": "Probatu Firefox beste nabigatzaile batetik ekarritako laster-marka, historia eta pasahitzekin.",
-  "manual_migration_cancel_button": "Ez, eskerrik asko",
-  "manual_migration_import_button": "Inportatu orain",
   "error_fallback_default_info": "Kontxo, zerbait gaizki joan da edukia kargatzerakoan.",
   "error_fallback_default_refresh_suggestion": "Berritu orria berriro saiatzeko.",
   "section_menu_action_remove_section": "Kendu atala",
@@ -99,7 +96,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_move_down": "Eraman behera",
   "section_menu_action_privacy_notice": "Pribatutasun-oharra",
   "firstrun_title": "Eraman Firefox aldean",
-  "firstrun_content": "Izan laster-markak, historia, pasahitzak eta beste ezarpenak eskura zure gailu guztietatik.",
+  "firstrun_content": "Izan laster-markak, historia, pasahitzak eta beste ezarpenak eskura zure gailu guztietan.",
   "firstrun_learn_more_link": "Firefox kontuei buruzko argibide gehiago",
   "firstrun_form_header": "Idatzi zure helbide elektronikoa",
   "firstrun_form_sub_header": "Firefox Sync-ekin jarraitzeko.",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Pribatutasun-oharra",
   "firstrun_continue_to_login": "Jarraitu",
   "firstrun_skip_login": "Saltatu urrats hau",
-  "context_menu_title": "Ireki menua"
+  "context_menu_title": "Ireki menua",
+  "manual_migration_explanation2": "Probatu Firefox beste nabigatzaile batetik ekarritako laster-marka, historia eta pasahitzekin.",
+  "manual_migration_cancel_button": "Ez, eskerrik asko",
+  "manual_migration_import_button": "Inportatu orain"
 };

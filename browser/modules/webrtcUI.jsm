@@ -6,9 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["webrtcUI"];
 
-ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {EventEmitter} = ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AppConstants",
                                "resource://gre/modules/AppConstants.jsm");
@@ -201,10 +201,9 @@ var webrtcUI = {
     return this.emitter.off(...args);
   },
 
-  // Listeners and observers are registered in nsBrowserGlue.js
+  // Listeners and observers are registered in BrowserGlue.jsm
   receiveMessage(aMessage) {
     switch (aMessage.name) {
-
       case "rtcpeer:Request": {
         let params = Object.freeze(Object.assign({
           origin: aMessage.target.contentPrincipal.origin,
@@ -489,7 +488,7 @@ function prompt(aBrowser, aRequest) {
   let options = {
     name: getHostOrExtensionName(uri),
     persistent: true,
-    hideClose: !Services.prefs.getBoolPref("privacy.permissionPrompts.showCloseButton"),
+    hideClose: true,
     eventCallback(aTopic, aNewBrowser) {
       if (aTopic == "swapping")
         return true;
@@ -606,8 +605,9 @@ function prompt(aBrowser, aRequest) {
         // Removing the child nodes of the menupopup doesn't clear the value
         // attribute of the menulist. This can have unfortunate side effects
         // when the list is rebuilt with a different content, so we remove
-        // the value attribute explicitly.
+        // the value attribute and unset the selectedItem explicitly.
         menupopup.parentNode.removeAttribute("value");
+        menupopup.parentNode.selectedItem = null;
 
         for (let device of devices)
           addDeviceToList(menupopup, device.name, device.deviceIndex);
@@ -628,6 +628,14 @@ function prompt(aBrowser, aRequest) {
         while (menupopup.lastChild) {
           menupopup.removeChild(menupopup.lastChild);
         }
+
+        // Removing the child nodes of the menupopup doesn't clear the value
+        // attribute of the menulist. This can have unfortunate side effects
+        // when the list is rebuilt with a different content, so we remove
+        // the value attribute and unset the selectedItem explicitly.
+        menupopup.parentNode.removeAttribute("value");
+        menupopup.parentNode.selectedItem = null;
+
         let label = doc.getElementById("webRTC-selectWindow-label");
         const gumStringId = "getUserMedia.selectWindowOrScreen";
         label.setAttribute("value",
@@ -711,8 +719,7 @@ function prompt(aBrowser, aRequest) {
             let baseURL =
               Services.urlFormatter.formatURLPref("app.support.baseURL");
 
-            let learnMore = chromeWin.document.createXULElement("label");
-            learnMore.className = "text-link";
+            let learnMore = chromeWin.document.createXULElement("label", {is: "text-link"});
             learnMore.setAttribute("href", baseURL + "screenshare-safety");
             learnMore.textContent = learnMoreText;
 
@@ -884,7 +891,6 @@ function prompt(aBrowser, aRequest) {
 
   // Don't offer "always remember" action in PB mode.
   if (!PrivateBrowsingUtils.isBrowserPrivate(aBrowser)) {
-
     // Disable the permanent 'Allow' action if the connection isn't secure, or for
     // screen/audio sharing (because we can't guess which window the user wants to
     // share without prompting).

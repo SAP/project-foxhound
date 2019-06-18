@@ -41,8 +41,8 @@ window.gActivityStreamStrings = {
   "prefs_home_header": "Contenido de la página de inicio de Firefox",
   "prefs_home_description": "Selecciona el contenido que desea en la pantalla de inicio de Firefox.",
   "prefs_content_discovery_header": "Página de inicio de Firefox",
-  "prefs_content_discovery_description": "Content Discovery en la página de inicio de Firefox le permite descubrir artículos relevantes de alta calidad en toda la web.",
-  "prefs_content_discovery_button": "Desactivar Content Discovery",
+  "prefs_content_discovery_description": "Content Discovery en la página de inicio de Firefox le permite descubrir artículos de alta calidad y relevantes de toda la web.",
+  "prefs_content_discovery_button": "Deshabilitar Content Discovery",
   "prefs_section_rows_option": "{num} fila;{num} filas",
   "prefs_search_header": "Búsqueda web",
   "prefs_topsites_description": "Los sitios que más visitas",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Guarda las historias que quieras en Pocket y llena tu mente con fascinantes lecturas.",
   "highlights_empty_state": "Empieza a navegar, y nosotros te mostraremos aquí algunos de los mejores artículos, videos y otras páginas que hayas visitado recientemente o marcado.",
   "topstories_empty_state": "Ya estás al día. Vuelve luego y busca más historias de {provider}. ¿No puedes esperar? Selecciona un tema popular y encontrarás más historias interesantes por toda la web.",
-  "manual_migration_explanation2": "Prueba Firefox con los marcadores, historial y contraseñas de otro navegador.",
-  "manual_migration_cancel_button": "No, gracias",
-  "manual_migration_import_button": "Importar ahora",
   "error_fallback_default_info": "Ups, algo salió mal mientras se cargaba el contenido.",
   "error_fallback_default_refresh_suggestion": "Actualiza la página e intenta de nuevo.",
   "section_menu_action_remove_section": "Eliminar sección",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Continuar",
   "firstrun_skip_login": "Saltar este paso",
   "context_menu_title": "Abrir menú",
-  "pocket_learn_more": "Saber más"
+  "manual_migration_explanation2": "Prueba Firefox con los marcadores, historial y contraseñas de otro navegador.",
+  "manual_migration_cancel_button": "No, gracias",
+  "manual_migration_import_button": "Importar ahora"
 };

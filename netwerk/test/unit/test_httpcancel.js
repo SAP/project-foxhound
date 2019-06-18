@@ -4,8 +4,8 @@
 // I've also shoehorned in a test that ENSURE_CALLED_BEFORE_CONNECT works as
 // expected: see comments that start with ENSURE_CALLED_BEFORE_CONNECT:
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService);
@@ -39,7 +39,7 @@ var observer = {
 };
 
 var listener = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     Assert.equal(request.status, Cr.NS_BINDING_ABORTED);
 
     // ENSURE_CALLED_BEFORE_CONNECT: setting referrer should now fail
@@ -67,7 +67,7 @@ var listener = {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     httpserv.stop(do_test_finished);
   }
 };
@@ -93,7 +93,7 @@ function execute_test() {
   obs = obs.QueryInterface(Ci.nsIObserverService);
   obs.addObserver(observer, "http-on-modify-request");
 
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function run_test() {

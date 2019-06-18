@@ -20,11 +20,15 @@ AntiTracking.runTest("IndexedDB in workers",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
   },
@@ -45,11 +49,15 @@ AntiTracking.runTest("IndexedDB in workers",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
   },
@@ -88,11 +96,15 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
 
@@ -114,11 +126,15 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
   },
@@ -129,7 +145,11 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
     }
 
     /* import-globals-from storageAccessAPIHelpers.js */
-    await noStorageAccessInitially();
+    if (allowListed) {
+      await hasStorageAccessInitially();
+    } else {
+      await noStorageAccessInitially();
+    }
 
     let blob = new Blob([nonBlockCode.toString() + "; nonBlockCode();"]);
     ok(blob, "Blob has been created");
@@ -142,11 +162,15 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
 
@@ -160,11 +184,15 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
 
     await new Promise((resolve, reject) => {
       worker.onmessage = function(e) {
-        if (e) {
+        if (e.data) {
           resolve();
         } else {
           reject();
         }
+      };
+
+      worker.onerror = function(e) {
+        reject();
       };
     });
   },

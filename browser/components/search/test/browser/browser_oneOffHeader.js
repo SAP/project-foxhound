@@ -7,9 +7,7 @@ const isMac = ("nsILocalFileMac" in Ci);
 
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
 
-const oneOffsContainer =
-  document.getAnonymousElementByAttribute(searchPopup, "anonid",
-                                          "search-one-off-buttons");
+const oneOffsContainer = searchPopup.searchOneOffsContainer;
 const searchSettings = oneOffsContainer.querySelector(".search-setting-button");
 
 var header = oneOffsContainer.querySelector(".search-panel-one-offs-header");
@@ -122,17 +120,13 @@ add_task(async function test_text() {
 
   // Click the "Foo Search" header at the top of the popup and make sure it
   // loads the search results.
-  let searchbarEngine =
-    document.getAnonymousElementByAttribute(searchPopup, "anonid",
-                                            "searchbar-engine");
-
+  let searchbarEngine = searchPopup.searchbarEngine;
   await synthesizeNativeMouseMove(searchbarEngine);
   SimpleTest.executeSoon(() => {
     EventUtils.synthesizeMouseAtCenter(searchbarEngine, {});
   });
 
-  let url = Services.search.defaultEngine
-                           .getSubmission(searchbar.textbox.value).uri.spec;
+  let url = (await Services.search.getDefault()).getSubmission(searchbar.textbox.value).uri.spec;
   await promiseTabLoadEvent(gBrowser.selectedTab, url);
 
   // Move the cursor out of the panel area to avoid messing with other tests.

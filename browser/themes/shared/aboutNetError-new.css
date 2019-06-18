@@ -103,15 +103,11 @@ body:not(.clockSkewError) #advancedPanelErrorTryAgain {
   display: none;
 }
 
-body:not(:-moz-any(.clockSkewError,.badStsCert)) #moreInformationButton {
-  display: none;
-}
-
 #openPortalLoginPageButton {
   margin-inline-start: 0;
 }
 
-body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
+body:not(.neterror) #advancedButton {
   display: block;
 }
 
@@ -152,6 +148,9 @@ body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
 
 #automaticallyReportInFuture {
   cursor: pointer;
+  /* Prevent the checkbox from looking super
+   * squeezed on small viewports */
+  flex-shrink: 0;
 }
 
 #errorCode:not([href]) {
@@ -191,6 +190,8 @@ body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
   font-family: monospace;
   white-space: pre-wrap;
   padding: 1em 0;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 #cert_domain_link:not([href]) {
@@ -206,33 +207,6 @@ body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
 
 .exceptionDialogButtonContainer[hidden] {
   display: none;
-}
-
-.illustrated #errorPageContainer {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-}
-
-.illustrated[dir="rtl"] #errorPageContainer {
-  background-position: right center;
-}
-
-.illustrated .title {
-  background: none;
-  padding-inline-start: 0;
-  margin-inline-start: 0;
-}
-
-.illustrated #text-container {
-  margin: auto;
-  padding-inline-start: 38%;
-}
-
-.illustrated #errorPageContainer {
-  background-repeat: no-repeat;
-  background-size: 38%;
 }
 
 .connectionFailure #errorPageContainer,
@@ -265,8 +239,7 @@ body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
 }
 
 .clockSkewError #advancedPanelErrorTryAgain,
-.clockSkewError #errorTryAgain,
-.clockSkewError #moreInformationButton {
+.clockSkewError #errorTryAgain {
   display: block;
   margin-top: 0.3em;
 }
@@ -289,4 +262,29 @@ body:not(:-moz-any(.clockSkewError,.badStsCert,.neterror)) #advancedButton {
 
 #wrongSystemTimeWithoutReferencePanel {
   display: none;
+}
+
+@media only screen and (max-width: 959px) {
+  #certificateErrorText {
+    /* The encoded certificate chain looks better when we're not
+     * wrapping words on big screens, but at some point we need
+     * to wrap to avoid overflowing */
+    word-wrap: anywhere;
+  }
+}
+
+@media only screen and (max-width: 480px) {
+  #badCertTechnicalInfo {
+    margin: 10px 10px 5px;
+  }
+
+  #viewCertificate {
+    margin: 0 10px;
+  }
+
+  #errorCode[href] {
+    /* Break the error code to avoid long codes overflowing the screen */
+    white-space: normal;
+    word-wrap: anywhere;
+  }
 }

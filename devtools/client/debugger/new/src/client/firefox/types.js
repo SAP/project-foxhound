@@ -11,13 +11,18 @@
  */
 
 import type {
+  BreakpointLocation,
+  BreakpointOptions,
   FrameId,
   ActorId,
   Script,
   Source,
   Pause,
+  PendingLocation,
   Frame,
-  SourceId
+  SourceId,
+  Worker,
+  Range
 } from "../../types";
 
 type URL = string;
@@ -67,13 +72,13 @@ type URL = string;
 export type FramePacket = {
   actor: ActorId,
   arguments: any[],
-  callee: any,
+  displayName: string,
   environment: any,
   this: any,
   depth?: number,
   oldest?: boolean,
   type: "pause" | "call",
-  where: ActualLocation
+  where: {| actor: string, line: number, column: number |}
 };
 
 /**
@@ -140,20 +145,6 @@ export type ResumedPacket = {
 };
 
 /**
- * Location of an actual event, when breakpoints are set they are requested
- * at one location but the server will respond with the "actual location" where
- * the breakpoint was really set if it differs from the requested location.
- *
- * @memberof firefox
- * @static
- */
-export type ActualLocation = {
-  source: SourcePayload,
-  line: number,
-  column?: number
-};
-
-/**
  * Response from the `getFrames` function call
  * @memberof firefox
  * @static
@@ -166,8 +157,6 @@ export type FramesResponse = {
 export type TabPayload = {
   actor: ActorId,
   animationsActor: ActorId,
-  callWatcherActor: ActorId,
-  canvasActor: ActorId,
   consoleActor: ActorId,
   cssPropertiesActor: ActorId,
   cssUsageActor: ActorId,
@@ -175,7 +164,6 @@ export type TabPayload = {
   emulationActor: ActorId,
   eventLoopLagActor: ActorId,
   framerateActor: ActorId,
-  gcliActor: ActorId,
   inspectorActor: ActorId,
   memoryActor: ActorId,
   monitorActor: ActorId,
@@ -191,9 +179,7 @@ export type TabPayload = {
   timelineActor: ActorId,
   title: string,
   url: URL,
-  webExtensionInspectedWindowActor: ActorId,
-  webaudioActor: ActorId,
-  webglActor: ActorId
+  webExtensionInspectedWindowActor: ActorId
 };
 
 /**
@@ -220,30 +206,30 @@ export type TabTarget = {
     evaluateJS: (
       script: Script,
       func: Function,
-      params?: { frameActor?: FrameId }
+      params?: { frameActor: ?FrameId }
     ) => void,
     evaluateJSAsync: (
       script: Script,
       func: Function,
-      params?: { frameActor?: FrameId }
-    ) => void,
+      params?: { frameActor: ?FrameId }
+    ) => Promise<{ result: ?Object }>,
     autocomplete: (
       input: string,
       cursor: number,
       func: Function,
-      frameId: string
-    ) => void
+      frameId: ?string
+    ) => void,
+    emit: (string, any) => void
   },
   form: { consoleActor: any },
   root: any,
-  activeTab: {
-    navigateTo: ({ url: string }) => Promise<*>,
-    listWorkers: () => Promise<*>,
-    reload: () => Promise<*>
-  },
+  navigateTo: ({ url: string }) => Promise<*>,
+  listWorkers: () => Promise<*>,
+  reload: () => Promise<*>,
   destroy: () => void,
   isBrowsingContext: boolean,
-  isContentProcess: boolean
+  isContentProcess: boolean,
+  traits: Object
 };
 
 /**
@@ -316,14 +302,10 @@ export type FunctionGrip = {|
  * @static
  */
 export type SourceClient = {
-  source: () => Source,
+  source: () => { source: any, contentType?: string },
+  _activeThread: ThreadClient,
   actor: string,
-  setBreakpoint: ({
-    line: number,
-    column: ?number,
-    condition: boolean,
-    noSliding: boolean
-  }) => Promise<BreakpointResponse>,
+  getBreakpointPositionsCompressed: (range: ?Range) => Promise<any>,
   prettyPrint: number => Promise<*>,
   disablePrettyPrint: () => Promise<*>,
   blackBox: (range?: Range) => Promise<*>,
@@ -358,6 +340,8 @@ export type ThreadClient = {
   source: ({ actor: SourceId }) => SourceClient,
   pauseGrip: (Grip | Function) => ObjectClient,
   pauseOnExceptions: (boolean, boolean) => Promise<*>,
+  setBreakpoint: (BreakpointLocation, BreakpointOptions) => Promise<*>,
+  removeBreakpoint: PendingLocation => Promise<*>,
   setXHRBreakpoint: (path: string, method: string) => Promise<boolean>,
   removeXHRBreakpoint: (path: string, method: string) => Promise<boolean>,
   interrupt: () => Promise<*>,
@@ -372,42 +356,9 @@ export type ThreadClient = {
   actor: ActorId,
   request: (payload: Object) => Promise<*>,
   url: string,
-  setEventListenerBreakpoints: (string[]) => void
+  setEventListenerBreakpoints: (string[]) => void,
+  skipBreakpoints: boolean => Promise<{| skip: boolean |}>
 };
-
-/**
- * BreakpointClient
- * @memberof firefox
- * @static
- */
-export type BreakpointClient = {
-  actor: ActorId,
-  remove: () => void,
-  location: {
-    actor: string,
-    url: string,
-    line: number,
-    column: ?number,
-    condition: string
-  },
-  setCondition: (ThreadClient, boolean, boolean) => Promise<BreakpointClient>,
-  // getCondition: () => any,
-  // hasCondition: () => any,
-  // request: any,
-  source: SourceClient
-};
-
-export type BPClients = { [id: ActorId]: BreakpointClient };
-
-export type BreakpointResponse = [
-  {
-    actor?: ActorId,
-    from?: ActorId,
-    isPending?: boolean,
-    actualLocation?: ActualLocation
-  },
-  BreakpointClient
-];
 
 export type FirefoxClientConnection = {
   getTabTarget: () => TabTarget,
@@ -415,3 +366,11 @@ export type FirefoxClientConnection = {
   setTabTarget: (target: TabTarget) => void,
   setThreadClient: (client: ThreadClient) => void
 };
+
+export type Panel = {|
+  emit: (eventName: string) => void,
+  openLink: (url: string) => void,
+  openWorkerToolbox: (worker: Worker) => void,
+  openElementInInspector: (grip: Object) => void,
+  openConsoleAndEvaluate: (input: string) => void
+|};

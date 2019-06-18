@@ -1,7 +1,6 @@
 import os
 
 import mozunit
-import pytest
 
 LINTER = 'flake8'
 
@@ -18,14 +17,11 @@ def test_lint_single_file(lint, paths):
     assert len(results) == 2
 
 
-def test_lint_custom_config(lint, paths):
+def test_lint_custom_config_ignored(lint, paths):
     results = lint(paths('custom'))
-    assert len(results) == 0
+    assert len(results) == 2
 
     results = lint(paths('custom/good.py'))
-    assert len(results) == 0
-
-    results = lint(paths('custom', 'bad.py'))
     assert len(results) == 2
 
 
@@ -67,16 +63,33 @@ foo = ['A list of strings', 'that go over 80 characters', 'to test if autopep8 f
         assert fh.read() == contents
 
 
-@pytest.mark.xfail(reason="Bug 1277851 - custom configs are ignored if specifying a parent path")
-def test_lint_custom_config_from_parent_path(lint, paths):
-    results = lint(paths(), collapse_results=True)
-    assert paths('custom/good.py')[0] not in results
+def test_lint_excluded_file(lint, paths, config):
+    # First file is globally excluded, second one is from .flake8 config.
+    files = paths('bad.py', 'subdir/exclude/bad.py')
+    config['exclude'] = paths('bad.py')
+    results = lint(files, config)
+    print(results)
+    assert len(results) == 0
+
+    # Make sure excludes also apply when running from a different cwd.
+    cwd = paths('subdir')[0]
+    os.chdir(cwd)
+
+    results = lint(paths('subdir/exclude'))
+    assert len(results) == 0
 
 
-@pytest.mark.xfail(reason="Bug 1277851 - 'exclude' argument is ignored")
-def test_lint_excluded_file(lint, paths):
-    paths = paths('bad.py')
-    results = lint(paths, exclude=paths)
+def test_lint_excluded_file_with_glob(lint, paths, config):
+    config['exclude'] = paths('ext/*.configure')
+
+    files = paths('ext')
+    results = lint(files, config)
+    print(results)
+    assert len(results) == 0
+
+    files = paths('ext/bad.configure')
+    results = lint(files, config)
+    print(results)
     assert len(results) == 0
 
 

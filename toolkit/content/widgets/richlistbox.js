@@ -6,6 +6,9 @@
 // This is loaded into chrome windows with the subscript loader. If you need to
 // define globals, wrap in a block to prevent leaking onto `window`.
 
+/**
+ * XUL:richlistbox element.
+ */
 MozElements.RichListBox = class RichListBox extends MozElements.BaseControl {
   constructor() {
     super();
@@ -411,7 +414,7 @@ MozElements.RichListBox = class RichListBox extends MozElements.BaseControl {
 
   // nsIDOMXULMultiSelectControlElement
   selectItem(aItem) {
-    if (!aItem) {
+    if (!aItem || aItem.disabled) {
       return;
     }
 
@@ -615,26 +618,27 @@ MozElements.RichListBox = class RichListBox extends MozElements.BaseControl {
     // If the current item is visible, scroll by one page so that
     // the new current item is at approximately the same position as
     // the existing current item.
+    let height = this.getBoundingClientRect().height;
     if (this._isItemVisible(this.currentItem)) {
-      this.scrollBy(0, this.clientHeight * aDirection);
+      this.scrollBy(0, height * aDirection);
     }
 
     // Figure out, how many items fully fit into the view port
     // (including the currently selected one), and determine
     // the index of the first one lying (partially) outside
-    var height = this.clientHeight;
-    var startBorder = this.currentItem.boxObject.y;
+    let currentItemRect = this.currentItem.getBoundingClientRect();
+    var startBorder = currentItemRect.y;
     if (aDirection == -1) {
-      startBorder += this.currentItem.clientHeight;
+      startBorder += currentItemRect.height;
     }
 
     var index = this.currentIndex;
     for (var ix = index; 0 <= ix && ix < children.length; ix += aDirection) {
-      var boxObject = children[ix].boxObject;
-      if (boxObject.height == 0) {
+      let childRect = children[ix].getBoundingClientRect();
+      if (childRect.height == 0) {
         continue; // hidden children have a y of 0
       }
-      var endBorder = boxObject.y + (aDirection == -1 ? boxObject.height : 0);
+      var endBorder = childRect.y + (aDirection == -1 ? childRect.height : 0);
       if ((endBorder - startBorder) * aDirection > height) {
         break; // we've reached the desired distance
       }
@@ -675,7 +679,7 @@ MozElements.RichListBox = class RichListBox extends MozElements.BaseControl {
           this.selectedItem = currentItem;
         }
 
-        if (this.clientHeight) {
+        if (this.getBoundingClientRect().height) {
           this.ensureElementIsVisible(currentItem);
         } else {
           // XXX hack around a bug in ensureElementIsVisible as it will
@@ -737,11 +741,12 @@ MozElements.RichListBox = class RichListBox extends MozElements.BaseControl {
       return false;
     }
 
-    var y = this.scrollTop + this.boxObject.y;
+    var y = this.getBoundingClientRect().y;
 
     // Partially visible items are also considered visible
-    return (aItem.boxObject.y + aItem.clientHeight > y) &&
-      (aItem.boxObject.y < y + this.clientHeight);
+    let itemRect = aItem.getBoundingClientRect();
+    return (itemRect.y + itemRect.height > y) &&
+           (itemRect.y < y + this.clientHeight);
   }
 
   moveByOffset(aOffset, aIsSelecting, aIsSelectingRange) {
@@ -839,3 +844,161 @@ MozXULElement.implementCustomInterface(MozElements.RichListBox, [
 ]);
 
 customElements.define("richlistbox", MozElements.RichListBox);
+
+/**
+ * XUL:richlistitem element.
+ */
+MozElements.MozRichlistitem = class MozRichlistitem extends MozElements.BaseText {
+  constructor() {
+    super();
+
+    this.selectedByMouseOver = false;
+
+    /**
+     * If there is no modifier key, we select on mousedown, not
+     * click, so that drags work correctly.
+     */
+    this.addEventListener("mousedown", (event) => {
+      var control = this.control;
+      if (!control || control.disabled)
+        return;
+      if ((!event.ctrlKey || (/Mac/.test(navigator.platform) && event.button == 2)) &&
+        !event.shiftKey && !event.metaKey) {
+        if (!this.selected) {
+          control.selectItem(this);
+        }
+        control.currentItem = this;
+      }
+    });
+
+    /**
+     * On a click (up+down on the same item), deselect everything
+     * except this item.
+     */
+    this.addEventListener("click", (event) => {
+      if (event.button != 0) {
+        return;
+      }
+
+      var control = this.control;
+      if (!control || control.disabled)
+        return;
+      control._userSelecting = true;
+      if (control.selType != "multiple") {
+        control.selectItem(this);
+      } else if (event.ctrlKey || event.metaKey) {
+        control.toggleItemSelection(this);
+        control.currentItem = this;
+      } else if (event.shiftKey) {
+        control.selectItemRange(null, this);
+        control.currentItem = this;
+      } else {
+        /* We want to deselect all the selected items except what was
+          clicked, UNLESS it was a right-click.  We have to do this
+          in click rather than mousedown so that you can drag a
+          selected group of items */
+
+        // use selectItemRange instead of selectItem, because this
+        // doesn't de- and reselect this item if it is selected
+        control.selectItemRange(this, this);
+      }
+      control._userSelecting = false;
+    });
+  }
+
+  /**
+   * nsIDOMXULSelectControlItemElement
+   */
+  get label() {
+    const XULNS =
+      "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+    return Array.map(this.getElementsByTagNameNS(XULNS, "label"),
+        label => label.value)
+      .join(" ");
+  }
+
+  set searchLabel(val) {
+    if (val !== null)
+      this.setAttribute("searchlabel", val);
+    else
+      // fall back to the label property (default value)
+      this.removeAttribute("searchlabel");
+    return val;
+  }
+
+  get searchLabel() {
+    return this.hasAttribute("searchlabel") ?
+      this.getAttribute("searchlabel") : this.label;
+  }
+  /**
+   * nsIDOMXULSelectControlItemElement
+   */
+  set value(val) {
+    this.setAttribute("value", val);
+    return val;
+  }
+
+  get value() {
+    return this.getAttribute("value");
+  }
+
+  /**
+   * nsIDOMXULSelectControlItemElement
+   */
+  set selected(val) {
+    if (val)
+      this.setAttribute("selected", "true");
+    else
+      this.removeAttribute("selected");
+
+    return val;
+  }
+
+  get selected() {
+    return this.getAttribute("selected") == "true";
+  }
+  /**
+   * nsIDOMXULSelectControlItemElement
+   */
+  get control() {
+    var parent = this.parentNode;
+    while (parent) {
+      if (parent.localName == "richlistbox")
+        return parent;
+      parent = parent.parentNode;
+    }
+    return null;
+  }
+
+  set current(val) {
+    if (val)
+      this.setAttribute("current", "true");
+    else
+      this.removeAttribute("current");
+    return val;
+  }
+
+  get current() {
+    return this.getAttribute("current") == "true";
+  }
+  disconnectedCallback() {
+    var control = this.control;
+    if (!control)
+      return;
+    // When we are destructed and we are current or selected, unselect ourselves
+    // so that richlistbox's selection doesn't point to something not in the DOM.
+    // We don't want to reset last-selected, so we set _suppressOnSelect.
+    if (this.selected) {
+      var suppressSelect = control._suppressOnSelect;
+      control._suppressOnSelect = true;
+      control.removeItemFromSelection(this);
+      control._suppressOnSelect = suppressSelect;
+    }
+    if (this.current)
+      control.currentItem = null;
+  }
+};
+
+MozXULElement.implementCustomInterface(
+  MozElements.MozRichlistitem, [Ci.nsIDOMXULSelectControlItemElement]
+);

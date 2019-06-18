@@ -8,6 +8,13 @@ const TP_PBM_PREF = "privacy.trackingprotection.pbmode.enabled";
 const TP_LIST_PREF = "urlclassifier.trackingTable";
 const NCB_PREF = "network.cookie.cookieBehavior";
 const CAT_PREF = "browser.contentblocking.category";
+const FP_PREF = "privacy.trackingprotection.fingerprinting.enabled";
+const CM_PREF = "privacy.trackingprotection.cryptomining.enabled";
+
+const {
+  EnterprisePolicyTesting,
+  PoliciesPrefTracker,
+} = ChromeUtils.import("resource://testing-common/EnterprisePolicyTesting.jsm", null);
 
 requestLongerTimeout(2);
 
@@ -113,6 +120,8 @@ add_task(async function testContentBlockingStandardCategory() {
     [TP_PREF]: null,
     [TP_PBM_PREF]: null,
     [NCB_PREF]: null,
+    [FP_PREF]: null,
+    [CM_PREF]: null,
   };
 
   for (let pref in prefs) {
@@ -135,6 +144,8 @@ add_task(async function testContentBlockingStandardCategory() {
   Services.prefs.setBoolPref(TP_PREF, true);
   Services.prefs.setBoolPref(TP_PBM_PREF, false);
   Services.prefs.setIntPref(NCB_PREF, Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER);
+  Services.prefs.setBoolPref(FP_PREF, true);
+  Services.prefs.setBoolPref(CM_PREF, true);
 
   for (let pref in prefs) {
     switch (Services.prefs.getPrefType(pref)) {
@@ -197,13 +208,15 @@ add_task(async function testContentBlockingStrictCategory() {
   is(Services.prefs.getBoolPref(TP_PBM_PREF), true, `${TP_PBM_PREF} has been set to true`);
   is(Services.prefs.getIntPref(NCB_PREF), Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER, `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER}`);
   ok(!Services.prefs.prefHasUserValue(TP_LIST_PREF), `reset the pref ${TP_LIST_PREF}`);
+  ok(!Services.prefs.prefHasUserValue(FP_PREF), `reset the pref ${FP_PREF}`);
+  ok(!Services.prefs.prefHasUserValue(CM_PREF), `reset the pref ${CM_PREF}`);
 
   gBrowser.removeCurrentTab();
 });
 
 // Tests that the content blocking "Custom" category behaves as expected.
 add_task(async function testContentBlockingCustomCategory() {
-  let prefs = [TP_LIST_PREF, TP_PREF, TP_PBM_PREF, NCB_PREF];
+  let prefs = [TP_LIST_PREF, TP_PREF, TP_PBM_PREF, NCB_PREF, FP_PREF, CM_PREF];
 
   await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
   let doc = gBrowser.contentDocument;
@@ -233,6 +246,16 @@ add_task(async function testContentBlockingCustomCategory() {
 
   strictRadioOption.click();
   await TestUtils.waitForCondition(() => Services.prefs.getStringPref(CAT_PREF) == "strict");
+
+  // Changing the FP_PREF and CM_PREF should necessarily set CAT_PREF to "custom"
+  for (let pref of [FP_PREF, CM_PREF]) {
+    Services.prefs.setBoolPref(pref, true);
+    await TestUtils.waitForCondition(() => Services.prefs.prefHasUserValue(pref));
+    is(Services.prefs.getStringPref(CAT_PREF), "custom", `${CAT_PREF} has been set to custom`);
+
+    strictRadioOption.click();
+    await TestUtils.waitForCondition(() => Services.prefs.getStringPref(CAT_PREF) == "strict");
+  }
 
   // Changing the NCB_PREF should necessarily set CAT_PREF to "custom"
   let defaultNCB = defaults.get(NCB_PREF);
@@ -289,5 +312,123 @@ add_task(async function testContentBlockingDependentTPControls() {
   let doc = gBrowser.contentDocument;
   checkControlState(doc, disabledControls, false);
 
+  gBrowser.removeCurrentTab();
+});
+
+// Checks that cryptomining and fingerprinting visibility can be controlled via pref.
+add_task(async function testCustomOptionsVisibility() {
+  Services.prefs.setBoolPref("browser.contentblocking.cryptomining.preferences.ui.enabled", false);
+  Services.prefs.setBoolPref("browser.contentblocking.fingerprinting.preferences.ui.enabled", false);
+
+  await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
+
+  let doc = gBrowser.contentDocument;
+  let cryptominersOption = doc.getElementById("contentBlockingCryptominersOption");
+  let fingerprintersOption = doc.getElementById("contentBlockingFingerprintersOption");
+
+  ok(cryptominersOption.hidden, "Cryptomining is hidden");
+  ok(fingerprintersOption.hidden, "Fingerprinting is hidden");
+
+  gBrowser.removeCurrentTab();
+
+  Services.prefs.setBoolPref("browser.contentblocking.cryptomining.preferences.ui.enabled", true);
+
+  await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
+
+  doc = gBrowser.contentDocument;
+  cryptominersOption = doc.getElementById("contentBlockingCryptominersOption");
+  fingerprintersOption = doc.getElementById("contentBlockingFingerprintersOption");
+
+  ok(!cryptominersOption.hidden, "Cryptomining is shown");
+  ok(fingerprintersOption.hidden, "Fingerprinting is hidden");
+
+  gBrowser.removeCurrentTab();
+
+  Services.prefs.setBoolPref("browser.contentblocking.fingerprinting.preferences.ui.enabled", true);
+
+  await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
+
+  doc = gBrowser.contentDocument;
+  cryptominersOption = doc.getElementById("contentBlockingCryptominersOption");
+  fingerprintersOption = doc.getElementById("contentBlockingFingerprintersOption");
+
+  ok(!cryptominersOption.hidden, "Cryptomining is shown");
+  ok(!fingerprintersOption.hidden, "Fingerprinting is shown");
+
+  gBrowser.removeCurrentTab();
+
+  Services.prefs.clearUserPref("browser.contentblocking.cryptomining.preferences.ui.enabled");
+  Services.prefs.clearUserPref("browser.contentblocking.fingerprinting.preferences.ui.enabled");
+});
+
+// Checks that adding a custom enterprise policy will put the user in the custom category.
+// Other categories will be disabled.
+add_task(async function testPolicyCategorization() {
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+  is(Services.prefs.getStringPref(CAT_PREF), "standard", `${CAT_PREF} starts on standard`);
+  ok(!Services.prefs.prefHasUserValue(TP_PREF), `${TP_PREF} starts with the default value`);
+  PoliciesPrefTracker.start();
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {"EnableTrackingProtection": {
+        "Value": true,
+      },
+    },
+  });
+  EnterprisePolicyTesting.checkPolicyPref(TP_PREF, true, false);
+  is(Services.prefs.getStringPref(CAT_PREF), "custom", `${CAT_PREF} has been set to custom`);
+
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+  is(Services.prefs.getStringPref(CAT_PREF), "standard", `${CAT_PREF} starts on standard`);
+  ok(!Services.prefs.prefHasUserValue(NCB_PREF), `${NCB_PREF} starts with the default value`);
+
+  let uiUpdatedPromise = TestUtils.topicObserved("privacy-pane-tp-ui-updated");
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {"Cookies": {
+        "AcceptThirdParty": "never",
+        "Locked": true,
+      },
+    },
+  });
+  await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
+  await uiUpdatedPromise;
+
+  EnterprisePolicyTesting.checkPolicyPref(NCB_PREF, Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN, true);
+  is(Services.prefs.getStringPref(CAT_PREF), "custom", `${CAT_PREF} has been set to custom`);
+
+  let doc = gBrowser.contentDocument;
+  let strictRadioOption = doc.getElementById("strictRadio");
+  let standardRadioOption = doc.getElementById("standardRadio");
+  is(strictRadioOption.disabled, true, "the strict option is disabled");
+  is(standardRadioOption.disabled, true, "the standard option is disabled");
+
+  gBrowser.removeCurrentTab();
+
+  // Cleanup after this particular test.
+  if (Services.policies.status != Ci.nsIEnterprisePolicies.INACTIVE) {
+    await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
+  }
+  is(Services.policies.status, Ci.nsIEnterprisePolicies.INACTIVE, "Engine is inactive at the end of the test");
+
+  EnterprisePolicyTesting.resetRunOnceState();
+  PoliciesPrefTracker.stop();
+});
+
+// Tests that changing a content blocking pref shows the content blocking warning
+// to reload tabs to apply changes.
+add_task(async function testContentBlockingReloadWarning() {
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+  await openPreferencesViaOpenPreferencesAPI("privacy", {leaveOpen: true});
+  let doc = gBrowser.contentDocument;
+  let reloadWarnings = [...doc.querySelectorAll(".content-blocking-warning.reload-tabs")];
+  let allHidden = reloadWarnings.every((el) => el.hidden);
+  ok(allHidden, "all of the warnings to reload tabs are initially hidden");
+
+  Services.prefs.setStringPref(CAT_PREF, "strict");
+
+  let strictWarning = doc.querySelector("#contentBlockingOptionStrict .content-blocking-warning.reload-tabs");
+  ok(!BrowserTestUtils.is_hidden(strictWarning), "The warning in the strict section should be showing");
+
+  Services.prefs.setStringPref(CAT_PREF, "standard");
   gBrowser.removeCurrentTab();
 });

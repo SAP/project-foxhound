@@ -263,23 +263,17 @@ nsresult JsepSessionImpl::CreateOfferMsection(const JsepOfferOptions& options,
 
   AddExtmap(msection);
 
-  if (lastAnswerMsection && lastAnswerMsection->GetPort()) {
-    MOZ_ASSERT(transceiver.IsAssociated());
-    MOZ_ASSERT(transceiver.GetMid() ==
-               lastAnswerMsection->GetAttributeList().GetMid());
+  std::string mid;
+  // We do not set the mid on the transceiver, that happens when a description
+  // is set.
+  if (transceiver.IsAssociated()) {
+    mid = transceiver.GetMid();
   } else {
-    std::string mid;
-    // We do not set the mid on the transceiver, that happens when a description
-    // is set.
-    if (transceiver.IsAssociated()) {
-      mid = transceiver.GetMid();
-    } else {
-      mid = GetNewMid();
-    }
-
-    msection->GetAttributeList().SetAttribute(
-        new SdpStringAttribute(SdpAttribute::kMidAttribute, mid));
+    mid = GetNewMid();
   }
+
+  msection->GetAttributeList().SetAttribute(
+      new SdpStringAttribute(SdpAttribute::kMidAttribute, mid));
 
   return NS_OK;
 }
@@ -419,11 +413,6 @@ nsresult JsepSessionImpl::CreateOffer(const JsepOfferOptions& options,
        JsepTransceiver* transceiver = GetTransceiverForLocal(level); ++level) {
     rv = CreateOfferMsection(options, *transceiver, sdp.get());
     NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  if (!sdp->GetMediaSectionCount()) {
-    JSEP_SET_ERROR("Cannot create offer when there are no valid transceivers.");
-    return NS_ERROR_UNEXPECTED;
   }
 
   SetupBundle(sdp.get());
@@ -1268,11 +1257,6 @@ nsresult JsepSessionImpl::ParseSdp(const std::string& sdp,
   }
 
   // Verify that the JSEP rules for all SDP are followed
-  if (!parsed->GetMediaSectionCount()) {
-    JSEP_SET_ERROR("Description has no media sections");
-    return NS_ERROR_INVALID_ARG;
-  }
-
   for (size_t i = 0; i < parsed->GetMediaSectionCount(); ++i) {
     if (mSdpHelper.MsectionIsDisabled(parsed->GetMediaSection(i))) {
       // Disabled, let this stuff slide.
@@ -1789,6 +1773,16 @@ nsresult JsepSessionImpl::ValidateAnswer(const Sdp& offer, const Sdp& answer) {
     if (offerMsection.GetMediaType() != answerMsection.GetMediaType()) {
       JSEP_SET_ERROR("Answer and offer have different media types at m-line "
                      << i);
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    if (mSdpHelper.MsectionIsDisabled(answerMsection)) {
+      continue;
+    }
+
+    if (mSdpHelper.MsectionIsDisabled(offerMsection)) {
+      JSEP_SET_ERROR(
+          "Answer tried to enable an m-section that was disabled in the offer");
       return NS_ERROR_INVALID_ARG;
     }
 

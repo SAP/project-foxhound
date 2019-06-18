@@ -1,5 +1,6 @@
 import {actionCreators as ac} from "common/Actions.jsm";
 import {DSCard} from "../DSCard/DSCard.jsx";
+import {DSLinkMenu} from "../DSLinkMenu/DSLinkMenu";
 import {ImpressionStats} from "../../DiscoveryStreamImpressionStats/ImpressionStats";
 import {List} from "../List/List.jsx";
 import React from "react";
@@ -31,7 +32,7 @@ export class Hero extends React.PureComponent {
     const {data} = this.props;
 
     // Handle a render before feed has been fetched by displaying nothing
-    if (!data || !data.recommendations) {
+    if (!data || !data.recommendations || !data.recommendations.length) {
       return (
         <div />
       );
@@ -69,31 +70,42 @@ export class Hero extends React.PureComponent {
       <div>
         <div className="ds-header">{this.props.title}</div>
         <div className={`ds-hero ds-hero-${this.props.border}`}>
-          <SafeAnchor
-            className="wrapper"
-            dispatch={this.props.dispatch}
-            onLinkClick={this.onLinkClick}
-            url={heroRec.url}>
-            <div className="img-wrapper">
-              <div className="img" style={{backgroundImage: `url(${heroRec.image_src})`}} />
-            </div>
-            <div className="meta">
-              <div className="header-and-excerpt">
-                <header>{heroRec.title}</header>
-                <p className="excerpt">{heroRec.excerpt}</p>
-              </div>
-              {heroRec.context ? (
-                <p className="context">{heroRec.context}</p>
-              ) : (
-                <p className="source">{heroRec.domain}</p>
-              )}
-            </div>
-            <ImpressionStats
-              campaignId={heroRec.campaignId}
-              rows={[{id: heroRec.id, pos: heroRec.pos}]}
+          <div className="ds-hero-item">
+            <SafeAnchor
+              className="wrapper"
               dispatch={this.props.dispatch}
-              source={this.props.type} />
-          </SafeAnchor>
+              onLinkClick={this.onLinkClick}
+              url={heroRec.url}>
+              <div className="img-wrapper">
+                <div className="img" style={{backgroundImage: `url(${heroRec.image_src})`}} />
+              </div>
+              <div className="meta">
+                <div className="header-and-excerpt">
+                  <header>{heroRec.title}</header>
+                  <p className="excerpt">{heroRec.excerpt}</p>
+                </div>
+                {heroRec.context ? (
+                  <p className="context">{heroRec.context}</p>
+                ) : (
+                  <p className="source">{heroRec.domain}</p>
+                )}
+              </div>
+              <ImpressionStats
+                campaignId={heroRec.campaignId}
+                rows={[{id: heroRec.id, pos: heroRec.pos}]}
+                dispatch={this.props.dispatch}
+                source={this.props.type} />
+            </SafeAnchor>
+            <DSLinkMenu
+              id={heroRec.id}
+              index={heroRec.pos}
+              dispatch={this.props.dispatch}
+              intl={this.props.intl}
+              url={heroRec.url}
+              title={heroRec.title}
+              source={heroRec.domain}
+              type={this.props.type} />
+          </div>
           <div className={`${this.props.subComponentType}`}>
             { this.props.subComponentType === `cards` ? cards : list }
           </div>

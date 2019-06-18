@@ -11,8 +11,13 @@ user_pref("geo.provider.testing", true);
 user_pref("media.gmp-manager.updateEnabled", false);
 user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
+// Prevent Remote Settings to issue non local connections.
+user_pref("services.settings.server", "http://localhost/remote-settings-dummy/v1");
 // The process priority manager only shifts priorities when it has at least
 // one active tab. xpcshell tabs don't have any active tabs, which would mean
 // all processes would run at low priority, which is not desirable, so we
 // disable the process priority manager entirely here.
 user_pref("dom.ipc.processPriorityManager.enabled", false);
+// Avoid idle-daily notifications, to avoid expensive operations that may
+// cause unexpected test timeouts.
+user_pref("idle.lastDailyNotification", -1);

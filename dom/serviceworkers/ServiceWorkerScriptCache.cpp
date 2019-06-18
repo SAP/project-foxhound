@@ -16,6 +16,7 @@
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/CookieSettings.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIStreamLoader.h"
@@ -109,7 +110,7 @@ class CompareNetwork final : public nsIStreamLoaderObserver,
   }
 
   nsresult Initialize(nsIPrincipal* aPrincipal, const nsAString& aURL,
-                      nsILoadGroup* aLoadGroup, Cache* const aCache);
+                      Cache* const aCache);
 
   void Abort();
 
@@ -257,7 +258,7 @@ class CompareManager final : public PromiseNativeHandler {
   }
 
   nsresult Initialize(nsIPrincipal* aPrincipal, const nsAString& aURL,
-                      const nsAString& aCacheName, nsILoadGroup* aLoadGroup);
+                      const nsAString& aCacheName);
 
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
 
@@ -330,7 +331,7 @@ class CompareManager final : public PromiseNativeHandler {
     mCNList.AppendElement(cn);
     mPendingCount += 1;
 
-    nsresult rv = cn->Initialize(mPrincipal, aURL, mLoadGroup, aCache);
+    nsresult rv = cn->Initialize(mPrincipal, aURL, aCache);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -586,7 +587,6 @@ class CompareManager final : public PromiseNativeHandler {
 
   nsString mURL;
   RefPtr<nsIPrincipal> mPrincipal;
-  RefPtr<nsILoadGroup> mLoadGroup;
 
   // Used for the old cache where saves the old source scripts.
   RefPtr<Cache> mOldCache;
@@ -616,7 +616,6 @@ NS_IMPL_ISUPPORTS0(CompareManager)
 
 nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
                                     const nsAString& aURL,
-                                    nsILoadGroup* aLoadGroup,
                                     Cache* const aCache) {
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(NS_IsMainThread());
@@ -659,12 +658,17 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
       mIsMainScript ? nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER
                     : nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS;
 
+  // Create a new cookieSettings.
+  nsCOMPtr<nsICookieSettings> cookieSettings =
+      mozilla::net::CookieSettings::Create();
+
   // Note that because there is no "serviceworker" RequestContext type, we can
   // use the TYPE_INTERNAL_SCRIPT content policy types when loading a service
   // worker.
   rv = NS_NewChannel(getter_AddRefs(mChannel), uri, aPrincipal, secFlags,
-                     contentPolicyType, nullptr, /* aPerformanceStorage */
-                     loadGroup, nullptr /* aCallbacks */, mLoadFlags);
+                     contentPolicyType, cookieSettings,
+                     nullptr /* aPerformanceStorage */, loadGroup,
+                     nullptr /* aCallbacks */, mLoadFlags);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -689,7 +693,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
     return rv;
   }
 
-  rv = mChannel->AsyncOpen2(loader);
+  rv = mChannel->AsyncOpen(loader);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -791,7 +795,7 @@ void CompareNetwork::Abort() {
 }
 
 NS_IMETHODIMP
-CompareNetwork::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
+CompareNetwork::OnStartRequest(nsIRequest* aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mState == Finished) {
@@ -845,8 +849,7 @@ nsresult CompareNetwork::SetPrincipalInfo(nsIChannel* aChannel) {
 }
 
 NS_IMETHODIMP
-CompareNetwork::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
-                              nsresult aStatusCode) {
+CompareNetwork::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   // Nothing to do here!
   return NS_OK;
 }
@@ -1144,8 +1147,7 @@ void CompareCache::ManageValueResult(JSContext* aCx,
 
 nsresult CompareManager::Initialize(nsIPrincipal* aPrincipal,
                                     const nsAString& aURL,
-                                    const nsAString& aCacheName,
-                                    nsILoadGroup* aLoadGroup) {
+                                    const nsAString& aCacheName) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(mPendingCount == 0);
@@ -1156,7 +1158,6 @@ nsresult CompareManager::Initialize(nsIPrincipal* aPrincipal,
 
   mURL = aURL;
   mPrincipal = aPrincipal;
-  mLoadGroup = aLoadGroup;
 
   // Always create a CacheStorage since we want to write the network entry to
   // the cache even if there isn't an existing one.
@@ -1280,6 +1281,23 @@ void CompareManager::Cleanup() {
   }
 }
 
+class NoopPromiseHandler final : public PromiseNativeHandler {
+ public:
+  NS_DECL_ISUPPORTS
+
+  NoopPromiseHandler() { AssertIsOnMainThread(); }
+
+  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+  }
+  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+  }
+
+ private:
+  ~NoopPromiseHandler() { AssertIsOnMainThread(); }
+};
+
+NS_IMPL_ISUPPORTS0(NoopPromiseHandler)
+
 }  // namespace
 
 nsresult PurgeCache(nsIPrincipal* aPrincipal, const nsAString& aCacheName) {
@@ -1304,6 +1322,11 @@ nsresult PurgeCache(nsIPrincipal* aPrincipal, const nsAString& aCacheName) {
   if (NS_WARN_IF(rv.Failed())) {
     return rv.StealNSResult();
   }
+
+  // Add a no-op promise handler to ensure that if this promise gets rejected,
+  // we don't end up reporting a rejected promise to the console.
+  RefPtr<NoopPromiseHandler> promiseHandler = new NoopPromiseHandler();
+  promise->AppendNativeHandler(promiseHandler);
 
   // We don't actually care about the result of the delete operation.
   return NS_OK;
@@ -1334,8 +1357,7 @@ nsresult GenerateCacheName(nsAString& aName) {
 
 nsresult Compare(ServiceWorkerRegistrationInfo* aRegistration,
                  nsIPrincipal* aPrincipal, const nsAString& aCacheName,
-                 const nsAString& aURL, CompareCallback* aCallback,
-                 nsILoadGroup* aLoadGroup) {
+                 const nsAString& aURL, CompareCallback* aCallback) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRegistration);
   MOZ_ASSERT(aPrincipal);
@@ -1344,7 +1366,7 @@ nsresult Compare(ServiceWorkerRegistrationInfo* aRegistration,
 
   RefPtr<CompareManager> cm = new CompareManager(aRegistration, aCallback);
 
-  nsresult rv = cm->Initialize(aPrincipal, aURL, aCacheName, aLoadGroup);
+  nsresult rv = cm->Initialize(aPrincipal, aURL, aCacheName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

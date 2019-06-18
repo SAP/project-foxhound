@@ -1,12 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://services-sync/constants.js");
-ChromeUtils.import("resource://services-sync/engines.js");
-ChromeUtils.import("resource://services-sync/engines/clients.js");
-ChromeUtils.import("resource://services-sync/record.js");
-ChromeUtils.import("resource://services-sync/service.js");
-ChromeUtils.import("resource://services-sync/util.js");
+const {ClientEngine, ClientsRec} = ChromeUtils.import("resource://services-sync/engines/clients.js");
+const {CryptoWrapper} = ChromeUtils.import("resource://services-sync/record.js");
+const {Service} = ChromeUtils.import("resource://services-sync/service.js");
 
 const MORE_THAN_CLIENTS_TTL_REFRESH = 691200; // 8 days
 const LESS_THAN_CLIENTS_TTL_REFRESH = 86400; // 1 day
@@ -194,7 +191,6 @@ add_task(async function test_bad_hmac() {
     check_clients_count(1);
     let newKey = Service.collectionKeys.keyForCollection();
     ok(!oldKey.equals(newKey));
-
   } finally {
     await cleanup();
     await promiseStopServer(server);
@@ -298,7 +294,6 @@ add_task(async function test_sync() {
   }
 
   try {
-
     _("First sync. Client record is uploaded.");
     equal(clientWBO(), undefined);
     equal(engine.lastRecordUpload, 0);
@@ -328,7 +323,6 @@ add_task(async function test_sync() {
     equal(clientWBO().payload, undefined);
     equal(engine.lastRecordUpload, yesterday);
     ok(!engine.isFirstSync);
-
   } finally {
     await cleanup();
     await promiseStopServer(server);
@@ -445,7 +439,6 @@ add_task(async function test_last_modified() {
     let payload = collection.cleartext(activeID);
     equal(payload.name, "New name");
     equal(payload.serverLastModified, undefined);
-
   } finally {
     await cleanup();
     server.deleteCollections("foo");
@@ -555,7 +548,6 @@ add_task(async function test_command_validation() {
         equal(engine._tracker[remoteId], undefined);
       }
     }
-
   }
   await cleanup();
 });
@@ -777,7 +769,6 @@ add_task(async function test_filter_duplicate_names() {
 
     ok(engine.remoteClientExists(dupeID), "recently synced dupe ID should now exist");
     equal(engine.remoteClients.length, 3, "recently synced dupe should now be in remoteClients");
-
   } finally {
     await cleanup();
 
@@ -848,7 +839,6 @@ add_task(async function test_command_sync() {
     let command = engine.localCommands[0];
     equal(command.command, "wipeAll");
     equal(command.args.length, 0);
-
   } finally {
     await cleanup();
 
@@ -908,7 +898,6 @@ add_task(async function test_clients_not_in_fxa_list() {
 
     ok(!engine._store._remoteClients[remoteId].stale);
     ok(engine._store._remoteClients[remoteId2].stale);
-
   } finally {
     engine.fxAccounts = fxAccounts;
     await cleanup();
@@ -970,7 +959,6 @@ add_task(async function test_dupe_device_ids() {
 
     ok(engine._store._remoteClients[remoteId].stale);
     ok(!engine._store._remoteClients[remoteId2].stale);
-
   } finally {
     engine.fxAccounts = fxAccounts;
     await cleanup();
@@ -1596,7 +1584,7 @@ add_task(async function test_command_sync() {
 
     await engine.sendCommand("wipeAll", []);
     await engine._tracker.addChangedID(engine.localID);
-    const getClientFxaDeviceId = sinon.stub(engine, "getClientFxaDeviceId", (id) => "fxa-" + id);
+    const getClientFxaDeviceId = sinon.stub(engine, "getClientFxaDeviceId").callsFake((id) => "fxa-" + id);
     const engineMock = sinon.mock(engine);
     let _notifyCollectionChanged = engineMock.expects("_notifyCollectionChanged")
                                              .withArgs(["fxa-" + remoteId, "fxa-" + remoteId2]);
@@ -1705,7 +1693,6 @@ add_task(async function ensureSameFlowIDs() {
     for (let client of Object.values(engine._store._remoteClients)) {
       client.commands = [];
     }
-
   } finally {
     Service.recordTelemetryEvent = origRecordTelemetryEvent;
     cleanup();
@@ -1809,7 +1796,7 @@ add_task(async function device_disconnected_notification_updates_known_stale_cli
   Services.obs.notifyObservers(null, "fxaccounts:device_disconnected",
                                JSON.stringify({ isLocalDevice: false }));
   ok(spyUpdate.calledOnce, "updateKnownStaleClients should be called");
-  spyUpdate.reset();
+  spyUpdate.resetHistory();
 
   Services.obs.notifyObservers(null, "fxaccounts:device_disconnected",
                                JSON.stringify({ isLocalDevice: true }));
@@ -1824,7 +1811,7 @@ add_task(async function update_known_stale_clients() {
   const stubRemoteClients = sinon.stub(engine._store, "_remoteClients").get(() => {
     return clients;
   });
-  const stubFetchFxADevices = sinon.stub(engine, "_fetchFxADevices", () => {
+  const stubFetchFxADevices = sinon.stub(engine, "_fetchFxADevices").callsFake(() => {
     engine._knownStaleFxADeviceIds = ["fxa-one", "fxa-two"];
   });
 
@@ -1848,7 +1835,7 @@ add_task(async function test_create_record_command_limit() {
   const fakeLimit = 4 * 1024;
 
   let maxSizeStub = sinon.stub(Service,
-    "getMemcacheMaxRecordPayloadSize", () => fakeLimit);
+    "getMemcacheMaxRecordPayloadSize").callsFake(() => fakeLimit);
 
   let user = server.user("foo");
   let remoteId = Utils.makeGUID();

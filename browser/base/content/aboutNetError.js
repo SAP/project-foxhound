@@ -84,7 +84,6 @@ function setupAdvancedButton() {
 
   // Register click handler for the weakCryptoAdvancedPanel
   document.getElementById("advancedButton").addEventListener("click", togglePanelVisibility);
-  document.getElementById("moreInformationButton").addEventListener("click", togglePanelVisibility);
 
   function togglePanelVisibility() {
     toggleDisplay(panel);
@@ -222,8 +221,6 @@ function initPage() {
 
   if (err == "sslv3Used") {
     document.getElementById("learnMoreContainer").style.display = "block";
-    let learnMoreLink = document.getElementById("learnMoreLink");
-    learnMoreLink.href = "https://support.mozilla.org/kb/how-resolve-sslv3-error-messages-firefox";
     document.body.className = "certerror";
   }
 
@@ -248,13 +245,6 @@ function initPage() {
     if (getErrorCode() == "nssFailure2") {
       let shortDesc = document.getElementById("errorShortDescText").textContent;
       document.getElementById("learnMoreContainer").style.display = "block";
-      let learnMoreLink = document.getElementById("learnMoreLink");
-      // nssFailure2 also gets us other non-overrideable errors. Choose
-      // a "learn more" link based on description:
-      if (shortDesc.includes("MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE")) {
-        learnMoreLink.href = "https://support.mozilla.org/kb/certificate-pinning-reports";
-      }
-
       var options = JSON.parse(evt.detail);
       if (options && options.enabled) {
         var checkbox = document.getElementById("automaticallyReportInFuture");
@@ -304,9 +294,23 @@ function initPage() {
   }
 }
 
+// This function centers the error container after its content updates.
+// It is currently duplicated in NetErrorChild.jsm to avoid having to do
+// async communication to the page that would result in flicker.
+// TODO(johannh): Get rid of this duplication.
 function updateContainerPosition() {
   let textContainer = document.getElementById("text-container");
-  textContainer.style.marginTop = `calc(50vh - ${textContainer.clientHeight / 2}px)`;
+  // Using the vh CSS property our margin adapts nicely to window size changes.
+  // Unfortunately, this doesn't work correctly in iframes, which is why we need
+  // to manually compute the height there.
+  if (window.parent == window) {
+    textContainer.style.marginTop = `calc(50vh - ${textContainer.clientHeight / 2}px)`;
+  } else {
+    let offset = (document.documentElement.clientHeight / 2) - (textContainer.clientHeight / 2);
+    if (offset > 0) {
+      textContainer.style.marginTop = `${offset}px`;
+    }
+  }
 }
 
 function initPageCaptivePortal() {

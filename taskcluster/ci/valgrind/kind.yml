@@ -14,6 +14,10 @@ transforms:
     - taskgraph.transforms.job:transforms
     - taskgraph.transforms.task:transforms
 
+job-defaults:
+    attributes:
+        retrigger: true
+
 jobs:
     linux64-valgrind/opt:
         description: "Linux64 Valgrind Opt"
@@ -48,4 +52,5 @@ jobs:
             - linux64-rust
             - linux64-cbindgen
             - linux64-sccache
+            - linux64-nasm
             - linux64-node

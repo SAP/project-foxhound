@@ -431,6 +431,35 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvScrollingEvent(
   return IPC_OK();
 }
 
+#if !defined(XP_WIN)
+mozilla::ipc::IPCResult DocAccessibleParent::RecvAnnouncementEvent(
+    const uint64_t& aID, const nsString& aAnnouncement,
+    const uint16_t& aPriority) {
+  ProxyAccessible* target = GetAccessible(aID);
+
+  if (!target) {
+    NS_ERROR("no proxy for event!");
+    return IPC_OK();
+  }
+
+  // XXX: A future patch will add platform support for this event type.
+  // Right now, we just need to support XPC for testing.
+
+  if (!nsCoreUtils::AccEventObserversExist()) {
+    return IPC_OK();
+  }
+
+  xpcAccessibleGeneric* xpcAcc = GetXPCAccessible(target);
+  xpcAccessibleDocument* doc = GetAccService()->GetXPCDocument(this);
+  RefPtr<xpcAccAnnouncementEvent> event = new xpcAccAnnouncementEvent(
+      nsIAccessibleEvent::EVENT_ANNOUNCEMENT, xpcAcc, doc, nullptr, false,
+      aAnnouncement, aPriority);
+  nsCoreUtils::DispatchAccEvent(std::move(event));
+
+  return IPC_OK();
+}
+#endif
+
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
     const a11y::role& aRole) {
   if (mShutdown) {
@@ -785,8 +814,13 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvBatch(
     DocAccessibleParent* doc = static_cast<DocAccessibleParent*>(
         aData.ElementAt(i).Document().get_PDocAccessibleParent());
     MOZ_ASSERT(doc);
+
     ProxyAccessible* proxy = doc->GetAccessible(aData.ElementAt(i).ID());
-    MOZ_ASSERT(proxy);
+    if (!proxy) {
+      MOZ_ASSERT_UNREACHABLE("No proxy found!");
+      continue;
+    }
+
     proxies.AppendElement(proxy);
   }
   ProxyBatch(this, aBatchType, proxies, aData);

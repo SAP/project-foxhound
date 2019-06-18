@@ -411,7 +411,8 @@ static void LookupAlternateValues(gfxFontFeatureValueSet* featureLookup,
   }
 }
 
-/* static */ void gfxFontShaper::MergeFontFeatures(
+/* static */
+void gfxFontShaper::MergeFontFeatures(
     const gfxFontStyle* aStyle, const nsTArray<gfxFontFeature>& aFontFeatures,
     bool aDisableLigatures, const nsACString& aFamilyName, bool aAddSmallCaps,
     void (*aHandleFeature)(const uint32_t&, uint32_t&, void*),
@@ -1957,12 +1958,12 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
     if (textDrawer) {
       // Generate an orientation matrix for the current writing mode
       wr::FontInstanceFlags flags = textDrawer->GetWRGlyphFlags();
-      if (flags.bits & wr::FontInstanceFlags::TRANSPOSE) {
+      if (flags & wr::FontInstanceFlags_TRANSPOSE) {
         std::swap(mat._11, mat._12);
         std::swap(mat._21, mat._22);
       }
-      mat.PostScale(flags.bits & wr::FontInstanceFlags::FLIP_X ? -1.0f : 1.0f,
-                    flags.bits & wr::FontInstanceFlags::FLIP_Y ? -1.0f : 1.0f);
+      mat.PostScale(flags & wr::FontInstanceFlags_FLIP_X ? -1.0f : 1.0f,
+                    flags & wr::FontInstanceFlags_FLIP_Y ? -1.0f : 1.0f);
       matPtr = &mat;
     }
 
@@ -2137,11 +2138,11 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
       // X and Y, while left rotation flips the resulting Y axis, and right
       // rotation flips the resulting X axis.
       textDrawer->SetWRGlyphFlags(
-          textDrawer->GetWRGlyphFlags() | wr::FontInstanceFlags::TRANSPOSE |
+          textDrawer->GetWRGlyphFlags() | wr::FontInstanceFlags_TRANSPOSE |
           (aOrientation ==
                    gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_LEFT
-               ? wr::FontInstanceFlags::FLIP_Y
-               : wr::FontInstanceFlags::FLIP_X));
+               ? wr::FontInstanceFlags_FLIP_Y
+               : wr::FontInstanceFlags_FLIP_X));
     } else {
       // For non-WebRender targets, just push a rotation transform.
       matrixRestore.SetContext(aRunParams.context);
@@ -3308,7 +3309,8 @@ static void DestroyRefCairo(void* aData) {
   cairo_destroy(refCairo);
 }
 
-/* static */ cairo_t* gfxFont::RefCairo(DrawTarget* aDT) {
+/* static */
+cairo_t* gfxFont::RefCairo(DrawTarget* aDT) {
   // DrawTargets that don't use a Cairo backend can be given a 1x1 "reference"
   // |cairo_t*|, stored in the DrawTarget's user data, for doing font-related
   // operations.
@@ -3990,10 +3992,10 @@ bool gfxFont::TryGetMathTable() {
   return !!mMathTable;
 }
 
-/* static */ void SharedFontList::Initialize() {
-  sEmpty = new SharedFontList();
-}
+/* static */
+void SharedFontList::Initialize() { sEmpty = new SharedFontList(); }
 
-/* static */ void SharedFontList::Shutdown() { sEmpty = nullptr; }
+/* static */
+void SharedFontList::Shutdown() { sEmpty = nullptr; }
 
 StaticRefPtr<SharedFontList> SharedFontList::sEmpty;

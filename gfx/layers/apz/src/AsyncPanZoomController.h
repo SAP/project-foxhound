@@ -10,6 +10,7 @@
 #include "CrossProcessMutex.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/RepaintRequest.h"
+#include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Monitor.h"
@@ -28,6 +29,7 @@
 #include "nsRegion.h"
 #include "nsTArray.h"
 #include "PotentialCheckerboardDurationTracker.h"
+#include "RecentEventsBuffer.h"  // for RecentEventsBuffer
 
 #include "base/message_loop.h"
 
@@ -492,6 +494,25 @@ class AsyncPanZoomController {
   ParentLayerPoint ToParentLayerCoordinates(const ScreenPoint& aVector,
                                             const ScreenPoint& aAnchor) const;
 
+  /**
+   * Same as above, but uses an ExternalPoint as the anchor.
+   */
+  ParentLayerPoint ToParentLayerCoordinates(const ScreenPoint& aVector,
+                                            const ExternalPoint& aAnchor) const;
+
+  /**
+   * Combines an offset defined as an external point, with a window-relative
+   * offset to give an absolute external point.
+   */
+  static ExternalPoint ToExternalPoint(const ExternalPoint& aScreenOffset,
+                                       const ScreenPoint& aScreenPoint);
+
+  /**
+   * Gets a vector where the head is the given point, and the tail is
+   * the touch start position.
+   */
+  ScreenPoint PanVector(const ExternalPoint& aPos) const;
+
   // Return whether or not a wheel event will be able to scroll in either
   // direction.
   bool CanScroll(const InputData& aEvent) const;
@@ -644,6 +665,7 @@ class AsyncPanZoomController {
   /**
    * Helper methods for long press gestures.
    */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsEventStatus OnLongPress(const TapGestureInput& aEvent);
   nsEventStatus OnLongPressUp(const TapGestureInput& aEvent);
 
@@ -660,6 +682,7 @@ class AsyncPanZoomController {
   /**
    * Helper method for double taps.
    */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsEventStatus OnDoubleTap(const TapGestureInput& aEvent);
 
   /**
@@ -724,20 +747,9 @@ class AsyncPanZoomController {
   void ScheduleCompositeAndMaybeRepaint();
 
   /**
-   * Gets the displacement of the current touch since it began. That is, it is
-   * the distance between the current position and the initial position of the
-   * current touch (this only makes sense if a touch is currently happening and
-   * OnTouchMove() or the equivalent for pan gestures is being invoked).
-   * Note: It's an abuse of the 'Coord' class to use it to represent a 2D
-   *       distance, but it's the closest thing we currently have.
-   */
-  ScreenCoord PanDistance() const;
-
-  /**
    * Gets the start point of the current touch.
-   * Like PanDistance(), this only makes sense if a touch is currently
-   * happening and OnTouchMove() or the equivalent for pan gestures is
-   * being invoked.
+   * This only makes sense if a touch is currently happening and OnTouchMove()
+   * or the equivalent for pan gestures is being invoked.
    */
   ParentLayerPoint PanStart() const;
 
@@ -758,6 +770,17 @@ class AsyncPanZoomController {
   ParentLayerPoint GetFirstTouchPoint(const MultiTouchInput& aEvent);
 
   /**
+   * Gets the relevant point in the event
+   * (eg. first touch, or pinch focus point) of the given InputData.
+   */
+  ExternalPoint GetExternalPoint(const InputData& aEvent);
+
+  /**
+   * Gets the relevant point in the event, in external screen coordinates.
+   */
+  ExternalPoint GetFirstExternalTouchPoint(const MultiTouchInput& aEvent);
+
+  /**
    * Sets the panning state basing on the pan direction angle and current
    * touch-action value.
    */
@@ -776,13 +799,15 @@ class AsyncPanZoomController {
   /**
    * Set and update the pinch lock
    */
-  void HandlePinchLocking(ScreenCoord spanDistance, ScreenPoint focusChange);
+  void HandlePinchLocking();
 
   /**
    * Sets up anything needed for panning. This takes us out of the "TOUCHING"
-   * state and starts actually panning us.
+   * state and starts actually panning us. We provide the physical pixel
+   * position of the start point so that the pan gesture is calculated
+   * regardless of if the window/GeckoView moved during the pan.
    */
-  nsEventStatus StartPanning(const ParentLayerPoint& aStartPoint);
+  nsEventStatus StartPanning(const ExternalPoint& aStartPoint);
 
   /**
    * Wrapper for Axis::UpdateWithTouchAtDevicePoint(). Calls this function for
@@ -962,6 +987,12 @@ class AsyncPanZoomController {
   // is performing a two-finger pan rather than a pinch gesture
   bool mPinchLocked;
 
+  // Stores the pinch events that occured within a given timeframe. Used to
+  // calculate the focusChange and spanDistance within a fixed timeframe.
+  // RecentEventsBuffer is not threadsafe. Should only be accessed on the
+  // controller thread.
+  RecentEventsBuffer<PinchGestureInput> mPinchEventBuffer;
+
   // Most up-to-date constraints on zooming. These should always be reasonable
   // values; for example, allowing a min zoom of 0.0 can cause very bad things
   // to happen.
@@ -990,6 +1021,9 @@ class AsyncPanZoomController {
   // associated with this id, we can adjust the scaling that WebRender applies,
   // thereby controlling the zoom.
   Maybe<uint64_t> mZoomAnimationId;
+
+  // Position on screen where user first put their finger down.
+  ExternalPoint mStartTouch;
 
   friend class Axis;
 
@@ -1067,22 +1101,26 @@ class AsyncPanZoomController {
       AsyncTransformConsumer aMode) const;
 
   /**
-   * Returns the incremental transformation corresponding to the async
-   * panning/zooming of the layout viewport (unlike GetCurrentAsyncTransform,
-   * which deals with async movement of the visual viewport). That is, when
-   * this transform is multiplied with the layer's existing transform, it will
-   * make the layer appear with the desired pan/zoom amount.
-   */
-  AsyncTransform GetCurrentAsyncViewportTransform(
-      AsyncTransformConsumer aMode) const;
-
-  /**
    * Returns the incremental transformation corresponding to the async pan/zoom
    * in progress. That is, when this transform is multiplied with the layer's
    * existing transform, it will make the layer appear with the desired pan/zoom
    * amount.
+   * The transform can have both scroll and zoom components; the caller can
+   * request just one or the other, or both, via the |aComponents| parameter.
    */
-  AsyncTransform GetCurrentAsyncTransform(AsyncTransformConsumer aMode) const;
+  AsyncTransform GetCurrentAsyncTransform(
+      AsyncTransformConsumer aMode,
+      AsyncTransformComponents aComponents = ScrollAndZoom) const;
+
+  /**
+   * Get the current async transform of the visual viewport relative to
+   * the layout viewport.
+   * We don't have an |aComponents| parameter here because the relative
+   * transform can only be a translation (the visual and layout viewports
+   * are zoomed together).
+   */
+  AsyncTransform GetCurrentAsyncViewportRelativeTransform(
+      AsyncTransformConsumer aMode) const;
 
   /**
    * Returns the incremental transformation corresponding to the async
@@ -1096,7 +1134,8 @@ class AsyncPanZoomController {
    * any transform due to axis over-scroll.
    */
   AsyncTransformComponentMatrix GetCurrentAsyncTransformWithOverscroll(
-      AsyncTransformConsumer aMode) const;
+      AsyncTransformConsumer aMode,
+      AsyncTransformComponents aComponents = ScrollAndZoom) const;
 
   /**
    * Returns the "zoom" bits of the transform. This includes both the rasterized
@@ -1120,6 +1159,16 @@ class AsyncPanZoomController {
    * |Metrics()| immediately, without any delay.)
    */
   bool SampleCompositedAsyncTransform();
+
+  /**
+   * Returns the incremental transformation corresponding to the async
+   * panning/zooming of the layout viewport (unlike GetCurrentAsyncTransform,
+   * which deals with async movement of the visual viewport). That is, when
+   * this transform is multiplied with the layer's existing transform, it will
+   * make the layer appear with the desired pan/zoom amount.
+   */
+  AsyncTransform GetCurrentAsyncViewportTransform(
+      AsyncTransformConsumer aMode) const;
 
   /*
    * Helper functions to query the async layout viewport, scroll offset, and

@@ -39,7 +39,7 @@ async function installSystemAddons(xml, waitIDs = []) {
   info("Triggering system add-on update check.");
 
   await serveSystemUpdate(xml, async function() {
-    let { XPIProvider } = ChromeUtils.import("resource://gre/modules/addons/XPIProvider.jsm", {});
+    let { XPIProvider } = ChromeUtils.import("resource://gre/modules/addons/XPIProvider.jsm");
     await Promise.all([
       XPIProvider.updateSystemAddons(),
       ...waitIDs.map(id => promiseWebExtensionStartup(id)),
@@ -217,7 +217,11 @@ async function checkInstalledSystemAddons(conditions, distroDir) {
       Assert.ok(file.exists());
       Assert.ok(file.isFile());
 
-      let uri = addon.getResourceURI(null);
+      let uri = addon.getResourceURI();
+      if (uri instanceof Ci.nsIJARURI) {
+        uri = uri.JARFile;
+      }
+
       Assert.ok(uri instanceof Ci.nsIFileURL);
       Assert.equal(uri.file.path, file.path);
 

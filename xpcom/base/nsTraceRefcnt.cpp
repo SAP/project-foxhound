@@ -52,6 +52,11 @@
 #  include "nsMemoryInfoDumper.h"
 #endif
 
+// dynamic_cast<void*> is not supported on Windows without RTTI.
+#ifndef _WIN32
+#  define HAVE_CPP_DYNAMIC_CAST_TO_VOID_PTR
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "prthread.h"
@@ -184,7 +189,7 @@ static void AssertActivityIsLegal() {
   }
   if (gActivityTLS == BAD_TLS_INDEX || PR_GetThreadPrivate(gActivityTLS)) {
     if (PR_GetEnv("MOZ_FATAL_STATIC_XPCOM_CTORS_DTORS")) {
-      MOZ_CRASH_UNSAFE_OOL(kStaticCtorDtorWarning);
+      MOZ_CRASH_UNSAFE(kStaticCtorDtorWarning);
     } else {
       NS_WARNING(kStaticCtorDtorWarning);
     }
@@ -343,8 +348,8 @@ static BloatEntry* GetBloatEntry(const char* aTypeName,
   return entry;
 }
 
-static void DumpSerialNumbers(const SerialHash::Iterator& aHashEntry,
-                              FILE* aFd) {
+static void DumpSerialNumbers(const SerialHash::Iterator& aHashEntry, FILE* aFd,
+                              bool aDumpAsStringBuffer) {
   SerialNumberRecord* record = aHashEntry.Data();
   auto* outputFile = aFd;
 #ifdef HAVE_CPP_DYNAMIC_CAST_TO_VOID_PTR
@@ -355,6 +360,19 @@ static void DumpSerialNumbers(const SerialHash::Iterator& aHashEntry,
   fprintf(outputFile, "%" PRIdPTR " @%p (%d references)\n",
           record->serialNumber, aHashEntry.Key(), record->refCount);
 #endif
+
+  if (aDumpAsStringBuffer) {
+    // This output will be wrong if the nsStringBuffer was used to
+    // store a char16_t string.
+    auto* buffer = static_cast<const nsStringBuffer*>(aHashEntry.Key());
+    nsDependentCString bufferString(static_cast<char*>(buffer->Data()),
+                                    buffer->StorageSize() - 1);
+    fprintf(outputFile,
+            "Contents of leaked nsStringBuffer with storage size %d as a "
+            "char*: %s\n",
+            buffer->StorageSize(), bufferString.get());
+  }
+
   if (!record->allocationStack.empty()) {
     static const size_t bufLen = 1024;
     char buf[bufLen];
@@ -441,9 +459,12 @@ nsresult nsTraceRefcnt::DumpStatistics() {
   fprintf(gBloatLog, "nsTraceRefcnt::DumpStatistics: %d entries\n", count);
 
   if (gSerialNumbers) {
+    bool onlyLoggingStringBuffers = gTypesToLog && gTypesToLog->Count() == 1 &&
+                                    gTypesToLog->Contains("nsStringBuffer");
+
     fprintf(gBloatLog, "\nSerial Numbers of Leaked Objects:\n");
     for (auto iter = gSerialNumbers->Iter(); !iter.Done(); iter.Next()) {
-      DumpSerialNumbers(iter, gBloatLog);
+      DumpSerialNumbers(iter, gBloatLog, onlyLoggingStringBuffers);
     }
   }
 

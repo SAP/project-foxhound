@@ -58,6 +58,7 @@
 #include "DynamicsCompressorNode.h"
 #include "GainNode.h"
 #include "IIRFilterNode.h"
+#include "js/ArrayBuffer.h"  // JS::StealArrayBufferContents
 #include "MediaElementAudioSourceNode.h"
 #include "MediaStreamAudioDestinationNode.h"
 #include "MediaStreamAudioSourceNode.h"
@@ -93,6 +94,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(AudioContext)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AudioContext)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDestination)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mListener)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWorklet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPromiseGripArray)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingResumePromises)
   if (!tmp->mIsStarted) {
@@ -111,6 +113,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(AudioContext,
                                                   DOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDestination)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mListener)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWorklet)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPromiseGripArray)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingResumePromises)
   if (!tmp->mIsStarted) {
@@ -154,6 +157,7 @@ AudioContext::AudioContext(nsPIDOMWindowInner* aWindow, bool aIsOffline,
       mIsDisconnecting(false),
       mWasAllowedToStart(true),
       mSuspendedByContent(false),
+      mSuspendedByChrome(false),
       mWasEverAllowedToStart(false),
       mWasEverBlockedToStart(false),
       mWouldBeAllowedToStart(true) {
@@ -237,7 +241,8 @@ JSObject* AudioContext::WrapObject(JSContext* aCx,
   }
 }
 
-/* static */ already_AddRefed<AudioContext> AudioContext::Constructor(
+/* static */
+already_AddRefed<AudioContext> AudioContext::Constructor(
     const GlobalObject& aGlobal, const AudioContextOptions& aOptions,
     ErrorResult& aRv) {
   // Audio playback is not yet supported when recording or replaying. See bug
@@ -280,14 +285,16 @@ JSObject* AudioContext::WrapObject(JSContext* aCx,
   return object.forget();
 }
 
-/* static */ already_AddRefed<AudioContext> AudioContext::Constructor(
+/* static */
+already_AddRefed<AudioContext> AudioContext::Constructor(
     const GlobalObject& aGlobal, const OfflineAudioContextOptions& aOptions,
     ErrorResult& aRv) {
   return Constructor(aGlobal, aOptions.mNumberOfChannels, aOptions.mLength,
                      aOptions.mSampleRate, aRv);
 }
 
-/* static */ already_AddRefed<AudioContext> AudioContext::Constructor(
+/* static */
+already_AddRefed<AudioContext> AudioContext::Constructor(
     const GlobalObject& aGlobal, uint32_t aNumberOfChannels, uint32_t aLength,
     float aSampleRate, ErrorResult& aRv) {
   // Audio playback is not yet supported when recording or replaying. See bug
@@ -536,8 +543,8 @@ bool AudioContext::IsRunning() const {
 
 already_AddRefed<Promise> AudioContext::DecodeAudioData(
     const ArrayBuffer& aBuffer,
-    const Optional<OwningNonNull<DecodeSuccessCallback> >& aSuccessCallback,
-    const Optional<OwningNonNull<DecodeErrorCallback> >& aFailureCallback,
+    const Optional<OwningNonNull<DecodeSuccessCallback>>& aSuccessCallback,
+    const Optional<OwningNonNull<DecodeErrorCallback>>& aFailureCallback,
     ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> parentObject = do_QueryInterface(GetParentObject());
   RefPtr<Promise> promise;
@@ -545,7 +552,8 @@ already_AddRefed<Promise> AudioContext::DecodeAudioData(
   jsapi.Init();
   JSContext* cx = jsapi.cx();
 
-  JS::Rooted<JSObject*> obj(cx, js::CheckedUnwrap(aBuffer.Obj()));
+  // CheckedUnwrapStatic is OK, since we know we have an ArrayBuffer.
+  JS::Rooted<JSObject*> obj(cx, js::CheckedUnwrapStatic(aBuffer.Obj()));
   if (!obj) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
@@ -577,7 +585,7 @@ already_AddRefed<Promise> AudioContext::DecodeAudioData(
   // Detach the array buffer
   size_t length = aBuffer.Length();
 
-  uint8_t* data = static_cast<uint8_t*>(JS_StealArrayBufferContents(cx, obj));
+  uint8_t* data = static_cast<uint8_t*>(JS::StealArrayBufferContents(cx, obj));
 
   // Sniff the content of the media.
   // Failed type sniffing will be handled by AsyncDecodeWebAudio.
@@ -692,7 +700,7 @@ void AudioContext::Shutdown() {
   // We don't want to touch promises if the global is going away soon.
   if (!mIsDisconnecting) {
     if (!mIsOffline) {
-      RefPtr<Promise> ignored = Close(IgnoreErrors());
+      CloseInternal(nullptr);
     }
 
     for (auto p : mPromiseGripArray) {
@@ -882,9 +890,20 @@ void AudioContext::OnStateChanged(void* aPromise, AudioContextState aNewState) {
 nsTArray<MediaStream*> AudioContext::GetAllStreams() const {
   nsTArray<MediaStream*> streams;
   for (auto iter = mAllNodes.ConstIter(); !iter.Done(); iter.Next()) {
-    MediaStream* s = iter.Get()->GetKey()->GetStream();
+    AudioNode* node = iter.Get()->GetKey();
+    MediaStream* s = node->GetStream();
     if (s) {
       streams.AppendElement(s);
+    }
+    // Add the streams of AudioParam.
+    const nsTArray<RefPtr<AudioParam>>& audioParams = node->GetAudioParams();
+    if (!audioParams.IsEmpty()) {
+      for (auto& param : audioParams) {
+        s = param->GetStream();
+        if (s && !streams.Contains(s)) {
+          streams.AppendElement(s);
+        }
+      }
     }
   }
   return streams;
@@ -916,10 +935,12 @@ already_AddRefed<Promise> AudioContext::Suspend(ErrorResult& aRv) {
 void AudioContext::SuspendFromChrome() {
   // Not support suspend call for these situations.
   if (mAudioContextState == AudioContextState::Suspended || mIsOffline ||
-      (mAudioContextState == AudioContextState::Closed || mCloseCalled)) {
+      (mAudioContextState == AudioContextState::Closed || mCloseCalled) ||
+      mIsShutDown) {
     return;
   }
   SuspendInternal(nullptr);
+  mSuspendedByChrome = true;
 }
 
 void AudioContext::SuspendInternal(void* aPromise) {
@@ -942,10 +963,12 @@ void AudioContext::SuspendInternal(void* aPromise) {
 void AudioContext::ResumeFromChrome() {
   // Not support resume call for these situations.
   if (mAudioContextState == AudioContextState::Running || mIsOffline ||
-      (mAudioContextState == AudioContextState::Closed || mCloseCalled)) {
+      (mAudioContextState == AudioContextState::Closed || mCloseCalled) ||
+      mIsShutDown || !mSuspendedByChrome) {
     return;
   }
   ResumeInternal();
+  mSuspendedByChrome = false;
 }
 
 already_AddRefed<Promise> AudioContext::Resume(ErrorResult& aRv) {
@@ -1000,6 +1023,10 @@ void AudioContext::ResumeInternal() {
   Graph()->ApplyAudioContextOperation(DestinationStream(), streams,
                                       AudioContextOperation::Resume, nullptr);
   mSuspendCalled = false;
+  // AudioContext will be resumed later, so we have no need to keep the suspend
+  // flag from Chrome, in case to avoid to resume the suspended Audio Context
+  // which is requested by content.
+  mSuspendedByChrome = false;
 }
 
 void AudioContext::UpdateAutoplayAssumptionStatus() {
@@ -1096,6 +1123,12 @@ already_AddRefed<Promise> AudioContext::Close(ErrorResult& aRv) {
 
   mPromiseGripArray.AppendElement(promise);
 
+  CloseInternal(promise);
+
+  return promise.forget();
+}
+
+void AudioContext::CloseInternal(void* aPromise) {
   // This can be called when freeing a document, and the streams are dead at
   // this point, so we need extra null-checks.
   AudioNodeStream* ds = DestinationStream();
@@ -1108,11 +1141,9 @@ already_AddRefed<Promise> AudioContext::Close(ErrorResult& aRv) {
       streams = GetAllStreams();
     }
     Graph()->ApplyAudioContextOperation(ds, streams,
-                                        AudioContextOperation::Close, promise);
+                                        AudioContextOperation::Close, aPromise);
   }
   mCloseCalled = true;
-
-  return promise.forget();
 }
 
 void AudioContext::RegisterNode(AudioNode* aNode) {
@@ -1173,6 +1204,13 @@ void AudioContext::Unmute() const {
   if (mDestination) {
     mDestination->Unmute();
   }
+}
+
+void AudioContext::SetParamMapForWorkletName(
+    const nsAString& aName, AudioParamDescriptorMap* aParamMap) {
+  MOZ_ASSERT(!mWorkletParamDescriptors.GetValue(aName));
+  Unused << mWorkletParamDescriptors.Put(aName, std::move(*aParamMap),
+                                         fallible);
 }
 
 size_t AudioContext::SizeOfIncludingThis(

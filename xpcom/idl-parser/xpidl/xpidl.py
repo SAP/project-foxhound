@@ -423,10 +423,9 @@ class Typedef(object):
 
     def rustType(self, calltype):
         if self.name == 'nsresult':
-            return '::nserror::nsresult'
+            return "%s::nserror::nsresult" % ('*mut ' if 'out' in calltype else '')
 
-        return "%s%s" % (calltype != 'in' and '*mut ' or '',
-                         self.name)
+        return "%s%s" % ('*mut ' if 'out' in calltype else '', self.name)
 
     def __str__(self):
         return "typedef %s %s\n" % (self.type, self.name)
@@ -468,6 +467,8 @@ class Forward(object):
     def rustType(self, calltype):
         if rustBlacklistedForward(self.name):
             raise RustNoncompat("forward declaration %s is unsupported" % self.name)
+        if calltype == 'element':
+            return 'RefPtr<%s>' % self.name
         return "%s*const %s" % (calltype != 'in' and '*mut ' or '',
                                 self.name)
 
@@ -560,19 +561,20 @@ class Native(object):
             const = True
 
         if calltype == 'element':
+            if self.specialtype == 'nsid':
+                if self.isPtr(calltype):
+                    raise IDLError("Array<nsIDPtr> not yet supported. "
+                                   "File an XPConnect bug if you need it.", self.location)
+
+                # ns[CI]?IDs should be held directly in Array<T>s
+                return self.nativename
+
             if self.isRef(calltype):
                 raise IDLError("[ref] qualified type unsupported in Array<T>", self.location)
 
             # Promises should be held in RefPtr<T> in Array<T>s
             if self.specialtype == 'promise':
                 return 'RefPtr<mozilla::dom::Promise>'
-
-            # We don't support nsIDPtr, in Array<T> currently, although
-            # this or support for Array<nsID> will be needed to replace
-            # [array] completely.
-            if self.specialtype == 'nsid':
-                raise IDLError("Array<nsIDPtr> not yet supported. "
-                               "File an XPConnect bug if you need it.", self.location)
 
         if self.isRef(calltype):
             m = '& '  # [ref] is always passed with a single indirection
@@ -598,6 +600,11 @@ class Native(object):
             prefix += '*mut '
 
         if self.specialtype == 'nsid':
+            if 'element' in calltype:
+                if self.isPtr(calltype):
+                    raise IDLError("Array<nsIDPtr> not yet supported. "
+                                   "File an XPConnect bug if you need it.", self.location)
+                return self.nativename
             return prefix + self.nativename
         if self.specialtype in ['cstring', 'utf8string']:
             if 'element' in calltype:
@@ -761,6 +768,8 @@ class Interface(object):
                              '*' if 'out' in calltype else '')
 
     def rustType(self, calltype, const=False):
+        if calltype == 'element':
+            return 'RefPtr<%s>' % self.name
         return "%s*const %s" % ('*mut ' if 'out' in calltype else '',
                                 self.name)
 
@@ -1001,6 +1010,9 @@ class Attribute(object):
     must_use = False
     binaryname = None
     infallible = False
+    # explicit_can_run_script is true if the attribute is explicitly annotated
+    # as being able to cause script to run.
+    explicit_can_run_script = False
 
     def __init__(self, type, name, attlist, readonly, location, doccomments):
         self.type = type
@@ -1036,6 +1048,8 @@ class Attribute(object):
                 self.must_use = True
             elif name == 'infallible':
                 self.infallible = True
+            elif name == 'can_run_script':
+                self.explicit_can_run_script = True
             else:
                 raise IDLError("Unexpected attribute '%s'" % name, aloc)
 
@@ -1083,6 +1097,9 @@ class Method(object):
     nostdcall = False
     must_use = False
     optional_argc = False
+    # explicit_can_run_script is true if the method is explicitly annotated
+    # as being able to cause script to run.
+    explicit_can_run_script = False
 
     def __init__(self, type, name, attlist, paramlist, location, doccomments, raises):
         self.type = type
@@ -1119,6 +1136,8 @@ class Method(object):
                 self.nostdcall = True
             elif name == 'must_use':
                 self.must_use = True
+            elif name == 'can_run_script':
+                self.explicit_can_run_script = True
             else:
                 raise IDLError("Unexpected attribute '%s'" % name, aloc)
 
@@ -1330,9 +1349,16 @@ class Array(object):
             return base
 
     def rustType(self, calltype):
-        # NOTE: To add Rust support, ensure 'element' is handled correctly in
-        # all rustType callees.
-        raise RustNoncompat("Array<...> types")
+        if calltype == 'legacyelement':
+            raise IDLError("[array] Array<T> is unsupported", self.location)
+
+        base = 'thin_vec::ThinVec<%s>' % self.type.rustType('element')
+        if 'out' in calltype:
+            return '*mut %s' % base
+        elif 'in' == calltype:
+            return '*const %s' % base
+        else:
+            return base
 
 
 TypeId = namedtuple('TypeId', 'name params')

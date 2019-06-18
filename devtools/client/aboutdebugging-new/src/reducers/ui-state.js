@@ -7,8 +7,10 @@
 const {
   ADB_ADDON_STATUS_UPDATED,
   DEBUG_TARGET_COLLAPSIBILITY_UPDATED,
+  HIDE_PROFILER_DIALOG,
   NETWORK_LOCATIONS_UPDATED,
   SELECT_PAGE_SUCCESS,
+  SHOW_PROFILER_DIALOG,
   TEMPORARY_EXTENSION_INSTALL_FAILURE,
   TEMPORARY_EXTENSION_INSTALL_SUCCESS,
   USB_RUNTIMES_SCAN_START,
@@ -25,6 +27,7 @@ function UiState(locations = [], debugTargetCollapsibilities = {},
     networkEnabled,
     networkLocations: locations,
     selectedPage: null,
+    showProfilerDialog: false,
     showSystemAddons,
     temporaryInstallError: null,
     wifiEnabled,
@@ -55,6 +58,14 @@ function uiReducer(state = UiState(), action) {
       return Object.assign({}, state, { selectedPage: page });
     }
 
+    case SHOW_PROFILER_DIALOG: {
+      return Object.assign({}, state, { showProfilerDialog: true });
+    }
+
+    case HIDE_PROFILER_DIALOG: {
+      return Object.assign({}, state, { showProfilerDialog: false });
+    }
+
     case USB_RUNTIMES_SCAN_START: {
       return Object.assign({}, state, { isScanningUsb: true });
     }
@@ -69,7 +80,7 @@ function uiReducer(state = UiState(), action) {
 
     case TEMPORARY_EXTENSION_INSTALL_FAILURE: {
       const { error } = action;
-      return Object.assign({}, state, { temporaryInstallError: error.message });
+      return Object.assign({}, state, { temporaryInstallError: error });
     }
 
     default:

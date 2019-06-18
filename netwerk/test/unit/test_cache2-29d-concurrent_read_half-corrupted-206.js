@@ -14,9 +14,8 @@ This test is using a resumable response.
 
 */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
@@ -73,9 +72,9 @@ function run_test()
   httpServer.start(-1);
 
   var chan1 = make_channel(URL + "/content");
-  chan1.asyncOpen2(new ChannelListener(firstTimeThrough, null));
+  chan1.asyncOpen(new ChannelListener(firstTimeThrough, null));
   var chan2 = make_channel(URL + "/content");
-  chan2.asyncOpen2(new ChannelListener(secondTimeThrough, null, CL_EXPECT_FAILURE));
+  chan2.asyncOpen(new ChannelListener(secondTimeThrough, null, CL_EXPECT_FAILURE));
 
   do_test_pending();
 }

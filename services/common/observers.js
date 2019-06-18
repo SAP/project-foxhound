@@ -4,8 +4,7 @@
 
 var EXPORTED_SYMBOLS = ["Observers"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * A service for adding, removing and notifying observers of notifications.
@@ -123,8 +122,9 @@ Observer.prototype = {
         this.callback.call(this.thisObject, subject, data);
       else
         this.callback(subject, data);
-    } else // typeof this.callback == "object" (nsIObserver)
+    } else { // typeof this.callback == "object" (nsIObserver)
       this.callback.observe(subject, topic, data);
+    }
   },
 };
 

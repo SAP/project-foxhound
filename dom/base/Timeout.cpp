@@ -15,12 +15,16 @@ namespace dom {
 Timeout::Timeout()
     : mTimeoutId(0),
       mFiringId(TimeoutManager::InvalidFiringId),
+#ifdef DEBUG
+      mFiringIndex(-1),
+#endif
       mPopupState(PopupBlocker::openAllowed),
       mReason(Reason::eTimeoutOrInterval),
       mNestingLevel(0),
       mCleared(false),
       mRunning(false),
-      mIsInterval(false) {}
+      mIsInterval(false) {
+}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(Timeout)
 

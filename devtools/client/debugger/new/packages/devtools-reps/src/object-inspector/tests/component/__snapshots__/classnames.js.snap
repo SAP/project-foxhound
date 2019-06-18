@@ -9,12 +9,7 @@ exports[`ObjectInspector - classnames has the expected class 1`] = `
   onKeyPress={[Function]}
   onKeyUp={[Function]}
   role="tree"
-  style={
-    Object {
-      "margin": 0,
-      "padding": 0,
-    }
-  }
+  style={Object {}}
   tabIndex="0"
 >
   <div
@@ -23,6 +18,7 @@ exports[`ObjectInspector - classnames has the expected class 1`] = `
     data-expandable={false}
     id="root"
     onClick={[Function]}
+    onKeyDownCapture={null}
     role="treeitem"
   >
     <div
@@ -58,12 +54,7 @@ exports[`ObjectInspector - classnames has the inline class when inline prop is t
   onKeyPress={[Function]}
   onKeyUp={[Function]}
   role="tree"
-  style={
-    Object {
-      "margin": 0,
-      "padding": 0,
-    }
-  }
+  style={Object {}}
   tabIndex="0"
 >
   <div
@@ -72,6 +63,7 @@ exports[`ObjectInspector - classnames has the inline class when inline prop is t
     data-expandable={false}
     id="root"
     onClick={[Function]}
+    onKeyDownCapture={null}
     role="treeitem"
   >
     <div
@@ -107,12 +99,7 @@ exports[`ObjectInspector - classnames has the nowrap class when disableWrap prop
   onKeyPress={[Function]}
   onKeyUp={[Function]}
   role="tree"
-  style={
-    Object {
-      "margin": 0,
-      "padding": 0,
-    }
-  }
+  style={Object {}}
   tabIndex="0"
 >
   <div
@@ -121,6 +108,7 @@ exports[`ObjectInspector - classnames has the nowrap class when disableWrap prop
     data-expandable={false}
     id="root"
     onClick={[Function]}
+    onKeyDownCapture={null}
     role="treeitem"
   >
     <div

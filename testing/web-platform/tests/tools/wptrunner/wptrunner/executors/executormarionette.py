@@ -417,7 +417,7 @@ class MarionetteCoverageProtocolPart(CoverageProtocolPart):
             return
 
         script = """
-            ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
+            const {PerTestCoverageUtils} = ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
             return PerTestCoverageUtils.enabled;
             """
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
@@ -427,7 +427,7 @@ class MarionetteCoverageProtocolPart(CoverageProtocolPart):
         script = """
             var callback = arguments[arguments.length - 1];
 
-            ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
+            const {PerTestCoverageUtils} = ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
             PerTestCoverageUtils.beforeTest().then(callback, callback);
             """
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
@@ -447,7 +447,7 @@ class MarionetteCoverageProtocolPart(CoverageProtocolPart):
         script = """
             var callback = arguments[arguments.length - 1];
 
-            ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
+            const {PerTestCoverageUtils} = ChromeUtils.import("chrome://marionette/content/PerTestCoverageUtils.jsm");
             PerTestCoverageUtils.afterTest().then(callback, callback);
             """
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
@@ -511,12 +511,13 @@ class MarionetteProtocol(Protocol):
         pass
 
     def teardown(self):
-        try:
-            self.marionette._request_in_app_shutdown()
-            self.marionette.delete_session(send_request=False)
-        except Exception:
-            # This is typically because the session never started
-            pass
+        if self.marionette and self.marionette.session_id:
+            try:
+                self.marionette._request_in_app_shutdown()
+                self.marionette.delete_session(send_request=False)
+            except Exception:
+                # This is typically because the session never started
+                pass
         if self.marionette is not None:
             del self.marionette
         super(MarionetteProtocol, self).teardown()
@@ -723,11 +724,6 @@ class MarionetteTestharnessExecutor(TestharnessExecutor):
             if done:
                 break
 
-        try:
-            self.protocol.testharness.close_old_windows(protocol)
-        except Exception:
-            pass
-
         if self.protocol.coverage.is_enabled:
             self.protocol.coverage.dump()
 
@@ -774,14 +770,18 @@ class MarionetteRefTestExecutor(RefTestExecutor):
     def teardown(self):
         try:
             self.implementation.teardown()
-            handles = self.protocol.marionette.window_handles
-            if handles:
-                self.protocol.marionette.switch_to_window(handles[0])
+            if self.protocol.marionette and self.protocol.marionette.session_id:
+                handles = self.protocol.marionette.window_handles
+                if handles:
+                    self.protocol.marionette.switch_to_window(handles[0])
             super(self.__class__, self).teardown()
         except Exception as e:
             # Ignore errors during teardown
             self.logger.warning("Exception during reftest teardown:\n%s" %
                                 traceback.format_exc(e))
+
+    def reset(self):
+        self.implementation.reset(**self.implementation_kwargs)
 
     def is_alive(self):
         return self.protocol.is_alive
@@ -864,6 +864,10 @@ class InternalRefTestImplementation(object):
         self.executor.protocol.marionette.set_context(self.executor.protocol.marionette.CONTEXT_CHROME)
         self.executor.protocol.marionette._send_message("reftest:setup", data)
 
+    def reset(self, screenshot=None):
+        self.teardown()
+        self.setup(screenshot)
+
     def run_test(self, test):
         references = self.get_references(test)
         timeout = (test.timeout * 1000) * self.timeout_multiplier
@@ -871,7 +875,9 @@ class InternalRefTestImplementation(object):
                                                              {"test": self.executor.test_url(test),
                                                               "references": references,
                                                               "expected": test.expected(),
-                                                              "timeout": timeout})["value"]
+                                                              "timeout": timeout,
+                                                              "width": 800,
+                                                              "height": 600})["value"]
         return rv
 
     def get_references(self, node):
@@ -882,8 +888,9 @@ class InternalRefTestImplementation(object):
 
     def teardown(self):
         try:
-            self.executor.protocol.marionette._send_message("reftest:teardown", {})
-            self.executor.protocol.marionette.set_context(self.executor.protocol.marionette.CONTEXT_CONTENT)
+            if self.executor.protocol.marionette and self.executor.protocol.marionette.session_id:
+                self.executor.protocol.marionette._send_message("reftest:teardown", {})
+                self.executor.protocol.marionette.set_context(self.executor.protocol.marionette.CONTEXT_CONTENT)
         except Exception as e:
             # Ignore errors during teardown
             self.logger.warning(traceback.format_exc(e))

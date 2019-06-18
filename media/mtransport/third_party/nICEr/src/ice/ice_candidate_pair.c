@@ -447,6 +447,12 @@ int nr_ice_candidate_pair_do_triggered_check(nr_ice_peer_ctx *pctx, nr_ice_cand_
     } else if(pair->state==NR_ICE_PAIR_STATE_SUCCEEDED) {
       r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/CAND_PAIR(%s): No new trigger check for succeeded pair",pctx->label,pair->codeword);
       return(0);
+    } else if (pair->local->stream->obsolete) {
+      r_log(LOG_ICE, LOG_DEBUG,
+            "ICE-PEER(%s)/CAND_PAIR(%s): No new trigger check for pair with "
+            "obsolete stream",
+            pctx->label, pair->codeword);
+      return (0);
     }
 
     /* Do not run this logic more than once on a given pair */
@@ -580,11 +586,9 @@ void nr_ice_candidate_pair_set_state(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pa
     }
   }
 
-int nr_ice_candidate_pair_dump_state(nr_ice_cand_pair *pair, FILE *out)
+void nr_ice_candidate_pair_dump_state(nr_ice_cand_pair *pair, int log_level)
   {
-    /*r_log(LOG_ICE,LOG_DEBUG,"CAND-PAIR(%s): pair %s: state=%s, priority=0x%llx\n",pair->codeword,pair->as_string,nr_ice_cand_pair_states[pair->state],pair->priority);*/
-
-    return(0);
+    r_log(LOG_ICE,log_level,"CAND-PAIR(%s): pair %s: state=%s, priority=0x%llx\n",pair->codeword,pair->as_string,nr_ice_cand_pair_states[pair->state],pair->priority);
   }
 
 

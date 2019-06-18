@@ -74,6 +74,8 @@ Only ``value`` and the values of ``extra`` will be truncated if over the specifi
 Any other ``String`` going over its limit will be reported as an error and the operation
 aborted.
 
+.. _eventdefinition:
+
 The YAML definition file
 ========================
 
@@ -310,6 +312,23 @@ All dynamically-registered events end up in the dynamic-process ``telemetry.dyna
 example above, if ``interaction.click.document`` was registered with ``registerEvents`` then
 the dynamic-process scalar ``telemetry.dynamic_event_counts`` would have a key
 ``interaction#click#document`` with the value ``6``.
+
+Testing
+=======
+
+Tests involving Event Telemetry often follow this four-step form:
+
+1. ``Services.telemetry.clearEvents();`` To minimize the effects of prior code and tests.
+2. ``Services.telemetry.setEventRecordingEnabled(myCategory, true);`` To enable the collection of
+   your events. (May or may not be relevant in your case)
+3. ``runTheCode();`` This is part of the test where you call the code that's supposed to collect
+   Event Telemetry.
+4. ``TelemetryTestUtils.assertEvents(expected, filter, options);`` This will check the
+   events recorded by Event Telemetry against your provided list of expected events.
+   If you only need to check the number of events recorded, you can use
+   ``TelemetryTestUtils.assertNumberOfEvents(expectedNum, filter, options);``.
+   Both utilities have `helpful inline documentation <https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/telemetry/tests/utils/TelemetryTestUtils.jsm>`_.
+
 
 Version History
 ===============

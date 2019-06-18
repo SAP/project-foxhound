@@ -6,7 +6,7 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
+const { Cc, Ci, Cu } = require("chrome");
 const Services = require("Services");
 const { Pool } = require("devtools/shared/protocol");
 const { LazyPool, createExtraActors } = require("devtools/shared/protocol/lazy-pool");
@@ -121,11 +121,6 @@ RootActor.prototype = {
     storageInspector: true,
     // Whether storage inspector is read only
     storageInspectorReadOnly: true,
-    // Whether conditional breakpoints are supported
-    conditionalBreakpoints: true,
-    // Whether the server supports full source actors (breakpoints on
-    // eval scripts, etc)
-    debuggerSourceActors: true,
     // Whether the server can return wasm binary source
     wasmBinarySource: true,
     bulk: true,
@@ -175,6 +170,9 @@ RootActor.prototype = {
     // `front.startProfiler`. This is an optional parameter but it will throw an error if
     // the profiled Firefox doesn't accept it.
     perfActorVersion: 1,
+    // Supports native log points and modifying the condition/log of an existing
+    // breakpoints. Fx66+
+    nativeLogpoints: true,
   },
 
   /**
@@ -544,16 +542,13 @@ RootActor.prototype = {
     // If the request doesn't contains id parameter or id is 0
     // (id == 0, based on onListProcesses implementation)
     if ((!("id" in request)) || request.id === 0) {
-      // Check if we are running on xpcshell. hiddenDOMWindow is going to throw on it.
+      // Check if we are running on xpcshell.
       // When running on xpcshell, there is no valid browsing context to attach to
       // and so ParentProcessTargetActor doesn't make sense as it inherits from
       // BrowsingContextTargetActor. So instead use ContentProcessTargetActor, which
       // matches xpcshell needs.
-      let isXpcshell = true;
-      try {
-        isXpcshell = !Services.wm.getMostRecentWindow(null) &&
-                     !Services.appShell.hiddenDOMWindow;
-      } catch (e) {}
+      const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+      const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
 
       if (!isXpcshell && this._parentProcessTargetActor &&
           (!this._parentProcessTargetActor.docShell ||

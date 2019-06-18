@@ -8,6 +8,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
@@ -18,7 +19,6 @@
 #include "nsICategoryManager.h"
 #include "nsIObserverService.h"
 #include "nsIWebProgress.h"
-#include "nsCURILoader.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIURL.h"
@@ -127,7 +127,7 @@ nsresult nsPrefetchNode::OpenChannel() {
       getter_AddRefs(mChannel), mURI, source, source->NodePrincipal(),
       nullptr,  // aTriggeringPrincipal
       Maybe<ClientInfo>(), Maybe<ServiceWorkerDescriptor>(), securityFlags,
-      mPolicyType,
+      mPolicyType, source->OwnerDoc()->CookieSettings(),
       nullptr,    // aPerformanceStorage
       loadGroup,  // aLoadGroup
       this,       // aCallbacks
@@ -151,7 +151,7 @@ nsresult nsPrefetchNode::OpenChannel() {
     priorityChannel->AdjustPriority(nsISupportsPriority::PRIORITY_LOWEST);
   }
 
-  rv = mChannel->AsyncOpen2(this);
+  rv = mChannel->AsyncOpen(this);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // Drop the ref to the channel, because we don't want to end up with
     // cycles through it.
@@ -180,7 +180,7 @@ NS_IMPL_ISUPPORTS(nsPrefetchNode, nsIRequestObserver, nsIStreamListener,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsPrefetchNode::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
+nsPrefetchNode::OnStartRequest(nsIRequest *aRequest) {
   nsresult rv;
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest, &rv);
@@ -188,13 +188,11 @@ nsPrefetchNode::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
 
   // if the load is cross origin without CORS, or the CORS access is rejected,
   // always fire load event to avoid leaking site information.
-  nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->GetLoadInfo();
-  if (loadInfo) {
-    mShouldFireLoadEvent =
-        loadInfo->GetTainting() == LoadTainting::Opaque ||
-        (loadInfo->GetTainting() == LoadTainting::CORS &&
-         (NS_FAILED(httpChannel->GetStatus(&rv)) || NS_FAILED(rv)));
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->LoadInfo();
+  mShouldFireLoadEvent =
+      loadInfo->GetTainting() == LoadTainting::Opaque ||
+      (loadInfo->GetTainting() == LoadTainting::CORS &&
+       (NS_FAILED(httpChannel->GetStatus(&rv)) || NS_FAILED(rv)));
 
   // no need to prefetch http error page
   bool requestSucceeded;
@@ -234,9 +232,8 @@ nsPrefetchNode::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
 }
 
 NS_IMETHODIMP
-nsPrefetchNode::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
-                                nsIInputStream *aStream, uint64_t aOffset,
-                                uint32_t aCount) {
+nsPrefetchNode::OnDataAvailable(nsIRequest *aRequest, nsIInputStream *aStream,
+                                uint64_t aOffset, uint32_t aCount) {
   uint32_t bytesRead = 0;
   aStream->ReadSegments(NS_DiscardSegment, nullptr, aCount, &bytesRead);
   mBytesRead += bytesRead;
@@ -245,8 +242,7 @@ nsPrefetchNode::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
 }
 
 NS_IMETHODIMP
-nsPrefetchNode::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
-                              nsresult aStatus) {
+nsPrefetchNode::OnStopRequest(nsIRequest *aRequest, nsresult aStatus) {
   LOG(("done prefetching [status=%" PRIx32 "]\n",
        static_cast<uint32_t>(aStatus)));
 
@@ -481,16 +477,14 @@ void nsPrefetchService::DispatchEvent(nsPrefetchNode *node, bool aSuccess) {
 
 void nsPrefetchService::AddProgressListener() {
   // Register as an observer for the document loader
-  nsCOMPtr<nsIWebProgress> progress =
-      do_GetService(NS_DOCUMENTLOADER_SERVICE_CONTRACTID);
+  nsCOMPtr<nsIWebProgress> progress = components::DocLoader::Service();
   if (progress)
     progress->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_DOCUMENT);
 }
 
 void nsPrefetchService::RemoveProgressListener() {
   // Register as an observer for the document loader
-  nsCOMPtr<nsIWebProgress> progress =
-      do_GetService(NS_DOCUMENTLOADER_SERVICE_CONTRACTID);
+  nsCOMPtr<nsIWebProgress> progress = components::DocLoader::Service();
   if (progress) progress->RemoveProgressListener(this);
 }
 

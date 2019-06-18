@@ -19,7 +19,8 @@ using namespace mozilla;
 // nsRubyContentFrame Method Implementations
 // ======================================
 
-/* virtual */ bool nsRubyContentFrame::IsFrameOfType(uint32_t aFlags) const {
+/* virtual */
+bool nsRubyContentFrame::IsFrameOfType(uint32_t aFlags) const {
   if (aFlags & eBidiInlineContainer) {
     return false;
   }
@@ -27,9 +28,9 @@ using namespace mozilla;
 }
 
 bool nsRubyContentFrame::IsIntraLevelWhitespace() const {
-  nsAtom* pseudoType = Style()->GetPseudo();
-  if (pseudoType != nsCSSAnonBoxes::rubyBase() &&
-      pseudoType != nsCSSAnonBoxes::rubyText()) {
+  auto pseudoType = Style()->GetPseudoType();
+  if (pseudoType != PseudoStyleType::rubyBase &&
+      pseudoType != PseudoStyleType::rubyText) {
     return false;
   }
 

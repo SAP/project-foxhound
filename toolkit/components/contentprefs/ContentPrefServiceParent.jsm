@@ -7,7 +7,7 @@
 
 var EXPORTED_SYMBOLS = [ "ContentPrefServiceParent" ];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "_methodsCallableFromChild",
                                "resource://gre/modules/ContentPrefUtils.jsm");
@@ -29,7 +29,7 @@ var ContentPrefServiceParent = {
     globalMM.addMessageListener("child-process-shutdown", this);
   },
 
-  // Only called on Android. Listeners are added in nsBrowserGlue.js on other
+  // Only called on Android. Listeners are added in BrowserGlue.jsm on other
   // platforms.
   init() {
     let globalMM = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
@@ -106,7 +106,7 @@ var ContentPrefServiceParent = {
     }
   },
 
-  // Listeners are added in nsBrowserGlue.js
+  // Listeners are added in BrowserGlue.jsm
   receiveMessage(msg) {
     if (msg.name != "ContentPrefs:FunctionCall") {
       this.handleObserverChange(msg);

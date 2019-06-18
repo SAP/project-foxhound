@@ -39,7 +39,7 @@ extern bool Stringify(JSContext* cx, js::MutableHandleValue vp,
 template <typename CharT>
 extern bool ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const CharT> chars,
                                  HandleValue reviver, MutableHandleValue vp,
-                                 const StringTaint* taint);
+                                 const StringTaint& taint);
 
 }  // namespace js
 

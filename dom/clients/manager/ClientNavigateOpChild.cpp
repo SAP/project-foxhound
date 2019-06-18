@@ -16,6 +16,7 @@
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsURLHelper.h"
+#include "ReferrerInfo.h"
 
 namespace mozilla {
 namespace dom {
@@ -226,9 +227,20 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
   }
 
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(url);
-
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
   loadState->SetTriggeringPrincipal(principal);
-  loadState->SetReferrerPolicy(doc->GetReferrerPolicy());
+
+  // Currently we query the CSP from the principal, which is the
+  // doc->NodePrincipal(). After Bug 965637 we can query the CSP
+  // from the doc directly.
+  if (principal) {
+    nsCOMPtr<nsIContentSecurityPolicy> csp;
+    principal->GetCsp(getter_AddRefs(csp));
+    loadState->SetCsp(csp);
+  }
+
+  loadState->SetReferrerInfo(referrerInfo);
   loadState->SetLoadType(LOAD_STOP_CONTENT);
   loadState->SetSourceDocShell(docShell);
   loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);

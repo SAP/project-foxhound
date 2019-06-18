@@ -11,29 +11,32 @@ const kSearchEngineURL2 = "http://example.com/?search={searchTerms}&IGNORE=TRUE"
 const kSearchEngineURL3 = "http://example.com/?search={searchTerms}";
 const kExtensionID = "searchignore@mozilla.com";
 
-add_task(async function test_ignorelistEngineLowerCase() {
-  Assert.ok(!Services.search.isInitialized);
+add_task(async function test_ignoreList() {
+  await setupRemoteSettings();
 
-  await asyncInit();
+  Assert.ok(!Services.search.isInitialized,
+    "Search service should not be initialized to begin with.");
 
-  Services.search.addEngineWithDetails(kSearchEngineID1, "", "", "", "get",
-                                       kSearchEngineURL1);
+  let updatePromise = SearchTestUtils.promiseSearchNotification("settings-update-complete");
+
+  await Services.search.addEngineWithDetails(kSearchEngineID1, "", "", "", "get", kSearchEngineURL1);
+
+  await updatePromise;
 
   // An ignored engine shouldn't be available at all
   let engine = Services.search.getEngineByName(kSearchEngineID1);
-  Assert.equal(engine, null, "Engine should not exist");
+  Assert.equal(engine, null, "Engine with ignored search params should not exist");
 
-  Services.search.addEngineWithDetails(kSearchEngineID2, "", "", "", "get",
-                                       kSearchEngineURL2);
+  await Services.search.addEngineWithDetails(kSearchEngineID2, "", "", "", "get", kSearchEngineURL2);
 
   // An ignored engine shouldn't be available at all
   engine = Services.search.getEngineByName(kSearchEngineID2);
-  Assert.equal(engine, null, "Engine should not exist");
+  Assert.equal(engine, null, "Engine with ignored search params of a different case should not exist");
 
-  Services.search.addEngineWithDetails(kSearchEngineID3, "", "", "", "get",
-                                       kSearchEngineURL3, kExtensionID);
+  await Services.search.addEngineWithDetails(kSearchEngineID3, "", "", "", "get",
+                                             kSearchEngineURL3, kExtensionID);
 
   // An ignored engine shouldn't be available at all
   engine = Services.search.getEngineByName(kSearchEngineID3);
-  Assert.equal(engine, null, "Engine should not exist");
+  Assert.equal(engine, null, "Engine with ignored extension id should not exist");
 });

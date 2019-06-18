@@ -67,7 +67,7 @@ class GLContextEGL : public GLContext {
 
   virtual void ReleaseSurface() override;
 
-  virtual bool SetupLookupFunction() override;
+  Maybe<SymbolLoader> GetSymbolLoader() const override;
 
   virtual bool SwapBuffers() override;
 
@@ -91,6 +91,10 @@ class GLContextEGL : public GLContext {
       CreateContextFlags flags, const gfx::IntSize& size,
       const SurfaceCaps& minCaps, nsACString* const out_FailureId);
 
+#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
+  static EGLSurface CreateEGLSurfaceForCompositorWidget(
+      widget::CompositorWidget* aCompositorWidget, const EGLConfig aConfig);
+#endif
  protected:
   friend class GLContextProviderEGL;
   friend class GLContextEGLFactory;

@@ -9,6 +9,63 @@ Unreleased
 
 ### Added
 
+- Added support for searching for Nightly’s default path on macOS
+
+  If the location of the Firefox binary is not given, geckodriver
+  will from now also look for the location of Firefox Nightly in
+  the default locations.  The ordered list of search paths on macOS
+  is as follows:
+
+    1. `/Applications/Firefox.app/Contents/MacOS/firefox-bin`
+    2. `$HOME/Applications/Firefox.app/Contents/MacOS/firefox-bin`
+    3. `/Applications/Firefox Nightly.app/Contents/MacOS/firefox-bin`
+    4. `$HOME/Applications/Firefox Nightly.app/Contents/MacOS/firefox-bin`
+
+  Thanks to [Kriti Singh] for this patch.
+
+- Support for application bundle paths on macOS
+
+  It is now possible to pass an application bundle path, such as
+  `/Applications/Firefox.app` as argument to the `binary` field in
+  [`moz:firefoxOptions`].  This will be automatically resolved to
+  the absolute path of the binary when Firefox is started.
+
+  Thanks to [Nupur Baghel] for this patch.
+
+### Removed
+
+- Dropped support for legacy Selenium web element references
+
+  The legacy way of serialising web elements, using `{"ELEMENT": <UUID>}`,
+  has been removed in this release.  This may break older Selenium
+  clients and clients which are otherwise not compatible with the
+  WebDriver standard.
+
+  Thanks to Shivam Singhal for this patch.
+
+- Removed `--webdriver-port` command-line option
+
+  `--webdriver-port <PORT>` was an undocumented alias for `--port`,
+  initially used for backwards compatibility with clients
+  prior to Selenium 3.0.0.
+
+### Changed
+
+- Improved error messages for incorrect command-line usage
+
+### Fixed
+
+- Errors related to incorrect command-line usage no longer hidden
+
+  By mistake, earlier versions of geckodriver failed to print incorrect
+  flag use.  With this release problems are again written to stderr.
+
+
+0.24.0 (2019-01-28, `917474f3473e`)
+-----------------------------------
+
+### Added
+
 - Introduces `strictFileInteractability` capability
 
   The new capabilitiy indicates if strict interactability checks
@@ -20,10 +77,35 @@ Unreleased
 - Added new endpoint `GET /session/{session id}/moz/screenshot/full`
   for taking full document screenshots, thanks to Greg Fraley.
 
-- Added new `--marionette-host <HOSTNAME>` flag for binding to a
+- Added new `--marionette-host <hostname>` flag for binding to a
   particular interface/IP layer on the system.
 
-# Changed
+- Added new endpoint `POST /session/{session_id}/window/new`
+  for the [New Window] command to create a new top-level browsing
+  context, which can be either a window or a tab. The first version
+  of Firefox supporting this command is Firefox 66.0.
+
+- When using the preference `devtools.console.stdout.content` set to
+  `true` logging of console API calls like `info()`, `warn()`, and
+  `error()` can be routed to stdout.
+
+- geckodriver now sets the `app.update.disabledForTesting` preference
+  to prevent Firefox >= 65 from automatically updating whilst under
+  automation.
+
+### Removed
+
+- ARMv7 HF builds have been discontinued
+
+  We [announced](https://lists.mozilla.org/pipermail/tools-marionette/2018-September/000035.html)
+  back in September 2018 that we would stop building for ARM,
+  but builds can be self-serviced by building from source.
+
+  To cross-compile from another host system, you can use this command:
+
+  	% cargo build --target armv7-unknown-linux-gnueabihf
+
+### Changed
 
 - Allow file uploads to hidden `<input type=file>` elements
 
@@ -31,9 +113,23 @@ Unreleased
   geckodriver is now aligned with chromedriver’s behaviour that
   allows interaction with hidden `<input type=file>` elements.
 
-  This allows WebDriver to be used with various popular web frameworks
-  that—through indirection—hides the file upload control and
-  invokes it through other means.
+  This allows WebDriver to be used with various popular web
+  frameworks that—through indirection—hides the file upload control
+  and invokes it through other means.
+
+- Allow use of an indefinite script timeout for the [Set Timeouts]
+  command, thanks to reimu.
+
+### Fixed
+
+- Corrected `Content-Type` of response header to `utf-8` to fix
+  an HTTP/1.1 compatibility bug.
+
+- Relaxed the deserialization of timeouts parameters to allow unknown
+  fields for the [Set Timeouts] command.
+
+- Fixed a regression in the [Take Element Screenshot] to not screenshot
+  the viewport, but the requested element.
 
 
 0.23.0 (2018-10-03)
@@ -168,7 +264,7 @@ to the standard.
   [Jeremy Lempereur].
 
 - Many documentation improvements, now published on
-  https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/.
+  https://firefox-source-docs.mozilla.org/testing/geckodriver/.
 
 
 0.21.0 (2018-06-15)
@@ -1110,6 +1206,7 @@ and greater.
 [insecure certificate]: https://w3c.github.io/webdriver/webdriver-spec.html#dfn-insecure-certificate
 [Minimize Window]: https://w3c.github.io/webdriver/webdriver-spec.html#minimize-window
 [New Session]: https://w3c.github.io/webdriver/webdriver-spec.html#new-session
+[New Window]: https://developer.mozilla.org/en-US/docs/Web/WebDriver/Commands/New_Window
 [Send Alert Text]: https://w3c.github.io/webdriver/webdriver-spec.html#send-alert-text
 [Set Timeouts]: https://w3c.github.io/webdriver/webdriver-spec.html#set-timeouts
 [Set Window Rect]: https://w3c.github.io/webdriver/webdriver-spec.html#set-window-rect
@@ -1122,6 +1219,8 @@ and greater.
 [Jeremy Lempereur]: https://github.com/o0Ignition0o
 [Joshua Bruning]: https://github.com/joshbruning
 [Kalpesh Krishna]: https://github.com/martiansideofthemoon
+[Kriti Singh]: https://github.com/kritisingh1
 [Mike Pennisi]: https://github.com/jugglinmike
+[Nupur Baghel]: https://github.com/nupurbaghel
 [Sven Jost]: https://github/mythsunwind
 [Vlad Filippov]: https://github.com/vladikoff

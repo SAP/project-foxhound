@@ -29,7 +29,8 @@ FileChannelParent::SetParentListener(HttpChannelParentListener *aListener) {
 }
 
 NS_IMETHODIMP
-FileChannelParent::NotifyTrackingProtectionDisabled() {
+FileChannelParent::NotifyChannelClassifierProtectionDisabled(
+    uint32_t aAcceptedReason) {
   // Nothing to do.
   return NS_OK;
 }
@@ -41,13 +42,14 @@ FileChannelParent::NotifyCookieAllowed() {
 }
 
 NS_IMETHODIMP
-FileChannelParent::NotifyTrackingCookieBlocked(uint32_t aRejectedReason) {
+FileChannelParent::NotifyCookieBlocked(uint32_t aRejectedReason) {
   // Nothing to do.
   return NS_OK;
 }
 
 NS_IMETHODIMP
-FileChannelParent::NotifyTrackingResource(bool aIsThirdParty) {
+FileChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
+                                             bool aIsThirdParty) {
   // Nothing to do.
   return NS_OK;
 }
@@ -76,7 +78,7 @@ FileChannelParent::Delete() {
 void FileChannelParent::ActorDestroy(ActorDestroyReason why) {}
 
 NS_IMETHODIMP
-FileChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
+FileChannelParent::OnStartRequest(nsIRequest *aRequest) {
   // We don't have a way to prevent nsBaseChannel from calling AsyncOpen on
   // the created nsDataChannel. We don't have anywhere to send the data in the
   // parent, so abort the binding.
@@ -84,15 +86,14 @@ FileChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) {
 }
 
 NS_IMETHODIMP
-FileChannelParent::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
-                                 nsresult aStatusCode) {
+FileChannelParent::OnStopRequest(nsIRequest *aRequest, nsresult aStatusCode) {
   // See above.
   MOZ_ASSERT(NS_FAILED(aStatusCode));
   return NS_OK;
 }
 
 NS_IMETHODIMP
-FileChannelParent::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
+FileChannelParent::OnDataAvailable(nsIRequest *aRequest,
                                    nsIInputStream *aInputStream,
                                    uint64_t aOffset, uint32_t aCount) {
   // See above.

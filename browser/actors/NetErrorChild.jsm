@@ -5,9 +5,9 @@
 
 var EXPORTED_SYMBOLS = ["NetErrorChild"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
 
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
                                "resource://gre/modules/BrowserUtils.jsm");
@@ -28,6 +28,8 @@ XPCOMUtils.defineLazyPreferenceGetter(this, "newErrorPagesEnabled",
   "browser.security.newcerterrorpage.enabled");
 XPCOMUtils.defineLazyPreferenceGetter(this, "mitmErrorPageEnabled",
   "browser.security.newcerterrorpage.mitm.enabled");
+XPCOMUtils.defineLazyPreferenceGetter(this, "mitmPrimingEnabled",
+  "security.certerrors.mitm.priming.enabled");
 XPCOMUtils.defineLazyGetter(this, "gNSSErrorsBundle", function() {
   return Services.strings.createBundle("chrome://pipnss/locale/nsserrors.properties");
 });
@@ -182,6 +184,10 @@ class NetErrorChild extends ActorChild {
     if (input.data.isDomainMismatch) {
       let subjectAltNames = input.data.certSubjectAltNames.split(",");
       let numSubjectAltNames = subjectAltNames.length;
+
+      subjectAltNames = subjectAltNames.filter(name => name.length > 0);
+      numSubjectAltNames = subjectAltNames.length;
+
       let msgPrefix = "";
       if (numSubjectAltNames != 0) {
         if (numSubjectAltNames == 1) {
@@ -356,12 +362,37 @@ class NetErrorChild extends ActorChild {
     }
   }
 
+  // eslint-disable-next-line complexity
   onCertErrorDetails(msg, docShell) {
     let doc = docShell.document;
 
+    // This function centers the error container after its content updates.
+    // It is currently duplicated in aboutNetError.js to avoid having to do
+    // async communication to the page that would result in flicker.
+    // TODO(johannh): Get rid of this duplication.
     function updateContainerPosition() {
       let textContainer = doc.getElementById("text-container");
-      textContainer.style.marginTop = `calc(50vh - ${textContainer.clientHeight / 2}px)`;
+      // Using the vh CSS property our margin adapts nicely to window size changes.
+      // Unfortunately, this doesn't work correctly in iframes, which is why we need
+      // to manually compute the height there.
+      if (doc.ownerGlobal.parent == doc.ownerGlobal) {
+        textContainer.style.marginTop = `calc(50vh - ${textContainer.clientHeight / 2}px)`;
+      } else {
+        let offset = (doc.documentElement.clientHeight / 2) - (textContainer.clientHeight / 2);
+        if (offset > 0) {
+          textContainer.style.marginTop = `${offset}px`;
+        }
+      }
+    }
+
+    // Check if the connection is being man-in-the-middled. When the parent
+    // detects an intercepted connection, the page may be reloaded with a new
+    // error code (MOZILLA_PKIX_ERROR_MITM_DETECTED).
+    if (newErrorPagesEnabled && mitmPrimingEnabled &&
+        msg.data.code == SEC_ERROR_UNKNOWN_ISSUER &&
+        // Only do this check for top-level failures.
+        doc.ownerGlobal.top === doc.ownerGlobal) {
+      this.mm.sendAsyncMessage("Browser:PrimeMitm");
     }
 
     let div = doc.getElementById("certificateErrorText");
@@ -369,10 +400,26 @@ class NetErrorChild extends ActorChild {
     this._setTechDetails(msg, doc);
     let learnMoreLink = doc.getElementById("learnMoreLink");
     let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
+    learnMoreLink.setAttribute("href", baseURL + "connection-not-secure");
     let errWhatToDo = doc.getElementById("es_nssBadCert_" + msg.data.codeString);
     let es = doc.getElementById("errorWhatToDoText");
     let errWhatToDoTitle = doc.getElementById("edd_nssBadCert");
     let est = doc.getElementById("errorWhatToDoTitleText");
+    let searchParams = new URLSearchParams(doc.documentURI.split("?")[1]);
+    let error = searchParams.get("e");
+
+    if (error == "sslv3Used") {
+      learnMoreLink.setAttribute("href", baseURL + "sslv3-error-messages");
+    }
+
+    if (error == "nssFailure2") {
+      let shortDesc = doc.getElementById("errorShortDescText").textContent;
+      // nssFailure2 also gets us other non-overrideable errors. Choose
+      // a "learn more" link based on description:
+      if (shortDesc.includes("MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE")) {
+        learnMoreLink.setAttribute("href", baseURL + "certificate-pinning-reports");
+      }
+    }
 
     // This is set to true later if the user's system clock is at fault for this error.
     let clockSkew = false;
@@ -423,6 +470,14 @@ class NetErrorChild extends ActorChild {
         break;
       case MOZILLA_PKIX_ERROR_MITM_DETECTED:
         if (newErrorPagesEnabled && mitmErrorPageEnabled) {
+          let autoEnabledEnterpriseRoots =
+            Services.prefs.getBoolPref("security.enterprise_roots.auto-enabled", false);
+          if (mitmPrimingEnabled && autoEnabledEnterpriseRoots) {
+            // If we automatically tried to import enterprise root certs but it didn't
+            // fix the MITM, reset the pref.
+            this.mm.sendAsyncMessage("Browser:ResetEnterpriseRootsPref");
+          }
+
           // We don't actually know what the MitM is called (since we don't
           // maintain a list), so we'll try and display the common name of the
           // root issuer to the user. In the worst case they are as clueless as
@@ -623,6 +678,8 @@ class NetErrorChild extends ActorChild {
         } else {
           this.onClick(aEvent);
         }
+      } else if (this.isAboutCertError(doc)) {
+          this.recordClick(aEvent.originalTarget);
       }
       break;
     }

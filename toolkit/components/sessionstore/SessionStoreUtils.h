@@ -45,15 +45,28 @@ class SessionStoreUtils {
       const nsCString& aDisallowCapabilities);
 
   static void CollectScrollPosition(const GlobalObject& aGlobal,
-                                    Document& aDocument,
-                                    SSScrollPositionDict& aRetVal);
+                                    WindowProxyHolder& aWindow,
+                                    Nullable<CollectedData>& aRetVal);
 
   static void RestoreScrollPosition(const GlobalObject& aGlobal,
                                     nsGlobalWindowInner& aWindow,
-                                    const SSScrollPositionDict& data);
+                                    const CollectedData& data);
 
-  static void CollectFormData(const GlobalObject& aGlobal, Document& aDocument,
-                              CollectedFormData& aRetVal);
+  static void CollectFormData(const GlobalObject& aGlobal,
+                              WindowProxyHolder& aWindow,
+                              Nullable<CollectedData>& aRetVal);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  static bool RestoreFormData(const GlobalObject& aGlobal, Document& aDocument,
+                              const CollectedData& aData);
+
+  static void CollectSessionStorage(
+      const GlobalObject& aGlobal, WindowProxyHolder& aWindow,
+      Record<nsString, Record<nsString, nsString>>& aRetVal);
+
+  static void RestoreSessionStorage(
+      const GlobalObject& aGlobal, nsIDocShell* aDocShell,
+      const Record<nsString, Record<nsString, nsString>>& aData);
 };
 
 }  // namespace dom

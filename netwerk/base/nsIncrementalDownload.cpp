@@ -182,7 +182,7 @@ nsresult nsIncrementalDownload::CallOnStartRequest() {
   if (!mObserver || mDidOnStartRequest) return NS_OK;
 
   mDidOnStartRequest = true;
-  return mObserver->OnStartRequest(this, mObserverContext);
+  return mObserver->OnStartRequest(this);
 }
 
 void nsIncrementalDownload::CallOnStopRequest() {
@@ -194,7 +194,7 @@ void nsIncrementalDownload::CallOnStopRequest() {
 
   mIsPending = false;
 
-  mObserver->OnStopRequest(this, mObserverContext, mStatus);
+  mObserver->OnStopRequest(this, mStatus);
   mObserver = nullptr;
   mObserverContext = nullptr;
 }
@@ -220,6 +220,7 @@ nsresult nsIncrementalDownload::ProcessTimeout() {
                               nsContentUtils::GetSystemPrincipal(),
                               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                               nsIContentPolicy::TYPE_OTHER,
+                              nullptr,  // nsICookieSettings
                               nullptr,  // PerformanceStorage
                               nullptr,  // loadGroup
                               this,     // aCallbacks
@@ -273,7 +274,7 @@ nsresult nsIncrementalDownload::ProcessTimeout() {
     }
   }
 
-  rv = channel->AsyncOpen2(this);
+  rv = channel->AsyncOpen(this);
   if (NS_FAILED(rv)) return rv;
 
   // Wait to assign mChannel when we know we are going to succeed.  This is
@@ -401,13 +402,15 @@ nsIncrementalDownload::Init(nsIURI *uri, nsIFile *dest, int32_t chunkSize,
 
 NS_IMETHODIMP
 nsIncrementalDownload::GetURI(nsIURI **result) {
-  NS_IF_ADDREF(*result = mURI);
+  nsCOMPtr<nsIURI> uri = mURI;
+  uri.forget(result);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsIncrementalDownload::GetFinalURI(nsIURI **result) {
-  NS_IF_ADDREF(*result = mFinalURI);
+  nsCOMPtr<nsIURI> uri = mFinalURI;
+  uri.forget(result);
   return NS_OK;
 }
 
@@ -465,8 +468,7 @@ nsIncrementalDownload::Start(nsIRequestObserver *observer,
 // nsIRequestObserver
 
 NS_IMETHODIMP
-nsIncrementalDownload::OnStartRequest(nsIRequest *request,
-                                      nsISupports *context) {
+nsIncrementalDownload::OnStartRequest(nsIRequest *request) {
   nsresult rv;
 
   nsCOMPtr<nsIHttpChannel> http = do_QueryInterface(request, &rv);
@@ -638,8 +640,7 @@ nsIncrementalDownload::OnStartRequest(nsIRequest *request,
 }
 
 NS_IMETHODIMP
-nsIncrementalDownload::OnStopRequest(nsIRequest *request, nsISupports *context,
-                                     nsresult status) {
+nsIncrementalDownload::OnStopRequest(nsIRequest *request, nsresult status) {
   // Not a real error; just a trick to kill off the channel without our
   // listener having to care.
   if (status == NS_ERROR_DOWNLOAD_NOT_PARTIAL) return NS_OK;
@@ -672,7 +673,6 @@ nsIncrementalDownload::OnStopRequest(nsIRequest *request, nsISupports *context,
 
 NS_IMETHODIMP
 nsIncrementalDownload::OnDataAvailable(nsIRequest *request,
-                                       nsISupports *context,
                                        nsIInputStream *input, uint64_t offset,
                                        uint32_t count) {
   while (count) {
@@ -828,11 +828,6 @@ extern nsresult net_NewIncrementalDownload(nsISupports *outer, const nsIID &iid,
                                            void **result) {
   if (outer) return NS_ERROR_NO_AGGREGATION;
 
-  nsIncrementalDownload *d = new nsIncrementalDownload();
-  if (!d) return NS_ERROR_OUT_OF_MEMORY;
-
-  NS_ADDREF(d);
-  nsresult rv = d->QueryInterface(iid, result);
-  NS_RELEASE(d);
-  return rv;
+  RefPtr<nsIncrementalDownload> d = new nsIncrementalDownload();
+  return d->QueryInterface(iid, result);
 }

@@ -10,9 +10,9 @@ const TOPIC_WILL_IMPORT_BOOKMARKS = "initial-migration-will-import-default-bookm
 const TOPIC_DID_IMPORT_BOOKMARKS = "initial-migration-did-import-default-bookmarks";
 const TOPIC_PLACES_DEFAULTS_FINISHED = "places-browser-init-complete";
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
@@ -1147,6 +1147,7 @@ var MigrationUtils = Object.freeze({
   MIGRATION_ENTRYPOINT_PLACES: 3,
   MIGRATION_ENTRYPOINT_PASSWORDS: 4,
   MIGRATION_ENTRYPOINT_NEWTAB: 5,
+  MIGRATION_ENTRYPOINT_FILE_MENU: 6,
 
   _sourceNameToIdMapping: {
     "nothing":    1,

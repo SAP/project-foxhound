@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var h2Port;
 var prefs;
@@ -42,13 +42,13 @@ function run_test() {
   prefs.setBoolPref("network.http.altsvc.oe", true);
   prefs.setCharPref("network.dns.localDomains", "foo.example.com, bar.example.com");
 
-  // The moz-http2 cert is for foo.example.com and is signed by CA.cert.der
+  // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
   // so add that cert to the trust list as a signing cert. The same cert is used
   // for both h2FooRoute and h2BarRoute though it is only valid for
   // the foo.example.com domain name.
   let certdb = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
-  addCertFromFile(certdb, "CA.cert.der", "CTu,u,u");
+  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
   h1Foo = new HttpServer();
   h1Foo.registerPathHandler("/altsvc-test", h1Server);
@@ -116,21 +116,6 @@ function resetPrefs() {
   prefs.clearUserPref("network.dns.localDomains");
 }
 
-function readFile(file) {
-  let fstream = Cc["@mozilla.org/network/file-input-stream;1"]
-                  .createInstance(Ci.nsIFileInputStream);
-  fstream.init(file, -1, 0, 0);
-  let data = NetUtil.readInputStreamToString(fstream, fstream.available());
-  fstream.close();
-  return data;
-}
-
-function addCertFromFile(certdb, filename, trustString) {
-  let certFile = do_get_file(filename, false);
-  let der = readFile(certFile);
-  certdb.addCert(der, trustString);
-}
-
 function makeChan(origin) {
   return NetUtil.newChannel({
     uri: origin + "altsvc-test",
@@ -149,7 +134,7 @@ var originAttributes = {};
 
 var Listener = function() {};
 Listener.prototype = {
-  onStartRequest: function testOnStartRequest(request, ctx) {
+  onStartRequest: function testOnStartRequest(request) {
     Assert.ok(request instanceof Ci.nsIHttpChannel);
 
     if (expectPass) {
@@ -162,11 +147,11 @@ Listener.prototype = {
     }
   },
 
-  onDataAvailable: function testOnDataAvailable(request, ctx, stream, off, cnt) {
+  onDataAvailable: function testOnDataAvailable(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
 
-  onStopRequest: function testOnStopRequest(request, ctx, status) {
+  onStopRequest: function testOnStopRequest(request, status) {
     var routed = "";
     try {
       routed = request.getRequestHeader("Alt-Used");
@@ -224,7 +209,7 @@ function doTest()
   }
   loadWithoutClearingMappings = false;
   chan.loadInfo.originAttributes = originAttributes;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 // xaltsvc is overloaded to do two things..

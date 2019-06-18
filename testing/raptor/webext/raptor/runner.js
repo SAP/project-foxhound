@@ -70,7 +70,6 @@ var results = {"name": "",
 function getTestSettings() {
   console.log("getting test settings from control server");
   return new Promise(resolve => {
-
     fetch(settingsURL).then(function(response) {
       response.text().then(function(text) {
         console.log(text);
@@ -164,7 +163,7 @@ function getTestSettings() {
         }
 
         // write options to storage that our content script needs to know
-        if (["firefox", "geckoview"].includes(browserName)) {
+        if (["firefox", "geckoview", "refbrow", "fenix"].includes(browserName)) {
           ext.storage.local.clear().then(function() {
             ext.storage.local.set({settings}).then(function() {
               console.log("wrote settings to ext local storage");
@@ -186,7 +185,7 @@ function getTestSettings() {
 
 function getBrowserInfo() {
   return new Promise(resolve => {
-    if (["firefox", "geckoview"].includes(browserName)) {
+    if (["firefox", "geckoview", "refbrow", "fenix"].includes(browserName)) {
       ext = browser;
       var gettingInfo = browser.runtime.getBrowserInfo();
       gettingInfo.then(function(bi) {
@@ -276,7 +275,7 @@ function waitForResult() {
 async function getScreenCapture() {
   console.log("Capturing screenshot...");
   var capturing;
-  if (["firefox", "geckoview"].includes(browserName)) {
+  if (["firefox", "geckoview", "refbrow", "fenix"].includes(browserName)) {
     capturing = ext.tabs.captureVisibleTab();
     capturing.then(onCaptured, onError);
     await capturing;
@@ -352,7 +351,6 @@ async function nextCycle() {
   }
   if (pageCycle <= pageCycles) {
     setTimeout(function() {
-
       let text = "begin pagecycle " + pageCycle;
       postToControlServer("status", text);
 
@@ -398,9 +396,24 @@ async function nextCycle() {
     }
 }
 
-function timeoutAlarmListener() {
+async function timeoutAlarmListener() {
   console.error("raptor-page-timeout on %s" % testURL);
-  postToControlServer("raptor-page-timeout", [testName, testURL]);
+
+  var pendingMetrics = {
+    "hero": isHeroPending,
+    "fnb paint": isFNBPaintPending,
+    "fcp": isFCPPending,
+    "dcf": isDCFPending,
+    "ttfi": isTTFIPending,
+    "load time": isLoadTimePending,
+  };
+
+  postToControlServer("raptor-page-timeout", [testName, testURL, pendingMetrics]);
+
+  // take a screen capture
+  if (screenCapture) {
+    await getScreenCapture();
+  }
   // call clean-up to shutdown gracefully
   cleanUp();
 }
@@ -415,7 +428,8 @@ function setTimeoutAlarm(timeoutName, timeoutMS) {
 }
 
 function cancelTimeoutAlarm(timeoutName) {
-  if (browserName === "firefox" || browserName === "geckoview") {
+  if (browserName === "firefox" || browserName === "geckoview" ||
+      browserName === "refbrow" || browserName === "fenix") {
     var clearAlarm = ext.alarms.clear(timeoutName);
     clearAlarm.then(function(onCleared) {
       if (onCleared) {
@@ -556,7 +570,7 @@ function cleanUp() {
   postToControlServer("status", "__raptor_shutdownBrowser");
 }
 
-function runner() {
+function raptorRunner() {
   let config = getTestConfig();
   console.log("test name is: " + config.test_name);
   console.log("test settings url is: " + config.test_settings_url);
@@ -599,7 +613,8 @@ function runner() {
 
       // setTimeout(function() { nextCycle(); }, postStartupDelay);
       // on geckoview you can't create a new tab; only using existing tab - set it blank first
-      if (config.browser == "geckoview") {
+      if (config.browser == "geckoview" || config.browser == "refbrow" ||
+          config.browser == "fenix") {
         setTimeout(function() { nextCycle(); }, postStartupDelay);
       } else {
         setTimeout(function() {
@@ -611,4 +626,13 @@ function runner() {
   });
 }
 
-window.onload = runner();
+// we do not wish to overwrite any window.onload that may exist in the pageload site itself
+var existing_onload = window.onload;
+if (existing_onload && typeof(existing_onload) == "function") {
+  window.onload = function() {
+    existing_onload();
+    raptorRunner();
+  };
+} else {
+  window.onload = raptorRunner();
+}

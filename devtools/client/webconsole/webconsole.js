@@ -6,12 +6,13 @@
 
 var Services = require("Services");
 loader.lazyRequireGetter(this, "Utils", "devtools/client/webconsole/utils", true);
-loader.lazyRequireGetter(this, "WebConsoleFrame", "devtools/client/webconsole/webconsole-frame", true);
+loader.lazyRequireGetter(this, "WebConsoleUI", "devtools/client/webconsole/webconsole-ui", true);
 loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "viewSource", "devtools/client/shared/view-source");
 loader.lazyRequireGetter(this, "openDocLink", "devtools/client/shared/link", true);
 
 var gHudId = 0;
+const isMacOS = Services.appinfo.OS === "Darwin";
 
 /**
  * A WebConsole instance is an interactive console initialized *per target*
@@ -21,41 +22,36 @@ var gHudId = 0;
  * This object only wraps the iframe that holds the Web Console UI. This is
  * meant to be an integration point between the Firefox UI and the Web Console
  * UI and features.
- *
- * @constructor
- * @param object target
- *        The target that the web console will connect to.
- * @param nsIDOMWindow iframeWindow
- *        The window where the web console UI is already loaded.
- * @param nsIDOMWindow chromeWindow
- *        The window of the web console owner.
- * @param object hudService
- *        The parent HUD Service
  */
-function WebConsole(target, iframeWindow, chromeWindow, hudService) {
-  this.iframeWindow = iframeWindow;
-  this.chromeWindow = chromeWindow;
-  this.hudId = "hud_" + ++gHudId;
-  this.target = target;
-  this.browserWindow = this.chromeWindow.top;
-  this.hudService = hudService;
+class WebConsole {
+  /*
+  * @constructor
+  * @param object target
+  *        The target that the web console will connect to.
+  * @param nsIDOMWindow iframeWindow
+  *        The window where the web console UI is already loaded.
+  * @param nsIDOMWindow chromeWindow
+  *        The window of the web console owner.
+  * @param object hudService
+  *        The parent HUD Service
+  * @param bool isBrowserConsole
+  */
+  constructor(target, iframeWindow, chromeWindow, hudService, isBrowserConsole = false) {
+    this.iframeWindow = iframeWindow;
+    this.chromeWindow = chromeWindow;
+    this.hudId = "hud_" + ++gHudId;
+    this.target = target;
+    this.browserWindow = this.chromeWindow.top;
+    this.hudService = hudService;
+    this._browserConsole = isBrowserConsole;
 
-  const element = this.browserWindow.document.documentElement;
-  if (element.getAttribute("windowtype") != gDevTools.chromeWindowType) {
-    this.browserWindow = this.hudService.currentContext();
+    const element = this.browserWindow.document.documentElement;
+    if (element.getAttribute("windowtype") != gDevTools.chromeWindowType) {
+      this.browserWindow = this.hudService.currentContext();
+    }
+    this.ui = new WebConsoleUI(this);
+    this._destroyer = null;
   }
-  this.ui = new WebConsoleFrame(this);
-}
-
-WebConsole.prototype = {
-  iframeWindow: null,
-  chromeWindow: null,
-  browserWindow: null,
-  hudId: null,
-  target: null,
-  ui: null,
-  _browserConsole: false,
-  _destroyer: null,
 
   /**
    * Getter for a function to to listen for every request that completes. Used
@@ -66,7 +62,7 @@ WebConsole.prototype = {
    */
   get lastFinishedRequestCallback() {
     return this.hudService.lastFinishedRequest.callback;
-  },
+  }
 
   /**
    * Getter for the window that can provide various utilities that the web
@@ -81,7 +77,7 @@ WebConsole.prototype = {
       return this.browserWindow;
     }
     return this.chromeWindow.top;
-  },
+  }
 
   /**
    * Getter for the output element that holds messages we display.
@@ -89,11 +85,11 @@ WebConsole.prototype = {
    */
   get outputNode() {
     return this.ui ? this.ui.outputNode : null;
-  },
+  }
 
   get gViewSourceUtils() {
     return this.chromeUtilsWindow.gViewSourceUtils;
-  },
+  }
 
   /**
    * Initialize the Web Console instance.
@@ -103,7 +99,7 @@ WebConsole.prototype = {
    */
   init() {
     return this.ui.init().then(() => this);
-  },
+  }
 
   /**
    * The JSTerm object that manages the console's input.
@@ -112,15 +108,40 @@ WebConsole.prototype = {
    */
   get jsterm() {
     return this.ui ? this.ui.jsterm : null;
-  },
+  }
 
   /**
-   * Alias for the WebConsoleFrame.setFilterState() method.
-   * @see webconsole.js::WebConsoleFrame.setFilterState()
+   * Get the value from the input field.
+   * @returns {String|null} returns null if there's no input.
+   */
+  getInputValue() {
+    if (!this.jsterm) {
+      return null;
+    }
+
+    return this.jsterm._getValue();
+  }
+
+  /**
+   * Sets the value of the input field (command line)
+   *
+   * @param {String} newValue: The new value to set.
+   */
+  setInputValue(newValue) {
+    if (!this.jsterm) {
+      return;
+    }
+
+    this.jsterm._setValue(newValue);
+  }
+
+  /**
+   * Alias for the WebConsoleUI.setFilterState() method.
+   * @see webconsole.js::WebConsoleUI.setFilterState()
    */
   setFilterState() {
     this.ui && this.ui.setFilterState.apply(this.ui, arguments);
-  },
+  }
 
   /**
    * Open a link in a new tab.
@@ -128,9 +149,12 @@ WebConsole.prototype = {
    * @param string link
    *        The URL you want to open in a new tab.
    */
-  openLink(link, e) {
-    openDocLink(link);
-  },
+  openLink(link, e = {}) {
+    openDocLink(link, {
+      relatedToCurrent: true,
+      inBackground: isMacOS ? e.metaKey : e.ctrlKey,
+    });
+  }
 
   /**
    * Open a link in Firefox's view source.
@@ -142,7 +166,7 @@ WebConsole.prototype = {
    */
   viewSource(sourceURL, sourceLine) {
     this.gViewSourceUtils.viewSource({ URL: sourceURL, lineNumber: sourceLine || 0 });
-  },
+  }
 
   /**
    * Tries to open a Stylesheet file related to the web page for the web console
@@ -163,7 +187,7 @@ WebConsole.prototype = {
       return;
     }
     toolbox.viewSourceInStyleEditor(sourceURL, sourceLine);
-  },
+  }
 
   /**
    * Tries to open a JavaScript file related to the web page for the web console
@@ -186,7 +210,7 @@ WebConsole.prototype = {
     toolbox.viewSourceInDebugger(sourceURL, sourceLine).then(() => {
       this.ui.emit("source-in-debugger-opened");
     });
-  },
+  }
 
   /**
    * Tries to open a JavaScript file related to the web page for the web console
@@ -197,7 +221,7 @@ WebConsole.prototype = {
    */
   viewSourceInScratchpad(sourceURL, sourceLine) {
     viewSource.viewSourceInScratchpad(sourceURL, sourceLine);
-  },
+  }
 
   /**
    * Retrieve information about the JavaScript debugger's stackframes list. This
@@ -224,7 +248,7 @@ WebConsole.prototype = {
     }
 
     return panel.getFrames();
-  },
+  }
 
   /**
    * Given an expression, returns an object containing a new expression, mapped by the
@@ -253,11 +277,15 @@ WebConsole.prototype = {
     }
 
     if (this.parserService && expression.includes("await ")) {
-      return this.parserService.mapExpression(expression);
+      const shouldMapBindings = false;
+      const shouldMapAwait = true;
+      const res = this.parserService.mapExpression(
+        expression, null, null, shouldMapBindings, shouldMapAwait);
+      return res;
     }
 
     return null;
-  },
+  }
 
   /**
    * A common access point for the client-side parser service that any panel can use.
@@ -274,7 +302,7 @@ WebConsole.prototype = {
       "resource://devtools/client/debugger/new/dist/parser-worker.js",
       this.chromeUtilsWindow);
     return this._parserService;
-  },
+  }
 
   /**
    * Retrieves the current selection from the Inspector, if such a selection
@@ -297,7 +325,7 @@ WebConsole.prototype = {
       return null;
     }
     return panel.selection;
-  },
+  }
 
   /**
    * Destroy the object. Call this method to avoid memory leaks when the Web
@@ -320,7 +348,7 @@ WebConsole.prototype = {
 
       if (!this._browserConsole) {
         try {
-          await this.target.activeTab.focus();
+          await this.target.focus();
         } catch (ex) {
           // Tab focus can fail if the tab or target is closed.
         }
@@ -336,7 +364,7 @@ WebConsole.prototype = {
     })();
 
     return this._destroyer;
-  },
-};
+  }
+}
 
 module.exports = WebConsole;

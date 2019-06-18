@@ -177,8 +177,8 @@ nsresult nsExtProtocolChannel::OpenURL() {
       nsCOMPtr<nsIStreamListener> listener = mListener;
       MessageLoop::current()->PostTask(NS_NewRunnableFunction(
           "nsExtProtocolChannel::OpenURL", [self, listener]() {
-            listener->OnStartRequest(self, nullptr);
-            listener->OnStopRequest(self, nullptr, self->mStatus);
+            listener->OnStartRequest(self);
+            listener->OnStopRequest(self, self->mStatus);
           }));
     }
   }
@@ -189,20 +189,24 @@ finish:
   return rv;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::Open(nsIInputStream **_retval) {
-  return OpenURL();
-}
-
-NS_IMETHODIMP nsExtProtocolChannel::Open2(nsIInputStream **aStream) {
+NS_IMETHODIMP nsExtProtocolChannel::Open(nsIInputStream **aStream) {
   nsCOMPtr<nsIStreamListener> listener;
   nsresult rv =
       nsContentSecurityManager::doContentSecurityCheck(this, listener);
   NS_ENSURE_SUCCESS(rv, rv);
-  return Open(aStream);
+
+  return OpenURL();
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener *listener,
-                                              nsISupports *ctxt) {
+NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener *aListener) {
+  nsCOMPtr<nsIStreamListener> listener = aListener;
+  nsresult rv =
+      nsContentSecurityManager::doContentSecurityCheck(this, listener);
+  if (NS_FAILED(rv)) {
+    mCallbacks = nullptr;
+    return rv;
+  }
+
   if (mConnectedParent) {
     return NS_OK;
   }
@@ -213,7 +217,7 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener *listener,
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
            nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
-      "security flags in loadInfo but asyncOpen2() not called");
+      "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_ARG_POINTER(listener);
   NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_ALREADY_OPENED);
@@ -222,17 +226,6 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener *listener,
   mListener = listener;
 
   return OpenURL();
-}
-
-NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen2(nsIStreamListener *aListener) {
-  nsCOMPtr<nsIStreamListener> listener = aListener;
-  nsresult rv =
-      nsContentSecurityManager::doContentSecurityCheck(this, listener);
-  if (NS_FAILED(rv)) {
-    mCallbacks = nullptr;
-    return rv;
-  }
-  return AsyncOpen(listener, nullptr);
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::GetLoadFlags(nsLoadFlags *aLoadFlags) {
@@ -318,6 +311,7 @@ NS_IMETHODIMP nsExtProtocolChannel::GetLoadInfo(nsILoadInfo **aLoadInfo) {
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::SetLoadInfo(nsILoadInfo *aLoadInfo) {
+  MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   mLoadInfo = aLoadInfo;
   return NS_OK;
 }
@@ -370,7 +364,7 @@ NS_IMETHODIMP nsExtProtocolChannel::CompleteRedirectSetup(
   // For redirects to external protocols we AsyncOpen on the child
   // (not the parent) because child channel has the right docshell
   // (which is needed for the select dialog).
-  return AsyncOpen(listener, context);
+  return AsyncOpen(listener);
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -388,7 +382,8 @@ NS_IMETHODIMP nsExtProtocolChannel::SetParentListener(
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingProtectionDisabled() {
+NS_IMETHODIMP nsExtProtocolChannel::NotifyChannelClassifierProtectionDisabled(
+    uint32_t aAcceptedReason) {
   // nothing to do
   return NS_OK;
 }
@@ -398,7 +393,7 @@ NS_IMETHODIMP nsExtProtocolChannel::NotifyCookieAllowed() {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingCookieBlocked(
+NS_IMETHODIMP nsExtProtocolChannel::NotifyCookieBlocked(
     uint32_t aRejectedReason) {
   // nothing to do
   return NS_OK;
@@ -411,7 +406,8 @@ NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingResource(bool aIsThirdParty) {
+NS_IMETHODIMP nsExtProtocolChannel::NotifyClassificationFlags(
+    uint32_t aClassificationFlags, bool aIsThirdParty) {
   // nothing to do
   return NS_OK;
 }
@@ -427,15 +423,13 @@ NS_IMETHODIMP nsExtProtocolChannel::Delete() {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::OnStartRequest(nsIRequest *aRequest,
-                                                   nsISupports *aContext) {
+NS_IMETHODIMP nsExtProtocolChannel::OnStartRequest(nsIRequest *aRequest) {
   // no data is expected
   MOZ_CRASH("No data expected from external protocol channel");
   return NS_ERROR_UNEXPECTED;
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::OnStopRequest(nsIRequest *aRequest,
-                                                  nsISupports *aContext,
                                                   nsresult aStatusCode) {
   // no data is expected
   MOZ_CRASH("No data expected from external protocol channel");
@@ -443,8 +437,8 @@ NS_IMETHODIMP nsExtProtocolChannel::OnStopRequest(nsIRequest *aRequest,
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::OnDataAvailable(
-    nsIRequest *aRequest, nsISupports *aContext, nsIInputStream *aInputStream,
-    uint64_t aOffset, uint32_t aCount) {
+    nsIRequest *aRequest, nsIInputStream *aInputStream, uint64_t aOffset,
+    uint32_t aCount) {
   // no data is expected
   MOZ_CRASH("No data expected from external protocol channel");
   return NS_ERROR_UNEXPECTED;
@@ -521,8 +515,8 @@ NS_IMETHODIMP nsExternalProtocolHandler::NewURI(
 }
 
 NS_IMETHODIMP
-nsExternalProtocolHandler::NewChannel2(nsIURI *aURI, nsILoadInfo *aLoadInfo,
-                                       nsIChannel **aRetval) {
+nsExternalProtocolHandler::NewChannel(nsIURI *aURI, nsILoadInfo *aLoadInfo,
+                                      nsIChannel **aRetval) {
   NS_ENSURE_TRUE(aURI, NS_ERROR_UNKNOWN_PROTOCOL);
   NS_ENSURE_TRUE(aRetval, NS_ERROR_UNKNOWN_PROTOCOL);
 
@@ -537,11 +531,6 @@ nsExternalProtocolHandler::NewChannel2(nsIURI *aURI, nsILoadInfo *aLoadInfo,
   nsCOMPtr<nsIChannel> channel = new nsExtProtocolChannel(aURI, aLoadInfo);
   channel.forget(aRetval);
   return NS_OK;
-}
-
-NS_IMETHODIMP nsExternalProtocolHandler::NewChannel(nsIURI *aURI,
-                                                    nsIChannel **_retval) {
-  return NewChannel2(aURI, nullptr, _retval);
 }
 
 ///////////////////////////////////////////////////////////////////////

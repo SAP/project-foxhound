@@ -16,7 +16,6 @@ XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
 
 XPIDL_SOURCES += [
     'nsIJARChannel.idl',
-    'nsIJARProtocolHandler.idl',
     'nsIJARURI.idl',
     'nsIZipReader.idl',
 ]
@@ -24,6 +23,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'jar'
 
 EXPORTS += [
+    'nsJARProtocolHandler.h',
     'nsJARURI.h',
     'nsZipArchive.h',
     'zipstruct.h',
@@ -32,11 +32,14 @@ EXPORTS += [
 UNIFIED_SOURCES += [
     'nsJAR.cpp',
     'nsJARChannel.cpp',
-    'nsJARFactory.cpp',
     'nsJARInputStream.cpp',
     'nsJARProtocolHandler.cpp',
     'nsJARURI.cpp',
     'nsZipArchive.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

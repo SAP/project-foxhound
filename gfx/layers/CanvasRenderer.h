@@ -44,11 +44,8 @@ struct CanvasInitializeData final {
   TransactionCallback mDidTransCallback = nullptr;
   void* mDidTransCallbackData = nullptr;
 
-  // Frontbuffer override
-  uint32_t mFrontbufferGLTex = 0;
-
   // The size of the canvas content
-  gfx::IntSize mSize = {0,0};
+  gfx::IntSize mSize = {0, 0};
 
   // Whether the canvas drawingbuffer has an alpha channel.
   bool mHasAlpha = false;

@@ -39,16 +39,16 @@ var tests = [
     },
     onShown(popup) {
       checkPopup(popup, this.notifyObj);
-      isnot(document.getElementById("geo-notification-icon").boxObject.width, 0,
+      isnot(document.getElementById("geo-notification-icon").getBoundingClientRect().width, 0,
             "geo anchor should be visible");
       dismissNotification(popup);
     },
     onHidden(popup) {
       let icon = document.getElementById("geo-notification-icon");
-      isnot(icon.boxObject.width, 0,
+      isnot(icon.getBoundingClientRect().width, 0,
             "geo anchor should be visible after dismissal");
       this.notification.remove();
-      is(icon.boxObject.width, 0,
+      is(icon.getBoundingClientRect().width, 0,
          "geo anchor should not be visible after removal");
     },
   },
@@ -178,7 +178,7 @@ var tests = [
       let promiseTopic = TestUtils.topicObserved("PopupNotifications-updateNotShowing");
       showNotification(notifyObj);
       await promiseTopic;
-      isnot(document.getElementById("geo-notification-icon").boxObject.width, 0,
+      isnot(document.getElementById("geo-notification-icon").getBoundingClientRect().width, 0,
             "geo anchor should be visible");
       goNext();
     },
@@ -192,7 +192,7 @@ var tests = [
       let promiseTopic = TestUtils.topicObserved("PopupNotifications-updateNotShowing");
       showNotification(notifyObj);
       await promiseTopic;
-      isnot(document.getElementById("autoplay-media-notification-icon").boxObject.width, 0,
+      isnot(document.getElementById("autoplay-media-notification-icon").getBoundingClientRect().width, 0,
             "autoplay media icon should be visible");
       goNext();
     },
@@ -213,27 +213,6 @@ var tests = [
       this.notification.remove();
       ok(this.notifyObj.removedCallbackTriggered, "removed callback triggered");
       ok(!this.notifyObj.secondaryActionClicked, "secondary action not clicked");
-    },
-  },
-  // Test that notification close button calls secondary action instead of
-  // dismissal callback if privacy.permissionPrompts.showCloseButton is set.
-  { id: "Test#10",
-    run() {
-      Services.prefs.setBoolPref("privacy.permissionPrompts.showCloseButton", true);
-      this.notifyObj = new BasicNotification(this.id);
-      this.notification = showNotification(this.notifyObj);
-    },
-    onShown(popup) {
-      checkPopup(popup, this.notifyObj);
-      let notification = popup.children[0];
-      EventUtils.synthesizeMouseAtCenter(notification.closebutton, {});
-    },
-    onHidden(popup) {
-      ok(!this.notifyObj.dismissalCallbackTriggered, "dismissal callback not triggered");
-      ok(this.notifyObj.secondaryActionClicked, "secondary action clicked");
-      Services.prefs.clearUserPref("privacy.permissionPrompts.showCloseButton");
-      this.notification.remove();
-      ok(this.notifyObj.removedCallbackTriggered, "removed callback triggered");
     },
   },
   // Test notification when chrome is hidden

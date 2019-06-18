@@ -13,23 +13,24 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::ops::Range;
-use std::os::raw::{c_void, c_char};
+use std::os::raw::{c_void, c_char, c_float};
 #[cfg(target_os = "android")]
 use std::os::raw::{c_int};
+use std::time::Duration;
 use gleam::gl;
 
 use webrender::api::*;
+use webrender::api::units::*;
 use webrender::{ReadPixelsFormat, Renderer, RendererOptions, RendererStats, ThreadListener};
 use webrender::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 use webrender::DebugFlags;
 use webrender::{ApiRecordingReceiver, BinaryRecorder};
 use webrender::{AsyncPropertySampler, PipelineInfo, SceneBuilderHooks};
-use webrender::{UploadMethod, VertexUsageHint};
+use webrender::{UploadMethod, VertexUsageHint, ProfilerHooks, set_profiler_hooks};
 use webrender::{Device, Shaders, WrShaders, ShaderPrecacheFlags};
 use thread_profiler::register_thread_with_profiler;
 use moz2d_renderer::Moz2dBlobImageHandler;
 use program_cache::{WrProgramCache, remove_disk_cache};
-use app_units::Au;
 use rayon;
 use euclid::SideOffsets2D;
 use nsstring::nsAString;
@@ -207,7 +208,7 @@ pub struct DocumentHandle {
 }
 
 impl DocumentHandle {
-    pub fn new(api: RenderApi, size: DeviceIntSize, layer: i8) -> DocumentHandle {
+    pub fn new(api: RenderApi, size: FramebufferIntSize, layer: i8) -> DocumentHandle {
         let doc = api.add_document(size, layer);
         DocumentHandle {
             api: api,
@@ -349,42 +350,6 @@ impl MutByteSlice {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct WrImageMask {
-    image: WrImageKey,
-    rect: LayoutRect,
-    repeat: bool,
-}
-
-impl Into<ImageMask> for WrImageMask {
-    fn into(self) -> ImageMask {
-        ImageMask {
-            image: self.image,
-            rect: self.rect.into(),
-            repeat: self.repeat,
-        }
-    }
-}
-impl<'a> Into<ImageMask> for &'a WrImageMask {
-    fn into(self) -> ImageMask {
-        ImageMask {
-            image: self.image,
-            rect: self.rect.into(),
-            repeat: self.repeat,
-        }
-    }
-}
-impl From<ImageMask> for WrImageMask {
-    fn from(image_mask: ImageMask) -> Self {
-        WrImageMask {
-            image: image_mask.image,
-            rect: image_mask.rect.into(),
-            repeat: image_mask.repeat,
-        }
-    }
-}
-
-#[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct WrImageDescriptor {
     pub format: ImageFormat,
@@ -487,6 +452,24 @@ impl ExternalImageHandler for WrExternalImageHandler {
             (self.unlock_func)(self.external_image_obj, id.into(), channel_index);
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+// Used for ComponentTransfer only
+pub struct WrFilterData {
+    funcR_type: ComponentTransferFuncType,
+    R_values: *mut c_float,
+    R_values_count: usize,
+    funcG_type: ComponentTransferFuncType,
+    G_values: *mut c_float,
+    G_values_count: usize,
+    funcB_type: ComponentTransferFuncType,
+    B_values: *mut c_float,
+    B_values_count: usize,
+    funcA_type: ComponentTransferFuncType,
+    A_values: *mut c_float,
+    A_values_count: usize,
 }
 
 #[repr(u32)]
@@ -658,9 +641,9 @@ pub extern "C" fn wr_renderer_render(renderer: &mut Renderer,
     if had_slow_frame {
       renderer.notify_slow_frame();
     }
-    match renderer.render(DeviceIntSize::new(width, height)) {
-        Ok(stats) => {
-            *out_stats = stats;
+    match renderer.render(FramebufferIntSize::new(width, height)) {
+        Ok(results) => {
+            *out_stats = results.stats;
             true
         }
         Err(errors) => {
@@ -686,9 +669,7 @@ pub unsafe extern "C" fn wr_renderer_readback(renderer: &mut Renderer,
     assert!(is_in_render_thread());
 
     let mut slice = make_slice_mut(dst_buffer, buffer_size);
-    renderer.read_pixels_into(DeviceIntRect::new(
-                                DeviceIntPoint::new(0, 0),
-                                DeviceIntSize::new(width, height)),
+    renderer.read_pixels_into(FramebufferIntSize::new(width, height).into(),
                               ReadPixelsFormat::Standard(ImageFormat::BGRA8),
                               &mut slice);
 }
@@ -777,7 +758,43 @@ pub unsafe extern "C" fn wr_pipeline_info_delete(_info: WrPipelineInfo) {
 extern "C" {
     pub fn gecko_profiler_start_marker(name: *const c_char);
     pub fn gecko_profiler_end_marker(name: *const c_char);
+    pub fn gecko_profiler_add_text_marker(
+        name: *const c_char, text_bytes: *const c_char, text_len: usize, microseconds: u64);
+    pub fn gecko_profiler_thread_is_being_profiled() -> bool;
 }
+
+/// Simple implementation of the WR ProfilerHooks trait to allow profile
+/// markers to be seen in the Gecko profiler.
+struct GeckoProfilerHooks;
+
+impl ProfilerHooks for GeckoProfilerHooks {
+    fn begin_marker(&self, label: &CStr) {
+        unsafe {
+            gecko_profiler_start_marker(label.as_ptr());
+        }
+    }
+
+    fn end_marker(&self, label: &CStr) {
+        unsafe {
+            gecko_profiler_end_marker(label.as_ptr());
+        }
+    }
+
+    fn add_text_marker(&self, label: &CStr, text: &str, duration: Duration) {
+        unsafe {
+            // NB: This can be as_micros() once we require Rust 1.33.
+            let micros = duration.subsec_micros() as u64 + duration.as_secs() * 1000 * 1000;
+            let text_bytes = text.as_bytes();
+            gecko_profiler_add_text_marker(label.as_ptr(), text_bytes.as_ptr() as *const c_char, text_bytes.len(), micros);
+        }
+    }
+
+    fn thread_is_being_profiled(&self) -> bool {
+        unsafe { gecko_profiler_thread_is_being_profiled() }
+    }
+}
+
+static PROFILER_HOOKS: GeckoProfilerHooks = GeckoProfilerHooks {};
 
 #[allow(improper_ctypes)] // this is needed so that rustc doesn't complain about passing the &mut Transaction to an extern function
 extern "C" {
@@ -1088,7 +1105,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
 
     let opts = RendererOptions {
         enable_aa: true,
-        enable_subpixel_aa: true,
+        enable_subpixel_aa: cfg!(not(target_os = "android")),
         support_low_priority_transactions,
         recorder: recorder,
         blob_image_handler: Some(Box::new(Moz2dBlobImageHandler::new(workers.clone()))),
@@ -1120,6 +1137,9 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         ..Default::default()
     };
 
+    // Ensure the WR profiler callbacks are hooked up to the Gecko profiler.
+    set_profiler_hooks(Some(&PROFILER_HOOKS));
+
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
@@ -1138,7 +1158,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     unsafe {
         *out_max_texture_size = renderer.get_max_texture_size();
     }
-    let window_size = DeviceIntSize::new(window_width, window_height);
+    let window_size = FramebufferIntSize::new(window_width, window_height);
     let layer = 0;
     *out_handle = Box::into_raw(Box::new(
             DocumentHandle::new(sender.create_api_by_client(next_namespace_id()), window_size, layer)));
@@ -1151,7 +1171,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
 pub extern "C" fn wr_api_create_document(
     root_dh: &mut DocumentHandle,
     out_handle: &mut *mut DocumentHandle,
-    doc_size: DeviceIntSize,
+    doc_size: FramebufferIntSize,
     layer: i8,
 ) {
     assert!(unsafe { is_in_compositor_thread() });
@@ -1200,17 +1220,9 @@ pub unsafe extern "C" fn wr_api_notify_memory_pressure(dh: &mut DocumentHandle) 
     dh.api.notify_memory_pressure();
 }
 
-/// cbindgen:field-names=[mBits]
-#[repr(C)]
-pub struct WrDebugFlags {
-    bits: u32,
-}
-
 #[no_mangle]
-pub extern "C" fn wr_api_set_debug_flags(dh: &mut DocumentHandle, flags: WrDebugFlags) {
-    if let Some(dbg_flags) = DebugFlags::from_bits(flags.bits) {
-        dh.api.set_debug_flags(dbg_flags);
-    }
+pub extern "C" fn wr_api_set_debug_flags(dh: &mut DocumentHandle, flags: DebugFlags) {
+    dh.api.set_debug_flags(flags);
 }
 
 #[no_mangle]
@@ -1264,6 +1276,11 @@ pub extern "C" fn wr_transaction_is_empty(txn: &Transaction) -> bool {
 #[no_mangle]
 pub extern "C" fn wr_transaction_resource_updates_is_empty(txn: &Transaction) -> bool {
     txn.resource_updates.is_empty()
+}
+
+#[no_mangle]
+pub extern "C" fn wr_transaction_is_rendered_frame_invalidated(txn: &Transaction) -> bool {
+    txn.invalidate_rendered_frame
 }
 
 #[no_mangle]
@@ -1338,13 +1355,11 @@ pub extern "C" fn wr_transaction_set_display_list(
 }
 
 #[no_mangle]
-pub extern "C" fn wr_transaction_set_window_parameters(
+pub extern "C" fn wr_transaction_set_document_view(
     txn: &mut Transaction,
-    window_size: &DeviceIntSize,
-    doc_rect: &DeviceIntRect,
+    doc_rect: &FramebufferIntRect,
 ) {
-    txn.set_window_parameters(
-        *window_size,
+    txn.set_document_view(
         *doc_rect,
         1.0,
     );
@@ -1376,6 +1391,7 @@ pub extern "C" fn wr_transaction_update_dynamic_properties(
     if transform_count > 0 {
         let transform_slice = make_slice(transform_array, transform_count);
 
+        properties.transforms.reserve(transform_slice.len());
         for element in transform_slice.iter() {
             let prop = PropertyValue {
                 key: PropertyBindingKey::new(element.id),
@@ -1389,6 +1405,7 @@ pub extern "C" fn wr_transaction_update_dynamic_properties(
     if opacity_count > 0 {
         let opacity_slice = make_slice(opacity_array, opacity_count);
 
+        properties.floats.reserve(opacity_slice.len());
         for element in opacity_slice.iter() {
             let prop = PropertyValue {
                 key: PropertyBindingKey::new(element.id),
@@ -1417,7 +1434,7 @@ pub extern "C" fn wr_transaction_append_transform_properties(
     };
 
     let transform_slice = make_slice(transform_array, transform_count);
-
+    properties.transforms.reserve(transform_slice.len());
     for element in transform_slice.iter() {
         let prop = PropertyValue {
             key: PropertyBindingKey::new(element.id),
@@ -1927,6 +1944,8 @@ pub extern "C" fn wr_dp_push_stacking_context(
     transform: *const LayoutTransform,
     filters: *const FilterOp,
     filter_count: usize,
+    filter_datas: *const WrFilterData,
+    filter_datas_count: usize,
     glyph_raster_space: RasterSpace,
 ) -> WrSpatialId {
     debug_assert!(unsafe { !is_in_render_thread() });
@@ -1934,6 +1953,20 @@ pub extern "C" fn wr_dp_push_stacking_context(
     let c_filters = make_slice(filters, filter_count);
     let mut filters : Vec<FilterOp> = c_filters.iter().map(|c_filter| {
                                                            *c_filter
+    }).collect();
+
+    let c_filter_datas = make_slice(filter_datas, filter_datas_count);
+    let r_filter_datas : Vec<FilterData> = c_filter_datas.iter().map(|c_filter_data| {
+        FilterData {
+            func_r_type: c_filter_data.funcR_type,
+            r_values: make_slice(c_filter_data.R_values, c_filter_data.R_values_count).to_vec(),
+            func_g_type: c_filter_data.funcG_type,
+            g_values: make_slice(c_filter_data.G_values, c_filter_data.G_values_count).to_vec(),
+            func_b_type: c_filter_data.funcB_type,
+            b_values: make_slice(c_filter_data.B_values, c_filter_data.B_values_count).to_vec(),
+            func_a_type: c_filter_data.funcA_type,
+            a_values: make_slice(c_filter_data.A_values, c_filter_data.A_values_count).to_vec(),
+        }
     }).collect();
 
     let transform_ref = unsafe { transform.as_ref() };
@@ -2023,6 +2056,7 @@ pub extern "C" fn wr_dp_push_stacking_context(
                                 params.transform_style,
                                 params.mix_blend_mode,
                                 &filters,
+                                &r_filter_datas,
                                 glyph_raster_space,
                                 params.cache_tiles);
 
@@ -2066,14 +2100,14 @@ pub extern "C" fn wr_dp_define_clip_with_parent_clip(
     clip_rect: LayoutRect,
     complex: *const ComplexClipRegion,
     complex_count: usize,
-    mask: *const WrImageMask,
+    mask: *const ImageMask,
 ) -> WrClipId {
     wr_dp_define_clip_impl(
         &mut state.frame_builder,
         parent.to_webrender(state.pipeline_id),
         clip_rect,
         make_slice(complex, complex_count),
-        unsafe { mask.as_ref() }.map(|m| m.into()),
+        unsafe { mask.as_ref() }.map(|m| *m),
     )
 }
 
@@ -2084,14 +2118,14 @@ pub extern "C" fn wr_dp_define_clip_with_parent_clip_chain(
     clip_rect: LayoutRect,
     complex: *const ComplexClipRegion,
     complex_count: usize,
-    mask: *const WrImageMask,
+    mask: *const ImageMask,
 ) -> WrClipId {
     wr_dp_define_clip_impl(
         &mut state.frame_builder,
         parent.to_webrender(state.pipeline_id),
         clip_rect,
         make_slice(complex, complex_count),
-        unsafe { mask.as_ref() }.map(|m| m.into()),
+        unsafe { mask.as_ref() }.map(|m| *m),
     )
 }
 
@@ -2147,7 +2181,8 @@ pub extern "C" fn wr_dp_define_scroll_layer(state: &mut WrState,
                                             external_scroll_id: u64,
                                             parent: &WrSpaceAndClip,
                                             content_rect: LayoutRect,
-                                            clip_rect: LayoutRect)
+                                            clip_rect: LayoutRect,
+                                            scroll_offset: LayoutPoint)
                                             -> WrSpaceAndClip {
     assert!(unsafe { is_in_main_thread() });
 
@@ -2158,7 +2193,10 @@ pub extern "C" fn wr_dp_define_scroll_layer(state: &mut WrState,
         clip_rect,
         vec![],
         None,
-        ScrollSensitivity::Script
+        ScrollSensitivity::Script,
+        // TODO(gw): We should also update the Gecko-side APIs to provide
+        //           this as a vector rather than a point.
+        scroll_offset.to_vector(),
     );
 
     WrSpaceAndClip::from_webrender(space_and_clip)

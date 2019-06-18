@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, rozumiem",
   "prefs_home_header": "Obsah domovskej stránky Firefoxu",
   "prefs_home_description": "Vyberte si obsah, ktorý chcete mať na domovskej stránke svojho Firefoxu.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Domovská stránka Firefoxu",
+  "prefs_content_discovery_description": "Odporúčanie obsahu na domovskej stránke Firefoxu vám umožňuje objaviť vysokokvalitné a relevantné články z celého internetu.",
+  "prefs_content_discovery_button": "Vypnúť odporúčanie obsahu",
   "prefs_section_rows_option": "{num} riadok;{num} riadky;{num} riadkov",
   "prefs_search_header": "Vyhľadávanie na webe",
   "prefs_topsites_description": "Najnavštevovanejšie stránky",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Ukladajte si články do služby Pocket a užívajte si skvelé čítanie.",
   "highlights_empty_state": "Začnite s prehliadaním a my vám na tomto mieste ukážeme skvelé články, videá a ostatné stránky, ktoré ste nedávno navštívili alebo pridali medzi záložky.",
   "topstories_empty_state": "Už ste prečítali všetko. Ďalšie príbehy zo služby {provider} tu nájdete opäť neskôr. Nemôžete sa dočkať? Vyberte si populárnu tému a pozrite sa na ďalšie skvelé príbehy z celého webu.",
-  "manual_migration_explanation2": "Vyskúšajte Firefox so záložkami, históriou prehliadania a heslami s iných prehliadačov.",
-  "manual_migration_cancel_button": "Nie, ďakujem",
-  "manual_migration_import_button": "Importovať teraz",
   "error_fallback_default_info": "Hups, pri načítavaní tohto obsahu sa niečo pokazilo.",
   "error_fallback_default_refresh_suggestion": "Obnovením stránky to skúsite znova.",
   "section_menu_action_remove_section": "Odstrániť sekciu",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Pokračovať",
   "firstrun_skip_login": "Preskočiť tento krok",
   "context_menu_title": "Otvorí ponuku",
-  "pocket_learn_more": "Ďalšie informácie"
+  "manual_migration_explanation2": "Vyskúšajte Firefox so záložkami, históriou prehliadania a heslami z iných prehliadačov.",
+  "manual_migration_cancel_button": "Nie, ďakujem",
+  "manual_migration_import_button": "Importovať teraz"
 };

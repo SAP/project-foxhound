@@ -6,10 +6,10 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {TelemetryUtils} = ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const TelemetryPrefs = TelemetryUtils.Preferences;
 
@@ -124,7 +124,7 @@ var HybridContentTelemetryListener = {
     }
 
     // Note that the name of the async message must match the name of
-    // the message in the related listener in nsBrowserGlue.js.
+    // the message in the related listener in BrowserGlue.jsm.
     sendAsyncMessage("HybridContentTelemetry:onTelemetryMessage", {
       name: event.detail.name,
       data: event.detail.data,

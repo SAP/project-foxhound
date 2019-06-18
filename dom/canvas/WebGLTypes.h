@@ -101,15 +101,17 @@ enum class WebGLExtensionID : uint8_t {
   EXT_blend_minmax,
   EXT_color_buffer_float,
   EXT_color_buffer_half_float,
+  EXT_disjoint_timer_query,
+  EXT_float_blend,
+  EXT_frag_depth,
+  EXT_shader_texture_lod,
+  EXT_sRGB,
   EXT_texture_compression_bptc,
   EXT_texture_compression_rgtc,
-  EXT_frag_depth,
-  EXT_sRGB,
-  EXT_shader_texture_lod,
   EXT_texture_filter_anisotropic,
-  EXT_disjoint_timer_query,
   MOZ_debug,
   OES_element_index_uint,
+  OES_fbo_render_mipmap,
   OES_standard_derivatives,
   OES_texture_float,
   OES_texture_float_linear,
@@ -128,8 +130,7 @@ enum class WebGLExtensionID : uint8_t {
   WEBGL_depth_texture,
   WEBGL_draw_buffers,
   WEBGL_lose_context,
-  Max,
-  Unknown
+  Max
 };
 
 class UniqueBuffer {

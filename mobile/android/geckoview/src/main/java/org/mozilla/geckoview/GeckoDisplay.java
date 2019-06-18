@@ -6,6 +6,7 @@
 
 package org.mozilla.geckoview;
 
+import android.graphics.Bitmap;
 import android.support.annotation.NonNull;
 import android.support.annotation.UiThread;
 import android.view.Surface;
@@ -19,10 +20,10 @@ import org.mozilla.gecko.util.ThreadUtils;
  * {@link #surfaceChanged(Surface, int, int, int, int)} is called and before {@link #surfaceDestroyed()} returns.
  */
 public class GeckoDisplay {
-    private final GeckoSession session;
+    private final GeckoSession mSession;
 
     protected GeckoDisplay(final GeckoSession session) {
-        this.session = session;
+        mSession = session;
     }
 
     /**
@@ -37,7 +38,7 @@ public class GeckoDisplay {
      * @param height New height of the Surface. Can not be negative.
      */
     @UiThread
-    public void surfaceChanged(@NonNull Surface surface, int width, int height) {
+    public void surfaceChanged(@NonNull final Surface surface, final int width, final int height) {
         surfaceChanged(surface, 0, 0, width, height);
     }
 
@@ -57,15 +58,16 @@ public class GeckoDisplay {
      * @throws IllegalArgumentException if left or top are negative.
      */
     @UiThread
-    public void surfaceChanged(@NonNull Surface surface, int left, int top, int width, int height) {
+    public void surfaceChanged(@NonNull final Surface surface, final int left, final int top,
+                               final int width, final int height) {
         ThreadUtils.assertOnUiThread();
 
         if ((left < 0) || (top < 0)) {
             throw new IllegalArgumentException("Parameters can not be negative.");
         }
 
-        if (session.getDisplay() == this) {
-            session.onSurfaceChanged(surface, left, top, width, height);
+        if (mSession.getDisplay() == this) {
+            mSession.onSurfaceChanged(surface, left, top, width, height);
         }
     }
 
@@ -80,8 +82,8 @@ public class GeckoDisplay {
     public void surfaceDestroyed() {
         ThreadUtils.assertOnUiThread();
 
-        if (session.getDisplay() == this) {
-            session.onSurfaceDestroyed();
+        if (mSession.getDisplay() == this) {
+            mSession.onSurfaceDestroyed();
         }
     }
 
@@ -98,8 +100,8 @@ public class GeckoDisplay {
     public void screenOriginChanged(final int left, final int top) {
         ThreadUtils.assertOnUiThread();
 
-        if (session.getDisplay() == this) {
-            session.onScreenOriginChanged(left, top);
+        if (mSession.getDisplay() == this) {
+            mSession.onScreenOriginChanged(left, top);
         }
     }
 
@@ -116,6 +118,33 @@ public class GeckoDisplay {
     @UiThread
     public boolean shouldPinOnScreen() {
         ThreadUtils.assertOnUiThread();
-        return session.getDisplay() == this && session.shouldPinOnScreen();
+        return mSession.getDisplay() == this && mSession.shouldPinOnScreen();
+    }
+
+    /**
+     * Request a {@link Bitmap} of the visible portion of the web page currently being
+     * rendered.
+     *
+     * Returned {@link Bitmap} will have the same dimensions as the {@link Surface} the
+     * {@link GeckoDisplay} is currently using.
+     *
+     * If the {@link GeckoSession#isCompositorReady} is false the {@link GeckoResult} will complete
+     * with an {@link IllegalStateException}.
+     *
+     * This function must be called on the UI thread.
+     *
+     * @return A {@link GeckoResult} that completes with a {@link Bitmap} containing
+     * the pixels and size information of the currently visible rendered web page.
+     */
+    @UiThread
+    public @NonNull GeckoResult<Bitmap> capturePixels() {
+        ThreadUtils.assertOnUiThread();
+        if (!mSession.isCompositorReady()) {
+            return GeckoResult.fromException(
+                    new IllegalStateException("Compositor must be ready before pixels can be captured"));
+        }
+        GeckoResult<Bitmap> result = new GeckoResult<>();
+        mSession.mCompositor.requestScreenPixels(result);
+        return result;
     }
 }

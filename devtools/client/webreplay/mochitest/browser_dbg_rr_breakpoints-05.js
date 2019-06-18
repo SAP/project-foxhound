@@ -6,8 +6,6 @@
 
 "use strict";
 
-// To disable all Web Replay tests, see browser.ini
-
 // Test hitting breakpoints when rewinding past the point where the breakpoint
 // script was created.
 add_task(async function() {
@@ -16,17 +14,18 @@ add_task(async function() {
     { waitForRecording: true }
   );
 
-  const {threadClient, tab, toolbox} = dbg;
+  const {threadClient, tab, toolbox, target} = dbg;
 
   // Rewind to the beginning of the recording.
   await rewindToLine(threadClient, undefined);
 
-  await setBreakpoint(threadClient, "doc_rr_basic.html", 21);
+  const bp = await setBreakpoint(threadClient, "doc_rr_basic.html", 21);
   await resumeToLine(threadClient, 21);
-  await checkEvaluateInTopFrame(threadClient, "number", 1);
+  await checkEvaluateInTopFrame(target, "number", 1);
   await resumeToLine(threadClient, 21);
-  await checkEvaluateInTopFrame(threadClient, "number", 2);
+  await checkEvaluateInTopFrame(target, "number", 2);
 
+  await threadClient.removeBreakpoint(bp);
   await toolbox.destroy();
   await gBrowser.removeTab(tab);
 });

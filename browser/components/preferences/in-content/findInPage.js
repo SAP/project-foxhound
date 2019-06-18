@@ -35,9 +35,9 @@ var gSearchResultsPane = {
     helpContainer.querySelector("a").href = helpUrl;
   },
 
-  handleEvent(event) {
+  async handleEvent(event) {
     // Ensure categories are initialized if idle callback didn't run sooo enough.
-    this.initializeCategories();
+    await this.initializeCategories();
     this.searchFunction(event);
   },
 
@@ -63,14 +63,14 @@ var gSearchResultsPane = {
   /**
    * Will attempt to initialize all uninitialized categories
    */
-  initializeCategories() {
+  async initializeCategories() {
     //  Initializing all the JS for all the tabs
     if (!this.categoriesInitialized) {
       this.categoriesInitialized = true;
       // Each element of gCategoryInits is a name
       for (let [/* name */, category] of gCategoryInits) {
         if (!category.inited) {
-          category.init();
+          await category.init();
         }
       }
     }
@@ -223,10 +223,10 @@ var gSearchResultsPane = {
 
     let srHeader = document.getElementById("header-searchResults");
     let noResultsEl = document.getElementById("no-results-message");
-    srHeader.hidden = !this.query;
     if (this.query) {
       // Showing the Search Results Tag
-      gotoPref("paneSearchResults");
+      await gotoPref("paneSearchResults");
+      srHeader.hidden = false;
 
       let resultsFound = false;
 
@@ -307,7 +307,8 @@ var gSearchResultsPane = {
       noResultsEl.hidden = true;
       document.getElementById("sorry-message-query").textContent = "";
       // Going back to General when cleared
-      gotoPref("paneGeneral");
+      await gotoPref("paneGeneral");
+      srHeader.hidden = true;
 
       // Hide some special second level headers in normal view
       for (let element of document.querySelectorAll(".search-header")) {
@@ -340,14 +341,21 @@ var gSearchResultsPane = {
         matchesFound = matchesFound || result;
       }
 
-      // Collecting data from boxObject / label / description
+      // Collecting data from anonymous content / label / description
       let nodeSizes = [];
       let allNodeText = "";
       let runningSize = 0;
-      let accessKeyTextNodes = this.textNodeDescendants(nodeObject.boxObject);
+
+      let accessKeyTextNodes = [];
+      let anons = document.getAnonymousNodes(nodeObject);
+      if (anons) {
+        for (let anon of anons) {
+          accessKeyTextNodes.push(...this.textNodeDescendants(anon));
+        }
+      }
 
       if (nodeObject.tagName == "label" || nodeObject.tagName == "description") {
-        accessKeyTextNodes.push(...this.textNodeDescendants(nodeObject));
+        accessKeyTextNodes.push(...simpleTextNodes);
       }
 
       for (let node of accessKeyTextNodes) {
@@ -364,7 +372,7 @@ var gSearchResultsPane = {
 
       // Searching some elements, such as xul:label, store their user-visible text in a "value" attribute.
       // Value will be skipped for menuitem since value in menuitem could represent index number to distinct each item.
-      let valueResult = nodeObject.tagName !== "menuitem" ?
+      let valueResult = nodeObject.tagName !== "menuitem" && nodeObject.tagName !== "radio" ?
         this.queryMatchesContent(nodeObject.getAttribute("value"), searchPhrase) : false;
 
       // Searching some elements, such as xul:button, buttons to open subdialogs

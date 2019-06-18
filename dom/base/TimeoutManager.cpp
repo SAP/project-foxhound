@@ -174,7 +174,7 @@ void TimeoutManager::MoveIdleToActive() {
           int(delta.ToMilliseconds()));
       // don't have end before start...
       profiler_add_marker(
-          "setTimeout deferred release", js::ProfilingStackFrame::Category::DOM,
+          "setTimeout deferred release", JS::ProfilingCategoryPair::DOM,
           MakeUnique<TextMarkerPayload>(
               marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now,
               now));
@@ -334,9 +334,6 @@ TimeDuration TimeoutManager::CalculateDelay(Timeout* aTimeout) const {
 }
 
 PerformanceCounter* TimeoutManager::GetPerformanceCounter() {
-  if (!StaticPrefs::dom_performance_enable_scheduler_timing()) {
-    return nullptr;
-  }
   Document* doc = mWindow.GetDocument();
   if (doc) {
     dom::DocGroup* docGroup = doc->GetDocGroup();
@@ -349,11 +346,6 @@ PerformanceCounter* TimeoutManager::GetPerformanceCounter() {
 
 void TimeoutManager::RecordExecution(Timeout* aRunningTimeout,
                                      Timeout* aTimeout) {
-  if (!StaticPrefs::dom_performance_enable_scheduler_timing() &&
-      mWindow.IsChromeWindow()) {
-    return;
-  }
-
   TimeoutBudgetManager& budgetManager = TimeoutBudgetManager::Get();
   TimeStamp now = TimeStamp::Now();
 
@@ -454,6 +446,10 @@ TimeoutManager::TimeoutManager(nsGlobalWindowInner& aWindow,
       mTimeouts(*this),
       mTimeoutIdCounter(1),
       mNextFiringId(InvalidFiringId + 1),
+#ifdef DEBUG
+      mFiringIndex(0),
+      mLastFiringIndex(-1),
+#endif
       mRunningTimeout(nullptr),
       mIdleTimeouts(*this),
       mIdleCallbackTimeoutCounter(1),
@@ -559,6 +555,9 @@ nsresult TimeoutManager::SetTimeout(nsITimeoutHandler* aHandler,
   }
 
   RefPtr<Timeout> timeout = new Timeout();
+#ifdef DEBUG
+  timeout->mFiringIndex = -1;
+#endif
   timeout->mWindow = &mWindow;
   timeout->mIsInterval = aIsInterval;
   timeout->mInterval = TimeDuration::FromMilliseconds(interval);
@@ -764,6 +763,7 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
   // if the timer fired early.  So we can stop walking if we get to timeouts
   // whose When() is greater than deadline, since once that happens we know
   // nothing past that point is expired.
+
   for (Timeout* timeout = timeouts.GetFirst(); timeout != nullptr;
        timeout = timeout->getNext()) {
     if (totalTimeLimit.IsZero() || timeout->When() > deadline) {
@@ -790,10 +790,12 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
     }
   }
   if (aProcessIdle) {
-    MOZ_LOG(gTimeoutLog, LogLevel::Debug,
-            ("Running %u deferred timeouts on idle (TimeoutManager=%p), "
-             "nextDeadline = %gms from now",
-             numTimersToRun, this, (nextDeadline - now).ToMilliseconds()));
+    MOZ_LOG(
+        gTimeoutLog, LogLevel::Debug,
+        ("Running %u deferred timeouts on idle (TimeoutManager=%p), "
+         "nextDeadline = %gms from now",
+         numTimersToRun, this,
+         nextDeadline.IsNull() ? 0.0 : (nextDeadline - now).ToMilliseconds()));
   }
 
   now = TimeStamp::Now();
@@ -850,14 +852,37 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
       // objects we computed above.
       if (timeout->mFiringId != firingId) {
         // If the FiringId does not match, but is still valid, then this is
-        // a Timeout for another RunTimeout() on the call stack.  Just
-        // skip it.
+        // a Timeout for another RunTimeout() on the call stack (such as in
+        // the case of nested event loops, for alert() or more likely XHR).
+        // Just skip it.
         if (IsValidFiringId(timeout->mFiringId)) {
           MOZ_LOG(gTimeoutLog, LogLevel::Debug,
                   ("Skipping Run%s(TimeoutManager=%p, timeout=%p) since "
-                   "firingId %d is valid (processing firingId %d)",
+                   "firingId %d is valid (processing firingId %d)"
+#ifdef DEBUG
+                   " - FiringIndex %" PRId64 " (mLastFiringIndex %" PRId64 ")"
+#endif
+                   ,
                    timeout->mIsInterval ? "Interval" : "Timeout", this,
-                   timeout.get(), timeout->mFiringId, firingId));
+                   timeout.get(), timeout->mFiringId, firingId
+#ifdef DEBUG
+                   ,
+                   timeout->mFiringIndex, mFiringIndex
+#endif
+                   ));
+#ifdef DEBUG
+          // The old FiringIndex assumed no recursion; recursion can cause
+          // other timers to get fired "in the middle" of a sequence we've
+          // already assigned firingindexes to.  Since we're not going to
+          // run this timeout now, remove any FiringIndex that was already
+          // set.
+
+          // Since all timers that have FiringIndexes set *must* be ready
+          // to run and have valid FiringIds, all of them will be 'skipped'
+          // and reset if we recurse - we don't have to look through the
+          // list past where we'll stop on the first InvalidFiringId.
+          timeout->mFiringIndex = -1;
+#endif
           continue;
         }
 
@@ -878,6 +903,22 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
 
       // The timeout is on the list to run at this depth, go ahead and
       // process it.
+
+      // Record the first time we try to fire a timeout, and ensure that
+      // all actual firings occur in that order.  This ensures that we
+      // retain compliance with the spec language
+      // (https://html.spec.whatwg.org/#dom-settimeout) specifically items
+      // 15 ("If method context is a Window object, wait until the Document
+      // associated with method context has been fully active for a further
+      // timeout milliseconds (not necessarily consecutively)") and item 16
+      // ("Wait until any invocations of this algorithm that had the same
+      // method context, that started before this one, and whose timeout is
+      // equal to or less than this one's, have completed.").
+#ifdef DEBUG
+      if (timeout->mFiringIndex == -1) {
+        timeout->mFiringIndex = mFiringIndex++;
+      }
+#endif
 
       if (mIsLoading && !aProcessIdle) {
         // Any timeouts that would fire during a load will be deferred
@@ -913,6 +954,20 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
           continue;
         }
 
+#ifdef DEBUG
+        if (timeout->mFiringIndex <= mLastFiringIndex) {
+          MOZ_LOG(gTimeoutLog, LogLevel::Debug,
+                  ("Incorrect firing index for Run%s(TimeoutManager=%p, "
+                   "timeout=%p) with "
+                   "firingId %d - FiringIndex %" PRId64
+                   " (mLastFiringIndex %" PRId64 ")",
+                   timeout->mIsInterval ? "Interval" : "Timeout", this,
+                   timeout.get(), timeout->mFiringId, timeout->mFiringIndex,
+                   mFiringIndex));
+        }
+        MOZ_ASSERT(timeout->mFiringIndex > mLastFiringIndex);
+        mLastFiringIndex = timeout->mFiringIndex;
+#endif
         // This timeout is good to run
         bool timeout_was_cleared = mWindow.RunTimeoutHandler(timeout, scx);
 #if MOZ_GECKO_PROFILER
@@ -927,10 +982,10 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
               aProcessIdle ? "Deferred " : "",
               timeout->mIsInterval ? "Interval" : "Timeout",
               int(elapsed.ToMilliseconds()), int(target.ToMilliseconds()),
-              int(delta.ToMilliseconds()),  int(runtime.ToMilliseconds()));
+              int(delta.ToMilliseconds()), int(runtime.ToMilliseconds()));
           // don't have end before start...
           profiler_add_marker(
-              "setTimeout", js::ProfilingStackFrame::Category::DOM,
+              "setTimeout", JS::ProfilingCategoryPair::DOM,
               MakeUnique<TextMarkerPayload>(
                   marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now,
                   now));
@@ -1038,6 +1093,9 @@ bool TimeoutManager::RescheduleTimeout(Timeout* aTimeout,
   TimeStamp firingTime = aLastCallbackTime + nextInterval;
   TimeDuration delay = firingTime - aCurrentNow;
 
+#ifdef DEBUG
+  aTimeout->mFiringIndex = -1;
+#endif
   // And make sure delay is nonnegative; that might happen if the timer
   // thread is firing our timers somewhat early or if they're taking a long
   // time to run the callback.

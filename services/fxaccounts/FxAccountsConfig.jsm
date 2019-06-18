@@ -4,10 +4,10 @@
 "use strict";
 var EXPORTED_SYMBOLS = ["FxAccountsConfig"];
 
-ChromeUtils.import("resource://services-common/rest.js");
-ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {RESTRequest} = ChromeUtils.import("resource://services-common/rest.js");
+const {log} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "fxAccounts",
                                "resource://gre/modules/FxAccounts.jsm");
@@ -29,44 +29,80 @@ const CONFIG_PREFS = [
   "identity.fxaccounts.auth.uri",
   "identity.fxaccounts.remote.oauth.uri",
   "identity.fxaccounts.remote.profile.uri",
+  "identity.fxaccounts.remote.pairing.uri",
   "identity.sync.tokenserver.uri",
 ];
 
 var FxAccountsConfig = {
   async promiseSignUpURI(entrypoint) {
-    return this._buildURL("signup", {entrypoint});
+    return this._buildURL("signup", {
+      extraParams: {entrypoint},
+    });
   },
 
   async promiseSignInURI(entrypoint) {
-    return this._buildURL("signin", {entrypoint});
+    return this._buildURL("signin", {
+      extraParams: {entrypoint},
+    });
   },
 
   async promiseEmailURI(email, entrypoint) {
-    return this._buildURL("", {entrypoint, email});
+    return this._buildURL("", {
+      extraParams: {entrypoint, email},
+    });
   },
 
   async promiseEmailFirstURI(entrypoint) {
-    return this._buildURL("", {entrypoint});
+    return this._buildURL("", {
+      extraParams: {entrypoint, action: "email"},
+    });
   },
 
   async promiseForceSigninURI(entrypoint) {
-    return this._buildURL("force_auth", {entrypoint}, true);
+    return this._buildURL("force_auth", {
+      extraParams: {entrypoint},
+      addAccountIdentifiers: true,
+    });
   },
 
   async promiseManageURI(entrypoint) {
-    return this._buildURL("settings", {entrypoint}, true);
+    return this._buildURL("settings", {
+      extraParams: {entrypoint},
+      addAccountIdentifiers: true,
+    });
   },
 
   async promiseChangeAvatarURI(entrypoint) {
-    return this._buildURL("settings/avatar/change", {entrypoint}, true);
+    return this._buildURL("settings/avatar/change", {
+      extraParams: {entrypoint},
+      addAccountIdentifiers: true,
+    });
   },
 
   async promiseManageDevicesURI(entrypoint) {
-    return this._buildURL("settings/clients", {entrypoint}, true);
+    return this._buildURL("settings/clients", {
+      extraParams: {entrypoint},
+      addAccountIdentifiers: true,
+    });
   },
 
   async promiseConnectDeviceURI(entrypoint) {
-    return this._buildURL("connect_another_device", {entrypoint}, true);
+    return this._buildURL("connect_another_device", {
+      extraParams: {entrypoint},
+      addAccountIdentifiers: true,
+    });
+  },
+
+  async promisePairingURI() {
+    return this._buildURL("pair", {
+      includeDefaultParams: false,
+    });
+  },
+
+  async promiseOAuthURI() {
+    return this._buildURL("oauth", {
+      includeDefaultParams: false,
+    });
   },
 
   get defaultParams() {
@@ -75,21 +111,21 @@ var FxAccountsConfig = {
 
   /**
    * @param path should be parsable by the URL constructor first parameter.
-   * @param {Object.<string, string>} [extraParams] Additionnal search params.
-   * @param {bool} [addCredentials] if true we add the current logged-in user
-   *                                uid and email to the search params.
+   * @param {bool} [options.includeDefaultParams] If true include the default search params.
+   * @param {Object.<string, string>} [options.extraParams] Additionnal search params.
+   * @param {bool} [options.addAccountIdentifiers] if true we add the current logged-in user uid and email to the search params.
    */
-  async _buildURL(path, extraParams, addCredentials = false) {
+  async _buildURL(path, {includeDefaultParams = true, extraParams = {}, addAccountIdentifiers = false}) {
     await this.ensureConfigured();
     const url = new URL(path, ROOT_URL);
     if (REQUIRES_HTTPS && url.protocol != "https:") {
       throw new Error("Firefox Accounts server must use HTTPS");
     }
-    const params = {...this.defaultParams, ...extraParams};
+    const params = {...(includeDefaultParams ? this.defaultParams : null), ...extraParams};
     for (let [k, v] of Object.entries(params)) {
       url.searchParams.append(k, v);
     }
-    if (addCredentials) {
+    if (addAccountIdentifiers) {
       const accountData = await this.getSignedInUser();
       if (!accountData) {
         return null;
@@ -207,6 +243,11 @@ var FxAccountsConfig = {
       }
       Services.prefs.setCharPref("identity.fxaccounts.auth.uri", authServerBase);
       Services.prefs.setCharPref("identity.fxaccounts.remote.oauth.uri", config.oauth_server_base_url + "/v1");
+      // At the time of landing this, our servers didn't yet answer with pairing_server_base_uri.
+      // Remove this condition check once Firefox 68 is stable.
+      if (config.pairing_server_base_uri) {
+        Services.prefs.setCharPref("identity.fxaccounts.remote.pairing.uri", config.pairing_server_base_uri);
+      }
       Services.prefs.setCharPref("identity.fxaccounts.remote.profile.uri", config.profile_server_base_url + "/v1");
       Services.prefs.setCharPref("identity.sync.tokenserver.uri", config.sync_tokenserver_base_url + "/1.0/sync/1.5");
       Services.prefs.setCharPref("identity.fxaccounts.remote.root", rootURL);

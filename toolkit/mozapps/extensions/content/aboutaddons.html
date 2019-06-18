@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" type="text/css"/>
+    <link rel="stylesheet" href="chrome://mozapps/content/extensions/aboutaddons.css" type="text/css"/>
+
+    <link rel="localization" href="branding/brand.ftl"/>
+    <link rel="localization" href="toolkit/about/aboutAddons.ftl"/>
+
+    <script type="application/javascript" src="chrome://mozapps/content/extensions/aboutaddons.js"></script>
+  </head>
+  <body>
+    <div id="main">
+    </div>
+
+    <template name="card">
+      <div class="card addon">
+        <img class="card-heading-icon addon-icon"/>
+        <div class="card-contents">
+          <span class="addon-name"></span>
+          <span class="addon-description"></span>
+        </div>
+        <div class="more-options-menu">
+          <button class="ghost-button" action="more-options"></button>
+          <panel-list>
+            <panel-item action="toggle-disabled"></panel-item>
+            <panel-item data-l10n-id="remove-addon-button" action="remove"></panel-item>
+            <panel-item-separator></panel-item-separator>
+            <panel-item data-l10n-id="expand-addon-button" action="expand"></panel-item>
+          </panel-list>
+        </div>
+      </div>
+    </template>
+
+    <template name="panel-list">
+      <link rel="stylesheet" href="chrome://mozapps/content/extensions/panel-list.css"/>
+      <div class="arrow top"></div>
+      <div class="list">
+        <slot/>
+      </div>
+      <div class="arrow bottom"></div>
+    </template>
+
+    <template name="panel-item">
+      <link rel="stylesheet" href="chrome://mozapps/content/extensions/panel-item.css"/>
+      <button><slot/></button>
+    </template>
+  </body>
+</html>

@@ -7,7 +7,12 @@
 import React, { PureComponent } from "react";
 import { connect } from "../../utils/connect";
 
-import { getSelectedSource, getSourcesForTabs } from "../../selectors";
+import {
+  getSelectedSource,
+  getSourcesForTabs,
+  getIsPaused,
+  getCurrentThread
+} from "../../selectors";
 import { isVisible } from "../../utils/ui";
 
 import { getHiddenTabs } from "../../utils/tabs";
@@ -21,6 +26,7 @@ import Tab from "./Tab";
 import { PaneToggleButton } from "../shared/Button";
 import Dropdown from "../shared/Dropdown";
 import AccessibleImage from "../shared/AccessibleImage";
+import CommandBar from "../SecondaryPanes/CommandBar";
 
 import type { Source } from "../../types";
 
@@ -36,7 +42,8 @@ type Props = {
   closeTab: typeof actions.closeTab,
   togglePaneCollapse: typeof actions.togglePaneCollapse,
   showSource: typeof actions.showSource,
-  selectSource: typeof actions.selectSource
+  selectSource: typeof actions.selectSource,
+  isPaused: boolean
 };
 
 type State = {
@@ -138,7 +145,7 @@ class Tabs extends PureComponent<Props, State> {
         <AccessibleImage
           className={`dropdown-icon ${this.getIconClass(source)}`}
         />
-        {filename}
+        <span className="dropdown-label">{filename}</span>
       </li>
     );
   };
@@ -170,12 +177,21 @@ class Tabs extends PureComponent<Props, State> {
     return <Dropdown panel={Panel} icon={icon} />;
   }
 
+  renderCommandBar() {
+    const { horizontal, endPanelCollapsed, isPaused } = this.props;
+    if (!endPanelCollapsed || !isPaused) {
+      return;
+    }
+
+    return <CommandBar horizontal={horizontal} />;
+  }
+
   renderStartPanelToggleButton() {
     return (
       <PaneToggleButton
         position="start"
-        collapsed={!this.props.startPanelCollapsed}
-        handleClick={this.props.togglePaneCollapse}
+        collapsed={this.props.startPanelCollapsed}
+        handleClick={(this.props.togglePaneCollapse: any)}
       />
     );
   }
@@ -189,8 +205,8 @@ class Tabs extends PureComponent<Props, State> {
     return (
       <PaneToggleButton
         position="end"
-        collapsed={!endPanelCollapsed}
-        handleClick={togglePaneCollapse}
+        collapsed={endPanelCollapsed}
+        handleClick={(togglePaneCollapse: any)}
         horizontal={horizontal}
       />
     );
@@ -203,6 +219,7 @@ class Tabs extends PureComponent<Props, State> {
         {this.renderTabs()}
         {this.renderDropdown()}
         {this.renderEndPanelToggleButton()}
+        {this.renderCommandBar()}
       </div>
     );
   }
@@ -210,7 +227,8 @@ class Tabs extends PureComponent<Props, State> {
 
 const mapStateToProps = state => ({
   selectedSource: getSelectedSource(state),
-  tabSources: getSourcesForTabs(state)
+  tabSources: getSourcesForTabs(state),
+  isPaused: getIsPaused(state, getCurrentThread(state))
 });
 
 export default connect(

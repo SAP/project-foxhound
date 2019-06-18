@@ -2,12 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
+// $FlowIgnore
 global.Worker = require("workerjs");
 
 import path from "path";
 // import getConfig from "../../bin/getConfig";
 import { readFileSync } from "fs";
 import Enzyme from "enzyme";
+// $FlowIgnore
 import Adapter from "enzyme-adapter-react-16";
 import { setupHelper } from "../utils/dbg";
 import { prefs } from "../utils/prefs";
@@ -38,11 +42,12 @@ env.testing = true;
 const rootPath = path.join(__dirname, "../../");
 
 function getL10nBundle() {
-  const read = file => readFileSync(path.join(__dirname, file));
+  const read = file => readFileSync(path.join(rootPath, file));
+
   try {
-    return read("../../assets/panel/debugger.properties");
+    return read("./assets/panel/debugger.properties");
   } catch (e) {
-    return read("../../../../locales/en-us/debugger.properties");
+    return read("../../locales/en-US/debugger.properties");
   }
 }
 
@@ -65,7 +70,8 @@ function formatException(reason, p) {
 
 beforeAll(() => {
   startSourceMapWorker(
-    path.join(rootPath, "node_modules/devtools-source-map/src/worker.js")
+    path.join(rootPath, "node_modules/devtools-source-map/src/worker.js"),
+    ""
   );
   startPrettyPrintWorker(
     path.join(rootPath, "src/workers/pretty-print/worker.js")
@@ -104,5 +110,25 @@ function mockIndexeddDB() {
     setItem: async (key, value) => {
       store[key] = value;
     }
+  };
+}
+
+// NOTE: We polyfill finally because TRY uses node 8
+if (!global.Promise.prototype.finally) {
+  global.Promise.prototype.finally = function finallyPolyfill(callback) {
+    var constructor = this.constructor;
+
+    return this.then(
+      function(value) {
+        return constructor.resolve(callback()).then(function() {
+          return value;
+        });
+      },
+      function(reason) {
+        return constructor.resolve(callback()).then(function() {
+          throw reason;
+        });
+      }
+    );
   };
 }

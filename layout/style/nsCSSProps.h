@@ -305,7 +305,6 @@ class nsCSSProps {
   static const KTableEntry kGridAutoFlowKTable[];
   static const KTableEntry kGridTrackBreadthKTable[];
   static const KTableEntry kLineHeightKTable[];
-  static const KTableEntry kContainKTable[];
   static const KTableEntry kTextAlignKTable[];
   static const KTableEntry kTextDecorationLineKTable[];
   static const KTableEntry kTextDecorationStyleKTable[];
@@ -313,8 +312,6 @@ class nsCSSProps {
   static const KTableEntry kTextOverflowKTable[];
   static const KTableEntry kTouchActionKTable[];
   static const KTableEntry kVerticalAlignKTable[];
-  static const KTableEntry kWidthKTable[];  // also min-width, max-width
-  static const KTableEntry kFlexBasisKTable[];
 };
 
 #endif /* nsCSSProps_h___ */

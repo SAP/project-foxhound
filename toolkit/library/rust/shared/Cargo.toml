@@ -7,6 +7,7 @@ description = "Shared Rust code for libxul"
 
 [dependencies]
 geckoservo = { path = "../../../../servo/ports/geckolib", optional = true }
+kvstore = { path = "../../../components/kvstore" }
 mp4parse_capi = { path = "../../../../media/mp4parse-rust/mp4parse_capi" }
 nserror = { path = "../../../../xpcom/rust/nserror" }
 nsstring = { path = "../../../../xpcom/rust/nsstring" }
@@ -23,12 +24,12 @@ encoding_glue = { path = "../../../../intl/encoding_glue" }
 audioipc-client = { path = "../../../../media/audioipc/client", optional = true }
 audioipc-server = { path = "../../../../media/audioipc/server", optional = true }
 u2fhid = { path = "../../../../dom/webauthn/u2f-hid-rs" }
+gkrust_utils = { path = "../../../../xpcom/rust/gkrust_utils" }
 rsdparsa_capi = { path = "../../../../media/webrtc/signaling/src/sdp/rsdparsa_capi" }
 # We have these to enforce common feature sets for said crates.
 log = {version = "0.4", features = ["release_max_level_info"]}
 env_logger = {version = "0.5", default-features = false} # disable `regex` to reduce code size
 cose-c = { version = "0.1.5" }
-rkv = "0.5"
 jsrust_shared = { path = "../../../../js/src/rust/shared", optional = true }
 arrayvec = "0.4"
 
@@ -46,6 +47,10 @@ gecko_debug = ["geckoservo/gecko_debug", "nsstring/gecko_debug"]
 simd-accel = ["encoding_c/simd-accel", "encoding_glue/simd-accel"]
 moz_memory = ["mp4parse_capi/mp4parse_fallible"]
 spidermonkey_rust = ["jsrust_shared"]
+cranelift_x86 = ["jsrust_shared/cranelift_x86"]
+cranelift_arm32 = ["jsrust_shared/cranelift_arm32"]
+cranelift_arm64 = ["jsrust_shared/cranelift_arm64"]
+cranelift_none = ["jsrust_shared/cranelift_none"]
 gecko_profiler = ["profiler_helper"]
 gecko_profiler_parse_elf = ["profiler_helper/parse_elf"]
 

@@ -958,6 +958,11 @@ FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
     mCompletenessInfo.ResetInvalidators({});
     mCompletenessInfo.AddInvalidator(*this);
 
+    const auto fnIsFloat32 = [](const webgl::FormatInfo& info) {
+      if (info.componentType != webgl::ComponentType::Float) return false;
+      return info.r == 32;
+    };
+
     for (const auto& cur : mAttachments) {
       const auto& tex = cur->Texture();
       const auto& rb = cur->Renderbuffer();
@@ -973,6 +978,7 @@ FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
       MOZ_ASSERT(imageInfo);
       info.width = std::min(info.width, imageInfo->mWidth);
       info.height = std::min(info.height, imageInfo->mHeight);
+      info.hasFloat32 |= fnIsFloat32(*imageInfo->mFormat->format);
     }
     mCompletenessInfo = Some(std::move(info));
     return LOCAL_GL_FRAMEBUFFER_COMPLETE;
@@ -1184,7 +1190,8 @@ void WebGLFramebuffer::FramebufferTexture2D(GLenum attachEnum,
   if (level < 0)
     return mContext->ErrorInvalidValue("`level` must not be negative.");
 
-  if (mContext->IsWebGL2()) {
+  if (mContext->IsWebGL2() ||
+      mContext->IsExtensionEnabled(WebGLExtensionID::OES_fbo_render_mipmap)) {
     /* GLES 3.0.4 p208:
      *   If textarget is one of TEXTURE_CUBE_MAP_POSITIVE_X,
      *   TEXTURE_CUBE_MAP_POSITIVE_Y, TEXTURE_CUBE_MAP_POSITIVE_Z,
@@ -1373,10 +1380,12 @@ static void GetBackbufferFormats(const WebGLContext* webgl,
   }
 }
 
-/*static*/ void WebGLFramebuffer::BlitFramebuffer(
-    WebGLContext* webgl, GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
-    GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask,
-    GLenum filter) {
+/*static*/
+void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
+                                       GLint srcY0, GLint srcX1, GLint srcY1,
+                                       GLint dstX0, GLint dstY0, GLint dstX1,
+                                       GLint dstY1, GLbitfield mask,
+                                       GLenum filter) {
   const GLbitfield depthAndStencilBits =
       LOCAL_GL_DEPTH_BUFFER_BIT | LOCAL_GL_STENCIL_BUFFER_BIT;
   if (bool(mask & depthAndStencilBits) && filter == LOCAL_GL_LINEAR) {
@@ -1597,6 +1606,36 @@ static void GetBackbufferFormats(const WebGLContext* webgl,
   const ScopedDrawCallWrapper wrapper(*webgl);
   gl->fBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1,
                        mask, filter);
+
+  // -
+  // glBlitFramebuffer ignores glColorMask!
+
+  if (!webgl->mBoundDrawFramebuffer && webgl->mNeedsFakeNoAlpha) {
+    if (!webgl->mScissorTestEnabled) {
+      gl->fEnable(LOCAL_GL_SCISSOR_TEST);
+    }
+    if (webgl->mRasterizerDiscardEnabled) {
+      gl->fDisable(LOCAL_GL_RASTERIZER_DISCARD);
+    }
+    const WebGLContext::ScissorRect dstRect = {
+        std::min(dstX0, dstX1), std::min(dstY0, dstY1), abs(dstX1 - dstX0),
+        abs(dstY1 - dstY0)};
+    dstRect.Apply(*gl);
+    gl->fClearColor(0, 0, 0, 1);
+
+    webgl->DoColorMask(0x8);
+    gl->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
+
+    if (!webgl->mScissorTestEnabled) {
+      gl->fDisable(LOCAL_GL_SCISSOR_TEST);
+    }
+    if (webgl->mRasterizerDiscardEnabled) {
+      gl->fEnable(LOCAL_GL_RASTERIZER_DISCARD);
+    }
+    webgl->mScissorRect.Apply(*gl);
+    gl->fClearColor(webgl->mColorClearValue[0], webgl->mColorClearValue[1],
+                    webgl->mColorClearValue[2], webgl->mColorClearValue[3]);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -23,9 +23,8 @@
  *    actually get stored in the correct jar).
  */
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
@@ -93,8 +92,10 @@ function run_test() {
   do_get_profile();
 
   // Allow all cookies if the pref service is available in this process.
-  if (!inChildProcess())
+  if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+    Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
+  }
 
   httpserver = new HttpServer();
   httpserver.registerPathHandler(setCookiePath, cookieSetHandler);
@@ -154,12 +155,12 @@ add_test(function test_non_safebrowsing_cookie() {
   function setNonSafeBrowsingCookie() {
     var channel = setupChannel(setCookiePath, originAttributes);
     channel.setRequestHeader("set-cookie", cookieName, false);
-    channel.asyncOpen2(new ChannelListener(checkNonSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(checkNonSafeBrowsingCookie, null));
   }
 
   function checkNonSafeBrowsingCookie() {
     var channel = setupChannel(checkCookiePath, originAttributes);
-    channel.asyncOpen2(new ChannelListener(completeCheckNonSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(completeCheckNonSafeBrowsingCookie, null));
   }
 
   function completeCheckNonSafeBrowsingCookie(request, data, context) {
@@ -184,12 +185,12 @@ add_test(function test_safebrowsing_cookie() {
   function setSafeBrowsingCookie() {
     var channel = setupChannel(setCookiePath, originAttributes);
     channel.setRequestHeader("set-cookie", cookieName, false);
-    channel.asyncOpen2(new ChannelListener(checkSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(checkSafeBrowsingCookie, null));
   }
 
   function checkSafeBrowsingCookie() {
     var channel = setupChannel(checkCookiePath, originAttributes);
-    channel.asyncOpen2(new ChannelListener(completeCheckSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(completeCheckSafeBrowsingCookie, null));
   }
 
   function completeCheckSafeBrowsingCookie(request, data, context) {

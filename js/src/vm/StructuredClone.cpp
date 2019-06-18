@@ -35,6 +35,7 @@
 #include "mozilla/Unused.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "jsapi.h"
@@ -42,12 +43,12 @@
 
 #include "builtin/DataViewObject.h"
 #include "builtin/MapObject.h"
+#include "js/ArrayBuffer.h"  // JS::{ArrayBufferHasData,DetachArrayBuffer,IsArrayBufferObject,New{,Mapped}ArrayBufferWithContents,ReleaseMappedArrayBufferContents}
 #include "js/Date.h"
 #include "js/GCHashTable.h"
+#include "js/SharedArrayBuffer.h"  // JS::IsSharedArrayBufferObject
 #include "js/Wrapper.h"
-#ifdef ENABLE_BIGINT
-#  include "vm/BigIntType.h"
-#endif
+#include "vm/BigIntType.h"
 #include "vm/JSContext.h"
 #include "vm/RegExpObject.h"
 #include "vm/SavedFrame.h"
@@ -401,9 +402,7 @@ struct JSStructuredCloneReader {
   JSString* readStringImpl(uint32_t nchars);
   JSString* readString(uint32_t data);
 
-#ifdef ENABLE_BIGINT
   BigInt* readBigInt(uint32_t data);
-#endif
 
   bool checkDouble(double d);
   MOZ_MUST_USE bool readTypedArray(uint32_t arrayType, uint32_t nelems,
@@ -495,6 +494,7 @@ struct JSStructuredCloneWriter {
   bool writeTransferMap();
 
   bool writeString(uint32_t tag, JSString* str);
+  bool writeBigInt(uint32_t tag, BigInt* bi);
   bool writeArrayBuffer(HandleObject obj);
   bool writeTypedArray(HandleObject obj);
   bool writeDataView(HandleObject obj);
@@ -506,10 +506,6 @@ struct JSStructuredCloneWriter {
   bool traverseMap(HandleObject obj);
   bool traverseSet(HandleObject obj);
   bool traverseSavedFrame(HandleObject obj);
-
-#ifdef ENABLE_BIGINT
-  bool writeBigInt(uint32_t tag, BigInt* bi);
-#endif
 
   bool reportDataCloneError(uint32_t errorId);
 
@@ -758,6 +754,9 @@ bool SCInput::readArray(T* p, size_t nelems) {
   }
 
   if (!point.readBytes(reinterpret_cast<char*>(p), size.value())) {
+    // To avoid any way in which uninitialized data could escape, zero the array
+    // if filling it failed.
+    std::uninitialized_fill_n(p, nelems, 0);
     return false;
   }
 
@@ -984,7 +983,7 @@ void JSStructuredCloneData::discardTransferables() {
     if (ownership == JS::SCTAG_TMO_ALLOC_DATA) {
       js_free(content);
     } else if (ownership == JS::SCTAG_TMO_MAPPED_DATA) {
-      JS_ReleaseMappedArrayBufferContents(content, extraData);
+      JS::ReleaseMappedArrayBufferContents(content, extraData);
     } else if (freeTransfer) {
       freeTransfer(tag, JS::TransferableOwnership(ownership), content,
                    extraData, closure_);
@@ -1059,7 +1058,7 @@ bool JSStructuredCloneWriter::parseTransferable() {
     }
     tObj = &v.toObject();
 
-    RootedObject unwrappedObj(cx, CheckedUnwrap(tObj));
+    RootedObject unwrappedObj(cx, CheckedUnwrapStatic(tObj));
     if (!unwrappedObj) {
       ReportAccessDenied(cx);
       return false;
@@ -1150,7 +1149,6 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
              : out.writeChars(linear->twoByteChars(nogc), length);
 }
 
-#ifdef ENABLE_BIGINT
 bool JSStructuredCloneWriter::writeBigInt(uint32_t tag, BigInt* bi) {
   bool signBit = bi->isNegative();
   size_t length = bi->digitLength();
@@ -1165,7 +1163,6 @@ bool JSStructuredCloneWriter::writeBigInt(uint32_t tag, BigInt* bi) {
   }
   return out.writeArray(bi->digits().data(), length);
 }
-#endif
 
 inline void JSStructuredCloneWriter::checkStack() {
 #ifdef DEBUG
@@ -1204,7 +1201,7 @@ inline void JSStructuredCloneWriter::checkStack() {
  */
 bool JSStructuredCloneWriter::writeTypedArray(HandleObject obj) {
   Rooted<TypedArrayObject*> tarr(context(),
-                                 &CheckedUnwrap(obj)->as<TypedArrayObject>());
+                                 obj->maybeUnwrapAs<TypedArrayObject>());
   JSAutoRealm ar(context(), tarr);
 
   if (!TypedArrayObject::ensureHasBuffer(context(), tarr)) {
@@ -1229,8 +1226,7 @@ bool JSStructuredCloneWriter::writeTypedArray(HandleObject obj) {
 }
 
 bool JSStructuredCloneWriter::writeDataView(HandleObject obj) {
-  Rooted<DataViewObject*> view(context(),
-                               &CheckedUnwrap(obj)->as<DataViewObject>());
+  Rooted<DataViewObject*> view(context(), obj->maybeUnwrapAs<DataViewObject>());
   JSAutoRealm ar(context(), view);
 
   if (!out.writePair(SCTAG_DATA_VIEW_OBJECT, view->byteLength())) {
@@ -1247,8 +1243,8 @@ bool JSStructuredCloneWriter::writeDataView(HandleObject obj) {
 }
 
 bool JSStructuredCloneWriter::writeArrayBuffer(HandleObject obj) {
-  Rooted<ArrayBufferObject*> buffer(
-      context(), &CheckedUnwrap(obj)->as<ArrayBufferObject>());
+  Rooted<ArrayBufferObject*> buffer(context(),
+                                    obj->maybeUnwrapAs<ArrayBufferObject>());
   JSAutoRealm ar(context(), buffer);
 
   return out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, buffer->byteLength()) &&
@@ -1256,8 +1252,7 @@ bool JSStructuredCloneWriter::writeArrayBuffer(HandleObject obj) {
 }
 
 bool JSStructuredCloneWriter::writeSharedArrayBuffer(HandleObject obj) {
-  MOZ_ASSERT(CheckedUnwrap(obj) &&
-             CheckedUnwrap(obj)->is<SharedArrayBufferObject>());
+  MOZ_ASSERT(obj->canUnwrapAs<SharedArrayBufferObject>());
 
   if (!cloneDataPolicy.isSharedArrayBufferAllowed()) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
@@ -1276,7 +1271,7 @@ bool JSStructuredCloneWriter::writeSharedArrayBuffer(HandleObject obj) {
   }
 
   Rooted<SharedArrayBufferObject*> sharedArrayBuffer(
-      context(), &CheckedUnwrap(obj)->as<SharedArrayBufferObject>());
+      context(), obj->maybeUnwrapAs<SharedArrayBufferObject>());
   SharedArrayRawBuffer* rawbuf = sharedArrayBuffer->rawBufferObject();
 
   if (!out.buf.refsHeld_.acquire(context(), rawbuf)) {
@@ -1296,7 +1291,7 @@ bool JSStructuredCloneWriter::writeSharedArrayBuffer(HandleObject obj) {
 }
 
 bool JSStructuredCloneWriter::writeSharedWasmMemory(HandleObject obj) {
-  MOZ_ASSERT(CheckedUnwrap(obj) && CheckedUnwrap(obj)->is<WasmMemoryObject>());
+  MOZ_ASSERT(obj->canUnwrapAs<WasmMemoryObject>());
 
   // Check the policy here so that we can report a sane error.
   if (!cloneDataPolicy.isSharedArrayBufferAllowed()) {
@@ -1308,8 +1303,8 @@ bool JSStructuredCloneWriter::writeSharedWasmMemory(HandleObject obj) {
   // If this changes, might need to change what we write.
   MOZ_ASSERT(WasmMemoryObject::RESERVED_SLOTS == 2);
 
-  Rooted<WasmMemoryObject*> memoryObj(
-      context(), &CheckedUnwrap(obj)->as<WasmMemoryObject>());
+  Rooted<WasmMemoryObject*> memoryObj(context(),
+                                      &obj->unwrapAs<WasmMemoryObject>());
   Rooted<SharedArrayBufferObject*> sab(
       context(), &memoryObj->buffer().as<SharedArrayBufferObject>());
 
@@ -1452,7 +1447,7 @@ bool JSStructuredCloneWriter::traverseMap(HandleObject obj) {
   Rooted<GCVector<Value>> newEntries(context(), GCVector<Value>(context()));
   {
     // If there is no wrapper, the compartment munging is a no-op.
-    RootedObject unwrapped(context(), CheckedUnwrap(obj));
+    RootedObject unwrapped(context(), obj->maybeUnwrapAs<MapObject>());
     MOZ_ASSERT(unwrapped);
     JSAutoRealm ar(context(), unwrapped);
     if (!MapObject::getKeysAndValuesInterleaved(unwrapped, &newEntries)) {
@@ -1484,7 +1479,7 @@ bool JSStructuredCloneWriter::traverseSet(HandleObject obj) {
   Rooted<GCVector<Value>> keys(context(), GCVector<Value>(context()));
   {
     // If there is no wrapper, the compartment munging is a no-op.
-    RootedObject unwrapped(context(), CheckedUnwrap(obj));
+    RootedObject unwrapped(context(), obj->maybeUnwrapAs<SetObject>());
     MOZ_ASSERT(unwrapped);
     JSAutoRealm ar(context(), unwrapped);
     if (!SetObject::keys(context(), unwrapped, &keys)) {
@@ -1532,10 +1527,8 @@ bool JSStructuredCloneWriter::traverseSet(HandleObject obj) {
 // Notice how the end-of-children marker for key1 is sandwiched between the
 // value1 beginning and end.
 bool JSStructuredCloneWriter::traverseSavedFrame(HandleObject obj) {
-  RootedObject unwrapped(context(), js::CheckedUnwrap(obj));
-  MOZ_ASSERT(unwrapped && unwrapped->is<SavedFrame>());
-
-  RootedSavedFrame savedFrame(context(), &unwrapped->as<SavedFrame>());
+  RootedSavedFrame savedFrame(context(), obj->maybeUnwrapAs<SavedFrame>());
+  MOZ_ASSERT(savedFrame);
 
   RootedObject parent(context(), savedFrame->getParent());
   if (!context()->compartment()->wrap(context(), &parent)) {
@@ -1635,13 +1628,9 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
     return out.writePair(SCTAG_NULL, 0);
   } else if (v.isUndefined()) {
     return out.writePair(SCTAG_UNDEFINED, 0);
-  }
-#ifdef ENABLE_BIGINT
-  else if (v.isBigInt()) {
+  } else if (v.isBigInt()) {
     return writeBigInt(SCTAG_BIGINT, v.toBigInt());
-  }
-#endif
-  else if (v.isObject()) {
+  } else if (v.isObject()) {
     RootedObject obj(context(), &v.toObject());
 
     bool backref;
@@ -1692,13 +1681,13 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
                writeString(SCTAG_STRING, re->getSource());
       }
       case ESClass::ArrayBuffer: {
-        if (JS_IsArrayBufferObject(obj) && JS_ArrayBufferHasData(obj)) {
+        if (JS::IsArrayBufferObject(obj) && JS::ArrayBufferHasData(obj)) {
           return writeArrayBuffer(obj);
         }
         break;
       }
       case ESClass::SharedArrayBuffer:
-        if (JS_IsSharedArrayBufferObject(obj)) {
+        if (JS::IsSharedArrayBufferObject(obj)) {
           return writeSharedArrayBuffer(obj);
         }
         break;
@@ -1714,7 +1703,6 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
         return traverseSet(obj);
       case ESClass::Map:
         return traverseMap(obj);
-#ifdef ENABLE_BIGINT
       case ESClass::BigInt: {
         RootedValue unboxed(context());
         if (!Unbox(context(), obj, &unboxed)) {
@@ -1722,7 +1710,6 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
         }
         return writeBigInt(SCTAG_BIGINT_OBJECT, unboxed.toBigInt());
       }
-#endif
       case ESClass::Promise:
       case ESClass::MapIterator:
       case ESClass::SetIterator:
@@ -1848,7 +1835,7 @@ bool JSStructuredCloneWriter::transferOwnership() {
       // The current setup of the array buffer inheritance hierarchy doesn't
       // lend itself well to generic manipulation via proxies.
       Rooted<ArrayBufferObject*> arrayBuffer(
-          cx, &CheckedUnwrap(obj)->as<ArrayBufferObject>());
+          cx, obj->maybeUnwrapAs<ArrayBufferObject>());
       JSAutoRealm ar(cx, arrayBuffer);
 
       if (arrayBuffer->isDetached()) {
@@ -1857,17 +1844,9 @@ bool JSStructuredCloneWriter::transferOwnership() {
         return false;
       }
 
-      size_t nbytes = arrayBuffer->byteLength();
-
-      if (arrayBuffer->isWasm() || arrayBuffer->isPreparedForAsmJS()) {
+      if (arrayBuffer->isPreparedForAsmJS()) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                   JSMSG_WASM_NO_TRANSFER);
-        return false;
-      }
-
-      if (arrayBuffer->isDetached()) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_TYPED_ARRAY_DETACHED);
         return false;
       }
 
@@ -1894,15 +1873,16 @@ bool JSStructuredCloneWriter::transferOwnership() {
         point = out.iter();
         point += pointOffset;
 
-        if (!JS_DetachArrayBuffer(cx, arrayBuffer)) {
+        if (!JS::DetachArrayBuffer(cx, arrayBuffer)) {
           return false;
         }
       } else {
-        bool hasStealableContents = arrayBuffer->hasStealableContents();
+        size_t nbytes = arrayBuffer->byteLength();
 
-        ArrayBufferObject::BufferContents bufContents =
-            ArrayBufferObject::stealContents(cx, arrayBuffer,
-                                             hasStealableContents);
+        using BufferContents = ArrayBufferObject::BufferContents;
+
+        BufferContents bufContents =
+            ArrayBufferObject::extractStructuredCloneContents(cx, arrayBuffer);
         if (!bufContents) {
           return false;  // out of memory
         }
@@ -1911,6 +1891,8 @@ bool JSStructuredCloneWriter::transferOwnership() {
         if (bufContents.kind() == ArrayBufferObject::MAPPED) {
           ownership = JS::SCTAG_TMO_MAPPED_DATA;
         } else {
+          MOZ_ASSERT(bufContents.kind() == ArrayBufferObject::MALLOCED,
+                     "failing to handle new ArrayBuffer kind?");
           ownership = JS::SCTAG_TMO_ALLOC_DATA;
         }
         extraData = nbytes;
@@ -2078,14 +2060,20 @@ JSString* JSStructuredCloneReader::readString(uint32_t data) {
                 : readStringImpl<char16_t>(nchars);
 }
 
-#ifdef ENABLE_BIGINT
 BigInt* JSStructuredCloneReader::readBigInt(uint32_t data) {
+  if (!context()->realm()->creationOptions().getBigIntEnabled()) {
+    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                              JSMSG_SC_BIGINT_DISABLED);
+    return nullptr;
+  }
+
   size_t length = data & JS_BITMASK(31);
   bool isNegative = data & (1 << 31);
   if (length == 0) {
     return BigInt::zero(context());
   }
-  BigInt* result = BigInt::createUninitialized(context(), length, isNegative);
+  RootedBigInt result(
+      context(), BigInt::createUninitialized(context(), length, isNegative));
   if (!result) {
     return nullptr;
   }
@@ -2094,7 +2082,6 @@ BigInt* JSStructuredCloneReader::readBigInt(uint32_t data) {
   }
   return result;
 }
-#endif
 
 static uint32_t TagToV1ArrayType(uint32_t tag) {
   MOZ_ASSERT(tag >= SCTAG_TYPED_ARRAY_V1_MIN &&
@@ -2234,7 +2221,7 @@ bool JSStructuredCloneReader::readDataView(uint32_t byteLength,
 
 bool JSStructuredCloneReader::readArrayBuffer(uint32_t nbytes,
                                               MutableHandleValue vp) {
-  JSObject* obj = ArrayBufferObject::create(context(), nbytes);
+  JSObject* obj = ArrayBufferObject::createZeroed(context(), nbytes);
   if (!obj) {
     return false;
   }
@@ -2352,7 +2339,7 @@ bool JSStructuredCloneReader::readV1ArrayBuffer(uint32_t arrayType,
     return false;
   }
 
-  JSObject* obj = ArrayBufferObject::create(context(), nbytes.value());
+  JSObject* obj = ArrayBufferObject::createZeroed(context(), nbytes.value());
   if (!obj) {
     return false;
   }
@@ -2444,7 +2431,6 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
 
     case SCTAG_BIGINT:
     case SCTAG_BIGINT_OBJECT: {
-#ifdef ENABLE_BIGINT
       RootedBigInt bi(context(), readBigInt(data));
       if (!bi) {
         return false;
@@ -2454,12 +2440,6 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
         return false;
       }
       break;
-#else
-      JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
-                                JSMSG_SC_BAD_SERIALIZED_DATA,
-                                "BigInt unsupported");
-      return false;
-#endif
     }
 
     case SCTAG_DATE_OBJECT: {
@@ -2706,7 +2686,11 @@ bool JSStructuredCloneReader::readTransferMap() {
       return false;
     }
 
-    MOZ_ASSERT(tag != SCTAG_TRANSFER_MAP_PENDING_ENTRY);
+    if (tag == SCTAG_TRANSFER_MAP_PENDING_ENTRY) {
+      ReportDataCloneError(cx, callbacks, JS_SCERR_TRANSFERABLE);
+      return false;
+    }
+
     RootedObject obj(cx);
 
     void* content;
@@ -2734,9 +2718,9 @@ bool JSStructuredCloneReader::readTransferMap() {
       MOZ_ASSERT(data == JS::SCTAG_TMO_ALLOC_DATA ||
                  data == JS::SCTAG_TMO_MAPPED_DATA);
       if (data == JS::SCTAG_TMO_ALLOC_DATA) {
-        obj = JS_NewArrayBufferWithContents(cx, nbytes, content);
+        obj = JS::NewArrayBufferWithContents(cx, nbytes, content);
       } else if (data == JS::SCTAG_TMO_MAPPED_DATA) {
-        obj = JS_NewMappedArrayBufferWithContents(cx, nbytes, content);
+        obj = JS::NewMappedArrayBufferWithContents(cx, nbytes, content);
       }
     } else if (tag == SCTAG_TRANSFER_MAP_STORED_ARRAY_BUFFER) {
       auto savedPos = in.tell();
@@ -2748,7 +2732,10 @@ bool JSStructuredCloneReader::readTransferMap() {
       if (!in.readPair(&tag, &data)) {
         return false;
       }
-      MOZ_ASSERT(tag == SCTAG_ARRAY_BUFFER_OBJECT);
+      if (tag != SCTAG_ARRAY_BUFFER_OBJECT) {
+        ReportDataCloneError(cx, callbacks, JS_SCERR_TRANSFERABLE);
+        return false;
+      }
       RootedValue val(cx);
       if (!readArrayBuffer(data, &val)) {
         return false;
@@ -2856,6 +2843,10 @@ JSObject* JSStructuredCloneReader::readSavedFrame(uint32_t principalsTag) {
     return nullptr;
   }
   savedFrame->initColumn(column);
+
+  // Don't specify a source ID when reading a cloned saved frame, as these IDs
+  // are only valid within a specific process.
+  savedFrame->initSourceId(0);
 
   RootedValue name(context());
   if (!startRead(&name) || !(name.isString() || name.isNull())) {
@@ -3075,7 +3066,7 @@ JS_PUBLIC_API bool JS_StructuredClone(
   {
     if (value.isObject()) {
       RootedObject obj(cx, &value.toObject());
-      obj = CheckedUnwrap(obj);
+      obj = CheckedUnwrapStatic(obj);
       if (!obj) {
         ReportAccessDenied(cx);
         return false;
@@ -3235,10 +3226,10 @@ JS_PUBLIC_API bool JS_WriteTypedArray(JSStructuredCloneWriter* w,
   w->context()->check(v);
   RootedObject obj(w->context(), &v.toObject());
 
-  // Note: writeTypedArray also does a CheckedUnwrap but it assumes this
+  // Note: writeTypedArray also does a maybeUnwrapAs but it assumes this
   // returns non-null. This isn't guaranteed for JSAPI users so we do our
   // own unwrapping here.
-  obj = CheckedUnwrap(obj);
+  obj = obj->maybeUnwrapAs<TypedArrayObject>();
   if (!obj) {
     ReportAccessDenied(w->context());
     return false;

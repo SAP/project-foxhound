@@ -7,16 +7,21 @@ package org.mozilla.geckoview;
 
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
+import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.UiThread;
+import android.support.annotation.IntDef;
 import android.util.Log;
 import android.util.Pair;
 import android.view.MotionEvent;
 import android.view.InputDevice;
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 
 import java.util.ArrayList;
 
@@ -33,13 +38,28 @@ public class PanZoomController extends JNIObject {
     private float mPointerScrollFactor = 64.0f;
     private long mLastDownTime;
 
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({SCROLL_BEHAVIOR_SMOOTH, SCROLL_BEHAVIOR_AUTO})
+    /* package */ @interface ScrollBehaviorType {}
+
+    /**
+     * Specifies smooth scrolling which animates content to the desired scroll position.
+     */
+    public static final int SCROLL_BEHAVIOR_SMOOTH = 0;
+    /**
+     * Specifies auto scrolling which jumps content to the desired scroll position.
+     */
+    public static final int SCROLL_BEHAVIOR_AUTO = 1;
+
     private SynthesizedEventState mPointerState;
 
     private ArrayList<Pair<Integer, MotionEvent>> mQueuedEvents;
 
+    private boolean mSynthesizedEvent = false;
+
     @WrapForJNI(calledFrom = "ui")
     private native boolean handleMotionEvent(
-            int action, int actionIndex, long time, int metaState,
+            int action, int actionIndex, long time, int metaState,  float screenX, float screenY,
             int pointerId[], float x[], float y[], float orientation[], float pressure[],
             float toolMajor[], float toolMinor[]);
 
@@ -54,7 +74,7 @@ public class PanZoomController extends JNIObject {
             int action, long time, int metaState,
             float x, float y, int buttons);
 
-    private boolean handleMotionEvent(MotionEvent event) {
+    private boolean handleMotionEvent(final MotionEvent event) {
         if (!mAttached) {
             mQueuedEvents.add(new Pair<>(EVENT_SOURCE_MOTION, event));
             return false;
@@ -94,12 +114,22 @@ public class PanZoomController extends JNIObject {
             toolMinor[i] = coords.toolMinor;
         }
 
+        final float screenX = event.getRawX() - event.getX();
+        final float screenY = event.getRawY() - event.getY();
+
+        // Take this opportunity to update screen origin of session. This gets
+        // dispatched to the gecko thread, so we also pass the new screen x/y directly to apz.
+        // If this is a synthesized touch, the screen offset is bogus so ignore it.
+        if (!mSynthesizedEvent) {
+            mSession.onScreenOriginChanged((int)screenX, (int)screenY);
+        }
+
         return handleMotionEvent(action, event.getActionIndex(), event.getEventTime(),
-                event.getMetaState(), pointerId, x, y, orientation, pressure,
+                event.getMetaState(), screenX, screenY, pointerId, x, y, orientation, pressure,
                 toolMajor, toolMinor);
     }
 
-    private boolean handleScrollEvent(MotionEvent event) {
+    private boolean handleScrollEvent(final MotionEvent event) {
         if (!mAttached) {
             mQueuedEvents.add(new Pair<>(EVENT_SOURCE_SCROLL, event));
             return false;
@@ -128,7 +158,7 @@ public class PanZoomController extends JNIObject {
                                  hScroll, vScroll);
     }
 
-    private boolean handleMouseEvent(MotionEvent event) {
+    private boolean handleMouseEvent(final MotionEvent event) {
         if (!mAttached) {
             mQueuedEvents.add(new Pair<>(EVENT_SOURCE_MOUSE, event));
             return false;
@@ -221,7 +251,7 @@ public class PanZoomController extends JNIObject {
      * @param event MotionEvent to process.
      * @return True if the event was handled.
      */
-    public boolean onMotionEvent(@NonNull MotionEvent event) {
+    public boolean onMotionEvent(final @NonNull MotionEvent event) {
         ThreadUtils.assertOnUiThread();
 
         final int action = event.getActionMasked();
@@ -296,7 +326,7 @@ public class PanZoomController extends JNIObject {
      *
      * @param isLongpressEnabled True if Gecko should generate long-press events.
      */
-    public void setIsLongpressEnabled(boolean isLongpressEnabled) {
+    public void setIsLongpressEnabled(final boolean isLongpressEnabled) {
         ThreadUtils.assertOnUiThread();
 
         if (mAttached) {
@@ -336,7 +366,7 @@ public class PanZoomController extends JNIObject {
             pointers = new ArrayList<PointerInfo>();
         }
 
-        int getPointerIndex(int pointerId) {
+        int getPointerIndex(final int pointerId) {
             for (int i = 0; i < pointers.size(); i++) {
                 if (pointers.get(i).pointerId == pointerId) {
                     return i;
@@ -345,7 +375,7 @@ public class PanZoomController extends JNIObject {
             return -1;
         }
 
-        int addPointer(int pointerId, int source) {
+        int addPointer(final int pointerId, final int source) {
             PointerInfo info = new PointerInfo();
             info.pointerId = pointerId;
             info.source = source;
@@ -353,7 +383,7 @@ public class PanZoomController extends JNIObject {
             return pointers.size() - 1;
         }
 
-        int getPointerCount(int source) {
+        int getPointerCount(final int source) {
             int count = 0;
             for (int i = 0; i < pointers.size(); i++) {
                 if (pointers.get(i).source == source) {
@@ -363,7 +393,7 @@ public class PanZoomController extends JNIObject {
             return count;
         }
 
-        MotionEvent.PointerProperties[] getPointerProperties(int source) {
+        MotionEvent.PointerProperties[] getPointerProperties(final int source) {
             MotionEvent.PointerProperties[] props =
                     new MotionEvent.PointerProperties[getPointerCount(source)];
             int index = 0;
@@ -385,7 +415,7 @@ public class PanZoomController extends JNIObject {
             return props;
         }
 
-        MotionEvent.PointerCoords[] getPointerCoords(int source) {
+        MotionEvent.PointerCoords[] getPointerCoords(final int source) {
             MotionEvent.PointerCoords[] coords =
                     new MotionEvent.PointerCoords[getPointerCount(source)];
             int index = 0;
@@ -398,10 +428,10 @@ public class PanZoomController extends JNIObject {
         }
     }
 
-    private void synthesizeNativePointer(int source, int pointerId, int eventType,
-                                         int clientX, int clientY, double pressure,
-                                         int orientation)
-    {
+    private void synthesizeNativePointer(final int source, final int pointerId,
+                                         final int originalEventType,
+                                         final int clientX, final int clientY,
+                                         final double pressure, final int orientation) {
         if (mPointerState == null) {
             mPointerState = new SynthesizedEventState();
         }
@@ -410,7 +440,8 @@ public class PanZoomController extends JNIObject {
         int pointerIndex = mPointerState.getPointerIndex(pointerId);
 
         // Event-specific handling
-        switch (eventType) {
+        int eventType = originalEventType;
+        switch (originalEventType) {
             case MotionEvent.ACTION_POINTER_UP:
                 if (pointerIndex < 0) {
                     Log.w(LOGTAG, "Pointer-up for invalid pointer");
@@ -495,21 +526,24 @@ public class PanZoomController extends JNIObject {
             /*edgeFlags*/ 0,
             /*source*/ source,
             /*flags*/ 0);
+
+        mSynthesizedEvent = true;
         onTouchEvent(event);
+        mSynthesizedEvent = false;
 
         // Forget about removed pointers
         if (eventType == MotionEvent.ACTION_POINTER_UP ||
             eventType == MotionEvent.ACTION_UP ||
             eventType == MotionEvent.ACTION_CANCEL ||
-            eventType == MotionEvent.ACTION_HOVER_MOVE)
-        {
+            eventType == MotionEvent.ACTION_HOVER_MOVE) {
             mPointerState.pointers.remove(pointerIndex);
         }
     }
 
     @WrapForJNI(calledFrom = "ui")
-    private void synthesizeNativeTouchPoint(int pointerId, int eventType, int clientX,
-                                            int clientY, double pressure, int orientation) {
+    private void synthesizeNativeTouchPoint(final int pointerId, final int eventType,
+                                            final int clientX, final int clientY,
+                                            final double pressure, final int orientation) {
         if (pointerId == PointerInfo.RESERVED_MOUSE_POINTER_ID) {
             throw new IllegalArgumentException("Pointer ID reserved for mouse");
         }
@@ -518,9 +552,94 @@ public class PanZoomController extends JNIObject {
     }
 
     @WrapForJNI(calledFrom = "ui")
-    private void synthesizeNativeMouseEvent(int eventType, int clientX, int clientY) {
+    private void synthesizeNativeMouseEvent(final int eventType, final int clientX,
+                                            final int clientY) {
         synthesizeNativePointer(InputDevice.SOURCE_MOUSE,
                                 PointerInfo.RESERVED_MOUSE_POINTER_ID,
                                 eventType, clientX, clientY, 0, 0);
+    }
+
+    /**
+     * Scroll the document body by an offset from the current scroll position.
+     * Uses {@link #SCROLL_BEHAVIOR_SMOOTH}.
+     *
+     * @param width {@link ScreenLength} offset to scroll along X axis.
+     * @param height {@link ScreenLength} offset to scroll along Y axis.
+     */
+    @UiThread
+    public void scrollBy(final @NonNull ScreenLength width, final @NonNull ScreenLength height) {
+        scrollBy(width, height, SCROLL_BEHAVIOR_SMOOTH);
+    }
+
+    /**
+     * Scroll the document body by an offset from the current scroll position.
+     *
+     * @param width {@link ScreenLength} offset to scroll along X axis.
+     * @param height {@link ScreenLength} offset to scroll along Y axis.
+     * @param behavior ScrollBehaviorType One of {@link #SCROLL_BEHAVIOR_SMOOTH}, {@link #SCROLL_BEHAVIOR_AUTO},
+     *                 that specifies how to scroll the content.
+     */
+    @UiThread
+    public void scrollBy(final @NonNull ScreenLength width, final @NonNull ScreenLength height,
+                         final @ScrollBehaviorType int behavior) {
+        final GeckoBundle msg = buildScrollMessage(width, height, behavior);
+        mSession.getEventDispatcher().dispatch("GeckoView:ScrollBy", msg);
+    }
+
+    /**
+     * Scroll the document body to an absolute  position.
+     * Uses {@link #SCROLL_BEHAVIOR_SMOOTH}.
+     *
+     * @param width {@link ScreenLength} position to scroll along X axis.
+     * @param height {@link ScreenLength} position to scroll along Y axis.
+     */
+    @UiThread
+    public void scrollTo(final @NonNull ScreenLength width, final @NonNull ScreenLength height) {
+        scrollTo(width, height, SCROLL_BEHAVIOR_SMOOTH);
+    }
+
+    /**
+     * Scroll the document body to an absolute position.
+     *
+     * @param width {@link ScreenLength} position to scroll along X axis.
+     * @param height {@link ScreenLength} position to scroll along Y axis.
+     * @param behavior ScrollBehaviorType One of {@link #SCROLL_BEHAVIOR_SMOOTH}, {@link #SCROLL_BEHAVIOR_AUTO},
+     *                 that specifies how to scroll the content.
+     */
+    @UiThread
+    public void scrollTo(final @NonNull ScreenLength width, final @NonNull ScreenLength height,
+                         final @ScrollBehaviorType int behavior) {
+        final GeckoBundle msg = buildScrollMessage(width, height, behavior);
+        mSession.getEventDispatcher().dispatch("GeckoView:ScrollTo", msg);
+    }
+
+    /**
+     * Scroll to the top left corner of the screen.
+     * Uses {@link #SCROLL_BEHAVIOR_SMOOTH}.
+     */
+    @UiThread
+    public void scrollToTop() {
+        scrollTo(ScreenLength.zero(), ScreenLength.top(), SCROLL_BEHAVIOR_SMOOTH);
+    }
+
+    /**
+     * Scroll to the bottom left corner of the screen.
+     * Uses {@link #SCROLL_BEHAVIOR_SMOOTH}.
+     */
+    @UiThread
+    public void scrollToBottom() {
+        scrollTo(ScreenLength.zero(), ScreenLength.bottom(), SCROLL_BEHAVIOR_SMOOTH);
+    }
+
+    private GeckoBundle buildScrollMessage(final @NonNull ScreenLength width,
+                                           final @NonNull ScreenLength height,
+                                           final @ScrollBehaviorType int behavior) {
+        final GeckoBundle msg = new GeckoBundle();
+        msg.putDouble("widthValue", width.getValue());
+        msg.putInt("widthType", width.getType());
+        msg.putDouble("heightValue", height.getValue());
+        msg.putInt("heightType", height.getType());
+        msg.putInt("behavior", behavior);
+        return msg;
     }
 }

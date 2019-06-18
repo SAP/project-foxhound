@@ -32,10 +32,102 @@ and built. If you want to debug your build, you need to enable X-forwarding (to 
 
 ```bash
 xhost +local:root
-docker run -v /path/to/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -it --entrypoint=/bin/bash taintfox
+docker run -v /path/to/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -it --rm --entrypoint=/bin/bash taintfox
 ```
 
 This provides a bash prompt to start taintfox or whatever you like.
+
+### Build Commands
+
+#### Building
+
+```bash
+./mach build
+```
+
+#### Running
+
+```bash
+./mach run
+```
+
+#### Packaging
+
+```bash
+./mach package
+```
+
+#### Debugging
+
+To run GDB, wait for taintfox to crash and then it will tell you which command to run. For example:
+
+```bash
+gdb /usr/local/src/taintfox/obj-tf-dbg/dist/bin/taintfox 11257
+```
+
+To run with the JIT spewer enabled, make sure the line:
+
+```bash
+ac_add_options --enable-jitspew
+```
+
+is present in your .mozconfig file for the build. Then run with the ```IONFLAGS``` variable to get more information from the JIT:
+
+```bash
+IONFLAGS=help /usr/local/src/taintfox/obj-tf-dbg/dist/bin/taintfox -no-remote -profile /usr/local/src/taintfox/obj-tf-dbg/tmp/profile-default
+```
+
+The complete list of options:
+
+```bash
+usage: IONFLAGS=option,option,option,... where options can be:
+
+  aborts        Compilation abort messages
+  scripts       Compiled scripts
+  mir           MIR information
+  prune         Prune unused branches
+  escape        Escape analysis
+  alias         Alias analysis
+  alias-sum     Alias analysis: shows summaries for every block
+  gvn           Global Value Numbering
+  licm          Loop invariant code motion
+  flac          Fold linear arithmetic constants
+  eaa           Effective address analysis
+  sincos        Replace sin/cos by sincos
+  sink          Sink transformation
+  regalloc      Register allocation
+  inline        Inlining
+  snapshots     Snapshot information
+  codegen       Native code generation
+  bailouts      Bailouts
+  caches        Inline caches
+  osi           Invalidation
+  safepoints    Safepoints
+  pools         Literal Pools (ARM only for now)
+  cacheflush    Instruction Cache flushes (ARM only for now)
+  range         Range Analysis
+  logs          JSON visualization logging
+  logs-sync     Same as logs, but flushes between each pass (sync. compiled functions only).
+  profiling     Profiling-related information
+  trackopts     Optimization tracking information gathered by the Gecko profiler. (Note: call enableGeckoProfiling() in your script to enable it).
+  trackopts-ext Encoding information about optimization tracking
+  dump-mir-expr Dump the MIR expressions
+  cfg           Control flow graph generation
+  all           Everything
+
+  bl-aborts     Baseline compiler abort messages
+  bl-scripts    Baseline script-compilation
+  bl-op         Baseline compiler detailed op-specific messages
+  bl-ic         Baseline inline-cache messages
+  bl-ic-fb      Baseline IC fallback stub messages
+  bl-osr        Baseline IC OSR messages
+  bl-bails      Baseline bailouts
+  bl-dbg-osr    Baseline debug mode on stack recompile messages
+  bl-all        All baseline spew
+```
+
+
+
 
 ## Source Containers
 

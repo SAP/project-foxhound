@@ -14,7 +14,6 @@
 #endif
 #include "mozilla/BrowserElementParent.h"
 #include "mozilla/dom/ChromeMessageSender.h"
-#include "mozilla/dom/ContentBridgeParent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DataTransferItemList.h"
@@ -22,6 +21,7 @@
 #include "mozilla/dom/indexedDB/ActorsParent.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/PaymentRequestParent.h"
+#include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
@@ -48,6 +48,7 @@
 #include "nsDebug.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
 #include "nsFrameManager.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowser.h"
@@ -75,6 +76,7 @@
 #endif
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
+#include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "PermissionMessageUtils.h"
@@ -102,7 +104,7 @@
 #include "nsString.h"
 #include "IHistory.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/dom/ChromeBrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 
 #ifdef XP_WIN
 #  include "mozilla/plugins/PluginWidgetParent.h"
@@ -129,6 +131,11 @@ using namespace mozilla::gfx;
 
 using mozilla::Unused;
 
+LazyLogModule gBrowserFocusLog("BrowserFocus");
+
+#define LOGBROWSERFOCUS(args) \
+  MOZ_LOG(gBrowserFocusLog, mozilla::LogLevel::Debug, args)
+
 // The flags passed by the webProgress notifications are 16 bits shifted
 // from the ones registered by webProgressListeners.
 #define NOTIFY_FLAG_SHIFT 16
@@ -138,11 +145,21 @@ namespace dom {
 
 TabParent::LayerToTabParentTable* TabParent::sLayerToTabParentTable = nullptr;
 
-NS_IMPL_ISUPPORTS(TabParent, nsITabParent, nsIAuthPromptProvider,
-                  nsISupportsWeakReference)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TabParent)
+  NS_INTERFACE_MAP_ENTRY(nsITabParent)
+  NS_INTERFACE_MAP_ENTRY(nsIAuthPromptProvider)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsITabParent)
+NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION(TabParent, mFrameElement, mBrowserDOMWindow, mLoadContext, mFrameLoader, mBrowsingContext)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(TabParent)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(TabParent)
 
-TabParent::TabParent(nsIContentParent* aManager, const TabId& aTabId,
-                     const TabContext& aContext, uint32_t aChromeFlags)
+TabParent::TabParent(ContentParent* aManager, const TabId& aTabId,
+                     const TabContext& aContext,
+                     CanonicalBrowsingContext* aBrowsingContext,
+                     uint32_t aChromeFlags,
+                     BrowserBridgeParent* aBrowserBridgeParent)
     : TabContext(aContext),
       mFrameElement(nullptr),
       mContentCache(*this),
@@ -160,6 +177,8 @@ TabParent::TabParent(nsIContentParent* aManager, const TabId& aTabId,
       mIsDestroyed(false),
       mChromeFlags(aChromeFlags),
       mDragValid(false),
+      mBrowsingContext(aBrowsingContext),
+      mBrowserBridgeParent(aBrowserBridgeParent),
       mTabId(aTabId),
       mCreatingWindow(false),
       mCursor(eCursorInvalid),
@@ -303,6 +322,10 @@ void TabParent::SetOwnerElement(Element* aElement) {
       Unused << SendSetWidgetNativeData(widgetNativeData);
     }
   }
+
+  if (mRenderFrame.IsInitialized()) {
+    mRenderFrame.OwnerContentChanged();
+  }
 }
 
 NS_IMETHODIMP TabParent::GetOwnerElement(Element** aElement) {
@@ -379,12 +402,7 @@ void TabParent::Destroy() {
 
   mIsDestroyed = true;
 
-  if (XRE_IsParentProcess()) {
-    ContentParent::NotifyTabDestroying(this->GetTabId(),
-                                       Manager()->AsContentParent()->ChildID());
-  } else {
-    ContentParent::NotifyTabDestroying(this->GetTabId(), Manager()->ChildID());
-  }
+  ContentParent::NotifyTabDestroying(this->GetTabId(), Manager()->ChildID());
 
   mMarkedDestroying = true;
 }
@@ -398,14 +416,9 @@ mozilla::ipc::IPCResult TabParent::RecvEnsureLayersConnected(
 }
 
 mozilla::ipc::IPCResult TabParent::Recv__delete__() {
-  if (XRE_IsParentProcess()) {
-    ContentParent::UnregisterRemoteFrame(
-        mTabId, Manager()->AsContentParent()->ChildID(), mMarkedDestroying);
-  } else {
-    Manager()->AsContentBridgeParent()->NotifyTabDestroyed();
-    ContentParent::UnregisterRemoteFrame(mTabId, Manager()->ChildID(),
-                                         mMarkedDestroying);
-  }
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
+  ContentParent::UnregisterRemoteFrame(mTabId, Manager()->ChildID(),
+                                       mMarkedDestroying);
 
   return IPC_OK();
 }
@@ -450,7 +463,7 @@ void TabParent::ActorDestroy(ActorDestroyReason why) {
     if (why == AbnormalShutdown && os) {
       os->NotifyObservers(ToSupports(frameLoader), "oop-frameloader-crashed",
                           nullptr);
-      nsCOMPtr<nsIFrameLoaderOwner> owner = do_QueryInterface(frameElement);
+      RefPtr<nsFrameLoaderOwner> owner = do_QueryObject(frameElement);
       if (owner) {
         RefPtr<nsFrameLoader> currentFrameLoader = owner->GetFrameLoader();
         // It's possible that the frameloader owner has already moved on
@@ -484,7 +497,9 @@ void TabParent::ActorDestroy(ActorDestroyReason why) {
 
 mozilla::ipc::IPCResult TabParent::RecvMoveFocus(
     const bool& aForward, const bool& aForDocumentNavigation) {
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  LOGBROWSERFOCUS(("RecvMoveFocus %p, aForward: %d, aForDocumentNavigation: %d",
+                   this, aForward, aForDocumentNavigation));
+  nsCOMPtr<nsIFocusManager> fm = nsFocusManager::GetFocusManager();
   if (fm) {
     RefPtr<Element> dummy;
 
@@ -616,16 +631,8 @@ void TabParent::LoadURL(nsIURI* aURI) {
 }
 
 void TabParent::InitRendering() {
-  RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
-
   MOZ_ASSERT(!mRenderFrame.IsInitialized());
-  MOZ_ASSERT(frameLoader);
-
-  if (!frameLoader) {
-    return;
-  }
-
-  mRenderFrame.Initialize(frameLoader);
+  mRenderFrame.Initialize(this);
   MOZ_ASSERT(mRenderFrame.IsInitialized());
 
   layers::LayersId layersId = mRenderFrame.GetLayersId();
@@ -829,12 +836,14 @@ void TabParent::HandleAccessKey(const WidgetKeyboardEvent& aEvent,
 }
 
 void TabParent::Activate() {
+  LOGBROWSERFOCUS(("Activate %p", this));
   if (!mIsDestroyed) {
     Unused << Manager()->SendActivate(this);
   }
 }
 
 void TabParent::Deactivate() {
+  LOGBROWSERFOCUS(("Deactivate %p", this));
   if (!mIsDestroyed) {
     Unused << Manager()->SendDeactivate(this);
   }
@@ -963,11 +972,6 @@ auto TabParent::AllocPIndexedDBPermissionRequestParent(
     return nullptr;
   }
 
-  nsCOMPtr<nsIContentParent> manager = Manager();
-  if (!manager->IsContentParent()) {
-    MOZ_CRASH("Figure out security checks for bridged content!");
-  }
-
   if (NS_WARN_IF(!mFrameElement)) {
     return nullptr;
   }
@@ -1015,6 +1019,27 @@ bool TabParent::DeallocPWindowGlobalParent(PWindowGlobalParent* aActor) {
   return true;
 }
 
+IPCResult TabParent::RecvPBrowserBridgeConstructor(
+    PBrowserBridgeParent* aActor, const nsString& aName,
+    const nsString& aRemoteType, BrowsingContext* aBrowsingContext) {
+  static_cast<BrowserBridgeParent*>(aActor)->Init(
+      aName, aRemoteType, CanonicalBrowsingContext::Cast(aBrowsingContext));
+  return IPC_OK();
+}
+
+PBrowserBridgeParent* TabParent::AllocPBrowserBridgeParent(
+    const nsString& aName, const nsString& aRemoteType,
+    BrowsingContext* aBrowsingContext) {
+  // Reference freed in DeallocPBrowserBridgeParent.
+  return do_AddRef(new BrowserBridgeParent()).take();
+}
+
+bool TabParent::DeallocPBrowserBridgeParent(PBrowserBridgeParent* aActor) {
+  // Free reference from AllocPBrowserBridgeParent.
+  static_cast<BrowserBridgeParent*>(aActor)->Release();
+  return true;
+}
+
 void TabParent::SendMouseEvent(const nsAString& aType, float aX, float aY,
                                int32_t aButton, int32_t aClickCount,
                                int32_t aModifiers,
@@ -1030,7 +1055,7 @@ void TabParent::SendRealMouseEvent(WidgetMouseEvent& aEvent) {
   if (mIsDestroyed) {
     return;
   }
-  aEvent.mRefPoint += GetChildProcessOffset();
+  aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
 
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (widget) {
@@ -1059,8 +1084,7 @@ void TabParent::SendRealMouseEvent(WidgetMouseEvent& aEvent) {
   uint64_t blockId;
   ApzAwareEventRoutingToChild(&guid, &blockId, nullptr);
 
-  bool isInputPriorityEventEnabled =
-      Manager()->AsContentParent()->IsInputPriorityEventEnabled();
+  bool isInputPriorityEventEnabled = Manager()->IsInputPriorityEventEnabled();
 
   if (mIsMouseEnterIntoWidgetEventSuppressed) {
     // In the case that the TabParent suppressed the eMouseEnterWidget event due
@@ -1187,8 +1211,8 @@ void TabParent::SendRealDragEvent(WidgetDragEvent& aEvent, uint32_t aDragAction,
   if (mIsDestroyed || !mIsReadyToHandleInputEvents) {
     return;
   }
-  MOZ_ASSERT(!Manager()->AsContentParent()->IsInputPriorityEventEnabled());
-  aEvent.mRefPoint += GetChildProcessOffset();
+  MOZ_ASSERT(!Manager()->IsInputPriorityEventEnabled());
+  aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
   if (aEvent.mMessage == eDrop) {
     if (!QueryDropLinksForVerification()) {
       return;
@@ -1200,11 +1224,6 @@ void TabParent::SendRealDragEvent(WidgetDragEvent& aEvent, uint32_t aDragAction,
   MOZ_ASSERT(!ret || aEvent.HasBeenPostedToRemoteProcess());
 }
 
-LayoutDevicePoint TabParent::AdjustTapToChildWidget(
-    const LayoutDevicePoint& aPoint) {
-  return aPoint + LayoutDevicePoint(GetChildProcessOffset());
-}
-
 void TabParent::SendMouseWheelEvent(WidgetWheelEvent& aEvent) {
   if (mIsDestroyed || !mIsReadyToHandleInputEvents) {
     return;
@@ -1213,9 +1232,9 @@ void TabParent::SendMouseWheelEvent(WidgetWheelEvent& aEvent) {
   ScrollableLayerGuid guid;
   uint64_t blockId;
   ApzAwareEventRoutingToChild(&guid, &blockId, nullptr);
-  aEvent.mRefPoint += GetChildProcessOffset();
+  aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
   DebugOnly<bool> ret =
-      Manager()->AsContentParent()->IsInputPriorityEventEnabled()
+      Manager()->IsInputPriorityEventEnabled()
           ? PBrowserParent::SendMouseWheelEvent(aEvent, guid, blockId)
           : PBrowserParent::SendNormalPriorityMouseWheelEvent(aEvent, guid,
                                                               blockId);
@@ -1233,7 +1252,7 @@ mozilla::ipc::IPCResult TabParent::RecvDispatchWheelEvent(
 
   WidgetWheelEvent localEvent(aEvent);
   localEvent.mWidget = widget;
-  localEvent.mRefPoint -= GetChildProcessOffset();
+  localEvent.mRefPoint = TransformChildToParent(localEvent.mRefPoint);
 
   widget->DispatchInputEvent(&localEvent);
   return IPC_OK();
@@ -1248,7 +1267,7 @@ mozilla::ipc::IPCResult TabParent::RecvDispatchMouseEvent(
 
   WidgetMouseEvent localEvent(aEvent);
   localEvent.mWidget = widget;
-  localEvent.mRefPoint -= GetChildProcessOffset();
+  localEvent.mRefPoint = TransformChildToParent(localEvent.mRefPoint);
 
   widget->DispatchInputEvent(&localEvent);
   return IPC_OK();
@@ -1263,7 +1282,7 @@ mozilla::ipc::IPCResult TabParent::RecvDispatchKeyboardEvent(
 
   WidgetKeyboardEvent localEvent(aEvent);
   localEvent.mWidget = widget;
-  localEvent.mRefPoint -= GetChildProcessOffset();
+  localEvent.mRefPoint = TransformChildToParent(localEvent.mRefPoint);
 
   widget->DispatchInputEvent(&localEvent);
   return IPC_OK();
@@ -1321,7 +1340,10 @@ class SynthesizedEventObserver : public nsIObserver {
       return NS_OK;
     }
 
-    if (!mTabParent->SendNativeSynthesisResponse(mObserverId,
+    if (mTabParent->IsDestroyed()) {
+      // If this happens it's probably a bug in the test that's triggering this.
+      NS_WARNING("TabParent was unexpectedly destroyed during event synthesization!");
+    } else if (!mTabParent->SendNativeSynthesisResponse(mObserverId,
                                                  nsCString(aTopic))) {
       NS_WARNING("Unable to send native event synthesization response!");
     }
@@ -1467,7 +1489,7 @@ void TabParent::SendRealKeyEvent(WidgetKeyboardEvent& aEvent) {
   if (mIsDestroyed || !mIsReadyToHandleInputEvents) {
     return;
   }
-  aEvent.mRefPoint += GetChildProcessOffset();
+  aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
 
   if (aEvent.mMessage == eKeyPress) {
     // XXX Should we do this only when input context indicates an editor having
@@ -1477,7 +1499,7 @@ void TabParent::SendRealKeyEvent(WidgetKeyboardEvent& aEvent) {
     aEvent.PreventNativeKeyBindings();
   }
   DebugOnly<bool> ret =
-      Manager()->AsContentParent()->IsInputPriorityEventEnabled()
+      Manager()->IsInputPriorityEventEnabled()
           ? PBrowserParent::SendRealKeyEvent(aEvent)
           : PBrowserParent::SendNormalPriorityRealKeyEvent(aEvent);
 
@@ -1511,13 +1533,12 @@ void TabParent::SendRealTouchEvent(WidgetTouchEvent& aEvent) {
     return;
   }
 
-  LayoutDeviceIntPoint offset = GetChildProcessOffset();
   for (uint32_t i = 0; i < aEvent.mTouches.Length(); i++) {
-    aEvent.mTouches[i]->mRefPoint += offset;
+    aEvent.mTouches[i]->mRefPoint =
+        TransformParentToChild(aEvent.mTouches[i]->mRefPoint);
   }
 
-  bool inputPriorityEventEnabled =
-      Manager()->AsContentParent()->IsInputPriorityEventEnabled();
+  bool inputPriorityEventEnabled = Manager()->IsInputPriorityEventEnabled();
 
   if (aEvent.mMessage == eTouchMove) {
     DebugOnly<bool> ret =
@@ -1569,12 +1590,13 @@ bool TabParent::SendHandleTap(TapType aType, const LayoutDevicePoint& aPoint,
       }
     }
   }
-  LayoutDeviceIntPoint offset = GetChildProcessOffset();
-  return Manager()->AsContentParent()->IsInputPriorityEventEnabled()
-             ? PBrowserParent::SendHandleTap(aType, aPoint + offset, aModifiers,
-                                             aGuid, aInputBlockId)
+  return Manager()->IsInputPriorityEventEnabled()
+             ? PBrowserParent::SendHandleTap(aType,
+                                             TransformParentToChild(aPoint),
+                                             aModifiers, aGuid, aInputBlockId)
              : PBrowserParent::SendNormalPriorityHandleTap(
-                   aType, aPoint + offset, aModifiers, aGuid, aInputBlockId);
+                   aType, TransformParentToChild(aPoint), aModifiers, aGuid,
+                   aInputBlockId);
 }
 
 mozilla::ipc::IPCResult TabParent::RecvSyncMessage(
@@ -1631,8 +1653,7 @@ mozilla::ipc::IPCResult TabParent::RecvAsyncMessage(
 }
 
 mozilla::ipc::IPCResult TabParent::RecvSetCursor(
-    const nsCursor& aCursor,
-    const bool& aHasCustomCursor,
+    const nsCursor& aCursor, const bool& aHasCustomCursor,
     const nsCString& aCursorData, const uint32_t& aWidth,
     const uint32_t& aHeight, const uint32_t& aStride,
     const gfx::SurfaceFormat& aFormat, const uint32_t& aHotspotX,
@@ -1726,10 +1747,17 @@ mozilla::ipc::IPCResult TabParent::RecvShowTooltip(const uint32_t& aX,
     return IPC_OK();
   }
 
-  nsCOMPtr<nsIFrameLoaderOwner> frame = do_QueryInterface(mFrameElement);
-  if (!frame) return IPC_OK();
+  // ShowTooltip will end up accessing XULElement properties in JS (specifically
+  // BoxObject). However, to get it to JS, we need to make sure we're a
+  // nsFrameLoaderOwner, which implies we're a XULFrameElement. We can then
+  // safely pass Element into JS.
+  RefPtr<nsFrameLoaderOwner> flo = do_QueryObject(mFrameElement);
+  if (!flo) return IPC_OK();
 
-  xulBrowserWindow->ShowTooltip(aX, aY, aTooltip, aDirection, frame);
+  nsCOMPtr<Element> el = do_QueryInterface(flo);
+  if (!el) return IPC_OK();
+
+  xulBrowserWindow->ShowTooltip(aX, aY, aTooltip, aDirection, el);
   return IPC_OK();
 }
 
@@ -1891,6 +1919,7 @@ mozilla::ipc::IPCResult TabParent::RecvOnWindowedPluginKeyEvent(
 }
 
 mozilla::ipc::IPCResult TabParent::RecvRequestFocus(const bool& aCanRaise) {
+  LOGBROWSERFOCUS(("RecvRequestFocus %p, aCanRaise: %d", this, aCanRaise));
   nsCOMPtr<nsIFocusManager> fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     return IPC_OK();
@@ -1903,7 +1932,7 @@ mozilla::ipc::IPCResult TabParent::RecvRequestFocus(const bool& aCanRaise) {
   uint32_t flags = nsIFocusManager::FLAG_NOSCROLL;
   if (aCanRaise) flags |= nsIFocusManager::FLAG_RAISE;
 
-  RefPtr<Element> element = mFrameElement;
+  nsCOMPtr<Element> element = mFrameElement;
   fm->SetFocus(element, flags);
   return IPC_OK();
 }
@@ -1942,15 +1971,76 @@ mozilla::ipc::IPCResult TabParent::RecvEnableDisableCommands(
   return IPC_OK();
 }
 
-NS_IMETHODIMP
-TabParent::GetChildProcessOffset(int32_t* aOutCssX, int32_t* aOutCssY) {
-  NS_ENSURE_ARG(aOutCssX);
-  NS_ENSURE_ARG(aOutCssY);
-  CSSPoint offset =
-      LayoutDevicePoint(GetChildProcessOffset()) * GetLayoutDeviceToCSSScale();
-  *aOutCssX = offset.x;
-  *aOutCssY = offset.y;
-  return NS_OK;
+LayoutDeviceIntPoint TabParent::TransformPoint(
+    const LayoutDeviceIntPoint& aPoint,
+    const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix) {
+  LayoutDevicePoint floatPoint(aPoint);
+  LayoutDevicePoint floatTransformed = TransformPoint(floatPoint, aMatrix);
+  // The next line loses precision if an out-of-process iframe
+  // has been scaled or rotated.
+  return RoundedToInt(floatTransformed);
+}
+
+LayoutDevicePoint TabParent::TransformPoint(
+    const LayoutDevicePoint& aPoint,
+    const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix) {
+  return aMatrix.TransformPoint(aPoint);
+}
+
+LayoutDeviceIntPoint TabParent::TransformParentToChild(
+    const LayoutDeviceIntPoint& aPoint) {
+  LayoutDeviceToLayoutDeviceMatrix4x4 matrix =
+      GetChildToParentConversionMatrix();
+  if (!matrix.Invert()) {
+    return LayoutDeviceIntPoint(0, 0);
+  }
+  return TransformPoint(aPoint, matrix);
+}
+
+LayoutDevicePoint TabParent::TransformParentToChild(
+    const LayoutDevicePoint& aPoint) {
+  LayoutDeviceToLayoutDeviceMatrix4x4 matrix =
+      GetChildToParentConversionMatrix();
+  if (!matrix.Invert()) {
+    return LayoutDevicePoint(0.0, 0.0);
+  }
+  return TransformPoint(aPoint, matrix);
+}
+
+LayoutDeviceIntPoint TabParent::TransformChildToParent(
+    const LayoutDeviceIntPoint& aPoint) {
+  return TransformPoint(aPoint, GetChildToParentConversionMatrix());
+}
+
+LayoutDevicePoint TabParent::TransformChildToParent(
+    const LayoutDevicePoint& aPoint) {
+  return TransformPoint(aPoint, GetChildToParentConversionMatrix());
+}
+
+LayoutDeviceIntRect TabParent::TransformChildToParent(
+    const LayoutDeviceIntRect& aRect) {
+  LayoutDeviceToLayoutDeviceMatrix4x4 matrix =
+      GetChildToParentConversionMatrix();
+  LayoutDeviceRect floatRect(aRect);
+  // The outcome is not ideal if an out-of-process iframe has been rotated
+  LayoutDeviceRect floatTransformed = matrix.TransformBounds(floatRect);
+  // The next line loses precision if an out-of-process iframe
+  // has been scaled or rotated.
+  return RoundedToInt(floatTransformed);
+}
+
+LayoutDeviceToLayoutDeviceMatrix4x4
+TabParent::GetChildToParentConversionMatrix() {
+  if (mChildToParentConversionMatrix) {
+    return *mChildToParentConversionMatrix;
+  }
+  LayoutDevicePoint offset(-GetChildProcessOffset());
+  return LayoutDeviceToLayoutDeviceMatrix4x4::Translation(offset);
+}
+
+void TabParent::SetChildToParentConversionMatrix(
+    const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix) {
+  mChildToParentConversionMatrix = Some(aMatrix);
 }
 
 LayoutDeviceIntPoint TabParent::GetChildProcessOffset() {
@@ -2156,7 +2246,7 @@ bool TabParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent) {
         aEvent.mReply.mRect +=
             nsLayoutUtils::WidgetToWidgetOffset(widget, docWidget);
       }
-      aEvent.mReply.mRect -= GetChildProcessOffset();
+      aEvent.mReply.mRect = TransformChildToParent(aEvent.mReply.mRect);
       break;
     }
     default:
@@ -2174,7 +2264,7 @@ bool TabParent::SendCompositionEvent(WidgetCompositionEvent& aEvent) {
     return true;
   }
 
-  bool ret = Manager()->AsContentParent()->IsInputPriorityEventEnabled()
+  bool ret = Manager()->IsInputPriorityEventEnabled()
                  ? PBrowserParent::SendCompositionEvent(aEvent)
                  : PBrowserParent::SendNormalPriorityCompositionEvent(aEvent);
   if (NS_WARN_IF(!ret)) {
@@ -2193,7 +2283,7 @@ bool TabParent::SendSelectionEvent(WidgetSelectionEvent& aEvent) {
     return true;
   }
   mContentCache.OnSelectionEvent(aEvent);
-  bool ret = Manager()->AsContentParent()->IsInputPriorityEventEnabled()
+  bool ret = Manager()->IsInputPriorityEventEnabled()
                  ? PBrowserParent::SendSelectionEvent(aEvent)
                  : PBrowserParent::SendNormalPrioritySelectionEvent(aEvent);
   if (NS_WARN_IF(!ret)) {
@@ -2212,7 +2302,8 @@ bool TabParent::SendPasteTransferable(
       aDataTransfer, aIsPrivateData, aRequestingPrincipal, aContentPolicyType);
 }
 
-/*static*/ TabParent* TabParent::GetFrom(nsFrameLoader* aFrameLoader) {
+/*static*/
+TabParent* TabParent::GetFrom(nsFrameLoader* aFrameLoader) {
   if (!aFrameLoader) {
     return nullptr;
   }
@@ -2220,16 +2311,19 @@ bool TabParent::SendPasteTransferable(
   return static_cast<TabParent*>(remoteBrowser);
 }
 
-/*static*/ TabParent* TabParent::GetFrom(nsITabParent* aTabParent) {
+/*static*/
+TabParent* TabParent::GetFrom(nsITabParent* aTabParent) {
   return static_cast<TabParent*>(aTabParent);
 }
 
-/*static*/ TabParent* TabParent::GetFrom(PBrowserParent* aTabParent) {
+/*static*/
+TabParent* TabParent::GetFrom(PBrowserParent* aTabParent) {
   return static_cast<TabParent*>(aTabParent);
 }
 
-/*static*/ TabParent* TabParent::GetFrom(nsIContent* aContent) {
-  nsCOMPtr<nsIFrameLoaderOwner> loaderOwner = do_QueryInterface(aContent);
+/*static*/
+TabParent* TabParent::GetFrom(nsIContent* aContent) {
+  RefPtr<nsFrameLoaderOwner> loaderOwner = do_QueryObject(aContent);
   if (!loaderOwner) {
     return nullptr;
   }
@@ -2237,7 +2331,8 @@ bool TabParent::SendPasteTransferable(
   return GetFrom(frameLoader);
 }
 
-/*static*/ TabId TabParent::GetTabIdFrom(nsIDocShell* docShell) {
+/*static*/
+TabId TabParent::GetTabIdFrom(nsIDocShell* docShell) {
   nsCOMPtr<nsITabChild> tabChild(TabChild::GetFrom(docShell));
   if (tabChild) {
     return static_cast<TabChild*>(tabChild.get())->GetTabId();
@@ -2250,6 +2345,10 @@ RenderFrame* TabParent::GetRenderFrame() {
     return nullptr;
   }
   return &mRenderFrame;
+}
+
+BrowserBridgeParent* TabParent::GetBrowserBridgeParent() const {
+  return mBrowserBridgeParent;
 }
 
 mozilla::ipc::IPCResult TabParent::RecvRequestIMEToCommitComposition(
@@ -2441,8 +2540,8 @@ already_AddRefed<nsFrameLoader> TabParent::GetFrameLoader(
     RefPtr<nsFrameLoader> fl = mFrameLoader;
     return fl.forget();
   }
-  nsCOMPtr<nsIFrameLoaderOwner> frameLoaderOwner =
-      do_QueryInterface(mFrameElement);
+  nsCOMPtr<Element> frameElement(mFrameElement);
+  RefPtr<nsFrameLoaderOwner> frameLoaderOwner = do_QueryObject(frameElement);
   return frameLoaderOwner ? frameLoaderOwner->GetFrameLoader() : nullptr;
 }
 
@@ -2601,7 +2700,7 @@ TabParent::SetDocShellIsActive(bool isActive) {
 #endif
 
   // Keep track of how many active recording/replaying tabs there are.
-  if (Manager()->AsContentParent()->IsRecordingOrReplaying()) {
+  if (Manager()->IsRecordingOrReplaying()) {
     SetIsActiveRecordReplayTab(isActive);
   }
 
@@ -2698,8 +2797,8 @@ void TabParent::SetRenderLayersInternal(bool aEnabled, bool aForceRepaint) {
   // Ask the child to repaint using the PHangMonitor channel/thread (which may
   // be less congested).
   if (aEnabled) {
-    ContentParent* cp = Manager()->AsContentParent();
-    cp->PaintTabWhileInterruptingJS(this, aForceRepaint, mLayerTreeEpoch);
+    Manager()->PaintTabWhileInterruptingJS(this, aForceRepaint,
+                                           mLayerTreeEpoch);
   }
 }
 
@@ -2716,7 +2815,7 @@ TabParent::SaveRecording(const nsAString& aFilename, bool* aRetval) {
   if (NS_FAILED(rv)) {
     return rv;
   }
-  return Manager()->AsContentParent()->SaveRecording(file, aRetval);
+  return Manager()->SaveRecording(file, aRetval);
 }
 
 NS_IMETHODIMP
@@ -2806,13 +2905,7 @@ void TabParent::NavigateByKey(bool aForward, bool aForDocumentNavigation) {
 
 NS_IMETHODIMP
 TabParent::TransmitPermissionsForPrincipal(nsIPrincipal* aPrincipal) {
-  nsCOMPtr<nsIContentParent> manager = Manager();
-  if (!manager->IsContentParent()) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return manager->AsContentParent()->TransmitPermissionsForPrincipal(
-      aPrincipal);
+  return Manager()->TransmitPermissionsForPrincipal(aPrincipal);
 }
 
 NS_IMETHODIMP
@@ -3029,9 +3122,7 @@ class FakeChannel final : public nsIChannel,
       GetContentLength(int64_t*) NO_IMPL NS_IMETHOD
       SetContentLength(int64_t) NO_IMPL NS_IMETHOD
       Open(nsIInputStream**) NO_IMPL NS_IMETHOD
-      Open2(nsIInputStream**) NO_IMPL NS_IMETHOD
-      AsyncOpen(nsIStreamListener*, nsISupports*) NO_IMPL NS_IMETHOD
-      AsyncOpen2(nsIStreamListener*) NO_IMPL NS_IMETHOD
+      AsyncOpen(nsIStreamListener*) NO_IMPL NS_IMETHOD
       GetContentDisposition(uint32_t*) NO_IMPL NS_IMETHOD
       SetContentDisposition(uint32_t) NO_IMPL NS_IMETHOD
       GetContentDispositionFilename(nsAString&) NO_IMPL NS_IMETHOD
@@ -3109,13 +3200,11 @@ mozilla::ipc::IPCResult TabParent::RecvInvokeDragSession(
   mInitialDataTransferItems.Clear();
   nsIPresShell* shell = mFrameElement->OwnerDoc()->GetShell();
   if (!shell) {
-    if (Manager()->IsContentParent()) {
-      Unused << Manager()->AsContentParent()->SendEndDragSession(
-          true, true, LayoutDeviceIntPoint(), 0);
-      // Continue sending input events with input priority when stopping the dnd
-      // session.
-      Manager()->AsContentParent()->SetInputPriorityEventEnabled(true);
-    }
+    Unused << Manager()->SendEndDragSession(true, true, LayoutDeviceIntPoint(),
+                                            0);
+    // Continue sending input events with input priority when stopping the dnd
+    // session.
+    Manager()->SetInputPriorityEventEnabled(true);
     return IPC_OK();
   }
 
@@ -3123,12 +3212,11 @@ mozilla::ipc::IPCResult TabParent::RecvInvokeDragSession(
   for (uint32_t i = 0; i < aTransfers.Length(); ++i) {
     mInitialDataTransferItems.AppendElement(std::move(aTransfers[i].items()));
   }
-  if (Manager()->IsContentParent()) {
-    nsCOMPtr<nsIDragService> dragService =
-        do_GetService("@mozilla.org/widget/dragservice;1");
-    if (dragService) {
-      dragService->MaybeAddChildProcess(Manager()->AsContentParent());
-    }
+
+  nsCOMPtr<nsIDragService> dragService =
+      do_GetService("@mozilla.org/widget/dragservice;1");
+  if (dragService) {
+    dragService->MaybeAddChildProcess(Manager());
   }
 
   if (aVisualDnDData.type() == OptionalShmem::Tvoid_t ||
@@ -3224,16 +3312,10 @@ bool TabParent::AsyncPanZoomEnabled() const {
 void TabParent::StartPersistence(uint64_t aOuterWindowID,
                                  nsIWebBrowserPersistDocumentReceiver* aRecv,
                                  ErrorResult& aRv) {
-  nsCOMPtr<nsIContentParent> manager = Manager();
-  if (!manager->IsContentParent()) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
   auto* actor = new WebBrowserPersistDocumentParent();
   actor->SetOnReady(aRecv);
-  bool ok =
-      manager->AsContentParent()->SendPWebBrowserPersistDocumentConstructor(
-          actor, this, aOuterWindowID);
+  bool ok = Manager()->SendPWebBrowserPersistDocumentConstructor(
+      actor, this, aOuterWindowID);
   if (!ok) {
     aRv.Throw(NS_ERROR_FAILURE);
   }
@@ -3320,7 +3402,7 @@ mozilla::ipc::IPCResult TabParent::RecvLookUpDictionary(
   }
 
   widget->LookUpDictionary(aText, aFontRangeArray, aIsVertical,
-                           aPoint - GetChildProcessOffset());
+                           TransformChildToParent(aPoint));
   return IPC_OK();
 }
 
@@ -3349,7 +3431,7 @@ mozilla::ipc::IPCResult TabParent::RecvShowCanvasPermissionPrompt(
 }
 
 mozilla::ipc::IPCResult TabParent::RecvVisitURI(
-    const URIParams& aURI, const OptionalURIParams& aLastVisitedURI,
+    const URIParams& aURI, const Maybe<URIParams>& aLastVisitedURI,
     const uint32_t& aFlags) {
   nsCOMPtr<nsIURI> ourURI = DeserializeURI(aURI);
   if (!ourURI) {
@@ -3401,7 +3483,8 @@ void TabParent::LiveResizeStarted() { SuppressDisplayport(true); }
 
 void TabParent::LiveResizeStopped() { SuppressDisplayport(false); }
 
-/* static */ size_t TabParent::gNumActiveRecordReplayTabs;
+/* static */
+size_t TabParent::gNumActiveRecordReplayTabs;
 
 void TabParent::SetIsActiveRecordReplayTab(bool aIsActive) {
   if (aIsActive != mIsActiveRecordReplayTab) {
@@ -3424,14 +3507,6 @@ mozilla::ipc::IPCResult TabParent::RecvGetSystemFont(nsCString* aFontName) {
   if (widget) {
     widget->GetSystemFont(*aFontName);
   }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult TabParent::RecvRootBrowsingContext(
-    const BrowsingContextId& aId) {
-  MOZ_ASSERT(!mBrowsingContext, "May only set browsing context once!");
-  mBrowsingContext = ChromeBrowsingContext::Get(aId);
-  MOZ_ASSERT(mBrowsingContext, "Invalid ID!");
   return IPC_OK();
 }
 

@@ -58,6 +58,17 @@
     ${If} "$0" != "${GREVersion}"
       WriteRegStr HKLM "Software\mozilla.org\Mozilla" "CurrentVersion" "${GREVersion}"
     ${EndIf}
+
+    ; Image File Execution Options were set for a short period on AArch64 (ARM64)
+    ; to disable multi-threaded DLL loading, which breaks with the sandbox.
+    ; A better solution was found, so this code is to clean up any entries left
+    ; lying around. Bug 1525981 tracks removing this.
+    ${If} "${ARCH}" == "AArch64"
+      StrCpy $0 "Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\${FileMainEXE}"
+      DeleteRegKey HKLM "$0"
+      StrCpy $0 "Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\plugin-container.exe"
+      DeleteRegKey HKLM "$0"
+    ${EndIf}
   ${EndIf}
 
   ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
@@ -160,9 +171,7 @@
 !endif
 
 !ifdef MOZ_LAUNCHER_PROCESS
-!ifdef RELEASE_OR_BETA
   ${DisableLauncherProcessByDefault}
-!endif
 !endif
 
 !macroend
@@ -1560,7 +1569,6 @@ FunctionEnd
 !endif ; NO_LOG
 
 !ifdef MOZ_LAUNCHER_PROCESS
-!ifdef RELEASE_OR_BETA
 !macro DisableLauncherProcessByDefault
   ClearErrors
   ${ReadRegQWORD} $0 HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Launcher"
@@ -1569,11 +1577,14 @@ FunctionEnd
     ${ReadRegQWORD} $0 HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
     ${If} ${Errors}
       ClearErrors
-      ; New install that hasn't seen this yet; disable by default
-      ${WriteRegQWORD} HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser" 0
+      ReadRegDWORD $0 HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Image"
+      ${If} ${Errors}
+        ClearErrors
+        ; New install that hasn't seen this yet; disable by default
+        ${WriteRegQWORD} HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser" 0
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 !macroend
 !define DisableLauncherProcessByDefault "!insertmacro DisableLauncherProcessByDefault"
-!endif
 !endif

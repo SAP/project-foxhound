@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("ChannelWrapper.webidl"):
     BUG_COMPONENT = ("WebExtensions", "Request Handling")
@@ -40,6 +40,7 @@ WEBIDL_FILES = [
     'HeapSnapshot.webidl',
     'InspectorUtils.webidl',
     'IteratorResult.webidl',
+    'JSWindowActor.webidl',
     'MatchGlob.webidl',
     'MatchPattern.webidl',
     'MessageManager.webidl',
@@ -68,8 +69,7 @@ if CONFIG['MOZ_PLACES']:
         'PlacesObservers.webidl',
     ]
 
-if CONFIG['MOZ_LIBPRIO']:
-    WEBIDL_FILES += [
-        'PrioEncoder.webidl',
-    ]
+WEBIDL_FILES += [
+    'PrioEncoder.webidl',
+]
 

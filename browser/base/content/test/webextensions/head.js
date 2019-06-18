@@ -3,10 +3,10 @@ ChromeUtils.defineModuleGetter(this, "AddonTestUtils", "resource://testing-commo
 const BASE = getRootDirectory(gTestPath)
   .replace("chrome://mochitests/content/", "https://example.com/");
 
-ChromeUtils.import("resource:///modules/ExtensionsUI.jsm");
+var {ExtensionsUI} = ChromeUtils.import("resource:///modules/ExtensionsUI.jsm");
 XPCOMUtils.defineLazyGetter(this, "Management", () => {
   // eslint-disable-next-line no-shadow
-  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
   return Management;
 });
 
@@ -40,7 +40,7 @@ function promisePopupNotificationShown(name) {
 }
 
 function promiseAppMenuNotificationShown(id) {
-  ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
+  const {AppMenuNotifications} = ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
   return new Promise(resolve => {
     function popupshown() {
       let notification = AppMenuNotifications.activeNotification;
@@ -97,10 +97,8 @@ function promiseInstallEvent(addon, event) {
  *          Resolves when the extension has been installed with the Addon
  *          object as the resolution value.
  */
-async function promiseInstallAddon(url, installTelemetryInfo) {
-  let install = await AddonManager.getInstallForURL(url, "application/x-xpinstall",
-                                                    null, null, null, null, null,
-                                                    installTelemetryInfo);
+async function promiseInstallAddon(url, telemetryInfo) {
+  let install = await AddonManager.getInstallForURL(url, {telemetryInfo});
   install.install();
 
   let addon = await new Promise(resolve => {
@@ -213,6 +211,7 @@ function checkNotification(panel, checkIcon, permissions) {
   let icon = panel.getAttribute("icon");
   let ul = document.getElementById("addon-webext-perm-list");
   let header = document.getElementById("addon-webext-perm-intro");
+  let learnMoreLink = document.getElementById("addon-webext-perm-info");
 
   if (checkIcon instanceof RegExp) {
     ok(checkIcon.test(icon), `Notification icon is correct ${JSON.stringify(icon)} ~= ${checkIcon}`);
@@ -225,8 +224,10 @@ function checkNotification(panel, checkIcon, permissions) {
   is(ul.childElementCount, permissions.length, `Permissions list has ${permissions.length} entries`);
   if (permissions.length == 0) {
     is(header.getAttribute("hidden"), "true", "Permissions header is hidden");
+    is(learnMoreLink.getAttribute("hidden"), "true", "Permissions learn more is hidden");
   } else {
     is(header.getAttribute("hidden"), "", "Permissions header is visible");
+    is(learnMoreLink.getAttribute("hidden"), "", "Permissions learn more is visible");
   }
 
   for (let i in permissions) {
@@ -500,7 +501,9 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
 
   let hasPermissionsExtras = collectedUpdateEvents.filter(evt => {
     return evt.extra.step === "permissions_prompt";
-  }).every(evt => !!evt.extra.num_perms && !!evt.extra.num_origins);
+  }).every(evt => {
+    return Number.isInteger(parseInt(evt.extra.num_strings, 10));
+  });
 
   ok(hasPermissionsExtras,
      "Every 'permissions_prompt' update telemetry event should have the permissions extra vars");

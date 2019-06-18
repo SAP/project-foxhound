@@ -59,7 +59,7 @@
 
 var EXPORTED_SYMBOLS = [ "Bookmarks" ];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
@@ -161,8 +161,8 @@ var Bookmarks = Object.freeze({
    */
   virtualMenuGuid: "menu_______v",
   virtualToolbarGuid: "toolbar____v",
-  virtualUnfiledGuid: "unfiled___v",
-  virtualMobileGuid: "mobile____v",
+  virtualUnfiledGuid: "unfiled____v",
+  virtualMobileGuid: "mobile_____v",
 
   /**
    * Checks if a guid is a virtual root.
@@ -1261,15 +1261,15 @@ var Bookmarks = Object.freeze({
 
     return (async function() {
       let results;
-      if (fetchInfo.hasOwnProperty("url"))
+      if (fetchInfo.hasOwnProperty("url")) {
         results = await fetchBookmarksByURL(fetchInfo, options && options.concurrent);
-      else if (fetchInfo.hasOwnProperty("guid"))
+      } else if (fetchInfo.hasOwnProperty("guid")) {
         results = await fetchBookmark(fetchInfo, options && options.concurrent);
-      else if (fetchInfo.hasOwnProperty("parentGuid") && fetchInfo.hasOwnProperty("index"))
+      } else if (fetchInfo.hasOwnProperty("parentGuid") && fetchInfo.hasOwnProperty("index")) {
         results = await fetchBookmarkByPosition(fetchInfo, options && options.concurrent);
-      else if (fetchInfo.hasOwnProperty("guidPrefix"))
+      } else if (fetchInfo.hasOwnProperty("guidPrefix")) {
         results = await fetchBookmarksByGUIDPrefix(fetchInfo, options && options.concurrent);
-      else if (fetchInfo.hasOwnProperty("tags")) {
+      } else if (fetchInfo.hasOwnProperty("tags")) {
         results = await fetchBookmarksByTags(fetchInfo, options && options.concurrent);
       }
 
@@ -1718,7 +1718,6 @@ async function updateBookmark(db, info, item, oldIndex, newParent, syncChangeDel
 function insertBookmark(item, parent) {
   return PlacesUtils.withConnectionWrapper("Bookmarks.jsm: insertBookmark",
     async function(db) {
-
     // If a guid was not provided, generate one, so we won't need to fetch the
     // bookmark just after having created it.
     let hasExistingGuid = item.hasOwnProperty("guid");
@@ -2267,8 +2266,6 @@ function reorderChildren(parent, orderedChildrenGuids, options) {
       }
 
       if (needReorder) {
-
-
         // Reorder the children array according to the specified order, provided
         // GUIDs come first, others are appended in somehow random order.
         children.sort((a, b) => {

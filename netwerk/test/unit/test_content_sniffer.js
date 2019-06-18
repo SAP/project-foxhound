@@ -1,7 +1,7 @@
 // This file tests nsIContentSniffer, introduced in bug 324985
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const unknownType = "application/x-unknown-content-type";
 const sniffedType = "application/x-sniffed";
@@ -39,7 +39,7 @@ var sniffer = {
 };
 
 var listener = {
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     try {
       var chan = request.QueryInterface(Ci.nsIChannel);
       if (chan.contentType == unknownType)
@@ -62,7 +62,7 @@ var listener = {
     throw Cr.NS_ERROR_UNEXPECTED;
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     run_test_iteration(this._iteration);
     do_test_finished();
   },
@@ -124,7 +124,7 @@ function run_test_iteration(index) {
   var chan = makeChan(urls[index - 1]);
 
   listener._iteration++;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }

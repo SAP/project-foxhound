@@ -1,7 +1,7 @@
 "use strict";
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 const TEST_DOMAIN = "www.example.com";
@@ -29,11 +29,13 @@ function run_test() {
     Services.cookies.removeCookiesWithOriginAttributes("{}", TEST_DOMAIN);
     Services.prefs.clearUserPref("network.dns.localDomains");
     Services.prefs.clearUserPref("network.cookie.cookieBehavior");
+    Services.prefs.clearUserPref("network.cookieSettings.unblocked_for_testing");
 
     httpserv.stop();
     httpserv = null;
   });
 
+  Services.prefs.setBoolPref("network.cookieSettings.unblocked_for_testing", true);
   Services.prefs.setCharPref("network.dns.localDomains", TEST_DOMAIN);
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
   Services.cookies.removeCookiesWithOriginAttributes("{}", TEST_DOMAIN);

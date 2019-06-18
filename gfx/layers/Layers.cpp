@@ -55,8 +55,6 @@ uint8_t gLayerManagerLayerBuilder;
 namespace mozilla {
 namespace layers {
 
-FILE* FILEOrDefault(FILE* aFile) { return aFile ? aFile : stderr; }
-
 typedef ScrollableLayerGuid::ViewID ViewID;
 
 using namespace mozilla::gfx;
@@ -144,7 +142,8 @@ bool LayerManager::AreComponentAlphaLayersEnabled() {
   return gfxPrefs::ComponentAlphaEnabled();
 }
 
-/*static*/ void LayerManager::LayerUserDataDestroy(void* data) {
+/*static*/
+void LayerManager::LayerUserDataDestroy(void* data) {
   delete static_cast<LayerUserData*>(data);
 }
 
@@ -164,8 +163,7 @@ void LayerManager::PayloadPresented() {
             "Payload Presented, type: %d latency: %dms\n",
             int32_t(payload.mType),
             int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
-        profiler_add_marker(marker.get(),
-                            js::ProfilingStackFrame::Category::GRAPHICS);
+        profiler_add_marker(marker.get(), JS::ProfilingCategoryPair::GRAPHICS);
       }
 #endif
 
@@ -674,7 +672,8 @@ void Layer::ComputeEffectiveTransformForMaskLayers(
   }
 }
 
-/* static */ void Layer::ComputeEffectiveTransformForMaskLayer(
+/* static */
+void Layer::ComputeEffectiveTransformForMaskLayer(
     Layer* aMaskLayer, const gfx::Matrix4x4& aTransformToSurface) {
   aMaskLayer->mEffectiveTransform = aTransformToSurface;
 
@@ -1291,7 +1290,8 @@ void ContainerLayer::ComputeEffectiveTransformsForChildren(
   }
 }
 
-/* static */ bool ContainerLayer::HasOpaqueAncestorLayer(Layer* aLayer) {
+/* static */
+bool ContainerLayer::HasOpaqueAncestorLayer(Layer* aLayer) {
   for (Layer* l = aLayer->GetParent(); l; l = l->GetParent()) {
     if (l->GetContentFlags() & Layer::CONTENT_OPAQUE) return true;
   }
@@ -1717,6 +1717,11 @@ void Layer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   }
   if (Is3DContextLeaf()) {
     aStream << " [is3DContextLeaf]";
+  }
+  if (Maybe<FrameMetrics::ViewID> viewId = IsAsyncZoomContainer()) {
+    aStream << nsPrintfCString(" [asyncZoomContainer scrollId=%" PRIu64 "]",
+                               *viewId)
+                   .get();
   }
   if (IsScrollbarContainer()) {
     aStream << " [scrollbar]";
@@ -2220,7 +2225,8 @@ void LayerManager::DumpPacket(layerscope::LayersPacket* aPacket) {
   layer->set_parentptr(0);
 }
 
-/*static*/ bool LayerManager::IsLogEnabled() {
+/*static*/
+bool LayerManager::IsLogEnabled() {
   return MOZ_LOG_TEST(GetLog(), LogLevel::Debug);
 }
 

@@ -1,6 +1,6 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var server = new HttpServer();
 server.registerPathHandler('/image.png', imageHandler);
@@ -43,7 +43,7 @@ function setup_chan(path, isPrivate, callback) {
   chan.notificationCallbacks = isPrivate ? privateLoadContext
                                          : nonPrivateLoadContext;
   var channelListener = new ChannelListener();
-  chan.asyncOpen2(channelListener);
+  chan.asyncOpen(channelListener);
 
   var listener = new ImageListener(null, callback);
   var outlistener = {};

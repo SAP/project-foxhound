@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "RuntimePermissions",
                                "resource://gre/modules/RuntimePermissions.jsm");
@@ -88,6 +88,13 @@ ContentPermissionPrompt.prototype = {
     // Returns true if the request was handled
     if (this.handleExistingPermission(request, perm.type, isApp, callback)) {
        return;
+    }
+
+    if (perm.type === "desktop-notification" &&
+        Services.prefs.getBoolPref("dom.webnotifications.requireuserinteraction", false) &&
+        !request.isHandlingUserInput) {
+      request.cancel();
+      return;
     }
 
     let browserBundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");

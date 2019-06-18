@@ -49,7 +49,8 @@ static bool IsEvalCacheCandidate(JSScript* script) {
          !script->hasObjects();
 }
 
-/* static */ HashNumber EvalCacheHashPolicy::hash(const EvalCacheLookup& l) {
+/* static */
+HashNumber EvalCacheHashPolicy::hash(const EvalCacheLookup& l) {
   AutoCheckCannotGC nogc;
   uint32_t hash = l.str->hasLatin1Chars()
                       ? HashString(l.str->latin1Chars(nogc), l.str->length())
@@ -57,8 +58,9 @@ static bool IsEvalCacheCandidate(JSScript* script) {
   return AddToHash(hash, l.callerScript.get(), l.pc);
 }
 
-/* static */ bool EvalCacheHashPolicy::match(const EvalCacheEntry& cacheEntry,
-                                             const EvalCacheLookup& l) {
+/* static */
+bool EvalCacheHashPolicy::match(const EvalCacheEntry& cacheEntry,
+                                const EvalCacheLookup& l) {
   MOZ_ASSERT(IsEvalCacheCandidate(cacheEntry.script));
 
   return EqualStrings(cacheEntry.str, l.str) &&
@@ -155,7 +157,7 @@ static bool EvalStringMightBeJSON(const mozilla::Range<const CharT> chars) {
 template <typename CharT>
 static EvalJSONResult ParseEvalStringAsJSON(
     JSContext* cx, const mozilla::Range<const CharT> chars,
-    MutableHandleValue rval, const StringTaint* taint) {
+    MutableHandleValue rval, const StringTaint& taint) {
   size_t len = chars.length();
   MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
              (chars[0] == '[' && chars[len - 1] == ']'));
@@ -193,8 +195,8 @@ static EvalJSONResult TryEvalJSON(JSContext* cx, JSLinearString* str,
   }
 
   return linearChars.isLatin1()
-             ? ParseEvalStringAsJSON(cx, linearChars.latin1Range(), rval, &str->taint())
-             : ParseEvalStringAsJSON(cx, linearChars.twoByteRange(), rval, &str->taint());
+             ? ParseEvalStringAsJSON(cx, linearChars.latin1Range(), rval, str->taint())
+             : ParseEvalStringAsJSON(cx, linearChars.twoByteRange(), rval, str->taint());
 }
 
 enum EvalType { DIRECT_EVAL, INDIRECT_EVAL };

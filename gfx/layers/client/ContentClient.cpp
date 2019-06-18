@@ -68,7 +68,8 @@ static IntRect ComputeBufferRect(const IntRect& aRequestedRect) {
   return rect;
 }
 
-/* static */ already_AddRefed<ContentClient> ContentClient::CreateContentClient(
+/* static */
+already_AddRefed<ContentClient> ContentClient::CreateContentClient(
     CompositableForwarder* aForwarder) {
   LayersBackend backend = aForwarder->GetCompositorBackendType();
   if (backend != LayersBackend::LAYERS_OPENGL &&
@@ -301,9 +302,9 @@ void ContentClient::EndPaint(
   }
 }
 
-nsIntRegion ExpandDrawRegion(ContentClient::PaintState& aPaintState,
-                             RotatedBuffer::DrawIterator* aIter,
-                             BackendType aBackendType) {
+static nsIntRegion ExpandDrawRegion(ContentClient::PaintState& aPaintState,
+                                    RotatedBuffer::DrawIterator* aIter,
+                                    BackendType aBackendType) {
   nsIntRegion* drawPtr = &aPaintState.mRegionToDraw;
   if (aIter) {
     // The iterators draw region currently only contains the bounds of the

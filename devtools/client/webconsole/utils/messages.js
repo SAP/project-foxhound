@@ -101,6 +101,9 @@ function transformConsoleAPICallPacket(packet) {
         parameters = null;
       }
       break;
+    case "timeStamp":
+      type = MESSAGE_TYPE.NULL_MESSAGE;
+      break;
     case "time":
       parameters = null;
       if (timer && timer.error) {
@@ -122,7 +125,7 @@ function transformConsoleAPICallPacket(packet) {
         // if corresponding console.time() was called before.
         const duration = Math.round(timer.duration * 100) / 100;
         if (type === "timeEnd") {
-          messageText = l10n.getFormatStr("timeEnd", [timer.name, duration]);
+          messageText = l10n.getFormatStr("console.timeEnd", [timer.name, duration]);
           parameters = null;
         } else if (type === "timeLog") {
           const [, ...rest] = parameters;
@@ -173,6 +176,7 @@ function transformConsoleAPICallPacket(packet) {
 
   const frame = message.filename ? {
     source: message.filename,
+    sourceId: message.sourceId,
     line: message.lineNumber,
     column: message.columnNumber,
   } : null;
@@ -190,6 +194,7 @@ function transformConsoleAPICallPacket(packet) {
     prefix: message.prefix,
     private: message.private,
     executionPoint: message.executionPoint,
+    logpointId: message.logpointId,
   });
 }
 
@@ -230,6 +235,7 @@ function transformPageErrorPacket(packet) {
 
   const frame = pageError.sourceName ? {
     source: pageError.sourceName,
+    sourceId: pageError.sourceId,
     line: pageError.lineNumber,
     column: pageError.columnNumber,
   } : null;
@@ -244,6 +250,7 @@ function transformPageErrorPacket(packet) {
     messageText: pageError.errorMessage,
     stacktrace: pageError.stacktrace ? pageError.stacktrace : null,
     frame,
+    errorMessageName: pageError.errorMessageName,
     exceptionDocURL: pageError.exceptionDocURL,
     timeStamp: pageError.timeStamp,
     notes: pageError.notes,
@@ -275,6 +282,7 @@ function transformNetworkEventPacket(packet) {
 function transformEvaluationResultPacket(packet) {
   let {
     exceptionMessage,
+    errorMessageName,
     exceptionDocURL,
     exception,
     frame,
@@ -310,6 +318,7 @@ function transformEvaluationResultPacket(packet) {
     level,
     messageText: exceptionMessage,
     parameters: [parameter],
+    errorMessageName,
     exceptionDocURL,
     frame,
     timeStamp,
@@ -331,6 +340,8 @@ function getRepeatId(message) {
     type: message.type,
     userProvidedStyles: message.userProvidedStyles,
     private: message.private,
+    stacktrace: message.stacktrace,
+    executionPoint: message.executionPoint,
   });
 }
 

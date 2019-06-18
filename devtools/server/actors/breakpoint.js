@@ -8,9 +8,6 @@
 
 "use strict";
 
-const { ActorClassWithSpec } = require("devtools/shared/protocol");
-const { breakpointSpec } = require("devtools/shared/specs/breakpoint");
-
 /**
  * Set breakpoints on all the given entry points with the given
  * BreakpointActor as the handler.
@@ -22,38 +19,35 @@ const { breakpointSpec } = require("devtools/shared/specs/breakpoint");
  */
 function setBreakpointAtEntryPoints(actor, entryPoints) {
   for (const { script, offsets } of entryPoints) {
-    actor.addScript(script);
-    for (const offset of offsets) {
-      script.setBreakpoint(offset, actor);
-    }
+    actor.addScript(script, offsets);
   }
 }
 
 exports.setBreakpointAtEntryPoints = setBreakpointAtEntryPoints;
 
 /**
- * BreakpointActors exist for the lifetime of their containing thread and are
- * responsible for deleting breakpoints, handling breakpoint hits and
- * associating breakpoints with scripts.
+ * BreakpointActors are instantiated for each breakpoint that has been installed
+ * by the client. They are not true actors and do not communicate with the
+ * client directly, but encapsulate the DebuggerScript locations where the
+ * breakpoint is installed.
  */
-const BreakpointActor = ActorClassWithSpec(breakpointSpec, {
-  /**
-   * Create a Breakpoint actor.
-   *
-   * @param ThreadActor threadActor
-   *        The parent thread actor that contains this breakpoint.
-   * @param GeneratedLocation generatedLocation
-   *        The generated location of the breakpoint.
-   */
-  initialize: function(threadActor, generatedLocation) {
-    // The set of Debugger.Script instances that this breakpoint has been set
-    // upon.
-    this.scripts = new Set();
+function BreakpointActor(threadActor, location) {
+  // A map from Debugger.Script instances to the offsets which the breakpoint
+  // has been set for in that script.
+  this.scripts = new Map();
 
-    this.threadActor = threadActor;
-    this.generatedLocation = generatedLocation;
-    this.condition = null;
-    this.isPending = true;
+  this.threadActor = threadActor;
+  this.location = location;
+  this.options = null;
+}
+
+BreakpointActor.prototype = {
+  setOptions(options) {
+    for (const [script, offsets] of this.scripts) {
+      this._updateOptionsForScript(script, offsets, options);
+    }
+
+    this.options = options;
   },
 
   destroy: function() {
@@ -70,20 +64,65 @@ const BreakpointActor = ActorClassWithSpec(breakpointSpec, {
    *
    * @param script Debugger.Script
    *        The new source script on which the breakpoint has been set.
+   * @param offsets Array
+   *        Any offsets in the script the breakpoint is associated with.
    */
-  addScript: function(script) {
-    this.scripts.add(script);
-    this.isPending = false;
+  addScript: function(script, offsets) {
+    this.scripts.set(script, offsets.concat(this.scripts.get(offsets) || []));
+    for (const offset of offsets) {
+      script.setBreakpoint(offset, this);
+    }
+
+    this._updateOptionsForScript(script, offsets, this.options);
   },
 
   /**
    * Remove the breakpoints from associated scripts and clear the script cache.
    */
   removeScripts: function() {
-    for (const script of this.scripts) {
+    for (const [script] of this.scripts) {
       script.clearBreakpoint(this);
     }
     this.scripts.clear();
+  },
+
+  // Update any state affected by changing options on a script this breakpoint
+  // is associated with.
+  _updateOptionsForScript(script, offsets, options) {
+    // When replaying, logging breakpoints are handled using an API to get logged
+    // messages from throughout the recording.
+    if (this.threadActor.dbg.replaying && options.logValue) {
+      for (const offset of offsets) {
+        const { lineNumber, columnNumber } = script.getOffsetLocation(offset);
+        script.replayVirtualConsoleLog(
+          offset, options.logValue, options.condition, (executionPoint, rv) => {
+            const message = {
+              filename: script.url,
+              lineNumber,
+              columnNumber,
+              executionPoint,
+              "arguments": ["return" in rv ? rv.return : rv.throw],
+              logpointId: options.logGroupId,
+            };
+            this.threadActor._parent._consoleActor.onConsoleAPICall(message);
+          }
+        );
+      }
+    }
+  },
+
+  // Get a string message to display when a frame evaluation throws.
+  getThrownMessage(completion) {
+    try {
+      if (completion.throw.getOwnPropertyDescriptor) {
+        return completion.throw.getOwnPropertyDescriptor("message").value;
+      } else if (completion.toString) {
+        return completion.toString();
+      }
+    } catch (ex) {
+      // ignore
+    }
+    return "Unknown exception";
   },
 
   /**
@@ -100,25 +139,14 @@ const BreakpointActor = ActorClassWithSpec(breakpointSpec, {
    *          - message: string
    *            If the condition throws, this is the thrown message.
    */
-  checkCondition: function(frame) {
-    const completion = frame.eval(this.condition);
+  checkCondition: function(frame, condition) {
+    const completion = frame.eval(condition);
     if (completion) {
       if (completion.throw) {
         // The evaluation failed and threw
-        let message = "Unknown exception";
-        try {
-          if (completion.throw.getOwnPropertyDescriptor) {
-            message = completion.throw.getOwnPropertyDescriptor("message")
-                      .value;
-          } else if (completion.toString) {
-            message = completion.toString();
-          }
-        } catch (ex) {
-          // ignore
-        }
         return {
           result: true,
-          message: message,
+          message: this.getThrownMessage(completion),
         };
       } else if (completion.yield) {
         assert(false, "Shouldn't ever get yield completions from an eval");
@@ -161,44 +189,66 @@ const BreakpointActor = ActorClassWithSpec(breakpointSpec, {
       return undefined;
     }
 
-    const reason = {};
+    const reason = { type: "breakpoint", actors: [ this.actorID ] };
+    const { condition, logValue } = this.options || {};
 
-    if (this.threadActor._hiddenBreakpoints.has(this.actorID)) {
-      reason.type = "pauseOnDOMEvents";
-    } else if (!this.condition) {
-      reason.type = "breakpoint";
-      // TODO: add the rest of the breakpoints on that line (bug 676602).
-      reason.actors = [ this.actorID ];
-    } else {
-      const { result, message } = this.checkCondition(frame);
+    // When replaying, breakpoints with log values are handled via
+    // _updateOptionsForScript.
+    if (logValue && this.threadActor.dbg.replaying) {
+      return undefined;
+    }
+
+    if (condition) {
+      const { result, message } = this.checkCondition(frame, condition);
 
       if (result) {
-        if (!message) {
-          reason.type = "breakpoint";
-        } else {
+        if (message) {
           reason.type = "breakpointConditionThrown";
           reason.message = message;
         }
-        reason.actors = [ this.actorID ];
       } else {
         return undefined;
       }
     }
+
+    if (logValue) {
+      const completion = frame.eval(`[${logValue}]`);
+      let value;
+      if (!completion) {
+        // The evaluation was killed (possibly by the slow script dialog).
+        value = ["Log value evaluation incomplete"];
+      } else if ("return" in completion) {
+        value = completion.return;
+      } else {
+        value = [this.getThrownMessage(completion)];
+      }
+
+      if (value && typeof value.unsafeDereference === "function") {
+        value = value.unsafeDereference();
+      }
+
+      const message = {
+        filename: url,
+        lineNumber: generatedLine,
+        columnNumber: generatedColumn,
+        "arguments": value,
+      };
+      this.threadActor._parent._consoleActor.onConsoleAPICall(message);
+
+      // Never stop at log points.
+      return undefined;
+    }
+
     return this.threadActor._pauseAndRespond(frame, reason);
   },
 
-  /**
-   * Handle a protocol request to remove this breakpoint.
-   */
   delete: function() {
     // Remove from the breakpoint store.
-    if (this.generatedLocation) {
-      this.threadActor.breakpointActorMap.deleteActor(this.generatedLocation);
-    }
+    this.threadActor.breakpointActorMap.deleteActor(this.location);
     this.threadActor.threadLifetimePool.removeActor(this);
     // Remove the actual breakpoint from the associated scripts.
     this.removeScripts();
   },
-});
+};
 
 exports.BreakpointActor = BreakpointActor;

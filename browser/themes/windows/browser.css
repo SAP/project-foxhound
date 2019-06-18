@@ -627,17 +627,16 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
 
 /* identity box */
 
-#identity-box:not(:active):-moz-focusring {
-  outline: 1px dotted;
-  outline-offset: -3px;
-}
-
 %include ../shared/identity-block/identity-block.inc.css
 
 /* autocomplete */
 
 %include ../shared/autocomplete.inc.css
 %include ../shared/urlbar-autocomplete.inc.css
+
+#urlbarView-results {
+  font-size: 1.15em;
+}
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
   border-top: 1px solid ThreeDShadow;
@@ -684,15 +683,16 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
 }
 
 .browserContainer > findbar {
-  background-color: var(--toolbar-bgcolor);
-  color: var(--toolbar-color);
+  background-color: var(--toolbar-non-lwt-bgcolor);
+  color: var(--toolbar-non-lwt-textcolor);
+  text-shadow: none;
 }
 
-.browserContainer > findbar:-moz-lwtheme {
+:root:not([lwtheme-image]) .browserContainer > findbar:-moz-lwtheme {
   background-color: var(--lwt-accent-color);
   background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
   border-top-color: var(--chrome-content-separator-color);
-  text-shadow: none;
+  color: var(--toolbar-color);
 }
 
 /* Tabstrip */
@@ -759,65 +759,7 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 }
 
 %include ../shared/notification-icons.inc.css
-
-.popup-notification-body[popupid="addon-progress"],
-.popup-notification-body[popupid="addon-install-confirmation"] {
-  width: 28em;
-  max-width: 28em;
-}
-
-.addon-install-confirmation-name {
-  font-weight: bold;
-}
-
-html|*.addon-webext-perm-list {
-  margin-block-end: 0;
-  padding-inline-start: 10px;
-}
-
-.addon-webext-perm-text {
-  margin-inline-start: 0;
-}
-
-.popup-notification-description[popupid="addon-webext-permissions"],
-.popup-notification-description[popupid="addon-webext-permissions-notification"] {
-  margin-inline-start: -1px;
-}
-
-.addon-webext-perm-notification-content,
-.addon-installed-notification-content {
-  margin-top: 0;
-}
-
-.addon-webext-name {
-  display: inline;
-  font-weight: bold;
-  margin: 0;
-}
-
-.addon-addon-icon,
-.addon-toolbar-icon {
-  width: 14px;
-  height: 14px;
-  vertical-align: bottom;
-  margin-bottom: 1px;
-  -moz-context-properties: fill;
-  fill: currentColor;
-}
-
-.addon-addon-icon {
-  list-style-image: url("chrome://mozapps/skin/extensions/extensionGeneric-16.svg");
-}
-
-.addon-toolbar-icon {
-  list-style-image: url("chrome://browser/skin/menu.svg");
-}
-
-/* Notification icon box */
-
-.notification-anchor-icon:-moz-focusring {
-  outline: 1px dotted -moz-DialogText;
-}
+%include ../shared/addon-notification.inc.css
 
 /* Translation infobar */
 

@@ -1,5 +1,5 @@
 // test that things that are expected to be in gre-resources are still there
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var ios = Cc["@mozilla.org/network/io-service;1"]. getService(Ci.nsIIOService);
 
@@ -18,7 +18,7 @@ function check_file(file) {
     loadUsingSystemPrincipal: true
   });
   try {
-    let instr = wrapInputStream(channel.open2());
+    let instr = wrapInputStream(channel.open());
     Assert.ok(instr.read(1024).length > 0)
   } catch (e) {
     do_throw("Failed to read " + file + " from gre-resources:"+e)

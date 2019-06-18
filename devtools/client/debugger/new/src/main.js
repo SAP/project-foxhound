@@ -4,11 +4,7 @@
 
 // @flow
 
-import React from "react";
 import ReactDOM from "react-dom";
-
-import { isFirefoxPanel } from "devtools-environment";
-
 import { onConnect } from "./client";
 import { teardownWorkers } from "./utils/bootstrap";
 import sourceQueue from "./utils/source-queue";
@@ -18,47 +14,29 @@ function unmountRoot() {
   ReactDOM.unmountComponentAtNode(mount);
 }
 
-if (isFirefoxPanel()) {
-  module.exports = {
-    bootstrap: ({
-      threadClient,
-      tabTarget,
-      debuggerClient,
-      sourceMaps,
-      toolboxActions
-    }: any) => {
-      return onConnect(
-        {
-          tab: { clientType: "firefox" },
-          tabConnection: {
-            tabTarget,
-            threadClient,
-            debuggerClient
-          }
-        },
-        {
-          services: { sourceMaps },
-          toolboxActions
+module.exports = {
+  bootstrap: ({
+    threadClient,
+    tabTarget,
+    debuggerClient,
+    sourceMaps,
+    panel
+  }: any) =>
+    onConnect(
+      {
+        tab: { clientType: "firefox" },
+        tabConnection: {
+          tabTarget,
+          threadClient,
+          debuggerClient
         }
-      );
-    },
-    destroy: () => {
-      unmountRoot();
-      sourceQueue.clear();
-      teardownWorkers();
-    }
-  };
-} else {
-  const { bootstrap, L10N } = require("devtools-launchpad");
-
-  window.L10N = L10N;
-  // $FlowIgnore:
-  window.L10N.setBundle(require("../assets/panel/debugger.properties"));
-
-  bootstrap(React, ReactDOM).then(connection => {
-    onConnect(connection, {
-      services: { sourceMaps: require("devtools-source-map") },
-      toolboxActions: {}
-    });
-  });
-}
+      },
+      sourceMaps,
+      panel
+    ),
+  destroy: () => {
+    unmountRoot();
+    sourceQueue.clear();
+    teardownWorkers();
+  }
+};

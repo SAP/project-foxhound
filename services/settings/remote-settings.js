@@ -12,8 +12,8 @@ var EXPORTED_SYMBOLS = [
   "remoteSettingsBroadcastHandler",
 ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "UptakeTelemetry",
                                "resource://services-common/uptake-telemetry.js");
@@ -40,8 +40,10 @@ const PREF_SETTINGS_CLOCK_SKEW_SECONDS = "clock_skew_seconds";
 const PREF_SETTINGS_LOAD_DUMP          = "load_dump";
 
 
-// Telemetry update source identifier.
-const TELEMETRY_HISTOGRAM_KEY = "settings-changes-monitoring";
+// Telemetry identifiers.
+const TELEMETRY_COMPONENT = "remotesettings";
+const TELEMETRY_SOURCE = "settings-changes-monitoring";
+
 // Push broadcast id.
 const BROADCAST_ID = "remote-settings/monitor_changes";
 
@@ -151,17 +153,22 @@ function remoteSettingsFunction() {
    *
    * @param {Object} options
 .  * @param {Object} options.expectedTimestamp (optional) The expected timestamp to be received — used by servers for cache busting.
+   * @param {string} options.trigger           (optional) label to identify what triggered this sync (eg. ``"timer"``, default: `"manual"`)
    * @returns {Promise} or throws error if something goes wrong.
    */
-  remoteSettings.pollChanges = async ({ expectedTimestamp } = {}) => {
+  remoteSettings.pollChanges = async ({ expectedTimestamp, trigger = "manual" } = {}) => {
+    let telemetryArgs = {
+      source: TELEMETRY_SOURCE,
+      trigger,
+    };
+
     // Check if the server backoff time is elapsed.
     if (gPrefs.prefHasUserValue(PREF_SETTINGS_SERVER_BACKOFF)) {
       const backoffReleaseTime = gPrefs.getCharPref(PREF_SETTINGS_SERVER_BACKOFF);
       const remainingMilliseconds = parseInt(backoffReleaseTime, 10) - Date.now();
       if (remainingMilliseconds > 0) {
         // Backoff time has not elapsed yet.
-        UptakeTelemetry.report(TELEMETRY_HISTOGRAM_KEY,
-                               UptakeTelemetry.STATUS.BACKOFF);
+        await UptakeTelemetry.report(TELEMETRY_COMPONENT, UptakeTelemetry.STATUS.BACKOFF, telemetryArgs);
         throw new Error(`Server is asking clients to back off; retry in ${Math.ceil(remainingMilliseconds / 1000)}s.`);
       } else {
         gPrefs.clearUserPref(PREF_SETTINGS_SERVER_BACKOFF);
@@ -177,25 +184,34 @@ function remoteSettingsFunction() {
       pollResult = await Utils.fetchLatestChanges(remoteSettings.pollingEndpoint, { expectedTimestamp, lastEtag });
     } catch (e) {
       // Report polling error to Uptake Telemetry.
-      let report;
-      if (/Server/.test(e.message)) {
-        report = UptakeTelemetry.STATUS.SERVER_ERROR;
+      let reportStatus;
+      if (/JSON\.parse/.test(e.message)) {
+        reportStatus = UptakeTelemetry.STATUS.PARSE_ERROR;
+      } else if (/content-type/.test(e.message)) {
+        reportStatus = UptakeTelemetry.STATUS.CONTENT_ERROR;
+      } else if (/Server/.test(e.message)) {
+        reportStatus = UptakeTelemetry.STATUS.SERVER_ERROR;
+      } else if (/Timeout/.test(e.message)) {
+        reportStatus = UptakeTelemetry.STATUS.TIMEOUT_ERROR;
       } else if (/NetworkError/.test(e.message)) {
-        report = UptakeTelemetry.STATUS.NETWORK_ERROR;
+        reportStatus = UptakeTelemetry.STATUS.NETWORK_ERROR;
       } else {
-        report = UptakeTelemetry.STATUS.UNKNOWN_ERROR;
+        reportStatus = UptakeTelemetry.STATUS.UNKNOWN_ERROR;
       }
-      UptakeTelemetry.report(TELEMETRY_HISTOGRAM_KEY, report);
+      await UptakeTelemetry.report(TELEMETRY_COMPONENT, reportStatus, telemetryArgs);
       // No need to go further.
       throw new Error(`Polling for changes failed: ${e.message}.`);
     }
 
-    const {serverTimeMillis, changes, currentEtag, backoffSeconds} = pollResult;
+    const { serverTimeMillis, changes, currentEtag, backoffSeconds, ageSeconds } = pollResult;
+
+    // Report age of server data in Telemetry.
+    telemetryArgs = { age: ageSeconds, ...telemetryArgs };
 
     // Report polling success to Uptake Telemetry.
-    const report = changes.length == 0 ? UptakeTelemetry.STATUS.UP_TO_DATE
-                                       : UptakeTelemetry.STATUS.SUCCESS;
-    UptakeTelemetry.report(TELEMETRY_HISTOGRAM_KEY, report);
+    const reportStatus = changes.length === 0 ? UptakeTelemetry.STATUS.UP_TO_DATE
+                                              : UptakeTelemetry.STATUS.SUCCESS;
+    await UptakeTelemetry.report(TELEMETRY_COMPONENT, reportStatus, telemetryArgs);
 
     // Check if the server asked the clients to back off (for next poll).
     if (backoffSeconds) {
@@ -211,7 +227,7 @@ function remoteSettingsFunction() {
     const checkedServerTimeInSeconds = Math.round(serverTimeMillis / 1000);
     gPrefs.setIntPref(PREF_SETTINGS_LAST_UPDATE, checkedServerTimeInSeconds);
 
-
+    // Should the clients try to load JSON dump? (mainly disabled in tests)
     const loadDump = gPrefs.getBoolPref(PREF_SETTINGS_LOAD_DUMP, true);
 
     // Iterate through the collections version info and initiate a synchronization
@@ -227,7 +243,7 @@ function remoteSettingsFunction() {
       // Start synchronization! It will be a no-op if the specified `lastModified` equals
       // the one in the local database.
       try {
-        await client.maybeSync(last_modified, { loadDump });
+        await client.maybeSync(last_modified, { loadDump, trigger });
 
         // Save last time this client was successfully synced.
         Services.prefs.setIntPref(client.lastCheckTimePref, checkedServerTimeInSeconds);
@@ -313,6 +329,6 @@ var RemoteSettings = remoteSettingsFunction();
 
 var remoteSettingsBroadcastHandler = {
   async receivedBroadcastMessage(data, broadcastID) {
-    return RemoteSettings.pollChanges({ expectedTimestamp: data });
+    return RemoteSettings.pollChanges({ expectedTimestamp: data, trigger: "broadcast" });
   },
 };

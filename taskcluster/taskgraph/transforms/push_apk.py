@@ -17,10 +17,6 @@ from taskgraph.util.taskcluster import get_artifact_prefix
 
 from voluptuous import Optional, Required
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 
 push_apk_description_schema = Schema({
     Required('dependent-tasks'): object,
@@ -74,8 +70,9 @@ def _get_required_architectures(project):
     architectures = {
         'android-api-16-nightly',
         'android-x86-nightly',
+        'android-x86_64-nightly',
     }
-    if project == 'mozilla-central':
+    if project in ('mozilla-central', 'mozilla-beta', 'try'):
         architectures.add('android-aarch64-nightly')
 
     return architectures

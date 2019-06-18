@@ -120,6 +120,7 @@ class nsSelectionCommandsBase : public nsIControllerCommand {
   NS_IMETHOD GetCommandStateParams(const char *aCommandName,
                                    nsICommandParams *aParams,
                                    nsISupports *aCommandContext) override;
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD DoCommandParams(const char *aCommandName,
                              nsICommandParams *aParams,
                              nsISupports *aCommandContext) override;
@@ -475,23 +476,23 @@ nsresult nsClipboardCommand::IsCommandEnabled(const char *aCommandName,
   NS_ENSURE_ARG_POINTER(outCmdEnabled);
   *outCmdEnabled = false;
 
-  if (strcmp(aCommandName, "cmd_copy") &&
-      strcmp(aCommandName, "cmd_copyAndCollapseToEnd") &&
-      strcmp(aCommandName, "cmd_cut") && strcmp(aCommandName, "cmd_paste"))
+  if (strcmp(aCommandName, "cmd_copy") && strcmp(aCommandName, "cmd_cut") &&
+      strcmp(aCommandName, "cmd_paste")) {
     return NS_OK;
+  }
 
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryInterface(aContext);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+  RefPtr<Document> doc = window->GetExtantDoc();
+  NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-  nsCOMPtr<Document> doc = window->GetExtantDoc();
   if (doc->IsHTMLOrXHTML()) {
     // In HTML and XHTML documents, we always want the cut, copy and paste
     // commands to be enabled.
     *outCmdEnabled = true;
   } else {
     // Cut isn't enabled in xul documents which use nsClipboardCommand
-    if (strcmp(aCommandName, "cmd_copy") == 0 ||
-        strcmp(aCommandName, "cmd_copyAndCollapseToEnd") == 0) {
+    if (strcmp(aCommandName, "cmd_copy") == 0) {
       *outCmdEnabled = nsCopySupport::CanCopy(doc);
     }
   }
@@ -501,7 +502,6 @@ nsresult nsClipboardCommand::IsCommandEnabled(const char *aCommandName,
 nsresult nsClipboardCommand::DoCommand(const char *aCommandName,
                                        nsISupports *aContext) {
   if (strcmp(aCommandName, "cmd_cut") && strcmp(aCommandName, "cmd_copy") &&
-      strcmp(aCommandName, "cmd_copyAndCollapseToEnd") &&
       strcmp(aCommandName, "cmd_paste"))
     return NS_OK;
 
@@ -522,16 +522,9 @@ nsresult nsClipboardCommand::DoCommand(const char *aCommandName,
   }
 
   bool actionTaken = false;
-  bool notCancelled = nsCopySupport::FireClipboardEvent(
-      eventMessage, nsIClipboard::kGlobalClipboard, presShell, nullptr,
-      &actionTaken);
-
-  if (notCancelled && !strcmp(aCommandName, "cmd_copyAndCollapseToEnd")) {
-    dom::Selection *sel =
-        presShell->GetCurrentSelection(SelectionType::eNormal);
-    NS_ENSURE_TRUE(sel, NS_ERROR_FAILURE);
-    sel->CollapseToEnd(IgnoreErrors());
-  }
+  nsCopySupport::FireClipboardEvent(eventMessage,
+                                    nsIClipboard::kGlobalClipboard, presShell,
+                                    nullptr, &actionTaken);
 
   return actionTaken ? NS_OK : NS_SUCCESS_DOM_NO_OPERATION;
 }
@@ -1112,7 +1105,6 @@ nsresult nsWindowCommandRegistration::RegisterWindowCommands(
 
   NS_REGISTER_ONE_COMMAND(nsClipboardCommand, "cmd_cut");
   NS_REGISTER_ONE_COMMAND(nsClipboardCommand, "cmd_copy");
-  NS_REGISTER_ONE_COMMAND(nsClipboardCommand, "cmd_copyAndCollapseToEnd");
   NS_REGISTER_ONE_COMMAND(nsClipboardCommand, "cmd_paste");
   NS_REGISTER_ONE_COMMAND(nsClipboardCopyLinkCommand, "cmd_copyLink");
   NS_REGISTER_FIRST_COMMAND(nsClipboardImageCommands, sCopyImageLocationString);
@@ -1133,7 +1125,8 @@ nsresult nsWindowCommandRegistration::RegisterWindowCommands(
   return rv;
 }
 
-/* static */ bool nsGlobalWindowCommands::FindScrollCommand(
+/* static */
+bool nsGlobalWindowCommands::FindScrollCommand(
     const char *aCommandName, KeyboardScrollAction *aOutAction) {
   // Search for a keyboard scroll action to do for this command in
   // browseCommands and physicalBrowseCommands. Each command exists in only one

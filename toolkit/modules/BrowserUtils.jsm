@@ -7,7 +7,7 @@
 
 var EXPORTED_SYMBOLS = [ "BrowserUtils" ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
 
@@ -319,7 +319,6 @@ var BrowserUtils = {
    */
   canFindInPage(location) {
     return !location.startsWith("about:addons") &&
-           !location.startsWith("about:config") &&
            !location.startsWith("about:preferences");
   },
 
@@ -687,5 +686,29 @@ var BrowserUtils = {
       }
     }
     return fragment;
+  },
+
+  /**
+   * Returns a Promise which resolves when the given observer topic has been
+   * observed.
+   *
+   * @param {string} topic
+   *        The topic to observe.
+   * @param {function(nsISupports, string)} [test]
+   *        An optional test function which, when called with the
+   *        observer's subject and data, should return true if this is the
+   *        expected notification, false otherwise.
+   * @returns {Promise<object>}
+   */
+  promiseObserved(topic, test = () => true) {
+    return new Promise(resolve => {
+      let observer = (subject, topic, data) => {
+        if (test(subject, data)) {
+          Services.obs.removeObserver(observer, topic);
+          resolve({subject, data});
+        }
+      };
+      Services.obs.addObserver(observer, topic);
+    });
   },
 };

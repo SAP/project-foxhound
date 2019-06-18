@@ -32,6 +32,7 @@
 #include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
+#include "nsICookieSettings.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIURL.h"
 #include "nsThreadUtils.h"
@@ -125,7 +126,8 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
                      const nsACString& aNegotiatedExtensions);
 
   nsresult ParseURL(const nsAString& aURL);
-  nsresult InitializeConnection(nsIPrincipal* aPrincipal);
+  nsresult InitializeConnection(nsIPrincipal* aPrincipal,
+                                nsICookieSettings* aCookieSettings);
 
   // These methods when called can release the WebSocket object
   void FailConnection(uint16_t reasonCode,
@@ -1089,8 +1091,8 @@ class ConnectRunnable final : public WebSocketMainThreadRunnable {
       return true;
     }
 
-    mConnectionFailed =
-        NS_FAILED(mImpl->InitializeConnection(doc->NodePrincipal()));
+    mConnectionFailed = NS_FAILED(mImpl->InitializeConnection(
+        doc->NodePrincipal(), mWorkerPrivate->CookieSettings()));
     return true;
   }
 
@@ -1099,7 +1101,8 @@ class ConnectRunnable final : public WebSocketMainThreadRunnable {
     MOZ_ASSERT(aTopLevelWorkerPrivate && !aTopLevelWorkerPrivate->GetWindow());
 
     mConnectionFailed = NS_FAILED(
-        mImpl->InitializeConnection(aTopLevelWorkerPrivate->GetPrincipal()));
+        mImpl->InitializeConnection(aTopLevelWorkerPrivate->GetPrincipal(),
+                                    mWorkerPrivate->CookieSettings()));
     return true;
   }
 
@@ -1255,11 +1258,13 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
       return nullptr;
     }
 
+    nsCOMPtr<Document> doc = webSocket->GetDocumentIfCurrent();
+
     // the constructor should throw a SYNTAX_ERROR only if it fails to parse the
     // url parameter, so don't throw if InitializeConnection fails, and call
     // onerror/onclose asynchronously
-    connectionFailed =
-        NS_FAILED(webSocketImpl->InitializeConnection(principal));
+    connectionFailed = NS_FAILED(webSocketImpl->InitializeConnection(
+        principal, doc ? doc->CookieSettings() : nullptr));
   } else {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
@@ -1531,7 +1536,7 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
     // The 'real' nsHttpChannel of the websocket gets opened in the parent.
     // Since we don't serialize the CSP within child and parent and also not
     // the context, we have to perform content policy checks here instead of
-    // AsyncOpen2().
+    // AsyncOpen().
     // Please note that websockets can't follow redirects, hence there is no
     // need to perform a CSP check after redirects.
     nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new net::LoadInfo(
@@ -1674,7 +1679,8 @@ class nsAutoCloseWS final {
   RefPtr<WebSocketImpl> mWebSocketImpl;
 };
 
-nsresult WebSocketImpl::InitializeConnection(nsIPrincipal* aPrincipal) {
+nsresult WebSocketImpl::InitializeConnection(
+    nsIPrincipal* aPrincipal, nsICookieSettings* aCookieSettings) {
   AssertIsOnMainThread();
   MOZ_ASSERT(!mChannel, "mChannel should be null");
 
@@ -1717,10 +1723,10 @@ nsresult WebSocketImpl::InitializeConnection(nsIPrincipal* aPrincipal) {
   // and aPrincipal are same origin.
   MOZ_ASSERT(!doc || doc->NodePrincipal()->Equals(aPrincipal));
 
-  rv = wsChannel->InitLoadInfo(doc, doc ? doc->NodePrincipal() : aPrincipal,
-                               aPrincipal,
-                               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                               nsIContentPolicy::TYPE_WEBSOCKET);
+  rv = wsChannel->InitLoadInfoNative(
+      doc, doc ? doc->NodePrincipal() : aPrincipal, aPrincipal, aCookieSettings,
+      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+      nsIContentPolicy::TYPE_WEBSOCKET);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   if (!mRequestedProtocolList.IsEmpty()) {
@@ -1850,7 +1856,10 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     }
   } else {
     // JS string
-    NS_ConvertUTF8toUTF16 utf16Data(aData);
+    nsAutoString utf16Data;
+    if (!AppendUTF8toUTF16(aData, utf16Data, mozilla::fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
     JSString* jsString;
     jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
     NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);

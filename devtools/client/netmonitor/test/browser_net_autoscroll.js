@@ -19,7 +19,7 @@ add_task(async function() {
   // Wait until the first request makes the empty notice disappear
   await waitForRequestListToAppear();
 
-  const requestsContainer = document.querySelector(".requests-list-contents");
+  const requestsContainer = document.querySelector(".requests-list-scroll");
   ok(requestsContainer, "Container element exists as expected.");
 
   // (1) Check that the scroll position is maintained at the bottom
@@ -53,8 +53,9 @@ add_task(async function() {
   store.dispatch(Actions.selectRequestByIndex(0));
   await waitForNetworkEvents(monitor, 8);
   await waitSomeTime();
-  const requestsContainerHeaders = requestsContainer.firstChild;
-  const headersHeight = requestsContainerHeaders.offsetHeight;
+  const requestsContainerHeaders = document.querySelector(".requests-list-headers");
+  const headersHeight =
+    Math.floor(requestsContainerHeaders.getBoundingClientRect().height);
   is(requestsContainer.scrollTop, headersHeight, "Did not scroll.");
 
   // Stop doing requests.
@@ -67,7 +68,7 @@ add_task(async function() {
 
   function waitForRequestListToAppear() {
     info("Waiting until the empty notice disappears and is replaced with the list");
-    return waitUntil(() => !!document.querySelector(".requests-list-contents"));
+    return waitUntil(() => !!document.querySelector(".requests-list-row-group"));
   }
 
   async function waitForRequestsToOverflowContainer() {
@@ -75,7 +76,7 @@ add_task(async function() {
     while (true) {
       info("Waiting for one network request");
       await waitForNetworkEvents(monitor, 1);
-      if (requestsContainer.scrollHeight > requestsContainer.clientHeight) {
+      if (requestsContainer.scrollHeight > requestsContainer.clientHeight + 50) {
         info("The list is long enough, returning");
         return;
       }

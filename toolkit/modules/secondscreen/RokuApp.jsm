@@ -7,9 +7,9 @@
 
 var EXPORTED_SYMBOLS = ["RokuApp"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
@@ -158,10 +158,10 @@ function RemoteMedia(url, listener) {
 }
 
 RemoteMedia.prototype = {
-  onStartRequest(request, context) {
+  onStartRequest(request) {
   },
 
-  onDataAvailable(request, context, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     this._scriptableStream.init(stream);
     let data = this._scriptableStream.read(count);
     if (!data) {
@@ -187,7 +187,7 @@ RemoteMedia.prototype = {
     }
   },
 
-  onStopRequest(request, context, result) {
+  onStopRequest(request, result) {
     if (this._listener && "onRemoteMediaStop" in this._listener)
       this._listener.onRemoteMediaStop(this);
   },

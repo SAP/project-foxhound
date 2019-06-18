@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
+const {GeckoViewChildModule} = ChromeUtils.import("resource://gre/modules/GeckoViewChildModule.jsm");
 
 class GeckoViewScrollChild extends GeckoViewChildModule {
   onEnable() {
@@ -37,5 +37,5 @@ class GeckoViewScrollChild extends GeckoViewChildModule {
   }
 }
 
-let {debug, warn} = GeckoViewScrollChild.initLogging("GeckoViewScroll");
-let module = GeckoViewScrollChild.create(this);
+const {debug, warn} = GeckoViewScrollChild.initLogging("GeckoViewScroll"); // eslint-disable-line no-unused-vars
+const module = GeckoViewScrollChild.create(this);

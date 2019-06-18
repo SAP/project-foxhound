@@ -6,17 +6,15 @@
 
 "use strict";
 
-const { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js", {});
+const { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js");
 
-this.WebConsoleOutput = function(parentNode, jsterm, toolbox, owner, serviceContainer) {
+this.WebConsoleWrapper = function(parentNode, webConsoleUI, toolbox, document) {
   // Initialize module loader and load all modules of the new inline
   // preview feature. The entire code-base doesn't need any extra
   // privileges and runs entirely in content scope.
-  const WebConsoleOutputWrapper = BrowserLoader({
+  const WebConsoleWrapper = BrowserLoader({
     baseURI: "resource://devtools/client/webconsole/",
     window,
-  }).require("./webconsole-output-wrapper");
-
-  return new WebConsoleOutputWrapper(
-    parentNode, jsterm, toolbox, owner, serviceContainer);
+  }).require("./webconsole-wrapper");
+  return new WebConsoleWrapper(parentNode, webConsoleUI, toolbox, document);
 };

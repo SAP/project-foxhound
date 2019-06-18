@@ -47,15 +47,14 @@ nsresult nsUnknownDecoder::ConvertedStreamListener::AppendDataToString(
 }
 
 NS_IMETHODIMP
-nsUnknownDecoder::ConvertedStreamListener::OnStartRequest(
-    nsIRequest* request, nsISupports* context) {
+nsUnknownDecoder::ConvertedStreamListener::OnStartRequest(nsIRequest* request) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsUnknownDecoder::ConvertedStreamListener::OnDataAvailable(
-    nsIRequest* request, nsISupports* context, nsIInputStream* stream,
-    uint64_t offset, uint32_t count) {
+    nsIRequest* request, nsIInputStream* stream, uint64_t offset,
+    uint32_t count) {
   uint32_t read;
   nsAutoCString decodedData;
   {
@@ -74,7 +73,6 @@ nsUnknownDecoder::ConvertedStreamListener::OnDataAvailable(
 
 NS_IMETHODIMP
 nsUnknownDecoder::ConvertedStreamListener::OnStopRequest(nsIRequest* request,
-                                                         nsISupports* context,
                                                          nsresult status) {
   return NS_OK;
 }
@@ -153,8 +151,7 @@ nsUnknownDecoder::AsyncConvertData(const char* aFromType, const char* aToType,
 // ----
 
 NS_IMETHODIMP
-nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
-                                  nsIInputStream* aStream,
+nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsIInputStream* aStream,
                                   uint64_t aSourceOffset, uint32_t aCount) {
   nsresult rv = NS_OK;
 
@@ -199,7 +196,7 @@ nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
 
       DetermineContentType(request);
 
-      rv = FireListenerNotifications(request, aCtxt);
+      rv = FireListenerNotifications(request, nullptr);
     }
   }
 
@@ -228,8 +225,7 @@ nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
       MutexAutoLock lock(mMutex);
       listener = mNextListener;
     }
-    rv = listener->OnDataAvailable(request, aCtxt, aStream, aSourceOffset,
-                                   aCount);
+    rv = listener->OnDataAvailable(request, aStream, aSourceOffset, aCount);
   }
 
   return rv;
@@ -242,7 +238,7 @@ nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
 // ----
 
 NS_IMETHODIMP
-nsUnknownDecoder::OnStartRequest(nsIRequest* request, nsISupports* aCtxt) {
+nsUnknownDecoder::OnStartRequest(nsIRequest* request) {
   nsresult rv = NS_OK;
 
   {
@@ -269,8 +265,7 @@ nsUnknownDecoder::OnStartRequest(nsIRequest* request, nsISupports* aCtxt) {
 }
 
 NS_IMETHODIMP
-nsUnknownDecoder::OnStopRequest(nsIRequest* request, nsISupports* aCtxt,
-                                nsresult aStatus) {
+nsUnknownDecoder::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   nsresult rv = NS_OK;
 
   bool contentTypeEmpty;
@@ -297,7 +292,7 @@ nsUnknownDecoder::OnStopRequest(nsIRequest* request, nsISupports* aCtxt,
       forcePendingChannel->ForcePending(true);
     }
 
-    rv = FireListenerNotifications(request, aCtxt);
+    rv = FireListenerNotifications(request, nullptr);
 
     if (NS_FAILED(rv)) {
       aStatus = rv;
@@ -315,7 +310,7 @@ nsUnknownDecoder::OnStopRequest(nsIRequest* request, nsISupports* aCtxt,
     listener = mNextListener;
     mNextListener = nullptr;
   }
-  rv = listener->OnStopRequest(request, aCtxt, aStatus);
+  rv = listener->OnStopRequest(request, aStatus);
 
   return rv;
 }
@@ -689,7 +684,7 @@ nsresult nsUnknownDecoder::FireListenerNotifications(nsIRequest* request,
       // Cancel the request to make sure it has the correct status if
       // mNextListener looks at it.
       request->Cancel(rv);
-      listener->OnStartRequest(request, aCtxt);
+      listener->OnStartRequest(request);
 
       nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
       if (divertable) {
@@ -701,7 +696,7 @@ nsresult nsUnknownDecoder::FireListenerNotifications(nsIRequest* request,
   }
 
   // Fire the OnStartRequest(...)
-  rv = listener->OnStartRequest(request, aCtxt);
+  rv = listener->OnStartRequest(request);
 
   nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
   if (divertable) {
@@ -750,7 +745,7 @@ nsresult nsUnknownDecoder::FireListenerNotifications(nsIRequest* request,
       rv = out->Write(mBuffer, mBufferLen, &len);
       if (NS_SUCCEEDED(rv)) {
         if (len == mBufferLen) {
-          rv = listener->OnDataAvailable(request, aCtxt, in, 0, len);
+          rv = listener->OnDataAvailable(request, in, 0, len);
         } else {
           NS_ERROR("Unable to write all the data into the pipe.");
           rv = NS_ERROR_FAILURE;
@@ -789,7 +784,7 @@ nsresult nsUnknownDecoder::ConvertEncodedData(nsIRequest* request,
     }
 
     if (listener) {
-      listener->OnStartRequest(request, nullptr);
+      listener->OnStartRequest(request);
 
       if (length) {
         nsCOMPtr<nsIStringInputStream> rawStream =
@@ -799,11 +794,11 @@ nsresult nsUnknownDecoder::ConvertEncodedData(nsIRequest* request,
         rv = rawStream->SetData((const char*)data, length);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        rv = listener->OnDataAvailable(request, nullptr, rawStream, 0, length);
+        rv = listener->OnDataAvailable(request, rawStream, 0, length);
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
-      listener->OnStopRequest(request, nullptr, NS_OK);
+      listener->OnStopRequest(request, NS_OK);
     }
   }
   return rv;

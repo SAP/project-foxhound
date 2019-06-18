@@ -9,19 +9,49 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Unused.h"
+#include "mozpkix/Result.h"
 
 #ifdef XP_MACOSX
 #  include <Security/Security.h>
 #  include "KeychainSecret.h"  // for ScopedCFType
-#endif                         // XP_MACOSX
+
+#  include "nsCocoaFeatures.h"
+#endif  // XP_MACOSX
 
 extern LazyLogModule gPIPNSSLog;
 
 using namespace mozilla;
 
+nsresult EnterpriseCert::Init(const uint8_t* data, size_t len, bool isRoot) {
+  mDER.clear();
+  if (!mDER.append(data, len)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  mIsRoot = isRoot;
+
+  return NS_OK;
+}
+
+nsresult EnterpriseCert::Init(const EnterpriseCert& orig) {
+  return Init(orig.mDER.begin(), orig.mDER.length(), orig.mIsRoot);
+}
+
+nsresult EnterpriseCert::CopyBytes(nsTArray<uint8_t>& dest) const {
+  dest.Clear();
+  if (!dest.AppendElements(mDER.begin(), mDER.length())) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  return NS_OK;
+}
+
+pkix::Result EnterpriseCert::GetInput(pkix::Input& input) const {
+  return input.Init(mDER.begin(), mDER.length());
+}
+
+bool EnterpriseCert::GetIsRoot() const { return mIsRoot; }
+
 #ifdef XP_WIN
-const wchar_t* kWindowsDefaultRootStoreName = L"ROOT";
-NS_NAMED_LITERAL_CSTRING(kMicrosoftFamilySafetyCN, "Microsoft Family Safety");
+const wchar_t* kWindowsDefaultRootStoreNames[] = {L"ROOT", L"CA"};
 
 // Helper function to determine if the OS considers the given certificate to be
 // a trust anchor for TLS server auth certificates. This is to be used in the
@@ -30,10 +60,13 @@ NS_NAMED_LITERAL_CSTRING(kMicrosoftFamilySafetyCN, "Microsoft Family Safety");
 // in some way unsuitable to issue certificates, mozilla::pkix will never build
 // a valid chain that includes the certificate, so importing it even if it
 // isn't a valid CA poses no risk.
-static bool CertIsTrustAnchorForTLSServerAuth(PCCERT_CONTEXT certificate) {
+static void CertIsTrustAnchorForTLSServerAuth(PCCERT_CONTEXT certificate,
+                                              bool& isTrusted, bool& isRoot) {
+  isTrusted = false;
+  isRoot = false;
   MOZ_ASSERT(certificate);
   if (!certificate) {
-    return false;
+    return;
   }
 
   PCCERT_CHAIN_CONTEXT pChainContext = nullptr;
@@ -57,44 +90,38 @@ static bool CertIsTrustAnchorForTLSServerAuth(PCCERT_CONTEXT certificate) {
   if (!CertGetCertificateChain(nullptr, certificate, nullptr, nullptr,
                                &chainPara, 0, nullptr, &pChainContext)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("CertGetCertificateChain failed"));
-    return false;
+    return;
   }
-  bool trusted =
-      pChainContext->TrustStatus.dwErrorStatus == CERT_TRUST_NO_ERROR;
-  bool isRoot = pChainContext->cChain == 1;
+  isTrusted = pChainContext->TrustStatus.dwErrorStatus == CERT_TRUST_NO_ERROR;
+  if (isTrusted && pChainContext->cChain > 0) {
+    // The so-called "final chain" is what we're after:
+    // https://docs.microsoft.com/en-us/windows/desktop/api/wincrypt/ns-wincrypt-_cert_chain_context
+    CERT_SIMPLE_CHAIN* finalChain =
+        pChainContext->rgpChain[pChainContext->cChain - 1];
+    // This is a root if the final chain consists of only one certificate (i.e.
+    // this one).
+    isRoot = finalChain->cElement == 1;
+  }
   CertFreeCertificateChain(pChainContext);
-  if (trusted && isRoot) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("certificate is trust anchor for TLS server auth"));
-    return true;
-  }
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-          ("certificate not trust anchor for TLS server auth"));
-  return false;
 }
 
-// It would be convenient to just use nsIX509CertDB in the following code.
-// However, since nsIX509CertDB depends on nsNSSComponent initialization (and
-// since this code runs during that initialization), we can't use it. Instead,
-// we can use NSS APIs directly (as long as we're called late enough in
-// nsNSSComponent initialization such that those APIs are safe to use).
+// Because HCERTSTORE is just a typedef void*, we can't use any of the nice
+// scoped or unique pointer templates. To elaborate, any attempt would
+// instantiate those templates with T = void. When T gets used in the context
+// of T&, this results in void&, which isn't legal.
+class ScopedCertStore final {
+ public:
+  explicit ScopedCertStore(HCERTSTORE certstore) : certstore(certstore) {}
 
-// Helper function to convert a PCCERT_CONTEXT (i.e. a certificate obtained via
-// a Windows API) to a temporary CERTCertificate (i.e. a certificate for use
-// with NSS APIs).
-UniqueCERTCertificate PCCERT_CONTEXTToCERTCertificate(PCCERT_CONTEXT pccert) {
-  MOZ_ASSERT(pccert);
-  if (!pccert) {
-    return nullptr;
-  }
+  ~ScopedCertStore() { CertCloseStore(certstore, 0); }
 
-  SECItem derCert = {siBuffer, pccert->pbCertEncoded, pccert->cbCertEncoded};
-  return UniqueCERTCertificate(
-      CERT_NewTempCertificate(CERT_GetDefaultCertDB(), &derCert,
-                              nullptr,  // nickname unnecessary
-                              false,    // not permanent
-                              true));   // copy DER
-}
+  HCERTSTORE get() { return certstore; }
+
+ private:
+  ScopedCertStore(const ScopedCertStore&) = delete;
+  ScopedCertStore& operator=(const ScopedCertStore&) = delete;
+  HCERTSTORE certstore;
+};
 
 // Loads the enterprise roots at the registry location corresponding to the
 // given location flag.
@@ -106,8 +133,8 @@ UniqueCERTCertificate PCCERT_CONTEXTToCERTCertificate(PCCERT_CONTEXT pccert) {
 //     HKLM\SOFTWARE\Policies\Microsoft\SystemCertificates\Root\Certificates)
 //   CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE
 //     (for HKLM\SOFTWARE\Microsoft\EnterpriseCertificates\Root\Certificates)
-static void GatherEnterpriseRootsForLocation(DWORD locationFlag,
-                                             UniqueCERTCertList& roots) {
+static void GatherEnterpriseCertsForLocation(DWORD locationFlag,
+                                             Vector<EnterpriseCert>& certs) {
   MOZ_ASSERT(locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE ||
                  locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY ||
                  locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
@@ -115,10 +142,6 @@ static void GatherEnterpriseRootsForLocation(DWORD locationFlag,
   if (!(locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE ||
         locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY ||
         locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE)) {
-    return;
-  }
-  MOZ_ASSERT(roots, "roots unexpectedly NULL?");
-  if (!roots) {
     return;
   }
 
@@ -129,66 +152,55 @@ static void GatherEnterpriseRootsForLocation(DWORD locationFlag,
   // of Microsoft's root store program.
   // The 3rd parameter to CertOpenStore should be NULL according to
   // https://msdn.microsoft.com/en-us/library/windows/desktop/aa376559%28v=vs.85%29.aspx
-  ScopedCertStore enterpriseRootStore(
-      CertOpenStore(CERT_STORE_PROV_SYSTEM_REGISTRY_W, 0, NULL, flags,
-                    kWindowsDefaultRootStoreName));
-  if (!enterpriseRootStore.get()) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("failed to open enterprise root store"));
-    return;
-  }
-  PCCERT_CONTEXT certificate = nullptr;
-  uint32_t numImported = 0;
-  while ((certificate = CertFindCertificateInStore(
-              enterpriseRootStore.get(), X509_ASN_ENCODING, 0, CERT_FIND_ANY,
-              nullptr, certificate))) {
-    if (!CertIsTrustAnchorForTLSServerAuth(certificate)) {
+  for (auto name : kWindowsDefaultRootStoreNames) {
+    ScopedCertStore enterpriseRootStore(
+        CertOpenStore(CERT_STORE_PROV_SYSTEM_REGISTRY_W, 0, NULL, flags, name));
+    if (!enterpriseRootStore.get()) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("skipping cert not trust anchor for TLS server auth"));
+              ("failed to open enterprise root store"));
       continue;
     }
-    UniqueCERTCertificate nssCertificate(
-        PCCERT_CONTEXTToCERTCertificate(certificate));
-    if (!nssCertificate) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("couldn't decode certificate"));
-      continue;
+    PCCERT_CONTEXT certificate = nullptr;
+    uint32_t numImported = 0;
+    while ((certificate = CertFindCertificateInStore(
+                enterpriseRootStore.get(), X509_ASN_ENCODING, 0, CERT_FIND_ANY,
+                nullptr, certificate))) {
+      bool isTrusted;
+      bool isRoot;
+      CertIsTrustAnchorForTLSServerAuth(certificate, isTrusted, isRoot);
+      if (!isTrusted) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("skipping cert not trusted for TLS server auth"));
+        continue;
+      }
+      EnterpriseCert enterpriseCert;
+      if (NS_FAILED(enterpriseCert.Init(certificate->pbCertEncoded,
+                                        certificate->cbCertEncoded, isRoot))) {
+        // Best-effort. We probably ran out of memory.
+        continue;
+      }
+      if (!certs.append(std::move(enterpriseCert))) {
+        // Best-effort again.
+        continue;
+      }
+      numImported++;
     }
-    // Don't import the Microsoft Family Safety root (this prevents the
-    // Enterprise Roots feature from interacting poorly with the Family
-    // Safety support).
-    UniquePORTString subjectName(CERT_GetCommonName(&nssCertificate->subject));
-    if (kMicrosoftFamilySafetyCN.Equals(subjectName.get())) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping Family Safety Root"));
-      continue;
-    }
-    if (CERT_AddCertToListTail(roots.get(), nssCertificate.get()) !=
-        SECSuccess) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("couldn't add cert to list"));
-      continue;
-    }
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Imported '%s'", subjectName.get()));
-    numImported++;
-    // now owned by roots
-    Unused << nssCertificate.release();
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("imported %u certs from %S", numImported, name));
   }
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("imported %u roots", numImported));
 }
 
-static void GatherEnterpriseRootsWindows(UniqueCERTCertList& roots) {
-  GatherEnterpriseRootsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE, roots);
-  GatherEnterpriseRootsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY,
-                                   roots);
-  GatherEnterpriseRootsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
-                                   roots);
+static void GatherEnterpriseCertsWindows(Vector<EnterpriseCert>& certs) {
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE, certs);
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY,
+                                   certs);
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                                   certs);
 }
 #endif  // XP_WIN
 
 #ifdef XP_MACOSX
-OSStatus GatherEnterpriseRootsOSX(UniqueCERTCertList& roots) {
-  MOZ_ASSERT(roots, "roots unexpectedly NULL?");
-  if (!roots) {
-    return errSecBadReq;
-  }
+OSStatus GatherEnterpriseCertsMacOS(Vector<EnterpriseCert>& certs) {
   // The following builds a search dictionary corresponding to:
   // { class: "certificate",
   //   match limit: "match all",
@@ -224,55 +236,84 @@ OSStatus GatherEnterpriseRootsOSX(UniqueCERTCertList& roots) {
   uint32_t numImported = 0;
   for (CFIndex i = 0; i < count; i++) {
     const CFTypeRef c = CFArrayGetValueAtIndex(arr.get(), i);
+    SecTrustRef trust;
+    rv = SecTrustCreateWithCertificates(c, sslPolicy.get(), &trust);
+    if (rv != errSecSuccess) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("SecTrustCreateWithCertificates failed"));
+      continue;
+    }
+    ScopedCFType<SecTrustRef> trustHandle(trust);
+    bool isTrusted = false;
+    bool fallBackToDeprecatedAPI = true;
+#  if defined MAC_OS_X_VERSION_10_14
+    if (nsCocoaFeatures::OnMojaveOrLater()) {
+      // This is an awkward way to express what we want, but the compiler
+      // complains if we try to put __builtin_available in a compound logical
+      // statement.
+      if (__builtin_available(macOS 10.14, *)) {
+        isTrusted = SecTrustEvaluateWithError(trustHandle.get(), nullptr);
+        fallBackToDeprecatedAPI = false;
+      }
+    }
+#  endif  // MAC_OS_X_VERSION_10_14
+    if (fallBackToDeprecatedAPI) {
+      SecTrustResultType result;
+      rv = SecTrustEvaluate(trustHandle.get(), &result);
+      if (rv != errSecSuccess) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("SecTrustEvaluate failed"));
+        continue;
+      }
+      // 'kSecTrustResultProceed' means the trust evaluation succeeded and that
+      // this is a trusted certificate.
+      // 'kSecTrustResultUnspecified' means the trust evaluation succeeded and
+      // that this certificate inherits its trust.
+      isTrusted = result == kSecTrustResultProceed ||
+                  result == kSecTrustResultUnspecified;
+    }
+    if (!isTrusted) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping cert not trusted"));
+      continue;
+    }
+    CFIndex count = SecTrustGetCertificateCount(trustHandle.get());
+    bool isRoot = count == 1;
+
     // Because we asked for certificates, each CFTypeRef in the array is really
     // a SecCertificateRef.
     const SecCertificateRef s = (const SecCertificateRef)c;
     ScopedCFType<CFDataRef> der(SecCertificateCopyData(s));
-    const unsigned char* ptr = CFDataGetBytePtr(der.get());
-    unsigned int len = CFDataGetLength(der.get());
-    SECItem derItem = {
-        siBuffer,
-        const_cast<unsigned char*>(ptr),
-        len,
-    };
-    UniqueCERTCertificate cert(
-        CERT_NewTempCertificate(CERT_GetDefaultCertDB(), &derItem,
-                                nullptr,  // nickname unnecessary
-                                false,    // not permanent
-                                true));   // copy DER
-    if (!cert) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("couldn't decode 3rd party root certificate"));
+    EnterpriseCert enterpriseCert;
+    if (NS_FAILED(enterpriseCert.Init(CFDataGetBytePtr(der.get()),
+                                      CFDataGetLength(der.get()), isRoot))) {
+      // Best-effort. We probably ran out of memory.
       continue;
     }
-    UniquePORTString subjectName(CERT_GetCommonName(&cert->subject));
-    if (CERT_AddCertToListTail(roots.get(), cert.get()) != SECSuccess) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("couldn't add cert to list"));
+    if (!certs.append(std::move(enterpriseCert))) {
+      // Best-effort again.
       continue;
     }
     numImported++;
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Imported '%s'", subjectName.get()));
-    mozilla::Unused << cert.release();  // owned by roots
   }
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("imported %u roots", numImported));
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("imported %u certs", numImported));
   return errSecSuccess;
 }
 #endif  // XP_MACOSX
 
-nsresult GatherEnterpriseRoots(UniqueCERTCertList& result) {
-  UniqueCERTCertList roots(CERT_NewCertList());
-  if (!roots) {
-    return NS_ERROR_OUT_OF_MEMORY;
+nsresult GatherEnterpriseCerts(Vector<EnterpriseCert>& certs) {
+  MOZ_ASSERT(!NS_IsMainThread());
+  if (NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
   }
+
+  certs.clear();
 #ifdef XP_WIN
-  GatherEnterpriseRootsWindows(roots);
+  GatherEnterpriseCertsWindows(certs);
 #endif  // XP_WIN
 #ifdef XP_MACOSX
-  OSStatus rv = GatherEnterpriseRootsOSX(roots);
+  OSStatus rv = GatherEnterpriseCertsMacOS(certs);
   if (rv != errSecSuccess) {
     return NS_ERROR_FAILURE;
   }
 #endif  // XP_MACOSX
-  result = std::move(roots);
   return NS_OK;
 }

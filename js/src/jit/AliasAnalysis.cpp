@@ -104,8 +104,8 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     return nullptr;
   }
 
-  // Note: only return the object if that objects owns that property.
-  // I.e. the poperty isn't on the prototype chain.
+  // Note: only return the object if that object owns that property.
+  // I.e. the property isn't on the prototype chain.
   const MDefinition* object = nullptr;
   switch (ins->op()) {
     case MDefinition::Opcode::InitializedLength:
@@ -128,6 +128,7 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::MaybeCopyElementsForWrite:
     case MDefinition::Opcode::MaybeToDoubleElement:
     case MDefinition::Opcode::TypedArrayLength:
+    case MDefinition::Opcode::TypedArrayByteOffset:
     case MDefinition::Opcode::SetTypedObjectOffset:
     case MDefinition::Opcode::SetDisjointTypedElements:
     case MDefinition::Opcode::ArrayPopShift:
@@ -180,6 +181,8 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::WasmLoadGlobalCell:
     case MDefinition::Opcode::WasmStoreGlobalVar:
     case MDefinition::Opcode::WasmStoreGlobalCell:
+    case MDefinition::Opcode::WasmLoadRef:
+    case MDefinition::Opcode::WasmStoreRef:
     case MDefinition::Opcode::ArrayJoin:
     case MDefinition::Opcode::ArraySlice:
       return nullptr;

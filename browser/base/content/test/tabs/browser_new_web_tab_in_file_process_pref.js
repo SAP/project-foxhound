@@ -24,11 +24,13 @@ add_task(async function() {
   await SpecialPowers.pushPrefEnv(
     {set: [["browser.tabs.remote.separateFileUriProcess", true],
            ["browser.tabs.remote.allowLinkedWebInFileUriProcess", true],
+           ["browser.tabs.remote.useHTTPResponseProcessSelection", false],
            ["dom.ipc.processCount.file", 2]]});
 
   // Open file:// page.
   let dir = getChromeDir(getResolvedURI(gTestPath));
   dir.append(TEST_FILE);
+  dir.normalize();
   const uriString = Services.io.newFileURI(dir).spec;
   await BrowserTestUtils.withNewTab(uriString, async function(fileBrowser) {
     // Get the file:// URI pid for comparison later.

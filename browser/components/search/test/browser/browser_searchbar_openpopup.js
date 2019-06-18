@@ -1,11 +1,6 @@
 // Tests that the suggestion popup appears at the right times in response to
 // focus and user events (mouse, keyboard, drop).
 
-// Instead of loading EventUtils.js into the test scope in browser-test.js for all tests,
-// we only need EventUtils.js for a few files which is why we are using loadSubScript.
-var EventUtils = {};
-Services.scriptloader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
-
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
 const kValues = ["long text", "long text 2", "long text 3"];
 
@@ -312,6 +307,8 @@ add_task(async function tab_opens_popup() {
   textbox.value = "foo";
 
   let promise = promiseEvent(searchPopup, "popupshown");
+  // Extra tab stop for url buttons.
+  EventUtils.synthesizeKey("KEY_Tab");
   EventUtils.synthesizeKey("KEY_Tab");
   await promise;
   isnot(searchPopup.getAttribute("showonlysettings"), "true", "Should show the full popup");
@@ -332,6 +329,8 @@ add_no_popup_task(function tab_doesnt_open_popup() {
   gURLBar.focus();
   textbox.value = "foo";
 
+  // Extra tab stop for url buttons.
+  EventUtils.synthesizeKey("KEY_Tab");
   EventUtils.synthesizeKey("KEY_Tab");
 
   is(Services.focus.focusedElement, textbox.inputField, "Should have focused the search bar");
@@ -384,6 +383,8 @@ add_task(async function refocus_window_doesnt_open_popup_keyboard() {
   textbox.value = "foo";
 
   let promise = promiseEvent(searchPopup, "popupshown");
+  // Extra tab stop for url buttons.
+  EventUtils.synthesizeKey("KEY_Tab");
   EventUtils.synthesizeKey("KEY_Tab");
   await promise;
   isnot(searchPopup.getAttribute("showonlysettings"), "true", "Should show the full popup");
@@ -446,7 +447,7 @@ add_task(async function dont_consume_clicks() {
   is(textbox.selectionEnd, 3, "Should have selected all of the text");
 
   promise = promiseEvent(searchPopup, "popuphidden");
-  await synthesizeNativeMouseClick(gURLBar);
+  await synthesizeNativeMouseClick(gURLBar.inputField);
   await promise;
 
   is(Services.focus.focusedElement, gURLBar.inputField, "Should have focused the URL bar");
@@ -548,6 +549,8 @@ add_task(async function dont_open_in_customization() {
   textbox.value = "foo";
 
   let promise = promiseEvent(searchPopup, "popupshown");
+  // Extra tab stop for url buttons.
+  EventUtils.synthesizeKey("KEY_Tab");
   EventUtils.synthesizeKey("KEY_Tab");
   await promise;
   isnot(searchPopup.getAttribute("showonlysettings"), "true", "Should show the full popup");

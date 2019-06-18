@@ -5,17 +5,23 @@
 "use strict";
 /* global frame */
 
-const {WebElementEventTarget} = ChromeUtils.import("chrome://marionette/content/dom.js", {});
-ChromeUtils.import("chrome://marionette/content/element.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+const {WebElementEventTarget} = ChromeUtils.import("chrome://marionette/content/dom.js");
+const {element} = ChromeUtils.import("chrome://marionette/content/element.js");
 const {
   NoSuchWindowError,
   UnsupportedOperationError,
-} = ChromeUtils.import("chrome://marionette/content/error.js", {});
+} = ChromeUtils.import("chrome://marionette/content/error.js");
+const {Log} = ChromeUtils.import("chrome://marionette/content/log.js");
 const {
   MessageManagerDestroyedPromise,
   waitForEvent,
   waitForObserverTopic,
-} = ChromeUtils.import("chrome://marionette/content/sync.js", {});
+} = ChromeUtils.import("chrome://marionette/content/sync.js");
+
+XPCOMUtils.defineLazyGetter(this, "logger", Log.get);
 
 this.EXPORTED_SYMBOLS = ["browser", "Context", "WindowState"];
 
@@ -116,7 +122,6 @@ browser.getTabBrowser = function(window) {
  * the current environment (Firefox, Fennec).
  */
 browser.Context = class {
-
   /**
    * @param {ChromeWindow} win
    *     ChromeWindow that contains the top-level browsing context.
@@ -268,7 +273,7 @@ browser.Context = class {
    * Retrieves the current tabmodal UI object.  According to the browser
    * associated with the currently selected tab.
    */
-  getTabModalUI() {
+  getTabModal() {
     let br = this.contentBrowser;
     if (!br.hasAttribute("tabmodalPromptShowing")) {
       return null;
@@ -279,7 +284,7 @@ browser.Context = class {
     let modalElements = br.parentNode.getElementsByTagNameNS(
         XUL_NS, "tabmodalprompt");
 
-    return br.tabModalPromptBox.prompts.get(modalElements[0]).ui;
+    return br.tabModalPromptBox.prompts.get(modalElements[0]);
   }
 
   /**
@@ -324,9 +329,9 @@ browser.Context = class {
 
         await Promise.all([activated, focused, startup]);
 
-        if (!focus) {
-          // The new window shouldn't get focused. As such set the
-          // focus back to the currently selected window.
+        // The new window shouldn't get focused. As such set the
+        // focus back to the opening window if needed.
+        if (!focus && Services.focus.activeWindow != this.window) {
           activated = waitForEvent(this.window, "activate");
           focused = waitForEvent(this.window, "focus", {capture: true});
 
@@ -394,7 +399,8 @@ browser.Context = class {
 
     switch (this.driver.appName) {
       case "fennec":
-        tab = this.tabBrowser.addTab(null, {selected: focus});
+        tab = this.tabBrowser.addTab(null);
+        this.tabBrowser.selectTab(focus ? tab : this.tab);
         break;
 
       case "firefox":
@@ -450,18 +456,13 @@ browser.Context = class {
       this.tab = this.tabBrowser.tabs[index];
 
       if (focus) {
-        switch (this.driver.appName) {
-          case "fennec":
-            this.tabBrowser.selectTab(this.tab);
-            break;
-
-          case "firefox":
-            this.tabBrowser.selectedTab = this.tab;
-            break;
-
-          default:
-            throw new UnsupportedOperationError(
-              `switchToTab() not supported in ${this.driver.appName}`);
+        if ("selectTab" in this.tabBrowser) {
+          this.tabBrowser.selectTab(this.tab);
+        } else if ("selectedTab" in this.tabBrowser) {
+          this.tabBrowser.selectedTab = this.tab;
+        } else {
+          throw new UnsupportedOperationError(
+            `switchToTab() not supported in ${this.driver.appName}`);
         }
       }
     }
@@ -530,7 +531,6 @@ browser.Context = class {
       cb();
     }
   }
-
 };
 
 /**
@@ -548,7 +548,6 @@ browser.Context = class {
  *
  */
 browser.Windows = class extends Map {
-
   /**
    * Save a weak reference to the Window object.
    *
@@ -585,7 +584,6 @@ browser.Windows = class extends Map {
     }
     return wref.get();
   }
-
 };
 
 /**

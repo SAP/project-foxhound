@@ -34,6 +34,17 @@ ${helpers.single_keyword(
     spec="Internal (not web-exposed)",
 )}
 
+// An internal-only property for elements in a top layer
+// https://fullscreen.spec.whatwg.org/#top-layer
+${helpers.single_keyword(
+    "-servo-top-layer",
+    "none top",
+    products="servo",
+    animation_value_type="none",
+    enabled_in="ua",
+    spec="Internal (not web-exposed)",
+)}
+
 ${helpers.single_keyword(
     "position",
     "static absolute relative fixed sticky",
@@ -406,6 +417,16 @@ ${helpers.single_keyword(
     animation_value_type="discrete",
 )}
 
+${helpers.predefined_type(
+    "scroll-snap-align",
+    "ScrollSnapAlign",
+    "computed::ScrollSnapAlign::none()",
+    products="gecko",
+    gecko_pref="layout.css.scroll-snap-v1.enabled",
+    spec="https://drafts.csswg.org/css-scroll-snap-1/#scroll-snap-align",
+    animation_value_type="discrete",
+)}
+
 % for axis in ["x", "y"]:
     ${helpers.predefined_type(
         "scroll-snap-type-" + axis,
@@ -591,6 +612,8 @@ ${helpers.predefined_type(
     products="gecko",
     animation_value_type="none",
     gecko_ffi_name="mBinding",
+    gecko_pref="layout.css.moz-binding.content.enabled",
+    enabled_in="chrome",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-binding)",
 )}
 

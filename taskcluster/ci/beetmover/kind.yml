@@ -27,10 +27,15 @@ not-for-build-platforms:
     - macosx64-devedition-nightly/opt
     - win32-devedition-nightly/opt
     - win64-devedition-nightly/opt
+    - win64-aarch64-devedition-nightly/opt
     - linux64-asan-reporter-nightly/opt
     - win64-asan-reporter-nightly/opt
 
 job-template:
     shipping-phase: promote
     attributes:
-        artifact_map: taskcluster/taskgraph/manifests/fennec_nightly.yml
+        artifact_map:
+            by-project:
+                mozilla-release: taskcluster/taskgraph/manifests/fennec_candidates.yml
+                mozilla-beta: taskcluster/taskgraph/manifests/fennec_candidates.yml
+                default: taskcluster/taskgraph/manifests/fennec_nightly.yml

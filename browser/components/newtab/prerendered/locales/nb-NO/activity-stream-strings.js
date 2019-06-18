@@ -40,9 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "OK, jeg forstår det",
   "prefs_home_header": "Innhold Firefox-startside",
   "prefs_home_description": "Velg hvilket innhold som du vil ha på din Firefox-startside.",
-  "prefs_content_discovery_header": "Firefox Home",
-  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
-  "prefs_content_discovery_button": "Turn Off Content Discovery",
+  "prefs_content_discovery_header": "Firefox startside",
+  "prefs_content_discovery_description": "Innholdsoppdagelse på Firefox startside lar deg oppdage relevante artikler av høy kvalitet fra nettet.",
+  "prefs_content_discovery_button": "Slå av innholdsoppdagelse",
   "prefs_section_rows_option": "{num} rekke;{num} rekker",
   "prefs_search_header": "Nettsøk",
   "prefs_topsites_description": "Mest besøkte nettsteder",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Lagre artiklene du synes er interessante i Pocket, og stimuler dine tanker med fasinerende lesermateriell.",
   "highlights_empty_state": "Begynn å surfe, og vi viser noen av de beste artiklene, videoer og andre sider du nylig har besøkt eller bokmerket her.",
   "topstories_empty_state": "Du har tatt igjen. Kom tilbake senere for flere topphistorier fra {provider}. Kan du ikke vente? Velg et populært emne for å finne flere gode artikler fra hele Internett.",
-  "manual_migration_explanation2": "Prøv Firefox med bokmerkene, historikk og passord fra en annen nettleser.",
-  "manual_migration_cancel_button": "Nei takk",
-  "manual_migration_import_button": "Importer nå",
   "error_fallback_default_info": "Ups, noe gikk galt når innholdet skulle lastes inn.",
   "error_fallback_default_refresh_suggestion": "Oppdater siden for å prøve igjen.",
   "section_menu_action_remove_section": "Fjern seksjon",
@@ -111,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Fortsett",
   "firstrun_skip_login": "Hopp over dette trinnet",
   "context_menu_title": "Åpne meny",
-  "pocket_learn_more": "Les mer"
+  "manual_migration_explanation2": "Prøv Firefox med bokmerkene, historikk og passord fra en annen nettleser.",
+  "manual_migration_cancel_button": "Nei takk",
+  "manual_migration_import_button": "Importer nå"
 };

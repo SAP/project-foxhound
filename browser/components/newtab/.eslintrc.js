@@ -15,7 +15,8 @@ module.exports = {
     "import", // require("eslint-plugin-import")
     "json", // require("eslint-plugin-json")
     "promise", // require("eslint-plugin-promise")
-    "react" // require("eslint-plugin-react")
+    "react", // require("eslint-plugin-react")
+    "react-hooks" // require("react-hooks")
   ],
   "settings": {
     "react": {
@@ -44,6 +45,8 @@ module.exports = {
     }
   }],
   "rules": {
+    "react-hooks/rules-of-hooks": 2,
+
     "promise/catch-or-return": 2,
     "promise/param-names": 2,
 
@@ -203,7 +206,6 @@ module.exports = {
     "one-var-declaration-per-line": [2, "initializations"],
     "operator-assignment": [2, "always"],
     "operator-linebreak": [2, "after"],
-    "padded-blocks": [2, "never"],
     "padding-line-between-statements": 0,
     "prefer-arrow-callback": ["error", {"allowNamedFunctions": true}],
     "prefer-const": 0, // TODO: Change to `1`?

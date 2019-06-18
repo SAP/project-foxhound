@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var CC = Components.Constructor;
 const ServerSocket = CC("@mozilla.org/network/server-socket;1",
                         "nsIServerSocket",
@@ -151,7 +149,7 @@ function test_speculative_connect() {
     var principal = ssm.createCodebasePrincipal(URI, {});
 
     ios.QueryInterface(Ci.nsISpeculativeConnect)
-       .speculativeConnect2(URI, principal, null);
+       .speculativeConnect(URI, principal, null);
 }
 
 /* Speculative connections should not be allowed for hosts with local IP

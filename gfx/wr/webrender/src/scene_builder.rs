@@ -4,19 +4,19 @@
 
 use api::{AsyncBlobImageRasterizer, BlobImageRequest, BlobImageParams, BlobImageResult};
 use api::{DocumentId, PipelineId, ApiMsg, FrameMsg, ResourceUpdate, ExternalEvent, Epoch};
-use api::{BuiltDisplayList, ColorF, LayoutSize, NotificationRequest, Checkpoint, IdNamespace};
-use api::{MemoryReport};
+use api::{BuiltDisplayList, ColorF, NotificationRequest, Checkpoint, IdNamespace};
+use api::{ClipIntern, FilterDataIntern, MemoryReport, PrimitiveKeyKind};
 use api::channel::MsgSender;
+use api::units::LayoutSize;
 #[cfg(feature = "capture")]
 use capture::CaptureConfig;
 use frame_builder::{FrameBuilderConfig, FrameBuilder};
 use clip_scroll_tree::ClipScrollTree;
 use display_list_flattener::DisplayListFlattener;
-use intern::{Internable, Interner};
-use intern_types;
+use hit_test::HitTestingSceneStats;
+use intern::{Internable, Interner, UpdateList};
 use internal_types::{FastHashMap, FastHashSet};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use prim_store::{PrimitiveKeyKind};
 use prim_store::PrimitiveStoreStats;
 use prim_store::borders::{ImageBorder, NormalBorderPrim};
 use prim_store::gradient::{LinearGradient, RadialGradient};
@@ -34,6 +34,7 @@ use time::precise_time_ns;
 use util::drain_filter;
 use std::thread;
 use std::time::Duration;
+
 
 /// Represents the work associated to a transaction before scene building.
 pub struct Transaction {
@@ -170,7 +171,7 @@ pub enum SceneSwapResult {
 }
 
 macro_rules! declare_interners {
-    ( $( $name: ident, )+ ) => {
+    ( $( $name:ident : $ty:ident, )+ ) => {
         /// This struct contains all items that can be shared between
         /// display lists. We want to intern and share the same clips,
         /// primitives and other things between display lists so that:
@@ -182,13 +183,21 @@ macro_rules! declare_interners {
         #[derive(Default)]
         pub struct Interners {
             $(
-                pub $name: intern_types::$name::Interner,
+                pub $name: Interner<$ty>,
             )+
         }
 
+        $(
+            impl AsMut<Interner<$ty>> for Interners {
+                fn as_mut(&mut self) -> &mut Interner<$ty> {
+                    &mut self.$name
+                }
+            }
+        )+
+
         pub struct InternerUpdates {
             $(
-                pub $name: intern_types::$name::UpdateList,
+                pub $name: UpdateList<<$ty as Internable>::Key>,
             )+
         }
 
@@ -217,37 +226,22 @@ macro_rules! declare_interners {
 
 enumerate_interners!(declare_interners);
 
-// Access to `Interners` interners by `Internable`
-pub trait InternerMut<I: Internable>
-{
-    fn interner_mut(&mut self) -> &mut Interner<I::Source, I::InternData, I::Marker>;
+/// Stores the allocation sizes of various arrays in the frame
+/// builder. This is retrieved from the current frame builder
+/// and used to reserve an approximately correct capacity of
+/// the arrays for the next scene that is getting built.
+pub struct DocumentStats {
+    pub prim_store_stats: PrimitiveStoreStats,
+    pub hit_test_stats: HitTestingSceneStats,
 }
 
-macro_rules! impl_interner_mut {
-    ($($ty:ident: $mem:ident,)*) => {
-        $(impl InternerMut<$ty> for Interners {
-            fn interner_mut(&mut self) -> &mut Interner<
-                <$ty as Internable>::Source,
-                <$ty as Internable>::InternData,
-                <$ty as Internable>::Marker
-            > {
-                &mut self.$mem
-            }
-        })*
+impl DocumentStats {
+    pub fn empty() -> DocumentStats {
+        DocumentStats {
+            prim_store_stats: PrimitiveStoreStats::empty(),
+            hit_test_stats: HitTestingSceneStats::empty(),
+        }
     }
-}
-
-impl_interner_mut! {
-    Image: image,
-    ImageBorder: image_border,
-    LineDecoration: line_decoration,
-    LinearGradient: linear_grad,
-    NormalBorderPrim: normal_border,
-    Picture: picture,
-    PrimitiveKeyKind: prim,
-    RadialGradient: radial_grad,
-    TextRun: text_run,
-    YuvImage: yuv_image,
 }
 
 // A document in the scene builder contains the current scene,
@@ -257,7 +251,7 @@ impl_interner_mut! {
 struct Document {
     scene: Scene,
     interners: Interners,
-    prim_store_stats: PrimitiveStoreStats,
+    doc_stats: DocumentStats,
 }
 
 impl Document {
@@ -265,7 +259,7 @@ impl Document {
         Document {
             scene,
             interners: Interners::default(),
-            prim_store_stats: PrimitiveStoreStats::empty(),
+            doc_stats: DocumentStats::empty(),
         }
     }
 }
@@ -412,7 +406,7 @@ impl SceneBuilder {
                     &self.config,
                     &mut new_scene,
                     &mut item.interners,
-                    &PrimitiveStoreStats::empty(),
+                    &DocumentStats::empty(),
                 );
 
                 interner_updates = Some(
@@ -431,7 +425,7 @@ impl SceneBuilder {
                 Document {
                     scene: item.scene,
                     interners: item.interners,
-                    prim_store_stats: PrimitiveStoreStats::empty(),
+                    doc_stats: DocumentStats::empty(),
                 },
             );
 
@@ -507,11 +501,11 @@ impl SceneBuilder {
                     &self.config,
                     &mut new_scene,
                     &mut doc.interners,
-                    &doc.prim_store_stats,
+                    &doc.doc_stats,
                 );
 
                 // Update the allocation stats for next scene
-                doc.prim_store_stats = frame_builder.prim_store.get_stats();
+                doc.doc_stats = frame_builder.get_stats();
 
                 // Retrieve the list of updates from the clip interner.
                 interner_updates = Some(
@@ -580,6 +574,7 @@ impl SceneBuilder {
 
         let scene_swap_start_time = precise_time_ns();
         let has_resources_updates = !txn.resource_updates.is_empty();
+        let invalidate_rendered_frame = txn.invalidate_rendered_frame;
 
         self.tx.send(SceneBuilderResult::Transaction(txn, result_tx)).unwrap();
 
@@ -597,7 +592,7 @@ impl SceneBuilder {
                 },
                 _ => (),
             };
-        } else if has_resources_updates {
+        } else if has_resources_updates || invalidate_rendered_frame {
             if let &Some(ref hooks) = &self.hooks {
                 hooks.post_resource_update();
             }

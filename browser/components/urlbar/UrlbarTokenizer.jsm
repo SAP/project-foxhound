@@ -12,13 +12,13 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarTokenizer"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "Log",
                                "resource://gre/modules/Log.jsm");
 XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.repository.getLogger("Places.Urlbar.Tokenizer"));
+  Log.repository.getLogger("Urlbar.Tokenizer"));
 
 var UrlbarTokenizer = {
   // Regex matching on whitespaces.
@@ -27,13 +27,16 @@ var UrlbarTokenizer = {
   // Regex used to guess url-like strings.
   // These are not expected to be 100% correct, we accept some user mistypes
   // and we're unlikely to be able to cover 100% of the cases.
-  REGEXP_LIKE_PROTOCOL: /^[A-Z+.-]+:\/{0,2}(?!\/)/i,
+  REGEXP_LIKE_PROTOCOL: /^[A-Z+.-]+:\/*(?!\/)/i,
   REGEXP_USERINFO_INVALID_CHARS: /[^\w.~%!$&'()*+,;=:-]/,
   REGEXP_HOSTPORT_INVALID_CHARS: /[^\[\]A-Z0-9.:-]/i,
   REGEXP_HOSTPORT_IP_LIKE: /^[a-f0-9\.\[\]:]+$/i,
-  REGEXP_HOSTPORT_INVALID_IP: /\.{2,}|\d{5,}|\d{4,}(?![:\]])|^\.|\.$|^(\d+\.){4,}\d+$|^\d+$/,
+  // This accepts partial IPv4.
+  REGEXP_HOSTPORT_INVALID_IP: /\.{2,}|\d{5,}|\d{4,}(?![:\]])|^\.|^(\d+\.){4,}\d+$|^\d{4,}$/,
+  // This only accepts complete IPv4.
   REGEXP_HOSTPORT_IPV4: /^(\d{1,3}\.){3,}\d{1,3}(:\d+)?$/,
-  REGEXP_HOSTPORT_IPV6: /^[0-9A-F:\[\]]{1,4}$/i,
+  // This accepts partial IPv6.
+  REGEXP_HOSTPORT_IPV6: /^\[([0-9a-f]{0,4}:){0,7}[0-9a-f]{0,4}\]?$/i,
   REGEXP_COMMON_EMAIL: /^[\w!#$%&'*+\/=?^`{|}~-]+@[\[\]A-Z0-9.-]+$/i,
 
   TYPE: {
@@ -173,7 +176,7 @@ var UrlbarTokenizer = {
   tokenize(queryContext) {
     logger.info("Tokenizing", queryContext);
     let searchString = queryContext.searchString;
-    if (searchString.length == 0) {
+    if (!searchString.trim()) {
       queryContext.tokens = [];
       return queryContext;
     }

@@ -21,9 +21,6 @@ AndroidSystemColors nsLookAndFeel::mSystemColors;
 bool nsLookAndFeel::mInitializedShowPassword = false;
 bool nsLookAndFeel::mShowPassword = true;
 
-bool nsLookAndFeel::mIsInPrefersReducedMotionForTest = false;
-bool nsLookAndFeel::mPrefersReducedMotionForTest = false;
-
 static const char16_t UNICODE_BULLET = 0x2022;
 
 nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel() {}
@@ -389,8 +386,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       break;
 
     case eIntID_PrefersReducedMotion:
-      if (mIsInPrefersReducedMotionForTest) {
-        aResult = mPrefersReducedMotionForTest ? 1 : 0;
+      if (sIsInPrefersReducedMotionForTest) {
+        aResult = sPrefersReducedMotionForTest ? 1 : 0;
         break;
       }
       aResult = java::GeckoSystemStateListener::PrefersReducedMotion() ? 1 : 0;
@@ -401,6 +398,16 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       break;
     case eIntID_AllPointerCapabilities:
       aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+      break;
+
+    case eIntID_SystemUsesDarkTheme:
+      // Bail out if AndroidBridge hasn't initialized since we try to query
+      // this vailue via nsMediaFeatures::InitSystemMetrics without initializing
+      // AndroidBridge on xpcshell tests.
+      if (!jni::IsAvailable()) {
+        return NS_ERROR_FAILURE;
+      }
+      aResult = java::GeckoSystemStateListener::IsNightMode() ? 1 : 0;
       break;
 
     default:
@@ -435,13 +442,12 @@ nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
 
 /*virtual*/
 bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                gfxFontStyle& aFontStyle,
-                                float aDevPixPerCSSPixel) {
+                                gfxFontStyle& aFontStyle) {
   aFontName.AssignLiteral("\"Roboto\"");
   aFontStyle.style = FontSlantStyle::Normal();
   aFontStyle.weight = FontWeight::Normal();
   aFontStyle.stretch = FontStretch::Normal();
-  aFontStyle.size = 9.0 * 96.0f / 72.0f * aDevPixPerCSSPixel;
+  aFontStyle.size = 9.0 * 96.0f / 72.0f;
   aFontStyle.systemFont = true;
   return true;
 }

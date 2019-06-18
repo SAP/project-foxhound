@@ -196,8 +196,6 @@ class RemoteReftest(RefTest):
         if not self.device.is_app_installed(expected):
             raise Exception("%s is not installed on this device" % expected)
 
-        self.automation.deleteANRs()
-        self.automation.deleteTombstones()
         self.device.clear_logcat()
 
         self.device.rm(self.remoteCache, force=True, recursive=True)
@@ -301,7 +299,6 @@ class RemoteReftest(RefTest):
         profileDir = profile.profile
         prefs = {}
         prefs["app.update.url.android"] = ""
-        prefs["browser.firstrun.show.localepicker"] = False
         prefs["reftest.remote"] = True
         prefs["datareporting.policy.dataSubmissionPolicyBypassAcceptance"] = True
         # move necko cache to a location that can be cleaned up

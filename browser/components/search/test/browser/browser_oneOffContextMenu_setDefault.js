@@ -1,5 +1,7 @@
 "use strict";
 
+const {UrlbarTestUtils} = ChromeUtils.import("resource://testing-common/UrlbarTestUtils.jsm");
+
 const TEST_ENGINE_NAME = "Foo";
 const TEST_ENGINE_BASENAME = "testEngine.xml";
 const SEARCHBAR_BASE_ID = "searchbar-engine-one-off-item-";
@@ -10,12 +12,12 @@ const urlbar = document.getElementById("urlbar");
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
 const urlbarPopup = document.getElementById("PopupAutoCompleteRichResult");
 const searchOneOff = searchPopup.oneOffButtons;
-const urlBarOneOff = urlbarPopup.oneOffSearchButtons;
+const urlBarOneOff = UrlbarTestUtils.getOneOffSearchButtons(window);
 
-let originalEngine = Services.search.defaultEngine;
+var originalEngine;
 
-function resetEngine() {
-  Services.search.defaultEngine = originalEngine;
+async function resetEngine() {
+  await Services.search.setDefault(originalEngine);
 }
 
 registerCleanupFunction(resetEngine);
@@ -23,6 +25,7 @@ registerCleanupFunction(resetEngine);
 let searchIcon;
 
 add_task(async function init() {
+  originalEngine = await Services.search.getDefault();
   let searchbar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -44,7 +47,7 @@ add_task(async function test_searchBarChangeEngine() {
   );
 
   // Click the set default engine menu item.
-  let promise = promiseCurrentEngineChanged();
+  let promise = promisedefaultEngineChanged();
   EventUtils.synthesizeMouseAtCenter(setDefaultEngineMenuItem, {});
 
   // This also checks the engine correctly changed.
@@ -78,23 +81,26 @@ add_task(async function test_urlBarChangeEngine() {
   );
 
   // Click the set default engine menu item.
-  let promise = promiseCurrentEngineChanged();
+  let promise = promisedefaultEngineChanged();
   EventUtils.synthesizeMouseAtCenter(setDefaultEngineMenuItem, {});
 
   // This also checks the engine correctly changed.
   await promise;
 
-  let currentEngine = Services.search.defaultEngine;
+  let defaultEngine = await Services.search.getDefault();
 
   // For the urlbar, we should keep the new engine's icon.
-  Assert.equal(oneOffButton.id, URLBAR_BASE_ID + currentEngine.name,
+  Assert.equal(oneOffButton.id, URLBAR_BASE_ID + defaultEngine.name,
                "Should now have the original engine's id for the button");
-  Assert.equal(oneOffButton.getAttribute("tooltiptext"), currentEngine.name,
+  Assert.equal(oneOffButton.getAttribute("tooltiptext"), defaultEngine.name,
                "Should now have the original engine's name for the tooltip");
-  Assert.equal(oneOffButton.image, currentEngine.iconURI.spec,
+  Assert.equal(oneOffButton.image, defaultEngine.iconURI.spec,
                "Should now have the original engine's uri for the image");
 
-  await promiseClosePopup(urlbarPopup);
+  await UrlbarTestUtils.promisePopupClose(window);
+
+  // Move the cursor out of the panel area to avoid messing with other tests.
+  await EventUtils.synthesizeNativeMouseMove(urlbarPopup);
 });
 
 /**
@@ -103,11 +109,11 @@ add_task(async function test_urlBarChangeEngine() {
  *
  * @returns {Promise} Resolved once the test engine is set as the current engine.
  */
-function promiseCurrentEngineChanged() {
+function promisedefaultEngineChanged() {
   return new Promise(resolve => {
     function observer(aSub, aTopic, aData) {
       if (aData == "engine-current") {
-        Assert.equal(Services.search.defaultEngine.name, TEST_ENGINE_NAME, "currentEngine set");
+        Assert.equal(Services.search.defaultEngine.name, TEST_ENGINE_NAME, "defaultEngine set");
         Services.obs.removeObserver(observer, "browser-search-engine-modified");
         resolve();
       }
@@ -131,20 +137,18 @@ function promiseCurrentEngineChanged() {
  *                          test engine.
  */
 async function openPopupAndGetEngineButton(isSearch, popup, oneOffInstance, baseId) {
-  // Open the popup.
-  let promise = promiseEvent(popup, "popupshown");
   info("Opening panel");
 
   // We have to open the popups in differnt ways.
   if (isSearch) {
+    // Open the popup.
+    let promise = promiseEvent(popup, "popupshown");
     // Use the search icon to avoid hitting the network.
     EventUtils.synthesizeMouseAtCenter(searchIcon, {});
+    await promise;
   } else {
-    // There's no history at this stage, so we need to press a key.
-    urlbar.focus();
-    EventUtils.sendString("a");
+    await UrlbarTestUtils.promiseAutocompleteResultPopup(window, "a", waitForFocus);
   }
-  await promise;
 
   const contextMenu = oneOffInstance.contextMenuPopup;
   const oneOffButtons = oneOffInstance.buttons;
@@ -165,7 +169,7 @@ async function openPopupAndGetEngineButton(isSearch, popup, oneOffInstance, base
                "Should have the correct id");
 
   // Open the context menu on the one-off.
-  promise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+  let promise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
   EventUtils.synthesizeMouseAtCenter(oneOffButton, {
     type: "contextmenu",
     button: 2,

@@ -7,15 +7,17 @@
 
 var EXPORTED_SYMBOLS = [ "ContentClick" ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "PlacesUIUtils",
                                "resource:///modules/PlacesUIUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
                                "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "E10SUtils",
+                               "resource://gre/modules/E10SUtils.jsm");
 
 var ContentClick = {
-  // Listeners are added in nsBrowserGlue.js
+  // Listeners are added in BrowserGlue.jsm
   receiveMessage(message) {
     switch (message.name) {
       case "Content:Click":
@@ -69,13 +71,12 @@ var ContentClick = {
 
     let params = {
       charset: browser.characterSet,
-      referrerURI: browser.documentURI,
-      referrerPolicy: json.referrerPolicy,
-      noReferrer: json.noReferrer,
+      referrerInfo: E10SUtils.deserializeReferrerInfo(json.referrerInfo),
       allowMixedContent: json.allowMixedContent,
       isContentWindowPrivate: json.isContentWindowPrivate,
       originPrincipal: json.originPrincipal,
       triggeringPrincipal: json.triggeringPrincipal,
+      csp: json.csp ? E10SUtils.deserializeCSP(json.csp) : null,
       frameOuterWindowID: json.frameOuterWindowID,
     };
 

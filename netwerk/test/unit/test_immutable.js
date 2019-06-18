@@ -1,5 +1,4 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var prefs;
 var spdypref;
@@ -27,11 +26,11 @@ function run_test() {
   // Disable rcwn to make cache behavior deterministic.
   prefs.setBoolPref("network.http.rcwn.enabled", false);
 
-  // The moz-http2 cert is for foo.example.com and is signed by CA.cert.der
+  // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
   // so add that cert to the trust list as a signing cert.  // the foo.example.com domain name.
   let certdb = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
-  addCertFromFile(certdb, "CA.cert.der", "CTu,u,u");
+  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
   origin = "https://foo.example.com:" + h2Port;
   dump ("origin - " + origin + "\n");
@@ -43,21 +42,6 @@ function resetPrefs() {
   prefs.setBoolPref("network.http.spdy.enabled.http2", http2pref);
   prefs.setBoolPref("network.http.rcwn.enabled", rcwnpref);
   prefs.clearUserPref("network.dns.localDomains");
-}
-
-function readFile(file) {
-  let fstream = Cc["@mozilla.org/network/file-input-stream;1"]
-                  .createInstance(Ci.nsIFileInputStream);
-  fstream.init(file, -1, 0, 0);
-  let data = NetUtil.readInputStreamToString(fstream, fstream.available());
-  fstream.close();
-  return data;
-}
-
-function addCertFromFile(certdb, filename, trustString) {
-  let certFile = do_get_file(filename, false);
-  let der = readFile(certFile);
-  certdb.addCert(der, trustString);
 }
 
 function makeChan(origin, path) {
@@ -73,7 +57,7 @@ var expectConditional = false;
 
 var Listener = function() {};
 Listener.prototype = {
-  onStartRequest: function testOnStartRequest(request, ctx) {
+  onStartRequest: function testOnStartRequest(request) {
     Assert.ok(request instanceof Ci.nsIHttpChannel);
 
     if (expectPass) {
@@ -86,11 +70,11 @@ Listener.prototype = {
     }
   },
 
-  onDataAvailable: function testOnDataAvailable(request, ctx, stream, off, cnt) {
+  onDataAvailable: function testOnDataAvailable(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
 
-  onStopRequest: function testOnStopRequest(request, ctx, status) {
+  onStopRequest: function testOnStopRequest(request, status) {
       if (expectConditional) {
         Assert.equal(request.getResponseHeader("x-conditional"), "true");
       } else {
@@ -116,7 +100,7 @@ function doTest1()
   var chan = makeChan(origin, "/immutable-test-without-attribute");
   var listener = new Listener();
   nextTest = doTest2;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function doTest2()
@@ -128,7 +112,7 @@ function doTest2()
   var listener = new Listener();
   nextTest = doTest3;
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function doTest3()
@@ -140,7 +124,7 @@ function doTest3()
   var listener = new Listener();
   nextTest = doTest4;
   chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function doTest4()
@@ -151,7 +135,7 @@ function doTest4()
   var chan = makeChan(origin, "/immutable-test-with-attribute");
   var listener = new Listener();
   nextTest = doTest5;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function doTest5()
@@ -163,7 +147,7 @@ function doTest5()
   var listener = new Listener();
   nextTest = doTest6;
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function doTest6()
@@ -175,7 +159,7 @@ function doTest6()
   var listener = new Listener();
   nextTest = testsDone;
   chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 

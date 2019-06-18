@@ -41,13 +41,16 @@ static const uint8_t kPhasorangleWidth = 8;
 
 nsIFrame* NS_NewMathMLmencloseFrame(nsIPresShell* aPresShell,
                                     ComputedStyle* aStyle) {
-  return new (aPresShell) nsMathMLmencloseFrame(aStyle);
+  return new (aPresShell)
+      nsMathMLmencloseFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmencloseFrame)
 
-nsMathMLmencloseFrame::nsMathMLmencloseFrame(ComputedStyle* aStyle, ClassID aID)
-    : nsMathMLContainerFrame(aStyle, aID),
+nsMathMLmencloseFrame::nsMathMLmencloseFrame(ComputedStyle* aStyle,
+                                             nsPresContext* aPresContext,
+                                             ClassID aID)
+    : nsMathMLContainerFrame(aStyle, aPresContext, aID),
       mRuleThickness(0),
       mRadicalRuleThickness(0),
       mLongDivCharIndex(-1),
@@ -292,19 +295,24 @@ void nsMathMLmencloseFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 }
 
-/* virtual */ nsresult nsMathMLmencloseFrame::MeasureForWidth(
-    DrawTarget* aDrawTarget, ReflowOutput& aDesiredSize) {
+/* virtual */
+nsresult nsMathMLmencloseFrame::MeasureForWidth(DrawTarget* aDrawTarget,
+                                                ReflowOutput& aDesiredSize) {
   return PlaceInternal(aDrawTarget, false, aDesiredSize, true);
 }
 
-/* virtual */ nsresult nsMathMLmencloseFrame::Place(
-    DrawTarget* aDrawTarget, bool aPlaceOrigin, ReflowOutput& aDesiredSize) {
+/* virtual */
+nsresult nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
+                                      bool aPlaceOrigin,
+                                      ReflowOutput& aDesiredSize) {
   return PlaceInternal(aDrawTarget, aPlaceOrigin, aDesiredSize, false);
 }
 
-/* virtual */ nsresult nsMathMLmencloseFrame::PlaceInternal(
-    DrawTarget* aDrawTarget, bool aPlaceOrigin, ReflowOutput& aDesiredSize,
-    bool aWidthOnly) {
+/* virtual */
+nsresult nsMathMLmencloseFrame::PlaceInternal(DrawTarget* aDrawTarget,
+                                              bool aPlaceOrigin,
+                                              ReflowOutput& aDesiredSize,
+                                              bool aWidthOnly) {
   ///////////////
   // Measure the size of our content using the base class to format like an
   // inferred mrow.

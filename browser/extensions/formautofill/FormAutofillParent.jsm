@@ -31,10 +31,10 @@
 // constructor via a backstage pass.
 var EXPORTED_SYMBOLS = ["formAutofillParent"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-ChromeUtils.import("resource://formautofill/FormAutofill.jsm");
+const {FormAutofill} = ChromeUtils.import("resource://formautofill/FormAutofill.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
@@ -62,7 +62,7 @@ function FormAutofillParent() {
   // Lazily load the storage JSM to avoid disk I/O until absolutely needed.
   // Once storage is loaded we need to update saved field names and inform content processes.
   XPCOMUtils.defineLazyGetter(this, "formAutofillStorage", () => {
-    let {formAutofillStorage} = ChromeUtils.import("resource://formautofill/FormAutofillStorage.jsm", {});
+    let {formAutofillStorage} = ChromeUtils.import("resource://formautofill/FormAutofillStorage.jsm");
     log.debug("Loading formAutofillStorage");
 
     formAutofillStorage.initialize().then(() => {
@@ -106,7 +106,7 @@ FormAutofillParent.prototype = {
     }
     this._initialized = true;
 
-    Services.obs.addObserver(this, "sync-pane-loaded");
+    Services.obs.addObserver(this, "privacy-pane-loaded");
     Services.ppmm.addMessageListener("FormAutofill:InitStorage", this);
     Services.ppmm.addMessageListener("FormAutofill:GetRecords", this);
     Services.ppmm.addMessageListener("FormAutofill:SaveAddress", this);
@@ -125,12 +125,33 @@ FormAutofillParent.prototype = {
       Services.ppmm.addMessageListener("FormAutofill:GetDecryptedString", this);
       Services.prefs.addObserver(ENABLED_AUTOFILL_CREDITCARDS_PREF, this);
     }
+
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this.injectElements(win.document);
+    }
+    Services.wm.addListener(this);
   },
+
+  injectElements(doc) {
+    Services.scriptloader.loadSubScript("chrome://formautofill/content/customElements.js",
+                                        doc.ownerGlobal);
+  },
+
+  onOpenWindow(xulWindow) {
+    const win = xulWindow.docShell.domWindow;
+    win.addEventListener("load", () => {
+      if (win.document.documentElement.getAttribute("windowtype") == "navigator:browser") {
+        this.injectElements(win.document);
+      }
+    }, {once: true});
+  },
+
+  onCloseWindow() {},
 
   observe(subject, topic, data) {
     log.debug("observe:", topic, "with data:", data);
     switch (topic) {
-      case "sync-pane-loaded": {
+      case "privacy-pane-loaded": {
         let formAutofillPreferences = new FormAutofillPreferences();
         let document = subject.document;
         let prefFragment = formAutofillPreferences.init(document);
@@ -166,10 +187,10 @@ FormAutofillParent.prototype = {
    */
   _onStatusChanged() {
     log.debug("_onStatusChanged: Status changed to", this._active);
-    Services.ppmm.broadcastAsyncMessage("FormAutofill:enabledStatus", this._active);
-    // Sync process data autofillEnabled to make sure the value up to date
+    Services.ppmm.sharedData.set("FormAutofill:enabled", this._active);
+    // Sync autofill enabled to make sure the value is up-to-date
     // no matter when the new content process is initialized.
-    Services.ppmm.initialProcessData.autofillEnabled = this._active;
+    Services.ppmm.sharedData.flush();
   },
 
   /**
@@ -179,7 +200,7 @@ FormAutofillParent.prototype = {
    * @returns {boolean} whether form autofill is active (enabled and has data)
    */
   _computeStatus() {
-    const savedFieldNames = Services.ppmm.initialProcessData.autofillSavedFieldNames;
+    const savedFieldNames = Services.ppmm.sharedData.get("FormAutofill:savedFieldNames");
 
     return (Services.prefs.getBoolPref(ENABLED_AUTOFILL_ADDRESSES_PREF) ||
            Services.prefs.getBoolPref(ENABLED_AUTOFILL_CREDITCARDS_PREF)) &&
@@ -278,8 +299,9 @@ FormAutofillParent.prototype = {
     Services.ppmm.removeMessageListener("FormAutofill:GetRecords", this);
     Services.ppmm.removeMessageListener("FormAutofill:SaveAddress", this);
     Services.ppmm.removeMessageListener("FormAutofill:RemoveAddresses", this);
-    Services.obs.removeObserver(this, "sync-pane-loaded");
+    Services.obs.removeObserver(this, "privacy-pane-loaded");
     Services.prefs.removeObserver(ENABLED_AUTOFILL_ADDRESSES_PREF, this);
+    Services.wm.removeListener(this);
 
     if (FormAutofill.isAutofillCreditCardsAvailable) {
       Services.ppmm.removeMessageListener("FormAutofill:SaveCreditCard", this);
@@ -353,18 +375,20 @@ FormAutofillParent.prototype = {
   _updateSavedFieldNames() {
     log.debug("_updateSavedFieldNames");
 
+    let savedFieldNames;
     // Don't access the credit cards store unless it is enabled.
     if (FormAutofill.isAutofillCreditCardsAvailable) {
-      Services.ppmm.initialProcessData.autofillSavedFieldNames =
-        new Set([...this.formAutofillStorage.addresses.getSavedFieldNames(),
-          ...this.formAutofillStorage.creditCards.getSavedFieldNames()]);
+      savedFieldNames = new Set([
+        ...this.formAutofillStorage.addresses.getSavedFieldNames(),
+        ...this.formAutofillStorage.creditCards.getSavedFieldNames(),
+      ]);
     } else {
-      Services.ppmm.initialProcessData.autofillSavedFieldNames =
-        this.formAutofillStorage.addresses.getSavedFieldNames();
+      savedFieldNames = this.formAutofillStorage.addresses.getSavedFieldNames();
     }
 
-    Services.ppmm.broadcastAsyncMessage("FormAutofill:savedFieldNames",
-                                        Services.ppmm.initialProcessData.autofillSavedFieldNames);
+    Services.ppmm.sharedData.set("FormAutofill:savedFieldNames", savedFieldNames);
+    Services.ppmm.sharedData.flush();
+
     this._updateStatus();
   },
 

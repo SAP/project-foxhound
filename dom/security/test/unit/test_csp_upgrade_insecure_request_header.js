@@ -1,7 +1,7 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 // Since this test creates a TYPE_DOCUMENT channel via javascript, it will
@@ -45,11 +45,11 @@ function ChannelListener() {
 }
 
 ChannelListener.prototype = {
-  onStartRequest(request, context) { },
-  onDataAvailable(request, context, stream, offset, count) {
+  onStartRequest(request) { },
+  onDataAvailable(request, stream, offset, count) {
     do_throw("Should not get any data!");
   },
-  onStopRequest(request, context, status) {
+  onStopRequest(request, status) {
     var upgrade_insecure_header = false;
     try {
       if (request.getRequestHeader("Upgrade-Insecure-Requests")) {
@@ -87,7 +87,7 @@ function run_next_test() {
     return;
   }
   channel = setupChannel(curTest.contentType);
-  channel.asyncOpen2(new ChannelListener());
+  channel.asyncOpen(new ChannelListener());
 }
 
 function run_test() {

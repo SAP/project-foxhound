@@ -53,15 +53,16 @@
 #include "nsAboutProtocolUtils.h"
 #include "nsIClassInfo.h"
 #include "nsIURIFixup.h"
-#include "nsCDefaultURIFixup.h"
 #include "nsIChromeRegistry.h"
 #include "nsIResProtocolHandler.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/NullPrincipal.h"
 #include <stdint.h>
+#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
@@ -253,9 +254,9 @@ static void InheritAndSetCSPOnPrincipalIfNeeded(nsIChannel* aChannel,
     return;
   }
 
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-  if (!loadInfo || loadInfo->GetExternalContentPolicyType() !=
-                       nsIContentPolicy::TYPE_SUBDOCUMENT) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  if (loadInfo->GetExternalContentPolicyType() !=
+      nsIContentPolicy::TYPE_SUBDOCUMENT) {
     return;
   }
 
@@ -289,12 +290,50 @@ static void InheritAndSetCSPOnPrincipalIfNeeded(nsIChannel* aChannel,
   nsCOMPtr<nsIContentSecurityPolicy> nullPrincipalCSP;
   aPrincipal->GetCsp(getter_AddRefs(nullPrincipalCSP));
   if (nullPrincipalCSP) {
-    MOZ_ASSERT(nullPrincipalCSP == originalCSP,
-               "There should be no other CSP here.");
+    MOZ_ASSERT(nsCSPContext::Equals(originalCSP, nullPrincipalCSP));
     // CSPs are equal, no need to set it again.
     return;
   }
-  aPrincipal->SetCsp(originalCSP);
+
+  // After 965637 all that magical CSP inheritance goes away. For now,
+  // we have to create a clone of the current CSP and have to manually
+  // set it on the Principal.
+  uint32_t count = 0;
+  rv = originalCSP->GetPolicyCount(&count);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  if (count == 0) {
+    // fast path: if there is nothing to inherit, we can return here.
+    return;
+  }
+
+  RefPtr<nsCSPContext> newCSP = new nsCSPContext();
+  nsWeakPtr loadingContext =
+      static_cast<nsCSPContext*>(originalCSP.get())->GetLoadingContext();
+  nsCOMPtr<Document> doc = do_QueryReferent(loadingContext);
+
+  rv = doc ? newCSP->SetRequestContext(doc, nullptr)
+           : newCSP->SetRequestContext(nullptr, aPrincipal);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < count; ++i) {
+    const nsCSPPolicy* policy = originalCSP->GetPolicy(i);
+    MOZ_ASSERT(policy);
+
+    nsAutoString policyString;
+    policy->toString(policyString);
+
+    rv = newCSP->AppendPolicy(policyString, policy->getReportOnlyFlag(),
+                              policy->getDeliveredViaMetaTagFlag());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
+  }
+  aPrincipal->SetCsp(newCSP);
 }
 
 nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
@@ -302,8 +341,8 @@ nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
   MOZ_ASSERT(aChannel, "Must have channel!");
 
   // Check whether we have an nsILoadInfo that says what we should do.
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
-  if (loadInfo && loadInfo->GetForceInheritPrincipalOverruleOwner()) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  if (loadInfo->GetForceInheritPrincipalOverruleOwner()) {
     nsCOMPtr<nsIPrincipal> principalToInherit =
         loadInfo->FindPrincipalToInherit(aChannel);
     principalToInherit.forget(aPrincipal);
@@ -319,52 +358,50 @@ nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
     }
   }
 
-  if (loadInfo) {
-    if (!aIgnoreSandboxing && loadInfo->GetLoadingSandboxed()) {
-      nsCOMPtr<nsIPrincipal> sandboxedLoadingPrincipal =
-          loadInfo->GetSandboxedLoadingPrincipal();
-      MOZ_ASSERT(sandboxedLoadingPrincipal);
-      InheritAndSetCSPOnPrincipalIfNeeded(aChannel, sandboxedLoadingPrincipal);
-      sandboxedLoadingPrincipal.forget(aPrincipal);
-      return NS_OK;
-    }
+  if (!aIgnoreSandboxing && loadInfo->GetLoadingSandboxed()) {
+    nsCOMPtr<nsIPrincipal> sandboxedLoadingPrincipal =
+        loadInfo->GetSandboxedLoadingPrincipal();
+    MOZ_ASSERT(sandboxedLoadingPrincipal);
+    InheritAndSetCSPOnPrincipalIfNeeded(aChannel, sandboxedLoadingPrincipal);
+    sandboxedLoadingPrincipal.forget(aPrincipal);
+    return NS_OK;
+  }
 
-    bool forceInherit = loadInfo->GetForceInheritPrincipal();
-    if (aIgnoreSandboxing && !forceInherit) {
-      // Check if SEC_FORCE_INHERIT_PRINCIPAL was dropped because of
-      // sandboxing:
-      if (loadInfo->GetLoadingSandboxed() &&
-          loadInfo->GetForceInheritPrincipalDropped()) {
-        forceInherit = true;
-      }
+  bool forceInherit = loadInfo->GetForceInheritPrincipal();
+  if (aIgnoreSandboxing && !forceInherit) {
+    // Check if SEC_FORCE_INHERIT_PRINCIPAL was dropped because of
+    // sandboxing:
+    if (loadInfo->GetLoadingSandboxed() &&
+        loadInfo->GetForceInheritPrincipalDropped()) {
+      forceInherit = true;
     }
-    if (forceInherit) {
-      nsCOMPtr<nsIPrincipal> principalToInherit =
-          loadInfo->FindPrincipalToInherit(aChannel);
+  }
+  if (forceInherit) {
+    nsCOMPtr<nsIPrincipal> principalToInherit =
+        loadInfo->FindPrincipalToInherit(aChannel);
+    principalToInherit.forget(aPrincipal);
+    return NS_OK;
+  }
+
+  auto securityMode = loadInfo->GetSecurityMode();
+  // The data: inheritance flags should only apply to the initial load,
+  // not to loads that it might have redirected to.
+  if (loadInfo->RedirectChain().IsEmpty() &&
+      (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
+       securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
+       securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS)) {
+    nsCOMPtr<nsIURI> uri;
+    nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIPrincipal> principalToInherit =
+        loadInfo->FindPrincipalToInherit(aChannel);
+    bool inheritForAboutBlank = loadInfo->GetAboutBlankInherits();
+
+    if (nsContentUtils::ChannelShouldInheritPrincipal(
+            principalToInherit, uri, inheritForAboutBlank, false)) {
       principalToInherit.forget(aPrincipal);
       return NS_OK;
-    }
-
-    auto securityMode = loadInfo->GetSecurityMode();
-    // The data: inheritance flags should only apply to the initial load,
-    // not to loads that it might have redirected to.
-    if (loadInfo->RedirectChain().IsEmpty() &&
-        (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
-         securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
-         securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS)) {
-      nsCOMPtr<nsIURI> uri;
-      nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsCOMPtr<nsIPrincipal> principalToInherit =
-          loadInfo->FindPrincipalToInherit(aChannel);
-      bool inheritForAboutBlank = loadInfo->GetAboutBlankInherits();
-
-      if (nsContentUtils::ChannelShouldInheritPrincipal(
-              principalToInherit, uri, inheritForAboutBlank, false)) {
-        principalToInherit.forget(aPrincipal);
-        return NS_OK;
-      }
     }
   }
   nsresult rv = GetChannelURIPrincipal(aChannel, aPrincipal);
@@ -395,20 +432,14 @@ nsScriptSecurityManager::GetChannelURIPrincipal(nsIChannel* aChannel,
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsILoadInfo> loadInfo;
-  aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
   // Inherit the origin attributes from loadInfo.
   // If this is a top-level document load, the origin attributes of the
   // loadInfo will be set from nsDocShell::DoURILoad.
   // For subresource loading, the origin attributes of the loadInfo is from
   // its loadingPrincipal.
-  OriginAttributes attrs;
-
-  // For addons loadInfo might be null.
-  if (loadInfo) {
-    attrs = loadInfo->GetOriginAttributes();
-  }
+  OriginAttributes attrs = loadInfo->GetOriginAttributes();
 
   nsCOMPtr<nsIPrincipal> prin =
       BasePrincipal::CreateCodebasePrincipal(uri, attrs);
@@ -574,7 +605,8 @@ nsScriptSecurityManager::CheckSameOriginURI(nsIURI* aSourceURI,
   return NS_OK;
 }
 
-/*static*/ uint32_t nsScriptSecurityManager::HashPrincipalByOrigin(
+/*static*/
+uint32_t nsScriptSecurityManager::HashPrincipalByOrigin(
     nsIPrincipal* aPrincipal) {
   nsCOMPtr<nsIURI> uri;
   aPrincipal->GetDomain(getter_AddRefs(uri));
@@ -932,6 +964,19 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
     return rv;
   }
 
+  // Used by ExtensionProtocolHandler to prevent loading extension resources
+  // in private contexts if the extension does not have permission.
+  if (aFromPrivateWindow) {
+    rv = DenyAccessIfURIHasFlags(
+        aTargetURI, nsIProtocolHandler::URI_DISALLOW_IN_PRIVATE_CONTEXT);
+    if (NS_FAILED(rv)) {
+      if (reportErrors) {
+        ReportError(errorTag, aSourceURI, aTargetURI, aFromPrivateWindow);
+      }
+      return rv;
+    }
+  }
+
   // Check for chrome target URI
   bool hasFlags = false;
   rv = NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::URI_IS_UI_RESOURCE,
@@ -1137,7 +1182,7 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
   // Now start testing fixup -- since aTargetURIStr is a string, not
   // an nsIURI, we may well end up fixing it up before loading.
   // Note: This needs to stay in sync with the nsIURIFixup api.
-  nsCOMPtr<nsIURIFixup> fixup = do_GetService(NS_URIFIXUP_CONTRACTID);
+  nsCOMPtr<nsIURIFixup> fixup = components::URIFixup::Service();
   if (!fixup) {
     return rv;
   }
@@ -1447,7 +1492,8 @@ nsScriptSecurityManager* nsScriptSecurityManager::GetScriptSecurityManager() {
   return gScriptSecMan;
 }
 
-/* static */ void nsScriptSecurityManager::InitStatics() {
+/* static */
+void nsScriptSecurityManager::InitStatics() {
   RefPtr<nsScriptSecurityManager> ssManager = new nsScriptSecurityManager();
   nsresult rv = ssManager->Init();
   if (NS_FAILED(rv)) {

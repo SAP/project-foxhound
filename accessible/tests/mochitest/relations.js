@@ -55,7 +55,6 @@ function testRelation(aIdentifier, aRelType, aRelatedIdentifiers) {
 
     ok(false, msg);
     return;
-
   } else if (!aRelatedIdentifiers) {
     ok(false, "There are unexpected targets of " + relDescr);
     return;
@@ -157,7 +156,7 @@ function testAbsentRelation(aIdentifier, aRelType, aUnrelatedIdentifiers) {
 function getRelationByType(aIdentifier, aRelType) {
   var acc = getAccessible(aIdentifier);
   if (!acc)
-    return;
+    return null;
 
   var relation = null;
   try {

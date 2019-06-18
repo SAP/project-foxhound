@@ -13,9 +13,9 @@
 namespace InspectorUtils {
   // documentOnly tells whether user and UA sheets should get included.
   sequence<StyleSheet> getAllStyleSheets(Document document, optional boolean documentOnly = false);
-  sequence<CSSRule> getCSSStyleRules(
+  sequence<CSSStyleRule> getCSSStyleRules(
     Element element,
-    [TreatNullAs=EmptyString] optional DOMString pseudo = "");
+    optional [TreatNullAs=EmptyString] DOMString pseudo = "");
   unsigned long getRuleLine(CSSRule rule);
   unsigned long getRuleColumn(CSSRule rule);
   unsigned long getRelativeRuleLine(CSSRule rule);
@@ -29,7 +29,7 @@ namespace InspectorUtils {
       Element element,
       CSSStyleRule rule,
       unsigned long selectorIndex,
-      [TreatNullAs=EmptyString] optional DOMString pseudo = "");
+      optional [TreatNullAs=EmptyString] DOMString pseudo = "");
   boolean isInheritedProperty(DOMString property);
   sequence<DOMString> getCSSPropertyNames(optional PropertyNamesOptions options);
   sequence<PropertyPref> getCSSPropertyPrefs();
@@ -76,7 +76,6 @@ namespace InspectorUtils {
   boolean hasPseudoClassLock(Element element, DOMString pseudoClass);
   void clearPseudoClassLocks(Element element);
   [Throws] void parseStyleSheet(CSSStyleSheet sheet, DOMString input);
-  void scrollElementIntoView(Element element);
   boolean isCustomElementName([TreatNullAs=EmptyString] DOMString name,
                               DOMString? namespaceURI);
 };

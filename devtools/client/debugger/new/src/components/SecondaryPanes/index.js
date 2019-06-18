@@ -5,6 +5,7 @@
 // @flow
 
 import React, { Component } from "react";
+import { isGeneratedId } from "devtools-source-map";
 import { connect } from "../../utils/connect";
 import { List } from "immutable";
 
@@ -16,9 +17,12 @@ import {
   getBreakpointsLoading,
   getExpressions,
   getIsWaitingOnBreak,
+  getMapScopes,
+  getSelectedFrame,
   getShouldPauseOnExceptions,
   getShouldPauseOnCaughtExceptions,
-  getWorkers
+  getWorkers,
+  getCurrentThread
 } from "../../selectors";
 
 import AccessibleImage from "../shared/AccessibleImage";
@@ -39,7 +43,7 @@ import Scopes from "./Scopes";
 
 import "./SecondaryPanes.css";
 
-import type { Expression, WorkerList } from "../../types";
+import type { Expression, Frame, WorkerList } from "../../types";
 
 type AccordionPaneItem = {
   header: string,
@@ -73,18 +77,24 @@ type Props = {
   hasFrames: boolean,
   horizontal: boolean,
   breakpoints: Object,
+  selectedFrame: ?Frame,
   breakpointsDisabled: boolean,
   breakpointsLoading: boolean,
   isWaitingOnBreak: boolean,
+  shouldMapScopes: boolean,
   shouldPauseOnExceptions: boolean,
   shouldPauseOnCaughtExceptions: boolean,
   workers: WorkerList,
   toggleShortcutsModal: () => void,
   toggleAllBreakpoints: typeof actions.toggleAllBreakpoints,
+  toggleMapScopes: typeof actions.toggleMapScopes,
   evaluateExpressions: typeof actions.evaluateExpressions,
   pauseOnExceptions: typeof actions.pauseOnExceptions,
   breakOnNext: typeof actions.breakOnNext
 };
+
+const mdnLink =
+  "https://developer.mozilla.org/docs/Tools/Debugger/Using_the_Debugger_map_scopes_feature?utm_source=devtools&utm_medium=debugger-map-scopes";
 
 class SecondaryPanes extends Component<Props, State> {
   constructor(props: Props) {
@@ -207,10 +217,49 @@ class SecondaryPanes extends Component<Props, State> {
       className: "scopes-pane",
       component: <Scopes />,
       opened: prefs.scopesVisible,
+      buttons: this.getScopesButtons(),
       onToggle: opened => {
         prefs.scopesVisible = opened;
       }
     };
+  }
+
+  getScopesButtons() {
+    const { selectedFrame, shouldMapScopes } = this.props;
+
+    if (
+      !features.mapScopes ||
+      !selectedFrame ||
+      isGeneratedId(selectedFrame.location.sourceId)
+    ) {
+      return null;
+    }
+
+    return [
+      <div>
+        <label
+          className="map-scopes-header"
+          title={L10N.getStr("scopes.mapping.label")}
+          onClick={e => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={shouldMapScopes ? "checked" : ""}
+            onChange={e => this.props.toggleMapScopes()}
+          />
+          {L10N.getStr("scopes.map.label")}
+        </label>
+        <a
+          className="mdn"
+          target="_blank"
+          href={mdnLink}
+          onClick={e => e.stopPropagation()}
+          title={L10N.getStr("scopes.helpTooltip.label")}
+        >
+          <AccessibleImage className="shortcuts" />
+        </a>
+      </div>
+    ];
   }
 
   getWatchItem(): AccordionPaneItem {
@@ -300,7 +349,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getEventListenersItem() {
+  getEventListenersItem(): AccordionPaneItem {
     return {
       header: L10N.getStr("eventListenersHeader"),
       className: "event-listeners-pane",
@@ -313,12 +362,11 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getStartItems() {
-    const { workers } = this.props;
+  getStartItems(): AccordionPaneItem[] {
+    const items: AccordionPaneItem[] = [];
 
-    const items: Array<AccordionPaneItem> = [];
     if (this.props.horizontal) {
-      if (features.workers && workers.length > 0) {
+      if (features.workers && this.props.workers.length > 0) {
         items.push(this.getWorkersItem());
       }
 
@@ -329,7 +377,6 @@ class SecondaryPanes extends Component<Props, State> {
 
     if (this.props.hasFrames) {
       items.push(this.getCallStackItem());
-
       if (this.props.horizontal) {
         items.push(this.getScopeItem());
       }
@@ -343,37 +390,34 @@ class SecondaryPanes extends Component<Props, State> {
       items.push(this.getEventListenersItem());
     }
 
-    return items.filter(item => item);
+    return items;
   }
 
-  renderHorizontalLayout() {
-    return <Accordion items={this.getItems()} />;
-  }
-
-  getEndItems() {
-    const { workers } = this.props;
-
-    let items: Array<AccordionPaneItem> = [];
-
+  getEndItems(): AccordionPaneItem[] {
     if (this.props.horizontal) {
       return [];
     }
 
-    if (features.workers && workers.length > 0) {
+    const items: AccordionPaneItem[] = [];
+    if (features.workers && this.props.workers.length > 0) {
       items.push(this.getWorkersItem());
     }
 
     items.push(this.getWatchItem());
 
     if (this.props.hasFrames) {
-      items = [...items, this.getScopeItem()];
+      items.push(this.getScopeItem());
     }
 
     return items;
   }
 
-  getItems() {
+  getItems(): AccordionPaneItem[] {
     return [...this.getStartItems(), ...this.getEndItems()];
+  }
+
+  renderHorizontalLayout() {
+    return <Accordion items={this.getItems()} />;
   }
 
   renderVerticalLayout() {
@@ -417,17 +461,23 @@ class SecondaryPanes extends Component<Props, State> {
   }
 }
 
-const mapStateToProps = state => ({
-  expressions: getExpressions(state),
-  hasFrames: !!getTopFrame(state),
-  breakpoints: getBreakpointsList(state),
-  breakpointsDisabled: getBreakpointsDisabled(state),
-  breakpointsLoading: getBreakpointsLoading(state),
-  isWaitingOnBreak: getIsWaitingOnBreak(state),
-  shouldPauseOnExceptions: getShouldPauseOnExceptions(state),
-  shouldPauseOnCaughtExceptions: getShouldPauseOnCaughtExceptions(state),
-  workers: getWorkers(state)
-});
+const mapStateToProps = state => {
+  const thread = getCurrentThread(state);
+
+  return {
+    expressions: getExpressions(state),
+    hasFrames: !!getTopFrame(state, thread),
+    breakpoints: getBreakpointsList(state),
+    breakpointsDisabled: getBreakpointsDisabled(state),
+    breakpointsLoading: getBreakpointsLoading(state),
+    isWaitingOnBreak: getIsWaitingOnBreak(state, thread),
+    selectedFrame: getSelectedFrame(state, thread),
+    shouldMapScopes: getMapScopes(state),
+    shouldPauseOnExceptions: getShouldPauseOnExceptions(state),
+    shouldPauseOnCaughtExceptions: getShouldPauseOnCaughtExceptions(state),
+    workers: getWorkers(state)
+  };
+};
 
 export default connect(
   mapStateToProps,
@@ -435,6 +485,7 @@ export default connect(
     toggleAllBreakpoints: actions.toggleAllBreakpoints,
     evaluateExpressions: actions.evaluateExpressions,
     pauseOnExceptions: actions.pauseOnExceptions,
+    toggleMapScopes: actions.toggleMapScopes,
     breakOnNext: actions.breakOnNext
   }
 )(SecondaryPanes);

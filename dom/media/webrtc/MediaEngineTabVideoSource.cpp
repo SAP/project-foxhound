@@ -7,6 +7,8 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/layers/SharedRGBImage.h"
+#include "mozilla/layers/TextureClient.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -111,6 +113,10 @@ nsString MediaEngineTabVideoSource::GetName() const {
 
 nsCString MediaEngineTabVideoSource::GetUUID() const {
   return NS_LITERAL_CSTRING("tab");
+}
+
+nsString MediaEngineTabVideoSource::GetGroupId() const {
+  return NS_LITERAL_STRING(u"&getUserMedia.videoSource.tabShareGroup;");
 }
 
 #define DEFAULT_TABSHARE_VIDEO_MAX_WIDTH 4096
@@ -249,7 +255,7 @@ void MediaEngineTabVideoSource::Pull(
     }
     if (mState == kStarted) {
       image = mImage;
-      imageSize = mImageSize;
+      imageSize = mImage ? mImage->GetSize() : IntSize();
     }
   }
 
@@ -305,17 +311,6 @@ void MediaEngineTabVideoSource::Draw() {
     }
   }
 
-  uint32_t stride =
-      StrideForFormatAndWidth(SurfaceFormat::X8R8G8B8_UINT32, size.width);
-
-  if (mDataSize < static_cast<size_t>(stride * size.height)) {
-    mDataSize = stride * size.height;
-    mData = MakeUniqueFallible<unsigned char[]>(mDataSize);
-  }
-  if (!mData) {
-    return;
-  }
-
   nsCOMPtr<nsIPresShell> presShell;
   if (mWindow) {
     nsIDocShell* docshell = mWindow->GetDocShell();
@@ -327,49 +322,68 @@ void MediaEngineTabVideoSource::Draw() {
     }
   }
 
-  RefPtr<layers::ImageContainer> container =
-      layers::LayerManager::CreateImageContainer(
-          layers::ImageContainer::ASYNCHRONOUS);
-  RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(
-      gfxPlatform::GetPlatform()->GetSoftwareBackend(), mData.get(), size,
-      stride, SurfaceFormat::B8G8R8X8, true);
-  if (!dt || !dt->IsValid()) {
+  if (!mImageContainer) {
+    mImageContainer = layers::LayerManager::CreateImageContainer(
+        layers::ImageContainer::ASYNCHRONOUS);
+  }
+
+  RefPtr<layers::SharedRGBImage> rgbImage =
+      mImageContainer->CreateSharedRGBImage();
+  if (!rgbImage) {
+    NS_WARNING("Failed to create SharedRGBImage");
+    return;
+  }
+  if (!rgbImage->Allocate(size, SurfaceFormat::B8G8R8X8)) {
+    NS_WARNING("Failed to allocate a shared image");
     return;
   }
 
-  if (mWindow) {
-    RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
-    MOZ_ASSERT(context);  // already checked the draw target above
-    context->SetMatrix(context->CurrentMatrix().PreScale(
-        (((float)size.width) / mViewportWidth),
-        (((float)size.height) / mViewportHeight)));
-
-    nscolor bgColor = NS_RGB(255, 255, 255);
-    uint32_t renderDocFlags =
-        mScrollWithPage ? 0
-                        : (nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING |
-                           nsIPresShell::RENDER_DOCUMENT_RELATIVE);
-    nsRect r(nsPresContext::CSSPixelsToAppUnits((float)mViewportOffsetX),
-             nsPresContext::CSSPixelsToAppUnits((float)mViewportOffsetY),
-             nsPresContext::CSSPixelsToAppUnits((float)mViewportWidth),
-             nsPresContext::CSSPixelsToAppUnits((float)mViewportHeight));
-    NS_ENSURE_SUCCESS_VOID(
-        presShell->RenderDocument(r, renderDocFlags, bgColor, context));
-  } else {
-    dt->ClearRect(Rect(0, 0, size.width, size.height));
-  }
-
-  RefPtr<SourceSurface> surface = dt->Snapshot();
-  if (!surface) {
+  RefPtr<layers::TextureClient> texture =
+      rgbImage->GetTextureClient(/* aForwarder */ nullptr);
+  if (!texture) {
+    NS_WARNING("Failed to allocate TextureClient");
     return;
   }
 
-  RefPtr<layers::SourceSurfaceImage> image =
-      new layers::SourceSurfaceImage(size, surface);
+  {
+    layers::TextureClientAutoLock autoLock(texture,
+                                           layers::OpenMode::OPEN_WRITE_ONLY);
+    if (!autoLock.Succeeded()) {
+      NS_WARNING("Failed to lock TextureClient");
+      return;
+    }
+
+    RefPtr<gfx::DrawTarget> dt = texture->BorrowDrawTarget();
+    if (!dt || !dt->IsValid()) {
+      NS_WARNING("Failed to borrow DrawTarget");
+      return;
+    }
+
+    if (mWindow) {
+      RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
+      MOZ_ASSERT(context);  // already checked the draw target above
+      context->SetMatrix(context->CurrentMatrix().PreScale(
+          (((float)size.width) / mViewportWidth),
+          (((float)size.height) / mViewportHeight)));
+
+      nscolor bgColor = NS_RGB(255, 255, 255);
+      uint32_t renderDocFlags =
+          mScrollWithPage ? 0
+                          : (nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING |
+                             nsIPresShell::RENDER_DOCUMENT_RELATIVE);
+      nsRect r(nsPresContext::CSSPixelsToAppUnits((float)mViewportOffsetX),
+               nsPresContext::CSSPixelsToAppUnits((float)mViewportOffsetY),
+               nsPresContext::CSSPixelsToAppUnits((float)mViewportWidth),
+               nsPresContext::CSSPixelsToAppUnits((float)mViewportHeight));
+      NS_ENSURE_SUCCESS_VOID(
+          presShell->RenderDocument(r, renderDocFlags, bgColor, context));
+    } else {
+      dt->ClearRect(Rect(0, 0, size.width, size.height));
+    }
+  }
 
   MutexAutoLock lock(mMutex);
-  mImage = image;
-  mImageSize = size;
+  mImage = rgbImage;
 }
 
 nsresult MediaEngineTabVideoSource::FocusOnSelectedSource(

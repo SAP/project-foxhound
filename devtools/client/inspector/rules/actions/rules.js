@@ -5,11 +5,27 @@
 "use strict";
 
 const {
+  UPDATE_ADD_RULE_ENABLED,
   UPDATE_HIGHLIGHTED_SELECTOR,
   UPDATE_RULES,
+  UPDATE_SOURCE_LINK_ENABLED,
+  UPDATE_SOURCE_LINK,
 } = require("./index");
 
 module.exports = {
+
+  /**
+   * Updates whether or not the add new rule button should be enabled.
+   *
+   * @param  {Boolean} enabled
+   *         Whether or not the add new rule button is enabled.
+   */
+  updateAddRuleEnabled(enabled) {
+    return {
+      type: UPDATE_ADD_RULE_ENABLED,
+      enabled,
+    };
+  },
 
   /**
    * Updates the highlighted selector.
@@ -34,6 +50,35 @@ module.exports = {
     return {
       type: UPDATE_RULES,
       rules,
+    };
+  },
+
+  /**
+   * Updates whether or not the source links are enabled.
+   *
+   * @param  {Boolean} enabled
+   *         Whether or not the source links are enabled.
+   */
+  updateSourceLinkEnabled(enabled) {
+    return {
+      type: UPDATE_SOURCE_LINK_ENABLED,
+      enabled,
+    };
+  },
+
+  /**
+   * Updates the source link information for a given rule.
+   *
+   * @param  {String} ruleId
+   *         The Rule id of the target rule.
+   * @param  {Object} sourceLink
+   *         New source link data.
+   */
+  updateSourceLink(ruleId, sourceLink) {
+    return {
+      type: UPDATE_SOURCE_LINK,
+      ruleId,
+      sourceLink,
     };
   },
 

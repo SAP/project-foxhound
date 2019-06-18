@@ -1117,3 +1117,11 @@ interface MOZ_debug {
     [Throws]
     any getParameter(GLenum pname);
 };
+
+[NoInterfaceObject]
+interface EXT_float_blend {
+};
+
+[NoInterfaceObject]
+interface OES_fbo_render_mipmap {
+};

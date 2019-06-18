@@ -175,6 +175,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.media.webrtc += [
     'webrtc/WebrtcGlobal.h',
+    'webrtc/WebrtcIPCTraits.h',
 ]
 
 if not CONFIG['MOZ_WEBRTC']:
@@ -183,7 +184,7 @@ if not CONFIG['MOZ_WEBRTC']:
   ]
 
 IPDL_SOURCES += [
-    'webrtc/PWebrtcGlobal.ipdl'
+    'webrtc/PWebrtcGlobal.ipdl',
 ]
 
 EXPORTS.mozilla.dom += [
@@ -206,6 +207,8 @@ EXPORTS.mozilla.dom += [
     'VideoStreamTrack.h',
     'VideoTrack.h',
     'VideoTrackList.h',
+    'webrtc/MediaTransportChild.h',
+    'webrtc/MediaTransportParent.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -237,6 +240,7 @@ UNIFIED_SOURCES += [
     'FileMediaResource.cpp',
     'GetUserMediaRequest.cpp',
     'GraphDriver.cpp',
+    'GraphRunner.cpp',
     'ImageToI420.cpp',
     'MediaCache.cpp',
     'MediaContainerType.cpp',
@@ -304,13 +308,16 @@ SOURCES += [
 
 # Some codec-related code uses multi-character constants, which GCC and clang
 # warn about. Suppress turning this warning into an error.
-if CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc'):
-  SOURCES['DecoderTraits.cpp'].flags += ['-Wno-error=multichar']
+SOURCES['DecoderTraits.cpp'].flags += ['-Wno-error=multichar']
 
-EXTRA_COMPONENTS += [
-    'PeerConnection.js',
-    'PeerConnection.manifest',
-]
+if CONFIG['MOZ_WEBRTC']:
+    XPCOM_MANIFESTS += [
+        'components.conf',
+    ]
+
+    EXTRA_JS_MODULES.media += [
+        'PeerConnection.jsm',
+    ]
 
 EXTRA_JS_MODULES.media += [
     'IdpSandbox.jsm',

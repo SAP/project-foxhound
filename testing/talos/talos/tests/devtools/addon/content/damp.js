@@ -1,11 +1,11 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
-const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", {});
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
 
 XPCOMUtils.defineLazyGetter(this, "require", function() {
   let { require } =
-    ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+    ChromeUtils.import("resource://devtools/shared/Loader.jsm");
   return require;
 });
 
@@ -99,7 +99,7 @@ Damp.prototype = {
     // before continuing.
     async function getTalosParentProfiler() {
       try {
-        ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+        var {TalosParentProfiler} = ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
         return TalosParentProfiler;
       } catch (err) {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -112,8 +112,8 @@ Damp.prototype = {
 
   /**
    * Helper to tell when a test start and when it is finished.
-   * It helps recording its duration, but also put markers for perf-html when profiling
-   * DAMP.
+   * It helps recording its duration, but also put markers for profiler.firefox.com
+   * when profiling DAMP.
    *
    * When this method is called, the test is considered to be starting immediately
    * When the test is over, the returned object's `done` method should be called.
@@ -122,8 +122,8 @@ Damp.prototype = {
    *        Test title, displayed everywhere in PerfHerder, DevTools Perf Dashboard, ...
    * @param record Boolean
    *        Optional, if passed false, the test won't be recorded. It won't appear in
-   *        PerfHerder. Instead we will record perf-html markers and only print the
-   *        timings on stdout.
+   *        PerfHerder. Instead we will record profiler.firefox.com markers and only
+   *        print the timings on stdout.
    *
    * @return object
    *         With a `done` method, to be called whenever the test is finished running

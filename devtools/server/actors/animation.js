@@ -103,7 +103,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
   },
 
   get isPseudoElement() {
-    return !this.player.effect.target.ownerDocument;
+    return !!this.player.effect.target.element;
   },
 
   get node() {
@@ -112,7 +112,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
     }
 
     const pseudo = this.player.effect.target;
-    const treeWalker = this.walker.getDocumentWalker(pseudo.parentElement);
+    const treeWalker = this.walker.getDocumentWalker(pseudo.element);
     return pseudo.type === "::before" ? treeWalker.firstChild() : treeWalker.lastChild();
   },
 
@@ -131,10 +131,6 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
   release: function() {},
 
   form: function(detail) {
-    if (detail === "actorid") {
-      return this.actorID;
-    }
-
     const data = this.getCurrentState();
     data.actor = this.actorID;
 
@@ -274,7 +270,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
     if (target.type) {
       // Animated element is a pseudo element.
       pseudo = target.type;
-      target = target.parentElement;
+      target = target.element;
     }
     return this.window.getComputedStyle(target, pseudo).animationTimingFunction;
   },
@@ -433,7 +429,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
           if (target.type) {
             // This target is a pseudo element.
             pseudo = target.type;
-            target = target.parentElement;
+            target = target.element;
           }
           const value =
             DOMWindowUtils.getUnanimatedComputedStyle(target,
@@ -694,27 +690,6 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
       this.observer.disconnect();
     }
-  },
-
-  /**
-   * Iterates through all nodes below a given rootNode (optionally also in
-   * nested frames) and finds all existing animation players.
-   * @param {DOMNode} rootNode The root node to start iterating at. Animation
-   * players will *not* be reported for this node.
-   * @param {Boolean} traverseFrames Whether we should iterate through nested
-   * frames too.
-   * @return {Array} An array of AnimationPlayer objects.
-   */
-  getAllAnimations: function(rootNode, traverseFrames) {
-    if (!traverseFrames) {
-      return rootNode.getAnimations({subtree: true});
-    }
-
-    let animations = [];
-    for (const {document} of this.targetActor.windows) {
-      animations = [...animations, ...document.getAnimations({subtree: true})];
-    }
-    return animations;
   },
 
   onWillNavigate: function({isTopLevel}) {

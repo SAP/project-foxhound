@@ -28,7 +28,8 @@ using namespace mozilla::layout;
 
 #define NO_SIDE 100
 
-/* virtual */ nscoord nsTableWrapperFrame::GetLogicalBaseline(
+/* virtual */
+nscoord nsTableWrapperFrame::GetLogicalBaseline(
     WritingMode aWritingMode) const {
   nsIFrame* kid = mFrames.FirstChild();
   if (!kid) {
@@ -40,8 +41,10 @@ using namespace mozilla::layout;
          kid->BStart(aWritingMode, mRect.Size());
 }
 
-nsTableWrapperFrame::nsTableWrapperFrame(ComputedStyle* aStyle, ClassID aID)
-    : nsContainerFrame(aStyle, aID) {}
+nsTableWrapperFrame::nsTableWrapperFrame(ComputedStyle* aStyle,
+                                         nsPresContext* aPresContext,
+                                         ClassID aID)
+    : nsContainerFrame(aStyle, aPresContext, aID) {}
 
 nsTableWrapperFrame::~nsTableWrapperFrame() {}
 
@@ -284,8 +287,8 @@ static nsSize GetContainingBlockSize(const ReflowInput& aOuterRI) {
   return size;
 }
 
-/* virtual */ nscoord nsTableWrapperFrame::GetMinISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsTableWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord iSize = nsLayoutUtils::IntrinsicForContainer(
       aRenderingContext, InnerTableFrame(), nsLayoutUtils::MIN_ISIZE);
   DISPLAY_MIN_INLINE_SIZE(this, iSize);
@@ -304,8 +307,8 @@ static nsSize GetContainingBlockSize(const ReflowInput& aOuterRI) {
   return iSize;
 }
 
-/* virtual */ nscoord nsTableWrapperFrame::GetPrefISize(
-    gfxContext* aRenderingContext) {
+/* virtual */
+nscoord nsTableWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord maxISize;
   DISPLAY_PREF_INLINE_SIZE(this, maxISize);
 
@@ -1001,7 +1004,8 @@ nsIContent* nsTableWrapperFrame::GetCellAt(uint32_t aRowIdx,
 
 nsTableWrapperFrame* NS_NewTableWrapperFrame(nsIPresShell* aPresShell,
                                              ComputedStyle* aStyle) {
-  return new (aPresShell) nsTableWrapperFrame(aStyle);
+  return new (aPresShell)
+      nsTableWrapperFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableWrapperFrame)

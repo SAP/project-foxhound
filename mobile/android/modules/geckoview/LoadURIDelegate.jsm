@@ -6,14 +6,14 @@
 
 var EXPORTED_SYMBOLS = ["LoadURIDelegate"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-GeckoViewUtils.initLogging("LoadURIDelegate", this);
+const {debug, warn} = GeckoViewUtils.initLogging("LoadURIDelegate"); // eslint-disable-line no-unused-vars
 
 const LoadURIDelegate = {
   // Delegate URI loading to the app.
@@ -85,5 +85,12 @@ const LoadURIDelegate = {
         aWindow.closed || errorPageURI !== undefined);
 
     return errorPageURI;
+  },
+
+  isSafeBrowsingError(aError) {
+    return aError === Cr.NS_ERROR_PHISHING_URI ||
+           aError === Cr.NS_ERROR_MALWARE_URI ||
+           aError === Cr.NS_ERROR_HARMFUL_URI ||
+           aError === Cr.NS_ERROR_UNWANTED_URI;
   },
 };

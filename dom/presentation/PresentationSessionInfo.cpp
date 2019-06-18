@@ -14,11 +14,13 @@
 #include "nsGlobalWindow.h"
 #include "nsIDocShell.h"
 #include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
 #include "nsIMutableArray.h"
 #include "nsINetAddr.h"
 #include "nsISocketTransport.h"
 #include "nsISupportsPrimitives.h"
 #include "nsNetCID.h"
+#include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "PresentationLog.h"
@@ -193,13 +195,15 @@ NS_IMPL_ISUPPORTS(PresentationSessionInfo,
                   nsIPresentationControlChannelListener,
                   nsIPresentationSessionTransportBuilderListener);
 
-/* virtual */ nsresult PresentationSessionInfo::Init(
+/* virtual */
+nsresult PresentationSessionInfo::Init(
     nsIPresentationControlChannel* aControlChannel) {
   SetControlChannel(aControlChannel);
   return NS_OK;
 }
 
-/* virtual */ void PresentationSessionInfo::Shutdown(nsresult aReason) {
+/* virtual */
+void PresentationSessionInfo::Shutdown(nsresult aReason) {
   PRES_DEBUG("%s:id[%s], reason[%" PRIx32 "], role[%d]\n", __func__,
              NS_ConvertUTF16toUTF8(mSessionId).get(),
              static_cast<uint32_t>(aReason), mRole);
@@ -336,7 +340,8 @@ nsresult PresentationSessionInfo::ReplyError(nsresult aError) {
   return UntrackFromService();
 }
 
-/* virtual */ nsresult PresentationSessionInfo::UntrackFromService() {
+/* virtual */
+nsresult PresentationSessionInfo::UntrackFromService() {
   nsCOMPtr<nsIPresentationService> service =
       do_GetService(PRESENTATION_SERVICE_CONTRACTID);
   if (NS_WARN_IF(!service)) {
@@ -368,8 +373,8 @@ nsPIDOMWindowInner* PresentationSessionInfo::GetWindow() {
   return window->AsInner();
 }
 
-/* virtual */ bool PresentationSessionInfo::IsAccessible(
-    base::ProcessId aProcessId) {
+/* virtual */
+bool PresentationSessionInfo::IsAccessible(base::ProcessId aProcessId) {
   // No restriction by default.
   return true;
 }
@@ -1489,7 +1494,7 @@ void PresentationPresentingInfo::ResolvedCallback(
     return;
   }
 
-  nsCOMPtr<nsIFrameLoaderOwner> owner = do_QueryInterface(frame);
+  RefPtr<nsFrameLoaderOwner> owner = do_QueryObject(frame);
   if (NS_WARN_IF(!owner)) {
     ReplyError(NS_ERROR_DOM_OPERATION_ERR);
     return;

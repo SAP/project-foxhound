@@ -3,10 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
-const {actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
+const {actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
@@ -136,8 +136,8 @@ this.AboutPreferences = class AboutPreferences {
    */
   renderPreferences({document, Preferences, gHomePane}, strings, prefStructure, discoveryStreamConfig) {
     // Helper to create a new element and append it
-    const createAppend = (tag, parent) => parent.appendChild(
-      document.createXULElement(tag));
+    const createAppend = (tag, parent, options) => parent.appendChild(
+      document.createXULElement(tag, options));
 
     // Helper to get strings and format with values if necessary
     const formatString = id => {
@@ -225,9 +225,8 @@ this.AboutPreferences = class AboutPreferences {
         sponsoredHbox.appendChild(checkbox);
         checkbox.classList.add("tail-with-learn-more");
 
-        const link = createAppend("label", sponsoredHbox);
+        const link = createAppend("label", sponsoredHbox, {is: "text-link"});
         link.classList.add("learn-sponsored");
-        link.classList.add("text-link");
         link.setAttribute("href", sectionData.learnMore.link.href);
         link.textContent = formatString(sectionData.learnMore.link.id);
       }
@@ -318,6 +317,7 @@ this.AboutPreferences = class AboutPreferences {
       createAppend("hbox", discoveryGroup)
         .appendChild(contentDiscoveryButton)
         .addEventListener("click", async () => {
+          this.store.dispatch({type: at.DISCOVERY_STREAM_OPT_OUT});
           const activeExperiments = await PreferenceExperiments.getAllActive();
           const experiment = activeExperiments.find(exp => exp.preferenceName === DISCOVERY_STREAM_CONFIG_PREF_NAME);
           // Unconditionally update the UI for a fast user response and in

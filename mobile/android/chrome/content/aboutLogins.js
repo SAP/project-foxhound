@@ -3,9 +3,9 @@
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.import("resource://services-common/utils.js"); /* global: CommonUtils */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Accounts.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Accounts} = ChromeUtils.import("resource://gre/modules/Accounts.jsm");
 
 XPCOMUtils.defineLazyGetter(window, "gChromeWin", () =>
   window.docShell.rootTreeItem.domWindow
@@ -275,30 +275,32 @@ var Logins = {
   _onSaveEditLogin: function() {
     let newUsername = document.getElementById("username").value;
     let newPassword = document.getElementById("password").value;
-    let newDomain  = document.getElementById("hostname").value;
     let origUsername = this._selectedLogin.username;
     let origPassword = this._selectedLogin.password;
-    let origDomain = this._selectedLogin.hostname;
 
     try {
-      if ((newUsername === origUsername) &&
-          (newPassword === origPassword) &&
-          (newDomain === origDomain) ) {
+      if ((newUsername === origUsername) && (newPassword === origPassword)) {
         Snackbars.show(gStringBundle.GetStringFromName("editLogin.saved1"), Snackbars.LENGTH_LONG);
         this._showList();
         return;
       }
 
-      let logins = Services.logins.findLogins({}, origDomain, origDomain, null);
+      let logins = Services.logins.findLogins({}, this._selectedLogin.hostname, this._selectedLogin.formSubmitURL, this._selectedLogin.httpRealm);
 
       for (let i = 0; i < logins.length; i++) {
         if (logins[i].username == origUsername) {
-          let clone = logins[i].clone();
-          clone.username = newUsername;
-          clone.password = newPassword;
-          clone.hostname = newDomain;
-          Services.logins.removeLogin(logins[i]);
-          Services.logins.addLogin(clone);
+          let propBag = Cc["@mozilla.org/hash-property-bag;1"].
+            createInstance(Ci.nsIWritablePropertyBag);
+          if (newUsername !== origUsername) {
+            propBag.setProperty("username", newUsername);
+          }
+          if (newPassword !== origPassword) {
+            propBag.setProperty("password", newPassword);
+          }
+          // Sync relies on timePasswordChanged to decide whether
+          // or not to sync a login, so touch it.
+          propBag.setProperty("timePasswordChanged", Date.now());
+          Services.logins.modifyLogin(logins[i], propBag);
           break;
         }
       }

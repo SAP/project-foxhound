@@ -2,7 +2,7 @@
  * @licstart The following is the entire license notice for the
  * Javascript code in this page
  *
- * Copyright 2018 Mozilla Foundation
+ * Copyright 2019 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,8 +123,8 @@ return /******/ (function(modules) { // webpackBootstrap
 "use strict";
 
 
-const pdfjsVersion = '2.1.220';
-const pdfjsBuild = 'ca472be4';
+const pdfjsVersion = '2.2.71';
+const pdfjsBuild = '80135378';
 
 const pdfjsCoreWorker = __w_pdfjs_require__(1);
 
@@ -146,11 +146,13 @@ var _util = __w_pdfjs_require__(2);
 
 var _pdf_manager = __w_pdfjs_require__(7);
 
-var _is_node = _interopRequireDefault(__w_pdfjs_require__(45));
+var _is_node = _interopRequireDefault(__w_pdfjs_require__(47));
 
-var _message_handler = __w_pdfjs_require__(46);
+var _message_handler = __w_pdfjs_require__(48);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
+
+var _core_utils = __w_pdfjs_require__(9);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -374,8 +376,9 @@ var WorkerMessageHandler = {
     var terminated = false;
     var cancelXHRs = null;
     var WorkerTasks = [];
+    const verbosity = (0, _util.getVerbosityLevel)();
     let apiVersion = docParams.apiVersion;
-    let workerVersion = '2.1.220';
+    let workerVersion = '2.2.71';
 
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
@@ -578,7 +581,7 @@ var WorkerMessageHandler = {
         loadDocument(false).then(onSuccess, function loadFailure(ex) {
           ensureNotTerminated();
 
-          if (!(ex instanceof _util.XRefParseException)) {
+          if (!(ex instanceof _core_utils.XRefParseException)) {
             onFailure(ex);
             return;
           }
@@ -684,8 +687,7 @@ var WorkerMessageHandler = {
       pdfManager.getPage(pageIndex).then(function (page) {
         var task = new WorkerTask('RenderPageRequest: page ' + pageIndex);
         startWorkerTask(task);
-        var pageNum = pageIndex + 1;
-        var start = Date.now();
+        const start = verbosity >= _util.VerbosityLevel.INFOS ? Date.now() : 0;
         page.getOperatorList({
           handler,
           task,
@@ -693,7 +695,10 @@ var WorkerMessageHandler = {
           renderInteractiveForms: data.renderInteractiveForms
         }).then(function (operatorList) {
           finishWorkerTask(task);
-          (0, _util.info)('page=' + pageNum + ' - getOperatorList: time=' + (Date.now() - start) + 'ms, len=' + operatorList.totalLength);
+
+          if (start) {
+            (0, _util.info)(`page=${pageIndex + 1} - getOperatorList: time=` + `${Date.now() - start}ms, len=${operatorList.totalLength}`);
+          }
         }, function (e) {
           finishWorkerTask(task);
 
@@ -725,7 +730,7 @@ var WorkerMessageHandler = {
           }
 
           handler.send('PageError', {
-            pageNum,
+            pageIndex,
             error: wrappedException,
             intent: data.intent
           });
@@ -742,8 +747,7 @@ var WorkerMessageHandler = {
       pdfManager.getPage(pageIndex).then(function (page) {
         var task = new WorkerTask('GetTextContent: page ' + pageIndex);
         startWorkerTask(task);
-        var pageNum = pageIndex + 1;
-        var start = Date.now();
+        const start = verbosity >= _util.VerbosityLevel.INFOS ? Date.now() : 0;
         page.extractTextContent({
           handler,
           task,
@@ -752,7 +756,11 @@ var WorkerMessageHandler = {
           combineTextItems: data.combineTextItems
         }).then(function () {
           finishWorkerTask(task);
-          (0, _util.info)('text indexing: page=' + pageNum + ' - time=' + (Date.now() - start) + 'ms');
+
+          if (start) {
+            (0, _util.info)(`page=${pageIndex + 1} - getTextContent: time=` + `${Date.now() - start}ms`);
+          }
+
           sink.close();
         }, function (reason) {
           finishWorkerTask(task);
@@ -828,18 +836,15 @@ if (typeof window === 'undefined' && !(0, _is_node.default)() && typeof self !==
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.toRomanNumerals = toRomanNumerals;
 exports.arrayByteLength = arrayByteLength;
 exports.arraysToBytes = arraysToBytes;
 exports.assert = assert;
 exports.bytesToString = bytesToString;
 exports.createPromiseCapability = createPromiseCapability;
-exports.deprecated = deprecated;
-exports.getInheritableProperty = getInheritableProperty;
-exports.getLookupTableFactory = getLookupTableFactory;
 exports.getVerbosityLevel = getVerbosityLevel;
 exports.info = info;
 exports.isArrayBuffer = isArrayBuffer;
+exports.isArrayEqual = isArrayEqual;
 exports.isBool = isBool;
 exports.isEmptyObj = isEmptyObj;
 exports.isNum = isNum;
@@ -875,7 +880,7 @@ Object.defineProperty(exports, "URL", {
     return _url_polyfill.URL;
   }
 });
-exports.createObjectURL = exports.FormatError = exports.XRefParseException = exports.XRefEntryException = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.MissingDataException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
+exports.createObjectURL = exports.FormatError = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
 
 __w_pdfjs_require__(3);
 
@@ -1166,10 +1171,6 @@ function warn(msg) {
   }
 }
 
-function deprecated(details) {
-  console.log('Deprecated API usage: ' + details);
-}
-
 function unreachable(msg) {
   throw new Error(msg);
 }
@@ -1239,19 +1240,6 @@ function shadow(obj, prop, value) {
   return value;
 }
 
-function getLookupTableFactory(initializer) {
-  var lookup;
-  return function () {
-    if (initializer) {
-      lookup = Object.create(null);
-      initializer(lookup);
-      initializer = null;
-    }
-
-    return lookup;
-  };
-}
-
 var PasswordException = function PasswordExceptionClosure() {
   function PasswordException(msg, code) {
     this.name = 'PasswordException';
@@ -1319,47 +1307,6 @@ var UnexpectedResponseException = function UnexpectedResponseExceptionClosure() 
 }();
 
 exports.UnexpectedResponseException = UnexpectedResponseException;
-
-var MissingDataException = function MissingDataExceptionClosure() {
-  function MissingDataException(begin, end) {
-    this.begin = begin;
-    this.end = end;
-    this.message = 'Missing data [' + begin + ', ' + end + ')';
-  }
-
-  MissingDataException.prototype = new Error();
-  MissingDataException.prototype.name = 'MissingDataException';
-  MissingDataException.constructor = MissingDataException;
-  return MissingDataException;
-}();
-
-exports.MissingDataException = MissingDataException;
-
-const XRefEntryException = function XRefEntryExceptionClosure() {
-  function XRefEntryException(msg) {
-    this.message = msg;
-  }
-
-  XRefEntryException.prototype = new Error();
-  XRefEntryException.prototype.name = 'XRefEntryException';
-  XRefEntryException.constructor = XRefEntryException;
-  return XRefEntryException;
-}();
-
-exports.XRefEntryException = XRefEntryException;
-
-var XRefParseException = function XRefParseExceptionClosure() {
-  function XRefParseException(msg) {
-    this.message = msg;
-  }
-
-  XRefParseException.prototype = new Error();
-  XRefParseException.prototype.name = 'XRefParseException';
-  XRefParseException.constructor = XRefParseException;
-  return XRefParseException;
-}();
-
-exports.XRefParseException = XRefParseException;
 
 let FormatError = function FormatErrorClosure() {
   function FormatError(msg) {
@@ -1516,42 +1463,6 @@ function isEvalSupported() {
   }
 }
 
-function getInheritableProperty({
-  dict,
-  key,
-  getArray = false,
-  stopWhenFound = true
-}) {
-  const LOOP_LIMIT = 100;
-  let loopCount = 0;
-  let values;
-
-  while (dict) {
-    const value = getArray ? dict.getArray(key) : dict.get(key);
-
-    if (value !== undefined) {
-      if (stopWhenFound) {
-        return value;
-      }
-
-      if (!values) {
-        values = [];
-      }
-
-      values.push(value);
-    }
-
-    if (++loopCount > LOOP_LIMIT) {
-      warn(`getInheritableProperty: maximum loop count exceeded for "${key}"`);
-      break;
-    }
-
-    dict = dict.get('Parent');
-  }
-
-  return values;
-}
-
 var Util = function UtilClosure() {
   function Util() {}
 
@@ -1659,29 +1570,6 @@ var Util = function UtilClosure() {
 }();
 
 exports.Util = Util;
-const ROMAN_NUMBER_MAP = ['', 'C', 'CC', 'CCC', 'CD', 'D', 'DC', 'DCC', 'DCCC', 'CM', '', 'X', 'XX', 'XXX', 'XL', 'L', 'LX', 'LXX', 'LXXX', 'XC', '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
-
-function toRomanNumerals(number, lowerCase = false) {
-  assert(Number.isInteger(number) && number > 0, 'The number should be a positive integer.');
-  let pos,
-      romanBuf = [];
-
-  while (number >= 1000) {
-    number -= 1000;
-    romanBuf.push('M');
-  }
-
-  pos = number / 100 | 0;
-  number %= 100;
-  romanBuf.push(ROMAN_NUMBER_MAP[pos]);
-  pos = number / 10 | 0;
-  number %= 10;
-  romanBuf.push(ROMAN_NUMBER_MAP[10 + pos]);
-  romanBuf.push(ROMAN_NUMBER_MAP[20 + number]);
-  const romanStr = romanBuf.join('');
-  return lowerCase ? romanStr.toLowerCase() : romanStr;
-}
-
 const PDFStringTranslateTable = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2D8, 0x2C7, 0x2C6, 0x2D9, 0x2DD, 0x2DB, 0x2DA, 0x2DC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x192, 0x2044, 0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019, 0x201A, 0x2122, 0xFB01, 0xFB02, 0x141, 0x152, 0x160, 0x178, 0x17D, 0x131, 0x142, 0x153, 0x161, 0x17E, 0, 0x20AC];
 
 function stringToPDFString(str) {
@@ -1735,15 +1623,39 @@ function isArrayBuffer(v) {
   return typeof v === 'object' && v !== null && v.byteLength !== undefined;
 }
 
+function isArrayEqual(arr1, arr2) {
+  if (arr1.length !== arr2.length) {
+    return false;
+  }
+
+  return arr1.every(function (element, index) {
+    return element === arr2[index];
+  });
+}
+
 function isSpace(ch) {
   return ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A;
 }
 
 function createPromiseCapability() {
-  var capability = {};
+  const capability = Object.create(null);
+  let isSettled = false;
+  Object.defineProperty(capability, 'settled', {
+    get() {
+      return isSettled;
+    }
+
+  });
   capability.promise = new Promise(function (resolve, reject) {
-    capability.resolve = resolve;
-    capability.reject = reject;
+    capability.resolve = function (data) {
+      isSettled = true;
+      resolve(data);
+    };
+
+    capability.reject = function (reason) {
+      isSettled = true;
+      reject(reason);
+    };
   });
   return capability;
 }
@@ -1839,9 +1751,11 @@ var _util = __w_pdfjs_require__(2);
 
 var _chunked_stream = __w_pdfjs_require__(8);
 
-var _document = __w_pdfjs_require__(9);
+var _core_utils = __w_pdfjs_require__(9);
 
-var _stream = __w_pdfjs_require__(13);
+var _document = __w_pdfjs_require__(10);
+
+var _stream = __w_pdfjs_require__(14);
 
 class BasePdfManager {
   constructor() {
@@ -1993,7 +1907,7 @@ class NetworkPdfManager extends BasePdfManager {
 
       return value;
     } catch (ex) {
-      if (!(ex instanceof _util.MissingDataException)) {
+      if (!(ex instanceof _core_utils.MissingDataException)) {
         throw ex;
       }
 
@@ -2041,6 +1955,8 @@ Object.defineProperty(exports, "__esModule", {
 exports.ChunkedStreamManager = exports.ChunkedStream = void 0;
 
 var _util = __w_pdfjs_require__(2);
+
+var _core_utils = __w_pdfjs_require__(9);
 
 class ChunkedStream {
   constructor(length, chunkSize, manager) {
@@ -2126,7 +2042,7 @@ class ChunkedStream {
     }
 
     if (!this.loadedChunks[chunk]) {
-      throw new _util.MissingDataException(pos, pos + 1);
+      throw new _core_utils.MissingDataException(pos, pos + 1);
     }
 
     this.lastSuccessfulEnsureByteChunk = chunk;
@@ -2147,7 +2063,7 @@ class ChunkedStream {
 
     for (let chunk = beginChunk; chunk < endChunk; ++chunk) {
       if (!this.loadedChunks[chunk]) {
-        throw new _util.MissingDataException(begin, end);
+        throw new _core_utils.MissingDataException(begin, end);
       }
     }
   }
@@ -2605,27 +2521,159 @@ exports.ChunkedStreamManager = ChunkedStreamManager;
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+exports.getLookupTableFactory = getLookupTableFactory;
+exports.getInheritableProperty = getInheritableProperty;
+exports.toRomanNumerals = toRomanNumerals;
+exports.XRefParseException = exports.XRefEntryException = exports.MissingDataException = void 0;
+
+var _util = __w_pdfjs_require__(2);
+
+function getLookupTableFactory(initializer) {
+  let lookup;
+  return function () {
+    if (initializer) {
+      lookup = Object.create(null);
+      initializer(lookup);
+      initializer = null;
+    }
+
+    return lookup;
+  };
+}
+
+const MissingDataException = function MissingDataExceptionClosure() {
+  function MissingDataException(begin, end) {
+    this.begin = begin;
+    this.end = end;
+    this.message = `Missing data [${begin}, ${end})`;
+  }
+
+  MissingDataException.prototype = new Error();
+  MissingDataException.prototype.name = 'MissingDataException';
+  MissingDataException.constructor = MissingDataException;
+  return MissingDataException;
+}();
+
+exports.MissingDataException = MissingDataException;
+
+const XRefEntryException = function XRefEntryExceptionClosure() {
+  function XRefEntryException(msg) {
+    this.message = msg;
+  }
+
+  XRefEntryException.prototype = new Error();
+  XRefEntryException.prototype.name = 'XRefEntryException';
+  XRefEntryException.constructor = XRefEntryException;
+  return XRefEntryException;
+}();
+
+exports.XRefEntryException = XRefEntryException;
+
+const XRefParseException = function XRefParseExceptionClosure() {
+  function XRefParseException(msg) {
+    this.message = msg;
+  }
+
+  XRefParseException.prototype = new Error();
+  XRefParseException.prototype.name = 'XRefParseException';
+  XRefParseException.constructor = XRefParseException;
+  return XRefParseException;
+}();
+
+exports.XRefParseException = XRefParseException;
+
+function getInheritableProperty({
+  dict,
+  key,
+  getArray = false,
+  stopWhenFound = true
+}) {
+  const LOOP_LIMIT = 100;
+  let loopCount = 0;
+  let values;
+
+  while (dict) {
+    const value = getArray ? dict.getArray(key) : dict.get(key);
+
+    if (value !== undefined) {
+      if (stopWhenFound) {
+        return value;
+      }
+
+      if (!values) {
+        values = [];
+      }
+
+      values.push(value);
+    }
+
+    if (++loopCount > LOOP_LIMIT) {
+      (0, _util.warn)(`getInheritableProperty: maximum loop count exceeded for "${key}"`);
+      break;
+    }
+
+    dict = dict.get('Parent');
+  }
+
+  return values;
+}
+
+const ROMAN_NUMBER_MAP = ['', 'C', 'CC', 'CCC', 'CD', 'D', 'DC', 'DCC', 'DCCC', 'CM', '', 'X', 'XX', 'XXX', 'XL', 'L', 'LX', 'LXX', 'LXXX', 'XC', '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
+
+function toRomanNumerals(number, lowerCase = false) {
+  (0, _util.assert)(Number.isInteger(number) && number > 0, 'The number should be a positive integer.');
+  let pos,
+      romanBuf = [];
+
+  while (number >= 1000) {
+    number -= 1000;
+    romanBuf.push('M');
+  }
+
+  pos = number / 100 | 0;
+  number %= 100;
+  romanBuf.push(ROMAN_NUMBER_MAP[pos]);
+  pos = number / 10 | 0;
+  number %= 10;
+  romanBuf.push(ROMAN_NUMBER_MAP[10 + pos]);
+  romanBuf.push(ROMAN_NUMBER_MAP[20 + number]);
+  const romanStr = romanBuf.join('');
+  return lowerCase ? romanStr.toLowerCase() : romanStr;
+}
+
+/***/ }),
+/* 10 */
+/***/ (function(module, exports, __w_pdfjs_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 exports.PDFDocument = exports.Page = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _obj = __w_pdfjs_require__(10);
+var _obj = __w_pdfjs_require__(11);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _stream = __w_pdfjs_require__(13);
+var _core_utils = __w_pdfjs_require__(9);
 
-var _annotation = __w_pdfjs_require__(25);
+var _stream = __w_pdfjs_require__(14);
 
-var _crypto = __w_pdfjs_require__(23);
+var _annotation = __w_pdfjs_require__(26);
 
-var _parser = __w_pdfjs_require__(12);
+var _crypto = __w_pdfjs_require__(24);
 
-var _operator_list = __w_pdfjs_require__(26);
+var _parser = __w_pdfjs_require__(13);
 
-var _evaluator = __w_pdfjs_require__(27);
+var _operator_list = __w_pdfjs_require__(27);
 
-var _function = __w_pdfjs_require__(41);
+var _evaluator = __w_pdfjs_require__(28);
+
+var _function = __w_pdfjs_require__(42);
 
 const DEFAULT_USER_UNIT = 1.0;
 const LETTER_SIZE_MEDIABOX = [0, 0, 612, 792];
@@ -2668,7 +2716,7 @@ class Page {
   }
 
   _getInheritableProperty(key, getArray = false) {
-    const value = (0, _util.getInheritableProperty)({
+    const value = (0, _core_utils.getInheritableProperty)({
       dict: this.pageDict,
       key,
       getArray,
@@ -2993,17 +3041,31 @@ class PDFDocument {
         this.xfa = this.acroForm.get('XFA');
         const fields = this.acroForm.get('Fields');
 
-        if ((!fields || !Array.isArray(fields) || fields.length === 0) && !this.xfa) {
+        if ((!Array.isArray(fields) || fields.length === 0) && !this.xfa) {
           this.acroForm = null;
         }
       }
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
 
       (0, _util.info)('Cannot fetch AcroForm entry; assuming no AcroForms are present');
       this.acroForm = null;
+    }
+
+    try {
+      const collection = this.catalog.catDict.get('Collection');
+
+      if ((0, _primitives.isDict)(collection) && collection.getKeys().length > 0) {
+        this.collection = collection;
+      }
+    } catch (ex) {
+      if (ex instanceof _core_utils.MissingDataException) {
+        throw ex;
+      }
+
+      (0, _util.info)('Cannot fetch Collection dictionary.');
     }
   }
 
@@ -3013,7 +3075,7 @@ class PDFDocument {
     try {
       linearization = _parser.Linearization.create(this.stream);
     } catch (err) {
-      if (err instanceof _util.MissingDataException) {
+      if (err instanceof _core_utils.MissingDataException) {
         throw err;
       }
 
@@ -3133,14 +3195,15 @@ class PDFDocument {
       PDFFormatVersion: this.pdfFormatVersion,
       IsLinearized: !!this.linearization,
       IsAcroFormPresent: !!this.acroForm,
-      IsXFAPresent: !!this.xfa
+      IsXFAPresent: !!this.xfa,
+      IsCollectionPresent: !!this.collection
     };
     let infoDict;
 
     try {
       infoDict = this.xref.trailer.get('Info');
     } catch (err) {
-      if (err instanceof _util.MissingDataException) {
+      if (err instanceof _core_utils.MissingDataException) {
         throw err;
       }
 
@@ -3254,10 +3317,10 @@ class PDFDocument {
 
   checkFirstPage() {
     return this.getPage(0).catch(reason => {
-      if (reason instanceof _util.XRefEntryException) {
+      if (reason instanceof _core_utils.XRefEntryException) {
         this._pagePromises.length = 0;
         this.cleanup();
-        throw new _util.XRefParseException();
+        throw new _core_utils.XRefParseException();
       }
     });
   }
@@ -3275,7 +3338,7 @@ class PDFDocument {
 exports.PDFDocument = PDFDocument;
 
 /***/ }),
-/* 10 */
+/* 11 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -3288,15 +3351,17 @@ exports.FileSpec = exports.XRef = exports.ObjectLoader = exports.Catalog = void 
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _parser = __w_pdfjs_require__(12);
+var _parser = __w_pdfjs_require__(13);
+
+var _core_utils = __w_pdfjs_require__(9);
 
 var _chunked_stream = __w_pdfjs_require__(8);
 
-var _crypto = __w_pdfjs_require__(23);
+var _crypto = __w_pdfjs_require__(24);
 
-var _colorspace = __w_pdfjs_require__(24);
+var _colorspace = __w_pdfjs_require__(25);
 
 function fetchDestination(dest) {
   return (0, _primitives.isDict)(dest) ? dest.get('D') : dest;
@@ -3336,7 +3401,7 @@ class Catalog {
         try {
           metadata = (0, _util.stringToUTF8String)((0, _util.bytesToString)(stream.getBytes()));
         } catch (e) {
-          if (e instanceof _util.MissingDataException) {
+          if (e instanceof _core_utils.MissingDataException) {
             throw e;
           }
 
@@ -3364,7 +3429,7 @@ class Catalog {
     try {
       obj = this._readDocumentOutline();
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
 
@@ -3472,7 +3537,7 @@ class Catalog {
     try {
       permissions = this._readPermissions();
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
 
@@ -3566,7 +3631,7 @@ class Catalog {
     try {
       obj = this._readPageLabels();
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
 
@@ -3647,7 +3712,7 @@ class Catalog {
 
         case 'R':
         case 'r':
-          currentLabel = (0, _util.toRomanNumerals)(currentIndex, style === 'r');
+          currentLabel = (0, _core_utils.toRomanNumerals)(currentIndex, style === 'r');
           break;
 
         case 'A':
@@ -4226,7 +4291,7 @@ var XRef = function XRefClosure() {
       try {
         encrypt = trailerDict.get('Encrypt');
       } catch (ex) {
-        if (ex instanceof _util.MissingDataException) {
+        if (ex instanceof _core_utils.MissingDataException) {
           throw ex;
         }
 
@@ -4245,7 +4310,7 @@ var XRef = function XRefClosure() {
       try {
         root = trailerDict.get('Root');
       } catch (ex) {
-        if (ex instanceof _util.MissingDataException) {
+        if (ex instanceof _core_utils.MissingDataException) {
           throw ex;
         }
 
@@ -4256,7 +4321,7 @@ var XRef = function XRefClosure() {
         this.root = root;
       } else {
         if (!recoveryMode) {
-          throw new _util.XRefParseException();
+          throw new _core_utils.XRefParseException();
         }
 
         throw new _util.FormatError('Invalid root reference');
@@ -4550,10 +4615,13 @@ var XRef = function XRefClosure() {
           trailers.push(position);
           position += skipUntil(buffer, position, startxrefBytes);
         } else if (m = objRegExp.exec(token)) {
-          if (typeof this.entries[m[1]] === 'undefined') {
-            this.entries[m[1]] = {
+          const num = m[1] | 0,
+                gen = m[2] | 0;
+
+          if (typeof this.entries[num] === 'undefined') {
+            this.entries[num] = {
               offset: position - stream.start,
-              gen: m[2] | 0,
+              gen,
               uncompressed: true
             };
           }
@@ -4628,7 +4696,7 @@ var XRef = function XRefClosure() {
         try {
           rootDict = dict.get('Root');
         } catch (ex) {
-          if (ex instanceof _util.MissingDataException) {
+          if (ex instanceof _core_utils.MissingDataException) {
             throw ex;
           }
 
@@ -4720,7 +4788,7 @@ var XRef = function XRefClosure() {
 
         return this.topDict;
       } catch (e) {
-        if (e instanceof _util.MissingDataException) {
+        if (e instanceof _core_utils.MissingDataException) {
           throw e;
         }
 
@@ -4731,7 +4799,7 @@ var XRef = function XRefClosure() {
         return;
       }
 
-      throw new _util.XRefParseException();
+      throw new _core_utils.XRefParseException();
     },
     getEntry: function XRef_getEntry(i) {
       var xrefEntry = this.entries[i];
@@ -4792,7 +4860,7 @@ var XRef = function XRefClosure() {
       var num = ref.num;
 
       if (xrefEntry.gen !== gen) {
-        throw new _util.XRefEntryException(`Inconsistent generation in XRef: ${ref}`);
+        throw new _core_utils.XRefEntryException(`Inconsistent generation in XRef: ${ref}`);
       }
 
       var stream = this.stream.makeSubStream(xrefEntry.offset + this.stream.start);
@@ -4810,7 +4878,7 @@ var XRef = function XRefClosure() {
       }
 
       if (obj1 !== num || obj2 !== gen || !(0, _primitives.isCmd)(obj3)) {
-        throw new _util.XRefEntryException(`Bad (uncompressed) XRef entry: ${ref}`);
+        throw new _core_utils.XRefEntryException(`Bad (uncompressed) XRef entry: ${ref}`);
       }
 
       if (obj3.cmd !== 'obj') {
@@ -4822,7 +4890,7 @@ var XRef = function XRefClosure() {
           }
         }
 
-        throw new _util.XRefEntryException(`Bad (uncompressed) XRef entry: ${ref}`);
+        throw new _core_utils.XRefEntryException(`Bad (uncompressed) XRef entry: ${ref}`);
       }
 
       if (this.encrypt && !suppressEncryption) {
@@ -4893,7 +4961,7 @@ var XRef = function XRefClosure() {
       xrefEntry = entries[xrefEntry.gen];
 
       if (xrefEntry === undefined) {
-        throw new _util.XRefEntryException(`Bad (compressed) XRef entry: ${ref}`);
+        throw new _core_utils.XRefEntryException(`Bad (compressed) XRef entry: ${ref}`);
       }
 
       return xrefEntry;
@@ -4911,7 +4979,7 @@ var XRef = function XRefClosure() {
       try {
         return this.fetch(ref, suppressEncryption);
       } catch (ex) {
-        if (!(ex instanceof _util.MissingDataException)) {
+        if (!(ex instanceof _core_utils.MissingDataException)) {
           throw ex;
         }
 
@@ -5258,7 +5326,7 @@ let ObjectLoader = function () {
             this.refSet.put(currentNode);
             currentNode = this.xref.fetch(currentNode);
           } catch (ex) {
-            if (!(ex instanceof _util.MissingDataException)) {
+            if (!(ex instanceof _core_utils.MissingDataException)) {
               throw ex;
             }
 
@@ -5320,7 +5388,7 @@ let ObjectLoader = function () {
 exports.ObjectLoader = ObjectLoader;
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -5608,7 +5676,7 @@ function isStream(v) {
 }
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -5619,19 +5687,21 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.Parser = exports.Linearization = exports.Lexer = void 0;
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _ccitt_stream = __w_pdfjs_require__(14);
+var _ccitt_stream = __w_pdfjs_require__(15);
 
-var _jbig2_stream = __w_pdfjs_require__(16);
+var _jbig2_stream = __w_pdfjs_require__(17);
 
-var _jpeg_stream = __w_pdfjs_require__(19);
+var _jpeg_stream = __w_pdfjs_require__(20);
 
-var _jpx_stream = __w_pdfjs_require__(21);
+var _jpx_stream = __w_pdfjs_require__(22);
+
+var _core_utils = __w_pdfjs_require__(9);
 
 const MAX_LENGTH_TO_CACHE = 1000;
 const MAX_ADLER32_LENGTH = 5552;
@@ -5678,7 +5748,7 @@ var Parser = function ParserClosure() {
         this.shift();
         return true;
       } catch (e) {
-        if (e instanceof _util.MissingDataException) {
+        if (e instanceof _core_utils.MissingDataException) {
           throw e;
         }
 
@@ -5935,7 +6005,8 @@ var Parser = function ParserClosure() {
       this.inlineStreamSkipEI(stream);
       return length;
     },
-    findASCII85DecodeInlineStreamEnd: function Parser_findASCII85DecodeInlineStreamEnd(stream) {
+
+    findASCII85DecodeInlineStreamEnd(stream) {
       var TILDE = 0x7E,
           GT = 0x3E;
       var startPos = stream.pos,
@@ -5943,9 +6014,18 @@ var Parser = function ParserClosure() {
           length;
 
       while ((ch = stream.getByte()) !== -1) {
-        if (ch === TILDE && stream.peekByte() === GT) {
-          stream.skip();
-          break;
+        if (ch === TILDE) {
+          ch = stream.peekByte();
+
+          while ((0, _util.isSpace)(ch)) {
+            stream.skip();
+            ch = stream.peekByte();
+          }
+
+          if (ch === GT) {
+            stream.skip();
+            break;
+          }
         }
       }
 
@@ -5960,6 +6040,7 @@ var Parser = function ParserClosure() {
       this.inlineStreamSkipEI(stream);
       return length;
     },
+
     findASCIIHexDecodeInlineStreamEnd: function Parser_findASCIIHexDecodeInlineStreamEnd(stream) {
       var GT = 0x3E;
       var startPos = stream.pos,
@@ -6303,7 +6384,7 @@ var Parser = function ParserClosure() {
         (0, _util.warn)('filter "' + name + '" not supported yet');
         return stream;
       } catch (ex) {
-        if (ex instanceof _util.MissingDataException) {
+        if (ex instanceof _core_utils.MissingDataException) {
           throw ex;
         }
 
@@ -6860,7 +6941,7 @@ var Linearization = {
 exports.Linearization = Linearization;
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -6873,7 +6954,7 @@ exports.LZWStream = exports.StringStream = exports.StreamsSequenceStream = expor
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
 var Stream = function StreamClosure() {
   function Stream(arrayBuffer, start, length, dict) {
@@ -8137,7 +8218,7 @@ var NullStream = function NullStreamClosure() {
 exports.NullStream = NullStream;
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -8148,11 +8229,11 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.CCITTFaxStream = void 0;
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _ccitt = __w_pdfjs_require__(15);
+var _ccitt = __w_pdfjs_require__(16);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
 var CCITTFaxStream = function CCITTFaxStreamClosure() {
   function CCITTFaxStream(str, maybeLength, params) {
@@ -8204,7 +8285,7 @@ var CCITTFaxStream = function CCITTFaxStreamClosure() {
 exports.CCITTFaxStream = CCITTFaxStream;
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -8909,7 +8990,7 @@ let CCITTFaxDecoder = function CCITTFaxDecoder() {
 exports.CCITTFaxDecoder = CCITTFaxDecoder;
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -8920,11 +9001,11 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.Jbig2Stream = void 0;
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
-var _jbig = __w_pdfjs_require__(17);
+var _jbig = __w_pdfjs_require__(18);
 
 var _util = __w_pdfjs_require__(2);
 
@@ -8993,7 +9074,7 @@ let Jbig2Stream = function Jbig2StreamClosure() {
 exports.Jbig2Stream = Jbig2Stream;
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -9006,9 +9087,9 @@ exports.Jbig2Image = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _arithmetic_decoder = __w_pdfjs_require__(18);
+var _arithmetic_decoder = __w_pdfjs_require__(19);
 
-var _ccitt = __w_pdfjs_require__(15);
+var _ccitt = __w_pdfjs_require__(16);
 
 let Jbig2Error = function Jbig2ErrorClosure() {
   function Jbig2Error(msg) {
@@ -11206,7 +11287,7 @@ var Jbig2Image = function Jbig2ImageClosure() {
 exports.Jbig2Image = Jbig2Image;
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -11560,7 +11641,7 @@ class ArithmeticDecoder {
 exports.ArithmeticDecoder = ArithmeticDecoder;
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -11573,11 +11654,11 @@ exports.JpegStream = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _jpg = __w_pdfjs_require__(20);
+var _jpg = __w_pdfjs_require__(21);
 
 let JpegStream = function JpegStreamClosure() {
   function JpegStream(stream, maybeLength, dict, params) {
@@ -11671,7 +11752,7 @@ let JpegStream = function JpegStreamClosure() {
 exports.JpegStream = JpegStream;
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -12850,7 +12931,7 @@ var JpegImage = function JpegImageClosure() {
 exports.JpegImage = JpegImage;
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -12861,9 +12942,9 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.JpxStream = void 0;
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
-var _jpx = __w_pdfjs_require__(22);
+var _jpx = __w_pdfjs_require__(23);
 
 var _util = __w_pdfjs_require__(2);
 
@@ -12937,7 +13018,7 @@ let JpxStream = function JpxStreamClosure() {
 exports.JpxStream = JpxStream;
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -12950,7 +13031,7 @@ exports.JpxImage = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _arithmetic_decoder = __w_pdfjs_require__(18);
+var _arithmetic_decoder = __w_pdfjs_require__(19);
 
 let JpxError = function JpxErrorClosure() {
   function JpxError(msg) {
@@ -15255,7 +15336,7 @@ var JpxImage = function JpxImageClosure() {
 exports.JpxImage = JpxImage;
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -15268,9 +15349,9 @@ exports.calculateSHA512 = exports.calculateSHA384 = exports.calculateSHA256 = ex
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
 var ARCFourCipher = function ARCFourCipherClosure() {
   function ARCFourCipher(key) {
@@ -16845,7 +16926,7 @@ var CipherTransformFactory = function CipherTransformFactoryClosure() {
 exports.CipherTransformFactory = CipherTransformFactory;
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -16858,7 +16939,7 @@ exports.ColorSpace = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
 function resizeRgbImage(src, dest, w1, h1, w2, h2, alpha01) {
   const COMPONENTS = 3;
@@ -16917,6 +16998,10 @@ class ColorSpace {
 
   isPassthrough(bits) {
     return false;
+  }
+
+  isDefaultDecode(decodeMap, bpc) {
+    return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
   }
 
   fillRgb(dest, originalWidth, originalHeight, width, height, actualHeight, bpc, comps, alpha01) {
@@ -17197,12 +17282,12 @@ class ColorSpace {
     throw new _util.FormatError(`unrecognized color space object: "${cs}"`);
   }
 
-  static isDefaultDecode(decode, n) {
+  static isDefaultDecode(decode, numComps) {
     if (!Array.isArray(decode)) {
       return true;
     }
 
-    if (n * 2 !== decode.length) {
+    if (numComps * 2 !== decode.length) {
       (0, _util.warn)('The decode map is not the correct length');
       return true;
     }
@@ -17291,16 +17376,16 @@ class AlternateCS extends ColorSpace {
     return this.base.getOutputLength(inputLength * this.base.numComps / this.numComps, alpha01);
   }
 
-  isDefaultDecode(decodeMap) {
-    return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
-  }
-
 }
 
 class PatternCS extends ColorSpace {
   constructor(baseCS) {
     super('Pattern', null);
     this.base = baseCS;
+  }
+
+  isDefaultDecode(decodeMap, bpc) {
+    (0, _util.unreachable)('Should not call PatternCS.isDefaultDecode');
   }
 
 }
@@ -17353,8 +17438,22 @@ class IndexedCS extends ColorSpace {
     return this.base.getOutputLength(inputLength * this.base.numComps, alpha01);
   }
 
-  isDefaultDecode(decodeMap) {
-    return true;
+  isDefaultDecode(decodeMap, bpc) {
+    if (!Array.isArray(decodeMap)) {
+      return true;
+    }
+
+    if (decodeMap.length !== 2) {
+      (0, _util.warn)('Decode map length is not correct');
+      return true;
+    }
+
+    if (!Number.isInteger(bpc) || bpc < 1) {
+      (0, _util.warn)('Bits per component is not correct');
+      return true;
+    }
+
+    return decodeMap[0] === 0 && decodeMap[1] === (1 << bpc) - 1;
   }
 
 }
@@ -17385,10 +17484,6 @@ class DeviceGrayCS extends ColorSpace {
 
   getOutputLength(inputLength, alpha01) {
     return inputLength * (3 + alpha01);
-  }
-
-  isDefaultDecode(decodeMap) {
-    return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
   }
 
 }
@@ -17430,10 +17525,6 @@ class DeviceRgbCS extends ColorSpace {
     return bits === 8;
   }
 
-  isDefaultDecode(decodeMap) {
-    return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
-  }
-
 }
 
 const DeviceCmykCS = function DeviceCmykCSClosure() {
@@ -17468,10 +17559,6 @@ const DeviceCmykCS = function DeviceCmykCSClosure() {
 
     getOutputLength(inputLength, alpha01) {
       return inputLength / 4 * (3 + alpha01) | 0;
-    }
-
-    isDefaultDecode(decodeMap) {
-      return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
     }
 
   }
@@ -17543,10 +17630,6 @@ const CalGrayCS = function CalGrayCSClosure() {
 
     getOutputLength(inputLength, alpha01) {
       return inputLength * (3 + alpha01);
-    }
-
-    isDefaultDecode(decodeMap) {
-      return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
     }
 
   }
@@ -17750,10 +17833,6 @@ const CalRGBCS = function CalRGBCSClosure() {
       return inputLength * (3 + alpha01) / 3 | 0;
     }
 
-    isDefaultDecode(decodeMap) {
-      return ColorSpace.isDefaultDecode(decodeMap, this.numComps);
-    }
-
   }
 
   return CalRGBCS;
@@ -17869,7 +17948,7 @@ const LabCS = function LabCSClosure() {
       return inputLength * (3 + alpha01) / 3 | 0;
     }
 
-    isDefaultDecode(decodeMap) {
+    isDefaultDecode(decodeMap, bpc) {
       return true;
     }
 
@@ -17883,7 +17962,7 @@ const LabCS = function LabCSClosure() {
 }();
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -17896,15 +17975,17 @@ exports.AnnotationFactory = exports.AnnotationBorderStyle = exports.Annotation =
 
 var _util = __w_pdfjs_require__(2);
 
-var _obj = __w_pdfjs_require__(10);
+var _obj = __w_pdfjs_require__(11);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _colorspace = __w_pdfjs_require__(24);
+var _colorspace = __w_pdfjs_require__(25);
 
-var _operator_list = __w_pdfjs_require__(26);
+var _core_utils = __w_pdfjs_require__(9);
 
-var _stream = __w_pdfjs_require__(13);
+var _operator_list = __w_pdfjs_require__(27);
+
+var _stream = __w_pdfjs_require__(14);
 
 class AnnotationFactory {
   static create(xref, ref, pdfManager, idFactory) {
@@ -17938,7 +18019,7 @@ class AnnotationFactory {
         return new TextAnnotation(parameters);
 
       case 'Widget':
-        let fieldType = (0, _util.getInheritableProperty)({
+        let fieldType = (0, _core_utils.getInheritableProperty)({
           dict,
           key: 'FT'
         });
@@ -18345,26 +18426,26 @@ class WidgetAnnotation extends Annotation {
     let data = this.data;
     data.annotationType = _util.AnnotationType.WIDGET;
     data.fieldName = this._constructFieldName(dict);
-    data.fieldValue = (0, _util.getInheritableProperty)({
+    data.fieldValue = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'V',
       getArray: true
     });
     data.alternativeText = (0, _util.stringToPDFString)(dict.get('TU') || '');
-    data.defaultAppearance = (0, _util.getInheritableProperty)({
+    data.defaultAppearance = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'DA'
     }) || '';
-    let fieldType = (0, _util.getInheritableProperty)({
+    let fieldType = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'FT'
     });
     data.fieldType = (0, _primitives.isName)(fieldType) ? fieldType.name : null;
-    this.fieldResources = (0, _util.getInheritableProperty)({
+    this.fieldResources = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'DR'
     }) || _primitives.Dict.empty;
-    data.fieldFlags = (0, _util.getInheritableProperty)({
+    data.fieldFlags = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'Ff'
     });
@@ -18433,7 +18514,7 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     super(params);
     const dict = params.dict;
     this.data.fieldValue = (0, _util.stringToPDFString)(this.data.fieldValue || '');
-    let alignment = (0, _util.getInheritableProperty)({
+    let alignment = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'Q'
     });
@@ -18443,7 +18524,7 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     }
 
     this.data.textAlignment = alignment;
-    let maximumLength = (0, _util.getInheritableProperty)({
+    let maximumLength = (0, _core_utils.getInheritableProperty)({
       dict,
       key: 'MaxLen'
     });
@@ -18579,7 +18660,7 @@ class ChoiceWidgetAnnotation extends WidgetAnnotation {
   constructor(params) {
     super(params);
     this.data.options = [];
-    let options = (0, _util.getInheritableProperty)({
+    let options = (0, _core_utils.getInheritableProperty)({
       dict: params.dict,
       key: 'Opt'
     });
@@ -18824,7 +18905,7 @@ class FileAttachmentAnnotation extends Annotation {
 }
 
 /***/ }),
-/* 26 */
+/* 27 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -19466,7 +19547,7 @@ var OperatorList = function OperatorListClosure() {
 exports.OperatorList = OperatorList;
 
 /***/ }),
-/* 27 */
+/* 28 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -19479,41 +19560,45 @@ exports.PartialEvaluator = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _cmap = __w_pdfjs_require__(28);
+var _cmap = __w_pdfjs_require__(29);
 
-var _stream = __w_pdfjs_require__(13);
+var _primitives = __w_pdfjs_require__(12);
 
-var _primitives = __w_pdfjs_require__(11);
+var _fonts = __w_pdfjs_require__(30);
 
-var _fonts = __w_pdfjs_require__(29);
+var _encodings = __w_pdfjs_require__(33);
 
-var _encodings = __w_pdfjs_require__(32);
+var _unicode = __w_pdfjs_require__(36);
 
-var _unicode = __w_pdfjs_require__(35);
+var _standard_fonts = __w_pdfjs_require__(35);
 
-var _standard_fonts = __w_pdfjs_require__(34);
+var _pattern = __w_pdfjs_require__(39);
 
-var _pattern = __w_pdfjs_require__(38);
+var _parser = __w_pdfjs_require__(13);
 
-var _parser = __w_pdfjs_require__(12);
+var _bidi = __w_pdfjs_require__(40);
 
-var _bidi = __w_pdfjs_require__(39);
+var _colorspace = __w_pdfjs_require__(25);
 
-var _colorspace = __w_pdfjs_require__(24);
+var _stream = __w_pdfjs_require__(14);
 
-var _glyphlist = __w_pdfjs_require__(33);
+var _glyphlist = __w_pdfjs_require__(34);
 
-var _metrics = __w_pdfjs_require__(40);
+var _core_utils = __w_pdfjs_require__(9);
 
-var _function = __w_pdfjs_require__(41);
+var _metrics = __w_pdfjs_require__(41);
 
-var _jpeg_stream = __w_pdfjs_require__(19);
+var _function = __w_pdfjs_require__(42);
 
-var _murmurhash = __w_pdfjs_require__(43);
+var _jpeg_stream = __w_pdfjs_require__(20);
 
-var _operator_list = __w_pdfjs_require__(26);
+var _murmurhash = __w_pdfjs_require__(44);
 
-var _image = __w_pdfjs_require__(44);
+var _image_utils = __w_pdfjs_require__(45);
+
+var _operator_list = __w_pdfjs_require__(27);
+
+var _image = __w_pdfjs_require__(46);
 
 var PartialEvaluator = function PartialEvaluatorClosure() {
   const DefaultPartialEvaluatorOptions = {
@@ -19523,64 +19608,6 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
     nativeImageDecoderSupport: _util.NativeImageDecoding.DECODE,
     ignoreErrors: false,
     isEvalSupported: true
-  };
-
-  function NativeImageDecoder({
-    xref,
-    resources,
-    handler,
-    forceDataSchema = false,
-    pdfFunctionFactory
-  }) {
-    this.xref = xref;
-    this.resources = resources;
-    this.handler = handler;
-    this.forceDataSchema = forceDataSchema;
-    this.pdfFunctionFactory = pdfFunctionFactory;
-  }
-
-  NativeImageDecoder.prototype = {
-    canDecode(image) {
-      return image instanceof _jpeg_stream.JpegStream && NativeImageDecoder.isDecodable(image, this.xref, this.resources, this.pdfFunctionFactory);
-    },
-
-    decode(image) {
-      var dict = image.dict;
-      var colorSpace = dict.get('ColorSpace', 'CS');
-      colorSpace = _colorspace.ColorSpace.parse(colorSpace, this.xref, this.resources, this.pdfFunctionFactory);
-      return this.handler.sendWithPromise('JpegDecode', [image.getIR(this.forceDataSchema), colorSpace.numComps]).then(function ({
-        data,
-        width,
-        height
-      }) {
-        return new _stream.Stream(data, 0, data.length, image.dict);
-      });
-    }
-
-  };
-
-  NativeImageDecoder.isSupported = function (image, xref, res, pdfFunctionFactory) {
-    var dict = image.dict;
-
-    if (dict.has('DecodeParms') || dict.has('DP')) {
-      return false;
-    }
-
-    var cs = _colorspace.ColorSpace.parse(dict.get('ColorSpace', 'CS'), xref, res, pdfFunctionFactory);
-
-    return (cs.name === 'DeviceGray' || cs.name === 'DeviceRGB') && cs.isDefaultDecode(dict.getArray('Decode', 'D'));
-  };
-
-  NativeImageDecoder.isDecodable = function (image, xref, res, pdfFunctionFactory) {
-    var dict = image.dict;
-
-    if (dict.has('DecodeParms') || dict.has('DP')) {
-      return false;
-    }
-
-    var cs = _colorspace.ColorSpace.parse(dict.get('ColorSpace', 'CS'), xref, res, pdfFunctionFactory);
-
-    return (cs.numComps === 1 || cs.numComps === 3) && cs.isDefaultDecode(dict.getArray('Decode', 'D'));
   };
 
   function PartialEvaluator({
@@ -19924,7 +19951,7 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
       const nativeImageDecoderSupport = forceDisableNativeImageDecoder ? _util.NativeImageDecoding.NONE : this.options.nativeImageDecoderSupport;
       var objId = 'img_' + this.idFactory.createObjId();
 
-      if (nativeImageDecoderSupport !== _util.NativeImageDecoding.NONE && !softMask && !mask && image instanceof _jpeg_stream.JpegStream && NativeImageDecoder.isSupported(image, this.xref, resources, this.pdfFunctionFactory)) {
+      if (nativeImageDecoderSupport !== _util.NativeImageDecoding.NONE && !softMask && !mask && image instanceof _jpeg_stream.JpegStream && _image_utils.NativeImageDecoder.isSupported(image, this.xref, resources, this.pdfFunctionFactory)) {
         return this.handler.sendWithPromise('obj', [objId, this.pageIndex, 'JpegStream', image.getIR(this.options.forceDataSchema)]).then(function () {
           operatorList.addDependency(objId);
           args = [objId, w, h];
@@ -19953,7 +19980,7 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
       var nativeImageDecoder = null;
 
       if (nativeImageDecoderSupport === _util.NativeImageDecoding.DECODE && (image instanceof _jpeg_stream.JpegStream || mask instanceof _jpeg_stream.JpegStream || softMask instanceof _jpeg_stream.JpegStream)) {
-        nativeImageDecoder = new NativeImageDecoder({
+        nativeImageDecoder = new _image_utils.NativeImageDecoder({
           xref: this.xref,
           resources,
           handler: this.handler,
@@ -20778,19 +20805,18 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
             fontFamily: font.fallbackName,
             ascent: font.ascent,
             descent: font.descent,
-            vertical: font.vertical
+            vertical: !!font.vertical
           };
         }
 
         textContentItem.fontName = font.loadedName;
         var tsm = [textState.fontSize * textState.textHScale, 0, 0, textState.fontSize, 0, textState.textRise];
 
-        if (font.isType3Font && textState.fontMatrix !== _util.FONT_IDENTITY_MATRIX && textState.fontSize === 1) {
-          var glyphHeight = font.bbox[3] - font.bbox[1];
+        if (font.isType3Font && textState.fontSize <= 1 && !(0, _util.isArrayEqual)(textState.fontMatrix, _util.FONT_IDENTITY_MATRIX)) {
+          const glyphHeight = font.bbox[3] - font.bbox[1];
 
           if (glyphHeight > 0) {
-            glyphHeight = glyphHeight * textState.fontMatrix[3];
-            tsm[3] *= glyphHeight;
+            tsm[3] *= glyphHeight * textState.fontMatrix[3];
           }
         }
 
@@ -20955,8 +20981,12 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
           return;
         }
 
-        textContentItem.width *= textContentItem.textAdvanceScale;
-        textContentItem.height *= textContentItem.textAdvanceScale;
+        if (!textContentItem.vertical) {
+          textContentItem.width *= textContentItem.textAdvanceScale;
+        } else {
+          textContentItem.height *= textContentItem.textAdvanceScale;
+        }
+
         textContent.items.push(runBidiTransform(textContentItem));
         textContentItem.initialized = false;
         textContentItem.str.length = 0;
@@ -21479,7 +21509,7 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
               }
             }
 
-            toUnicode[charcode] = String.fromCharCode(code);
+            toUnicode[charcode] = String.fromCodePoint(code);
           }
 
           continue;
@@ -21579,7 +21609,7 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
               str.push(((w1 & 0x3ff) << 10) + (w2 & 0x3ff) + 0x10000);
             }
 
-            map[charCode] = String.fromCharCode.apply(String, str);
+            map[charCode] = String.fromCodePoint.apply(String, str);
           });
           return new _fonts.ToUnicodeMap(map);
         });
@@ -22260,7 +22290,7 @@ var EvalState = function EvalStateClosure() {
 }();
 
 var EvaluatorPreprocessor = function EvaluatorPreprocessorClosure() {
-  var getOPMap = (0, _util.getLookupTableFactory)(function (t) {
+  var getOPMap = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['w'] = {
       id: _util.OPS.setLineWidth,
       numArgs: 1,
@@ -22752,7 +22782,7 @@ var EvaluatorPreprocessor = function EvaluatorPreprocessorClosure() {
 }();
 
 /***/ }),
-/* 28 */
+/* 29 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -22765,11 +22795,13 @@ exports.CMapFactory = exports.IdentityCMap = exports.CMap = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _parser = __w_pdfjs_require__(12);
+var _parser = __w_pdfjs_require__(13);
 
-var _stream = __w_pdfjs_require__(13);
+var _core_utils = __w_pdfjs_require__(9);
+
+var _stream = __w_pdfjs_require__(14);
 
 var BUILT_IN_CMAPS = ['Adobe-GB1-UCS2', 'Adobe-CNS1-UCS2', 'Adobe-Japan1-UCS2', 'Adobe-Korea1-UCS2', '78-EUC-H', '78-EUC-V', '78-H', '78-RKSJ-H', '78-RKSJ-V', '78-V', '78ms-RKSJ-H', '78ms-RKSJ-V', '83pv-RKSJ-H', '90ms-RKSJ-H', '90ms-RKSJ-V', '90msp-RKSJ-H', '90msp-RKSJ-V', '90pv-RKSJ-H', '90pv-RKSJ-V', 'Add-H', 'Add-RKSJ-H', 'Add-RKSJ-V', 'Add-V', 'Adobe-CNS1-0', 'Adobe-CNS1-1', 'Adobe-CNS1-2', 'Adobe-CNS1-3', 'Adobe-CNS1-4', 'Adobe-CNS1-5', 'Adobe-CNS1-6', 'Adobe-GB1-0', 'Adobe-GB1-1', 'Adobe-GB1-2', 'Adobe-GB1-3', 'Adobe-GB1-4', 'Adobe-GB1-5', 'Adobe-Japan1-0', 'Adobe-Japan1-1', 'Adobe-Japan1-2', 'Adobe-Japan1-3', 'Adobe-Japan1-4', 'Adobe-Japan1-5', 'Adobe-Japan1-6', 'Adobe-Korea1-0', 'Adobe-Korea1-1', 'Adobe-Korea1-2', 'B5-H', 'B5-V', 'B5pc-H', 'B5pc-V', 'CNS-EUC-H', 'CNS-EUC-V', 'CNS1-H', 'CNS1-V', 'CNS2-H', 'CNS2-V', 'ETHK-B5-H', 'ETHK-B5-V', 'ETen-B5-H', 'ETen-B5-V', 'ETenms-B5-H', 'ETenms-B5-V', 'EUC-H', 'EUC-V', 'Ext-H', 'Ext-RKSJ-H', 'Ext-RKSJ-V', 'Ext-V', 'GB-EUC-H', 'GB-EUC-V', 'GB-H', 'GB-V', 'GBK-EUC-H', 'GBK-EUC-V', 'GBK2K-H', 'GBK2K-V', 'GBKp-EUC-H', 'GBKp-EUC-V', 'GBT-EUC-H', 'GBT-EUC-V', 'GBT-H', 'GBT-V', 'GBTpc-EUC-H', 'GBTpc-EUC-V', 'GBpc-EUC-H', 'GBpc-EUC-V', 'H', 'HKdla-B5-H', 'HKdla-B5-V', 'HKdlb-B5-H', 'HKdlb-B5-V', 'HKgccs-B5-H', 'HKgccs-B5-V', 'HKm314-B5-H', 'HKm314-B5-V', 'HKm471-B5-H', 'HKm471-B5-V', 'HKscs-B5-H', 'HKscs-B5-V', 'Hankaku', 'Hiragana', 'KSC-EUC-H', 'KSC-EUC-V', 'KSC-H', 'KSC-Johab-H', 'KSC-Johab-V', 'KSC-V', 'KSCms-UHC-H', 'KSCms-UHC-HW-H', 'KSCms-UHC-HW-V', 'KSCms-UHC-V', 'KSCpc-EUC-H', 'KSCpc-EUC-V', 'Katakana', 'NWP-H', 'NWP-V', 'RKSJ-H', 'RKSJ-V', 'Roman', 'UniCNS-UCS2-H', 'UniCNS-UCS2-V', 'UniCNS-UTF16-H', 'UniCNS-UTF16-V', 'UniCNS-UTF32-H', 'UniCNS-UTF32-V', 'UniCNS-UTF8-H', 'UniCNS-UTF8-V', 'UniGB-UCS2-H', 'UniGB-UCS2-V', 'UniGB-UTF16-H', 'UniGB-UTF16-V', 'UniGB-UTF32-H', 'UniGB-UTF32-V', 'UniGB-UTF8-H', 'UniGB-UTF8-V', 'UniJIS-UCS2-H', 'UniJIS-UCS2-HW-H', 'UniJIS-UCS2-HW-V', 'UniJIS-UCS2-V', 'UniJIS-UTF16-H', 'UniJIS-UTF16-V', 'UniJIS-UTF32-H', 'UniJIS-UTF32-V', 'UniJIS-UTF8-H', 'UniJIS-UTF8-V', 'UniJIS2004-UTF16-H', 'UniJIS2004-UTF16-V', 'UniJIS2004-UTF32-H', 'UniJIS2004-UTF32-V', 'UniJIS2004-UTF8-H', 'UniJIS2004-UTF8-V', 'UniJISPro-UCS2-HW-V', 'UniJISPro-UCS2-V', 'UniJISPro-UTF8-V', 'UniJISX0213-UTF32-H', 'UniJISX0213-UTF32-V', 'UniJISX02132004-UTF32-H', 'UniJISX02132004-UTF32-V', 'UniKS-UCS2-H', 'UniKS-UCS2-V', 'UniKS-UTF16-H', 'UniKS-UTF16-V', 'UniKS-UTF32-H', 'UniKS-UTF32-V', 'UniKS-UTF8-H', 'UniKS-UTF8-V', 'V', 'WP-Symbol'];
 
@@ -23540,7 +23572,7 @@ var CMapFactory = function CMapFactoryClosure() {
           }
         }
       } catch (ex) {
-        if (ex instanceof _util.MissingDataException) {
+        if (ex instanceof _core_utils.MissingDataException) {
           throw ex;
         }
 
@@ -23647,7 +23679,7 @@ var CMapFactory = function CMapFactoryClosure() {
 exports.CMapFactory = CMapFactory;
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -23661,23 +23693,25 @@ exports.IdentityToUnicodeMap = exports.ToUnicodeMap = exports.FontFlags = export
 
 var _util = __w_pdfjs_require__(2);
 
-var _cff_parser = __w_pdfjs_require__(30);
+var _cff_parser = __w_pdfjs_require__(31);
 
-var _glyphlist = __w_pdfjs_require__(33);
+var _glyphlist = __w_pdfjs_require__(34);
 
-var _encodings = __w_pdfjs_require__(32);
+var _encodings = __w_pdfjs_require__(33);
 
-var _standard_fonts = __w_pdfjs_require__(34);
+var _standard_fonts = __w_pdfjs_require__(35);
 
-var _unicode = __w_pdfjs_require__(35);
+var _unicode = __w_pdfjs_require__(36);
 
-var _font_renderer = __w_pdfjs_require__(36);
+var _font_renderer = __w_pdfjs_require__(37);
 
-var _cmap = __w_pdfjs_require__(28);
+var _cmap = __w_pdfjs_require__(29);
 
-var _stream = __w_pdfjs_require__(13);
+var _core_utils = __w_pdfjs_require__(9);
 
-var _type1_parser = __w_pdfjs_require__(37);
+var _stream = __w_pdfjs_require__(14);
+
+var _type1_parser = __w_pdfjs_require__(38);
 
 const PRIVATE_USE_AREAS = [[0xE000, 0xF8FF], [0x100000, 0x10FFFD]];
 var PDF_GLYPH_SPACE_UNITS = 1000;
@@ -26459,7 +26493,7 @@ var Type1Font = function Type1FontClosure() {
       headerBytes = stream.getBytes(suggestedLength);
       headerBytesLength = headerBytes.length;
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
     }
@@ -26806,7 +26840,7 @@ var CFFFont = function CFFFontClosure() {
 }();
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -26819,9 +26853,9 @@ exports.CFFFDSelect = exports.CFFCompiler = exports.CFFPrivateDict = exports.CFF
 
 var _util = __w_pdfjs_require__(2);
 
-var _charsets = __w_pdfjs_require__(31);
+var _charsets = __w_pdfjs_require__(32);
 
-var _encodings = __w_pdfjs_require__(32);
+var _encodings = __w_pdfjs_require__(33);
 
 var MAX_SUBR_NESTING = 10;
 var CFFStandardStrings = ['.notdef', 'space', 'exclam', 'quotedbl', 'numbersign', 'dollar', 'percent', 'ampersand', 'quoteright', 'parenleft', 'parenright', 'asterisk', 'plus', 'comma', 'hyphen', 'period', 'slash', 'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'colon', 'semicolon', 'less', 'equal', 'greater', 'question', 'at', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'bracketleft', 'backslash', 'bracketright', 'asciicircum', 'underscore', 'quoteleft', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'braceleft', 'bar', 'braceright', 'asciitilde', 'exclamdown', 'cent', 'sterling', 'fraction', 'yen', 'florin', 'section', 'currency', 'quotesingle', 'quotedblleft', 'guillemotleft', 'guilsinglleft', 'guilsinglright', 'fi', 'fl', 'endash', 'dagger', 'daggerdbl', 'periodcentered', 'paragraph', 'bullet', 'quotesinglbase', 'quotedblbase', 'quotedblright', 'guillemotright', 'ellipsis', 'perthousand', 'questiondown', 'grave', 'acute', 'circumflex', 'tilde', 'macron', 'breve', 'dotaccent', 'dieresis', 'ring', 'cedilla', 'hungarumlaut', 'ogonek', 'caron', 'emdash', 'AE', 'ordfeminine', 'Lslash', 'Oslash', 'OE', 'ordmasculine', 'ae', 'dotlessi', 'lslash', 'oslash', 'oe', 'germandbls', 'onesuperior', 'logicalnot', 'mu', 'trademark', 'Eth', 'onehalf', 'plusminus', 'Thorn', 'onequarter', 'divide', 'brokenbar', 'degree', 'thorn', 'threequarters', 'twosuperior', 'registered', 'minus', 'eth', 'multiply', 'threesuperior', 'copyright', 'Aacute', 'Acircumflex', 'Adieresis', 'Agrave', 'Aring', 'Atilde', 'Ccedilla', 'Eacute', 'Ecircumflex', 'Edieresis', 'Egrave', 'Iacute', 'Icircumflex', 'Idieresis', 'Igrave', 'Ntilde', 'Oacute', 'Ocircumflex', 'Odieresis', 'Ograve', 'Otilde', 'Scaron', 'Uacute', 'Ucircumflex', 'Udieresis', 'Ugrave', 'Yacute', 'Ydieresis', 'Zcaron', 'aacute', 'acircumflex', 'adieresis', 'agrave', 'aring', 'atilde', 'ccedilla', 'eacute', 'ecircumflex', 'edieresis', 'egrave', 'iacute', 'icircumflex', 'idieresis', 'igrave', 'ntilde', 'oacute', 'ocircumflex', 'odieresis', 'ograve', 'otilde', 'scaron', 'uacute', 'ucircumflex', 'udieresis', 'ugrave', 'yacute', 'ydieresis', 'zcaron', 'exclamsmall', 'Hungarumlautsmall', 'dollaroldstyle', 'dollarsuperior', 'ampersandsmall', 'Acutesmall', 'parenleftsuperior', 'parenrightsuperior', 'twodotenleader', 'onedotenleader', 'zerooldstyle', 'oneoldstyle', 'twooldstyle', 'threeoldstyle', 'fouroldstyle', 'fiveoldstyle', 'sixoldstyle', 'sevenoldstyle', 'eightoldstyle', 'nineoldstyle', 'commasuperior', 'threequartersemdash', 'periodsuperior', 'questionsmall', 'asuperior', 'bsuperior', 'centsuperior', 'dsuperior', 'esuperior', 'isuperior', 'lsuperior', 'msuperior', 'nsuperior', 'osuperior', 'rsuperior', 'ssuperior', 'tsuperior', 'ff', 'ffi', 'ffl', 'parenleftinferior', 'parenrightinferior', 'Circumflexsmall', 'hyphensuperior', 'Gravesmall', 'Asmall', 'Bsmall', 'Csmall', 'Dsmall', 'Esmall', 'Fsmall', 'Gsmall', 'Hsmall', 'Ismall', 'Jsmall', 'Ksmall', 'Lsmall', 'Msmall', 'Nsmall', 'Osmall', 'Psmall', 'Qsmall', 'Rsmall', 'Ssmall', 'Tsmall', 'Usmall', 'Vsmall', 'Wsmall', 'Xsmall', 'Ysmall', 'Zsmall', 'colonmonetary', 'onefitted', 'rupiah', 'Tildesmall', 'exclamdownsmall', 'centoldstyle', 'Lslashsmall', 'Scaronsmall', 'Zcaronsmall', 'Dieresissmall', 'Brevesmall', 'Caronsmall', 'Dotaccentsmall', 'Macronsmall', 'figuredash', 'hypheninferior', 'Ogoneksmall', 'Ringsmall', 'Cedillasmall', 'questiondownsmall', 'oneeighth', 'threeeighths', 'fiveeighths', 'seveneighths', 'onethird', 'twothirds', 'zerosuperior', 'foursuperior', 'fivesuperior', 'sixsuperior', 'sevensuperior', 'eightsuperior', 'ninesuperior', 'zeroinferior', 'oneinferior', 'twoinferior', 'threeinferior', 'fourinferior', 'fiveinferior', 'sixinferior', 'seveninferior', 'eightinferior', 'nineinferior', 'centinferior', 'dollarinferior', 'periodinferior', 'commainferior', 'Agravesmall', 'Aacutesmall', 'Acircumflexsmall', 'Atildesmall', 'Adieresissmall', 'Aringsmall', 'AEsmall', 'Ccedillasmall', 'Egravesmall', 'Eacutesmall', 'Ecircumflexsmall', 'Edieresissmall', 'Igravesmall', 'Iacutesmall', 'Icircumflexsmall', 'Idieresissmall', 'Ethsmall', 'Ntildesmall', 'Ogravesmall', 'Oacutesmall', 'Ocircumflexsmall', 'Otildesmall', 'Odieresissmall', 'OEsmall', 'Oslashsmall', 'Ugravesmall', 'Uacutesmall', 'Ucircumflexsmall', 'Udieresissmall', 'Yacutesmall', 'Thornsmall', 'Ydieresissmall', '001.000', '001.001', '001.002', '001.003', 'Black', 'Bold', 'Book', 'Light', 'Medium', 'Regular', 'Roman', 'Semibold'];
@@ -28609,7 +28643,7 @@ var CFFCompiler = function CFFCompilerClosure() {
 exports.CFFCompiler = CFFCompiler;
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -28627,7 +28661,7 @@ const ExpertSubsetCharset = ['.notdef', 'space', 'dollaroldstyle', 'dollarsuperi
 exports.ExpertSubsetCharset = ExpertSubsetCharset;
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -28681,10 +28715,10 @@ function getEncoding(encodingName) {
 }
 
 /***/ }),
-/* 33 */
+/* 34 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
-var getLookupTableFactory = __w_pdfjs_require__(2).getLookupTableFactory;
+var getLookupTableFactory = __w_pdfjs_require__(9).getLookupTableFactory;
 var getGlyphsUnicode = getLookupTableFactory(function (t) {
  t['A'] = 0x0041;
  t['AE'] = 0x00C6;
@@ -33217,7 +33251,7 @@ exports.getGlyphsUnicode = getGlyphsUnicode;
 exports.getDingbatsGlyphsUnicode = getDingbatsGlyphsUnicode;
 
 /***/ }),
-/* 34 */
+/* 35 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -33228,9 +33262,9 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.getSupplementalGlyphMapForCalibri = exports.getSupplementalGlyphMapForArialBlack = exports.getGlyphMapForStandardFonts = exports.getSymbolsFonts = exports.getSerifFonts = exports.getNonStdFontMap = exports.getStdFontMap = void 0;
 
-var _util = __w_pdfjs_require__(2);
+var _core_utils = __w_pdfjs_require__(9);
 
-const getStdFontMap = (0, _util.getLookupTableFactory)(function (t) {
+const getStdFontMap = (0, _core_utils.getLookupTableFactory)(function (t) {
   t['ArialNarrow'] = 'Helvetica';
   t['ArialNarrow-Bold'] = 'Helvetica-Bold';
   t['ArialNarrow-BoldItalic'] = 'Helvetica-BoldOblique';
@@ -33289,7 +33323,7 @@ const getStdFontMap = (0, _util.getLookupTableFactory)(function (t) {
   t['TimesNewRomanPSMT-Italic'] = 'Times-Italic';
 });
 exports.getStdFontMap = getStdFontMap;
-const getNonStdFontMap = (0, _util.getLookupTableFactory)(function (t) {
+const getNonStdFontMap = (0, _core_utils.getLookupTableFactory)(function (t) {
   t['Calibri'] = 'Helvetica';
   t['Calibri-Bold'] = 'Helvetica-Bold';
   t['Calibri-BoldItalic'] = 'Helvetica-BoldOblique';
@@ -33327,7 +33361,7 @@ const getNonStdFontMap = (0, _util.getLookupTableFactory)(function (t) {
   t['Wingdings'] = 'ZapfDingbats';
 });
 exports.getNonStdFontMap = getNonStdFontMap;
-const getSerifFonts = (0, _util.getLookupTableFactory)(function (t) {
+const getSerifFonts = (0, _core_utils.getLookupTableFactory)(function (t) {
   t['Adobe Jenson'] = true;
   t['Adobe Text'] = true;
   t['Albertus'] = true;
@@ -33463,13 +33497,13 @@ const getSerifFonts = (0, _util.getLookupTableFactory)(function (t) {
   t['XITS'] = true;
 });
 exports.getSerifFonts = getSerifFonts;
-const getSymbolsFonts = (0, _util.getLookupTableFactory)(function (t) {
+const getSymbolsFonts = (0, _core_utils.getLookupTableFactory)(function (t) {
   t['Dingbats'] = true;
   t['Symbol'] = true;
   t['ZapfDingbats'] = true;
 });
 exports.getSymbolsFonts = getSymbolsFonts;
-const getGlyphMapForStandardFonts = (0, _util.getLookupTableFactory)(function (t) {
+const getGlyphMapForStandardFonts = (0, _core_utils.getLookupTableFactory)(function (t) {
   t[2] = 10;
   t[3] = 32;
   t[4] = 33;
@@ -33865,13 +33899,13 @@ const getGlyphMapForStandardFonts = (0, _util.getLookupTableFactory)(function (t
   t[3416] = 8377;
 });
 exports.getGlyphMapForStandardFonts = getGlyphMapForStandardFonts;
-const getSupplementalGlyphMapForArialBlack = (0, _util.getLookupTableFactory)(function (t) {
+const getSupplementalGlyphMapForArialBlack = (0, _core_utils.getLookupTableFactory)(function (t) {
   t[227] = 322;
   t[264] = 261;
   t[291] = 346;
 });
 exports.getSupplementalGlyphMapForArialBlack = getSupplementalGlyphMapForArialBlack;
-const getSupplementalGlyphMapForCalibri = (0, _util.getLookupTableFactory)(function (t) {
+const getSupplementalGlyphMapForCalibri = (0, _core_utils.getLookupTableFactory)(function (t) {
   t[1] = 32;
   t[4] = 65;
   t[17] = 66;
@@ -33960,10 +33994,10 @@ const getSupplementalGlyphMapForCalibri = (0, _util.getLookupTableFactory)(funct
 exports.getSupplementalGlyphMapForCalibri = getSupplementalGlyphMapForCalibri;
 
 /***/ }),
-/* 35 */
+/* 36 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
-var getLookupTableFactory = __w_pdfjs_require__(2).getLookupTableFactory;
+var getLookupTableFactory = __w_pdfjs_require__(9).getLookupTableFactory;
 var getSpecialPUASymbols = getLookupTableFactory(function (t) {
  t[63721] = 0x00A9;
  t[63193] = 0x00A9;
@@ -35937,7 +35971,7 @@ exports.getNormalizedUnicodes = getNormalizedUnicodes;
 exports.getUnicodeForGlyph = getUnicodeForGlyph;
 
 /***/ }),
-/* 36 */
+/* 37 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -35950,13 +35984,13 @@ exports.FontRendererFactory = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _cff_parser = __w_pdfjs_require__(30);
+var _cff_parser = __w_pdfjs_require__(31);
 
-var _glyphlist = __w_pdfjs_require__(33);
+var _glyphlist = __w_pdfjs_require__(34);
 
-var _encodings = __w_pdfjs_require__(32);
+var _encodings = __w_pdfjs_require__(33);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
 var FontRendererFactory = function FontRendererFactoryClosure() {
   function getLong(data, offset) {
@@ -36891,7 +36925,7 @@ var FontRendererFactory = function FontRendererFactoryClosure() {
 exports.FontRendererFactory = FontRendererFactory;
 
 /***/ }),
-/* 37 */
+/* 38 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -36904,9 +36938,9 @@ exports.Type1Parser = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _encodings = __w_pdfjs_require__(32);
+var _encodings = __w_pdfjs_require__(33);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
 var HINTING_ENABLED = false;
 
@@ -37586,7 +37620,7 @@ var Type1Parser = function Type1ParserClosure() {
 exports.Type1Parser = Type1Parser;
 
 /***/ }),
-/* 38 */
+/* 39 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -37600,9 +37634,11 @@ exports.Pattern = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _colorspace = __w_pdfjs_require__(24);
+var _colorspace = __w_pdfjs_require__(25);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
+
+var _core_utils = __w_pdfjs_require__(9);
 
 var ShadingType = {
   FUNCTION_BASED: 1,
@@ -37645,7 +37681,7 @@ var Pattern = function PatternClosure() {
           throw new _util.FormatError('Unsupported ShadingType: ' + type);
       }
     } catch (ex) {
-      if (ex instanceof _util.MissingDataException) {
+      if (ex instanceof _core_utils.MissingDataException) {
         throw ex;
       }
 
@@ -38508,7 +38544,7 @@ function getTilingPatternIR(operatorList, dict, args) {
 }
 
 /***/ }),
-/* 39 */
+/* 40 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -38812,7 +38848,7 @@ function bidi(str, startLevel, vertical) {
 }
 
 /***/ }),
-/* 40 */
+/* 41 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -38823,14 +38859,14 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.getMetrics = void 0;
 
-var _util = __w_pdfjs_require__(2);
+var _core_utils = __w_pdfjs_require__(9);
 
-var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
+var getMetrics = (0, _core_utils.getLookupTableFactory)(function (t) {
   t['Courier'] = 600;
   t['Courier-Bold'] = 600;
   t['Courier-BoldOblique'] = 600;
   t['Courier-Oblique'] = 600;
-  t['Helvetica'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Helvetica'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 278;
     t['exclam'] = 278;
     t['quotedbl'] = 355;
@@ -39147,7 +39183,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 556;
   });
-  t['Helvetica-Bold'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Helvetica-Bold'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 278;
     t['exclam'] = 333;
     t['quotedbl'] = 474;
@@ -39464,7 +39500,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 556;
   });
-  t['Helvetica-BoldOblique'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Helvetica-BoldOblique'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 278;
     t['exclam'] = 333;
     t['quotedbl'] = 474;
@@ -39781,7 +39817,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 556;
   });
-  t['Helvetica-Oblique'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Helvetica-Oblique'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 278;
     t['exclam'] = 278;
     t['quotedbl'] = 355;
@@ -40098,7 +40134,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 556;
   });
-  t['Symbol'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Symbol'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 250;
     t['exclam'] = 333;
     t['universal'] = 713;
@@ -40290,7 +40326,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['bracerightbt'] = 494;
     t['apple'] = 790;
   });
-  t['Times-Roman'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Times-Roman'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 250;
     t['exclam'] = 333;
     t['quotedbl'] = 408;
@@ -40607,7 +40643,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 500;
   });
-  t['Times-Bold'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Times-Bold'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 250;
     t['exclam'] = 333;
     t['quotedbl'] = 555;
@@ -40924,7 +40960,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 500;
   });
-  t['Times-BoldItalic'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Times-BoldItalic'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 250;
     t['exclam'] = 389;
     t['quotedbl'] = 555;
@@ -41241,7 +41277,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 500;
   });
-  t['Times-Italic'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['Times-Italic'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 250;
     t['exclam'] = 333;
     t['quotedbl'] = 420;
@@ -41558,7 +41594,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
     t['imacron'] = 278;
     t['Euro'] = 500;
   });
-  t['ZapfDingbats'] = (0, _util.getLookupTableFactory)(function (t) {
+  t['ZapfDingbats'] = (0, _core_utils.getLookupTableFactory)(function (t) {
     t['space'] = 278;
     t['a1'] = 974;
     t['a2'] = 961;
@@ -41766,7 +41802,7 @@ var getMetrics = (0, _util.getLookupTableFactory)(function (t) {
 exports.getMetrics = getMetrics;
 
 /***/ }),
-/* 41 */
+/* 42 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -41780,9 +41816,9 @@ exports.PostScriptCompiler = exports.PostScriptEvaluator = exports.PDFFunctionFa
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _ps_parser = __w_pdfjs_require__(42);
+var _ps_parser = __w_pdfjs_require__(43);
 
 let IsEvalSupportedCached = {
   get value() {
@@ -43124,7 +43160,7 @@ var PostScriptCompiler = function PostScriptCompilerClosure() {
 exports.PostScriptCompiler = PostScriptCompiler;
 
 /***/ }),
-/* 42 */
+/* 43 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -43137,7 +43173,7 @@ exports.PostScriptParser = exports.PostScriptLexer = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
 class PostScriptParser {
   constructor(lexer) {
@@ -43376,7 +43412,7 @@ class PostScriptLexer {
 exports.PostScriptLexer = PostScriptLexer;
 
 /***/ }),
-/* 43 */
+/* 44 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -43389,131 +43425,199 @@ exports.MurmurHash3_64 = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var MurmurHash3_64 = function MurmurHash3_64Closure(seed) {
-  var MASK_HIGH = 0xffff0000;
-  var MASK_LOW = 0xffff;
+const SEED = 0xc3d2e1f0;
+const MASK_HIGH = 0xffff0000;
+const MASK_LOW = 0xffff;
 
-  function MurmurHash3_64(seed) {
-    var SEED = 0xc3d2e1f0;
+class MurmurHash3_64 {
+  constructor(seed) {
     this.h1 = seed ? seed & 0xffffffff : SEED;
     this.h2 = seed ? seed & 0xffffffff : SEED;
   }
 
-  MurmurHash3_64.prototype = {
-    update: function MurmurHash3_64_update(input) {
-      let data, length;
+  update(input) {
+    let data, length;
 
-      if ((0, _util.isString)(input)) {
-        data = new Uint8Array(input.length * 2);
-        length = 0;
+    if ((0, _util.isString)(input)) {
+      data = new Uint8Array(input.length * 2);
+      length = 0;
 
-        for (let i = 0, ii = input.length; i < ii; i++) {
-          var code = input.charCodeAt(i);
+      for (let i = 0, ii = input.length; i < ii; i++) {
+        const code = input.charCodeAt(i);
 
-          if (code <= 0xff) {
-            data[length++] = code;
-          } else {
-            data[length++] = code >>> 8;
-            data[length++] = code & 0xff;
-          }
-        }
-      } else if ((0, _util.isArrayBuffer)(input)) {
-        data = input;
-        length = data.byteLength;
-      } else {
-        throw new Error('Wrong data format in MurmurHash3_64_update. ' + 'Input must be a string or array.');
-      }
-
-      var blockCounts = length >> 2;
-      var tailLength = length - blockCounts * 4;
-      var dataUint32 = new Uint32Array(data.buffer, 0, blockCounts);
-      var k1 = 0;
-      var k2 = 0;
-      var h1 = this.h1;
-      var h2 = this.h2;
-      var C1 = 0xcc9e2d51;
-      var C2 = 0x1b873593;
-      var C1_LOW = C1 & MASK_LOW;
-      var C2_LOW = C2 & MASK_LOW;
-
-      for (let i = 0; i < blockCounts; i++) {
-        if (i & 1) {
-          k1 = dataUint32[i];
-          k1 = k1 * C1 & MASK_HIGH | k1 * C1_LOW & MASK_LOW;
-          k1 = k1 << 15 | k1 >>> 17;
-          k1 = k1 * C2 & MASK_HIGH | k1 * C2_LOW & MASK_LOW;
-          h1 ^= k1;
-          h1 = h1 << 13 | h1 >>> 19;
-          h1 = h1 * 5 + 0xe6546b64;
+        if (code <= 0xff) {
+          data[length++] = code;
         } else {
-          k2 = dataUint32[i];
-          k2 = k2 * C1 & MASK_HIGH | k2 * C1_LOW & MASK_LOW;
-          k2 = k2 << 15 | k2 >>> 17;
-          k2 = k2 * C2 & MASK_HIGH | k2 * C2_LOW & MASK_LOW;
-          h2 ^= k2;
-          h2 = h2 << 13 | h2 >>> 19;
-          h2 = h2 * 5 + 0xe6546b64;
+          data[length++] = code >>> 8;
+          data[length++] = code & 0xff;
         }
       }
-
-      k1 = 0;
-
-      switch (tailLength) {
-        case 3:
-          k1 ^= data[blockCounts * 4 + 2] << 16;
-
-        case 2:
-          k1 ^= data[blockCounts * 4 + 1] << 8;
-
-        case 1:
-          k1 ^= data[blockCounts * 4];
-          k1 = k1 * C1 & MASK_HIGH | k1 * C1_LOW & MASK_LOW;
-          k1 = k1 << 15 | k1 >>> 17;
-          k1 = k1 * C2 & MASK_HIGH | k1 * C2_LOW & MASK_LOW;
-
-          if (blockCounts & 1) {
-            h1 ^= k1;
-          } else {
-            h2 ^= k1;
-          }
-
-      }
-
-      this.h1 = h1;
-      this.h2 = h2;
-      return this;
-    },
-    hexdigest: function MurmurHash3_64_hexdigest() {
-      var h1 = this.h1;
-      var h2 = this.h2;
-      h1 ^= h2 >>> 1;
-      h1 = h1 * 0xed558ccd & MASK_HIGH | h1 * 0x8ccd & MASK_LOW;
-      h2 = h2 * 0xff51afd7 & MASK_HIGH | ((h2 << 16 | h1 >>> 16) * 0xafd7ed55 & MASK_HIGH) >>> 16;
-      h1 ^= h2 >>> 1;
-      h1 = h1 * 0x1a85ec53 & MASK_HIGH | h1 * 0xec53 & MASK_LOW;
-      h2 = h2 * 0xc4ceb9fe & MASK_HIGH | ((h2 << 16 | h1 >>> 16) * 0xb9fe1a85 & MASK_HIGH) >>> 16;
-      h1 ^= h2 >>> 1;
-
-      for (var i = 0, arr = [h1, h2], str = ''; i < arr.length; i++) {
-        var hex = (arr[i] >>> 0).toString(16);
-
-        while (hex.length < 8) {
-          hex = '0' + hex;
-        }
-
-        str += hex;
-      }
-
-      return str;
+    } else if ((0, _util.isArrayBuffer)(input)) {
+      data = input;
+      length = data.byteLength;
+    } else {
+      throw new Error('Wrong data format in MurmurHash3_64_update. ' + 'Input must be a string or array.');
     }
-  };
-  return MurmurHash3_64;
-}();
+
+    const blockCounts = length >> 2;
+    const tailLength = length - blockCounts * 4;
+    const dataUint32 = new Uint32Array(data.buffer, 0, blockCounts);
+    let k1 = 0,
+        k2 = 0;
+    let h1 = this.h1,
+        h2 = this.h2;
+    const C1 = 0xcc9e2d51,
+          C2 = 0x1b873593;
+    const C1_LOW = C1 & MASK_LOW,
+          C2_LOW = C2 & MASK_LOW;
+
+    for (let i = 0; i < blockCounts; i++) {
+      if (i & 1) {
+        k1 = dataUint32[i];
+        k1 = k1 * C1 & MASK_HIGH | k1 * C1_LOW & MASK_LOW;
+        k1 = k1 << 15 | k1 >>> 17;
+        k1 = k1 * C2 & MASK_HIGH | k1 * C2_LOW & MASK_LOW;
+        h1 ^= k1;
+        h1 = h1 << 13 | h1 >>> 19;
+        h1 = h1 * 5 + 0xe6546b64;
+      } else {
+        k2 = dataUint32[i];
+        k2 = k2 * C1 & MASK_HIGH | k2 * C1_LOW & MASK_LOW;
+        k2 = k2 << 15 | k2 >>> 17;
+        k2 = k2 * C2 & MASK_HIGH | k2 * C2_LOW & MASK_LOW;
+        h2 ^= k2;
+        h2 = h2 << 13 | h2 >>> 19;
+        h2 = h2 * 5 + 0xe6546b64;
+      }
+    }
+
+    k1 = 0;
+
+    switch (tailLength) {
+      case 3:
+        k1 ^= data[blockCounts * 4 + 2] << 16;
+
+      case 2:
+        k1 ^= data[blockCounts * 4 + 1] << 8;
+
+      case 1:
+        k1 ^= data[blockCounts * 4];
+        k1 = k1 * C1 & MASK_HIGH | k1 * C1_LOW & MASK_LOW;
+        k1 = k1 << 15 | k1 >>> 17;
+        k1 = k1 * C2 & MASK_HIGH | k1 * C2_LOW & MASK_LOW;
+
+        if (blockCounts & 1) {
+          h1 ^= k1;
+        } else {
+          h2 ^= k1;
+        }
+
+    }
+
+    this.h1 = h1;
+    this.h2 = h2;
+  }
+
+  hexdigest() {
+    let h1 = this.h1,
+        h2 = this.h2;
+    h1 ^= h2 >>> 1;
+    h1 = h1 * 0xed558ccd & MASK_HIGH | h1 * 0x8ccd & MASK_LOW;
+    h2 = h2 * 0xff51afd7 & MASK_HIGH | ((h2 << 16 | h1 >>> 16) * 0xafd7ed55 & MASK_HIGH) >>> 16;
+    h1 ^= h2 >>> 1;
+    h1 = h1 * 0x1a85ec53 & MASK_HIGH | h1 * 0xec53 & MASK_LOW;
+    h2 = h2 * 0xc4ceb9fe & MASK_HIGH | ((h2 << 16 | h1 >>> 16) * 0xb9fe1a85 & MASK_HIGH) >>> 16;
+    h1 ^= h2 >>> 1;
+    const hex1 = (h1 >>> 0).toString(16),
+          hex2 = (h2 >>> 0).toString(16);
+    return hex1.padStart(8, '0') + hex2.padStart(8, '0');
+  }
+
+}
 
 exports.MurmurHash3_64 = MurmurHash3_64;
 
 /***/ }),
-/* 44 */
+/* 45 */
+/***/ (function(module, exports, __w_pdfjs_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.NativeImageDecoder = void 0;
+
+var _colorspace = __w_pdfjs_require__(25);
+
+var _jpeg_stream = __w_pdfjs_require__(20);
+
+var _stream = __w_pdfjs_require__(14);
+
+class NativeImageDecoder {
+  constructor({
+    xref,
+    resources,
+    handler,
+    forceDataSchema = false,
+    pdfFunctionFactory
+  }) {
+    this.xref = xref;
+    this.resources = resources;
+    this.handler = handler;
+    this.forceDataSchema = forceDataSchema;
+    this.pdfFunctionFactory = pdfFunctionFactory;
+  }
+
+  canDecode(image) {
+    return image instanceof _jpeg_stream.JpegStream && NativeImageDecoder.isDecodable(image, this.xref, this.resources, this.pdfFunctionFactory);
+  }
+
+  decode(image) {
+    const dict = image.dict;
+    let colorSpace = dict.get('ColorSpace', 'CS');
+    colorSpace = _colorspace.ColorSpace.parse(colorSpace, this.xref, this.resources, this.pdfFunctionFactory);
+    return this.handler.sendWithPromise('JpegDecode', [image.getIR(this.forceDataSchema), colorSpace.numComps]).then(function ({
+      data,
+      width,
+      height
+    }) {
+      return new _stream.Stream(data, 0, data.length, dict);
+    });
+  }
+
+  static isSupported(image, xref, res, pdfFunctionFactory) {
+    const dict = image.dict;
+
+    if (dict.has('DecodeParms') || dict.has('DP')) {
+      return false;
+    }
+
+    const cs = _colorspace.ColorSpace.parse(dict.get('ColorSpace', 'CS'), xref, res, pdfFunctionFactory);
+
+    return (cs.name === 'DeviceGray' || cs.name === 'DeviceRGB') && cs.isDefaultDecode(dict.getArray('Decode', 'D'));
+  }
+
+  static isDecodable(image, xref, res, pdfFunctionFactory) {
+    const dict = image.dict;
+
+    if (dict.has('DecodeParms') || dict.has('DP')) {
+      return false;
+    }
+
+    const cs = _colorspace.ColorSpace.parse(dict.get('ColorSpace', 'CS'), xref, res, pdfFunctionFactory);
+
+    const bpc = dict.get('BitsPerComponent', 'BPC') || 1;
+    return (cs.numComps === 1 || cs.numComps === 3) && cs.isDefaultDecode(dict.getArray('Decode', 'D'), bpc);
+  }
+
+}
+
+exports.NativeImageDecoder = NativeImageDecoder;
+
+/***/ }),
+/* 46 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -43526,15 +43630,15 @@ exports.PDFImage = void 0;
 
 var _util = __w_pdfjs_require__(2);
 
-var _primitives = __w_pdfjs_require__(11);
+var _primitives = __w_pdfjs_require__(12);
 
-var _colorspace = __w_pdfjs_require__(24);
+var _colorspace = __w_pdfjs_require__(25);
 
-var _stream = __w_pdfjs_require__(13);
+var _stream = __w_pdfjs_require__(14);
 
-var _jpeg_stream = __w_pdfjs_require__(19);
+var _jpeg_stream = __w_pdfjs_require__(20);
 
-var _jpx = __w_pdfjs_require__(22);
+var _jpx = __w_pdfjs_require__(23);
 
 var PDFImage = function PDFImageClosure() {
   function handleImageData(image, nativeDecoder) {
@@ -43681,17 +43785,18 @@ var PDFImage = function PDFImageClosure() {
     this.decode = dict.getArray('Decode', 'D');
     this.needsDecode = false;
 
-    if (this.decode && (this.colorSpace && !this.colorSpace.isDefaultDecode(this.decode) || isMask && !_colorspace.ColorSpace.isDefaultDecode(this.decode, 1))) {
+    if (this.decode && (this.colorSpace && !this.colorSpace.isDefaultDecode(this.decode, bitsPerComponent) || isMask && !_colorspace.ColorSpace.isDefaultDecode(this.decode, 1))) {
       this.needsDecode = true;
       var max = (1 << bitsPerComponent) - 1;
       this.decodeCoefficients = [];
       this.decodeAddends = [];
+      const isIndexed = this.colorSpace && this.colorSpace.name === 'Indexed';
 
       for (var i = 0, j = 0; i < this.decode.length; i += 2, ++j) {
         var dmin = this.decode[i];
         var dmax = this.decode[i + 1];
-        this.decodeCoefficients[j] = dmax - dmin;
-        this.decodeAddends[j] = max * dmin;
+        this.decodeCoefficients[j] = isIndexed ? (dmax - dmin) / max : dmax - dmin;
+        this.decodeAddends[j] = isIndexed ? dmin : max * dmin;
       }
     }
 
@@ -44172,7 +44277,7 @@ var PDFImage = function PDFImageClosure() {
 exports.PDFImage = PDFImage;
 
 /***/ }),
-/* 45 */
+/* 47 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";
@@ -44183,7 +44288,7 @@ module.exports = function isNodeJS() {
 };
 
 /***/ }),
-/* 46 */
+/* 48 */
 /***/ (function(module, exports, __w_pdfjs_require__) {
 
 "use strict";

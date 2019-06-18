@@ -31,6 +31,12 @@ public class WebRequest extends WebMessage {
     public final @NonNull String method;
 
     /**
+     * The body of the request. Must be a directly-allocated ByteBuffer.
+     * May be null.
+     */
+    public final @Nullable ByteBuffer body;
+
+    /**
      * The cache mode for the request. See {@link #CACHE_MODE_DEFAULT}.
      * These modes match those from the DOM Fetch API.
      *
@@ -99,11 +105,17 @@ public class WebRequest extends WebMessage {
     /**
      * Constructs a new WebRequest from a {@link WebRequest.Builder}.
      */
-    /* package */ WebRequest(@NonNull Builder builder) {
+    /* package */ WebRequest(final @NonNull Builder builder) {
         super(builder);
         method = builder.mMethod;
         cacheMode = builder.mCacheMode;
         referrer = builder.mReferrer;
+
+        if (builder.mBody != null) {
+            body = builder.mBody.asReadOnlyBuffer();
+        } else {
+            body = null;
+        }
     }
 
     /**
@@ -125,7 +137,7 @@ public class WebRequest extends WebMessage {
         }
 
         @Override
-        public @NonNull Builder uri(@NonNull String uri) {
+        public @NonNull Builder uri(final @NonNull String uri) {
             super.uri(uri);
             return this;
         }
@@ -142,9 +154,18 @@ public class WebRequest extends WebMessage {
             return this;
         }
 
-        @Override
-        public @NonNull Builder body(@Nullable ByteBuffer buffer) {
-            super.body(buffer);
+        /**
+         * Set the body.
+         *
+         * @param buffer A {@link ByteBuffer} with the data.
+         *               Must be allocated directly via {@link ByteBuffer#allocateDirect(int)}.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder body(final @Nullable ByteBuffer buffer) {
+            if (buffer != null && !buffer.isDirect()) {
+                throw new IllegalArgumentException("body must be directly allocated");
+            }
+            mBody = buffer;
             return this;
         }
 

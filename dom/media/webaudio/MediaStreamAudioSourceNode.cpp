@@ -41,8 +41,8 @@ MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Max,
                 ChannelInterpretation::Speakers) {}
 
-/* static */ already_AddRefed<MediaStreamAudioSourceNode>
-MediaStreamAudioSourceNode::Create(
+/* static */
+already_AddRefed<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::Create(
     AudioContext& aAudioContext, const MediaStreamAudioSourceOptions& aOptions,
     ErrorResult& aRv) {
   if (aAudioContext.IsOffline()) {
@@ -97,6 +97,9 @@ void MediaStreamAudioSourceNode::Init(DOMMediaStream* aMediaStream,
   mInputStream->AddConsumerToKeepAlive(ToSupports(this));
 
   mInputStream->RegisterTrackListener(this);
+  if (mInputStream->Active()) {
+    NotifyActive();
+  }
   AttachToFirstTrack(mInputStream);
 }
 
@@ -178,6 +181,11 @@ void MediaStreamAudioSourceNode::NotifyTrackRemoved(
 
   DetachFromTrack();
   AttachToFirstTrack(mInputStream);
+}
+
+void MediaStreamAudioSourceNode::NotifyActive() {
+  MOZ_ASSERT(mInputStream);
+  Context()->StartBlockedAudioContextIfAllowed();
 }
 
 /**

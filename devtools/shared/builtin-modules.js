@@ -13,10 +13,13 @@
  * they would also miss them.
  */
 
-const { Cu, CC, Cc, Ci } = require("chrome");
+const { Cu, Cc, Ci } = require("chrome");
 const promise = require("resource://gre/modules/Promise.jsm").Promise;
 const jsmScope = require("resource://devtools/shared/Loader.jsm");
-const { Services } = jsmScope;
+const { Services } = require("resource://gre/modules/Services.jsm");
+
+const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+
 // Steal various globals only available in JSM scope (and not Sandbox one)
 const {
   console,
@@ -24,6 +27,7 @@ const {
   DOMQuad,
   DOMRect,
   HeapSnapshot,
+  NamedNodeMap,
   NodeFilter,
   StructuredCloneHolder,
   TelemetryStopwatch,
@@ -31,26 +35,14 @@ const {
 
 // Create a single Sandbox to access global properties needed in this module.
 // Sandbox are memory expensive, so we should create as little as possible.
-const {
-  atob,
-  btoa,
-  Blob,
-  ChromeUtils,
-  CSS,
-  CSSRule,
-  DOMParser,
-  Element,
-  Event,
-  FileReader,
-  FormData,
-  indexedDB,
-  InspectorUtils,
-  Node,
-  TextDecoder,
-  TextEncoder,
-  URL,
-  XMLHttpRequest,
-} = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(), {
+const debuggerSandbox = Cu.Sandbox(systemPrincipal, {
+  // This sandbox is also reused for ChromeDebugger implementation.
+  // As we want to load the `Debugger` API for debugging chrome contexts,
+  // we have to ensure loading it in a distinct compartment from its debuggee.
+  // invisibleToDebugger does that and helps the Debugger API identify the boundaries
+  // between debuggee and debugger code.
+  invisibleToDebugger: true,
+
   wantGlobalProperties: [
     "atob",
     "btoa",
@@ -72,6 +64,27 @@ const {
     "XMLHttpRequest",
   ],
 });
+
+const {
+  atob,
+  btoa,
+  Blob,
+  ChromeUtils,
+  CSS,
+  CSSRule,
+  DOMParser,
+  Element,
+  Event,
+  FileReader,
+  FormData,
+  indexedDB,
+  InspectorUtils,
+  Node,
+  TextDecoder,
+  TextEncoder,
+  URL,
+  XMLHttpRequest,
+} = debuggerSandbox;
 
 /**
  * Defines a getter on a specified object that will be created upon first use.
@@ -233,9 +246,15 @@ defineLazyGetter(exports.modules, "Debugger", () => {
   if (global.Debugger) {
     return global.Debugger;
   }
-  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm", {});
+  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
   addDebuggerToGlobal(global);
   return global.Debugger;
+});
+
+defineLazyGetter(exports.modules, "ChromeDebugger", () => {
+  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
+  addDebuggerToGlobal(debuggerSandbox);
+  return debuggerSandbox.Debugger;
 });
 
 defineLazyGetter(exports.modules, "RecordReplayControl", () => {
@@ -245,7 +264,7 @@ defineLazyGetter(exports.modules, "RecordReplayControl", () => {
   if (global.RecordReplayControl) {
     return global.RecordReplayControl;
   }
-  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm", {});
+  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
   addDebuggerToGlobal(global);
   return global.RecordReplayControl;
 });
@@ -291,6 +310,7 @@ exports.globals = {
   DOMParser,
   DOMPoint,
   DOMQuad,
+  NamedNodeMap,
   NodeFilter,
   DOMRect,
   Element,

@@ -7,7 +7,6 @@ DIRS += [
 
 ]
 
-DebuggerModules(
+CompiledModules(
     'setInScopeLines.js',
-    'setPausePoints.js',
 )

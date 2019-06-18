@@ -9,7 +9,7 @@ add_task(async function testBrowserActionClickCanceled() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
 
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {type: "mouseover"}, window);
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -27,7 +27,7 @@ add_task(async function testBrowserActionClickCanceled() {
 
   await extension.startup();
 
-  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
 
   let ext = GlobalManager.extensionMap.get(extension.id);
   let browserAction = browserActionFor(ext);
@@ -87,7 +87,7 @@ add_task(async function testBrowserActionClickCanceled() {
 
 add_task(async function testBrowserActionDisabled() {
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {type: "mouseover"}, window);
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -115,7 +115,7 @@ add_task(async function testBrowserActionDisabled() {
   await extension.awaitMessage("browserAction-disabled");
   await promiseAnimationFrame();
 
-  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
 
   let ext = GlobalManager.extensionMap.get(extension.id);
   let browserAction = browserActionFor(ext);
@@ -195,7 +195,7 @@ add_task(async function testBrowserActionTabPopulation() {
   await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(win.gURLBar, {type: "mouseover"}, win);
+  EventUtils.synthesizeMouseAtCenter(win.gURLBar.textbox, {type: "mouseover"}, win);
 
   await extension.startup();
 
@@ -231,11 +231,11 @@ add_task(async function testClosePopupDuringPreload() {
   });
 
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {type: "mouseover"}, window);
 
   await extension.startup();
 
-  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
 
   let ext = GlobalManager.extensionMap.get(extension.id);
   let browserAction = browserActionFor(ext);

@@ -3,8 +3,8 @@
 // heuristic query freshness as defined in RFC 2616 section 13.9
 //
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -54,7 +54,7 @@ function triggerNextTest() {
     var test = tests[index];
     var channel = setupChannel(test.url, test.server);
     if (test.flags) channel.loadFlags = test.flags;
-    channel.asyncOpen2(new ChannelListener(checkValueAndTrigger, null));
+    channel.asyncOpen(new ChannelListener(checkValueAndTrigger, null));
 }
 
 function checkValueAndTrigger(request, data, ctx) {

@@ -34,7 +34,8 @@ namespace mozilla {
 namespace layers {
 
 // public:
-/* static */ RefPtr<UiCompositorControllerChild>
+/* static */
+RefPtr<UiCompositorControllerChild>
 UiCompositorControllerChild::CreateForSameProcess(
     const LayersId& aRootLayerTreeId) {
   RefPtr<UiCompositorControllerChild> child =
@@ -48,7 +49,8 @@ UiCompositorControllerChild::CreateForSameProcess(
   return child;
 }
 
-/* static */ RefPtr<UiCompositorControllerChild>
+/* static */
+RefPtr<UiCompositorControllerChild>
 UiCompositorControllerChild::CreateForGPUProcess(
     const uint64_t& aProcessToken,
     Endpoint<PUiCompositorControllerChild>&& aEndpoint) {
@@ -164,7 +166,7 @@ bool UiCompositorControllerChild::ToolbarPixelsToCompositor(
     return false;
   }
 
-  return SendToolbarPixelsToCompositor(aMem, aSize);
+  return SendToolbarPixelsToCompositor(std::move(aMem), aSize);
 }
 
 void UiCompositorControllerChild::Destroy() {
@@ -178,6 +180,7 @@ void UiCompositorControllerChild::Destroy() {
 
   if (mIsOpen) {
     // Close the underlying IPC channel.
+    mWidget = nullptr;
     PUiCompositorControllerChild::Close();
     mIsOpen = false;
   }

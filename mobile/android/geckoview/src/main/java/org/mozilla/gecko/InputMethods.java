@@ -16,8 +16,11 @@ import android.view.inputmethod.InputMethodManager;
 
 final public class InputMethods {
     public static final String METHOD_ANDROID_LATINIME = "com.android.inputmethod.latin/.LatinIME";
-    public static final String METHOD_ATOK = "com.justsystems.atokmobile.service/.AtokInputMethodService";
+    // ATOK has a lot of package names since they release custom versions.
+    public static final String METHOD_ATOK_PREFIX = "com.justsystems.atokmobile";
+    public static final String METHOD_ATOK_OEM_PREFIX = "com.atok.mobile.";
     public static final String METHOD_GOOGLE_JAPANESE_INPUT = "com.google.android.inputmethod.japanese/.MozcService";
+    public static final String METHOD_ATOK_OEM_SOFTBANK = "com.mobiroo.n.justsystems.atok/.AtokInputMethodService";
     public static final String METHOD_GOOGLE_LATINIME = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME";
     public static final String METHOD_HTC_TOUCH_INPUT = "com.htc.android.htcime/.HTCIMEService";
     public static final String METHOD_IWNN = "jp.co.omronsoft.iwnnime.ml/.standardcommon.IWnnLanguageSwitcher";
@@ -32,12 +35,13 @@ final public class InputMethods {
 
     private InputMethods() {}
 
-    public static String getCurrentInputMethod(Context context) {
+    public static String getCurrentInputMethod(final Context context) {
         String inputMethod = Secure.getString(context.getContentResolver(), Secure.DEFAULT_INPUT_METHOD);
         return (inputMethod != null ? inputMethod : "");
     }
 
-    public static InputMethodInfo getInputMethodInfo(Context context, String inputMethod) {
+    public static InputMethodInfo getInputMethodInfo(final Context context,
+                                                     final String inputMethod) {
         InputMethodManager imm = getInputMethodManager(context);
         Collection<InputMethodInfo> infos = imm.getEnabledInputMethodList();
         for (InputMethodInfo info : infos) {
@@ -48,29 +52,44 @@ final public class InputMethods {
         return null;
     }
 
-    public static InputMethodManager getInputMethodManager(Context context) {
+    public static InputMethodManager getInputMethodManager(final Context context) {
         return (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
     }
 
-    public static void restartInput(Context context, View view) {
+    public static void restartInput(final Context context, final View view) {
         final InputMethodManager imm = getInputMethodManager(context);
         if (imm != null) {
             imm.restartInput(view);
         }
     }
 
-    public static boolean needsSoftResetWorkaround(String inputMethod) {
+    public static boolean needsSoftResetWorkaround(final String inputMethod) {
         // Stock latin IME on Android 4.2 and above
         return Build.VERSION.SDK_INT >= 17 &&
                (METHOD_ANDROID_LATINIME.equals(inputMethod) ||
                 METHOD_GOOGLE_LATINIME.equals(inputMethod));
     }
 
-    public static boolean shouldCommitCharAsKey(String inputMethod) {
+    /**
+     * Check input method if we require a workaround to remove composition in
+     * {@link android.view.inputmethod.InputMethodManager.updateSelection}.
+     *
+     * @param inputMethod The input method name by {@link #getCurrentInputMethod}.
+     * @return true if {@link android.view.inputmethod.InputMethodManager.updateSelection}
+     * doesn't remove the composition, use {@link android.view.inputmethod.InputMehtodManager.restartInput}
+     * to remove it in this case.
+     */
+    public static boolean needsRestartInput(final String inputMethod) {
+        return inputMethod.startsWith(METHOD_ATOK_PREFIX) ||
+               inputMethod.startsWith(METHOD_ATOK_OEM_PREFIX) ||
+               METHOD_ATOK_OEM_SOFTBANK.equals(inputMethod);
+    }
+
+    public static boolean shouldCommitCharAsKey(final String inputMethod) {
         return METHOD_HTC_TOUCH_INPUT.equals(inputMethod);
     }
 
-    public static boolean needsRestartOnReplaceRemove(Context context) {
+    public static boolean needsRestartOnReplaceRemove(final Context context) {
         String inputMethod = getCurrentInputMethod(context);
         return METHOD_SONY.equals(inputMethod);
     }

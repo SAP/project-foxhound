@@ -74,7 +74,8 @@ SandboxReporter::~SandboxReporter() {
   close(mClientFd);
 }
 
-/* static */ SandboxReporter* SandboxReporter::Singleton() {
+/* static */
+SandboxReporter* SandboxReporter::Singleton() {
   static StaticMutex sMutex;
   StaticMutexAutoLock lock(sMutex);
 
@@ -126,11 +127,14 @@ static void SubmitToTelemetry(const SandboxReport& aReport) {
     case SandboxReport::ProcType::CONTENT:
       key.AppendLiteral("content");
       break;
+    case SandboxReport::ProcType::FILE:
+      key.AppendLiteral("file");
+      break;
     case SandboxReport::ProcType::MEDIA_PLUGIN:
       key.AppendLiteral("gmp");
       break;
-    case SandboxReport::ProcType::FILE:
-      key.AppendLiteral("file");
+    case SandboxReport::ProcType::RDD:
+      key.AppendLiteral("rdd");
       break;
     default:
       MOZ_ASSERT(false);

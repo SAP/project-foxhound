@@ -11,11 +11,18 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/browser/components/search/test/browser/head.js",
   this);
 
-let originalEngine = Services.search.defaultEngine;
+var originalEngine;
+
+var arrayBufferIconTested = false;
+var plainURIIconTested = false;
 
 add_task(async function setup() {
+  originalEngine = await Services.search.getDefault();
+
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.newtab.preload", false]],
+    set: [
+      ["browser.newtab.preload", false],
+    ],
   });
 
   await promiseNewEngine("testEngine.xml", {
@@ -23,8 +30,12 @@ add_task(async function setup() {
     testPath: "chrome://mochitests/content/browser/browser/components/search/test/browser/",
   });
 
-  registerCleanupFunction(() => {
-    Services.search.defaultEngine = originalEngine;
+  await promiseNewEngine("testEngine_chromeicon.xml", {
+    setAsCurrent: false,
+  });
+
+  registerCleanupFunction(async () => {
+    await Services.search.setDefault(originalEngine);
   });
 });
 
@@ -38,27 +49,30 @@ add_task(async function GetState() {
     type: "State",
     data: await currentStateObj(),
   });
+
+  ok(arrayBufferIconTested, "ArrayBuffer path for the iconData was tested");
+  ok(plainURIIconTested, "Plain URI path for the iconData was tested");
 });
 
-add_task(async function SetCurrentEngine() {
+add_task(async function SetDefaultEngine() {
   let { mm } = await addTab();
-  let newCurrentEngine = null;
-  let oldCurrentEngine = Services.search.defaultEngine;
-  let engines = Services.search.getVisibleEngines();
+  let newDefaultEngine = null;
+  let oldDefaultEngine = await Services.search.getDefault();
+  let engines = await Services.search.getVisibleEngines();
   for (let engine of engines) {
-    if (engine != oldCurrentEngine) {
-      newCurrentEngine = engine;
+    if (engine != oldDefaultEngine) {
+      newDefaultEngine = engine;
       break;
     }
   }
-  if (!newCurrentEngine) {
+  if (!newDefaultEngine) {
     info("Couldn't find a non-selected search engine, " +
          "skipping this part of the test");
     return;
   }
   mm.sendAsyncMessage(TEST_MSG, {
     type: "SetCurrentEngine",
-    data: newCurrentEngine.name,
+    data: newDefaultEngine.name,
   });
   let deferred = PromiseUtils.defer();
   Services.obs.addObserver(function obs(subj, topic, data) {
@@ -75,20 +89,20 @@ add_task(async function SetCurrentEngine() {
   let msg = await searchPromise;
   checkMsg(msg, {
     type: "CurrentEngine",
-    data: await currentEngineObj(newCurrentEngine),
+    data: await defaultEngineObj(newDefaultEngine),
   });
 
-  Services.search.defaultEngine = oldCurrentEngine;
+  await Services.search.setDefault(oldDefaultEngine);
   msg = await waitForTestMsg(mm, "CurrentEngine");
   checkMsg(msg, {
     type: "CurrentEngine",
-    data: await currentEngineObj(oldCurrentEngine),
+    data: await defaultEngineObj(oldDefaultEngine),
   });
 });
 
 add_task(async function modifyEngine() {
   let { mm } = await addTab();
-  let engine = Services.search.defaultEngine;
+  let engine = await Services.search.getDefault();
   let oldAlias = engine.alias;
   engine.alias = "ContentSearchTest";
   let msg = await waitForTestMsg(mm, "CurrentState");
@@ -106,7 +120,7 @@ add_task(async function modifyEngine() {
 
 add_task(async function search() {
   let { browser } = await addTab();
-  let engine = Services.search.defaultEngine;
+  let engine = await Services.search.getDefault();
   let data = {
     engineName: engine.name,
     searchString: "ContentSearchTest",
@@ -125,7 +139,7 @@ add_task(async function searchInBackgroundTab() {
   // search page should be loaded in the same tab that performed the search, in
   // the background tab.
   let { browser } = await addTab();
-  let engine = Services.search.defaultEngine;
+  let engine = await Services.search.getDefault();
   let data = {
     engineName: engine.name,
     searchString: "ContentSearchTest",
@@ -155,16 +169,16 @@ add_task(async function badImage() {
   let expectedEngine =
     expectedCurrentState.engines.find(e => e.name == engine.name);
   ok(!!expectedEngine, "Sanity check: engine should be in expected state");
-  ok(expectedEngine.iconBuffer === null,
+  ok(expectedEngine.iconData === null,
      "Sanity check: icon array buffer of engine in expected state " +
-     "should be null: " + expectedEngine.iconBuffer);
+     "should be null: " + expectedEngine.iconData);
   checkMsg(finalCurrentStateMsg, {
     type: "CurrentState",
     data: expectedCurrentState,
   });
   // Removing the engine triggers a final CurrentState message.  Wait for it so
   // it doesn't trip up subsequent tests.
-  Services.search.removeEngine(engine);
+  await Services.search.removeEngine(engine);
   await waitForTestMsg(mm, "CurrentState");
 });
 
@@ -249,7 +263,7 @@ add_task(async function GetSuggestions_AddFormHistoryEntry_RemoveFormHistoryEntr
   });
 
   // Finally, clean up by removing the test engine.
-  Services.search.removeEngine(engine);
+  await Services.search.removeEngine(engine);
   await waitForTestMsg(mm, "CurrentState");
 });
 
@@ -333,20 +347,8 @@ function waitForNewEngine(mm, basename, numImages) {
   let eventPromises = expectedSearchEvents.map(e => waitForTestMsg(mm, e));
 
   // Wait for addEngine().
-  let addDeferred = PromiseUtils.defer();
   let url = getRootDirectory(gTestPath) + basename;
-  Services.search.addEngine(url, "", false, {
-    onSuccess(engine) {
-      info("Search engine added: " + basename);
-      addDeferred.resolve(engine);
-    },
-    onError(errCode) {
-      ok(false, "addEngine failed with error code " + errCode);
-      addDeferred.reject();
-    },
-  });
-
-  return Promise.all([addDeferred.promise].concat(eventPromises));
+  return Promise.all([Services.search.addEngine(url, "", false)].concat(eventPromises));
 }
 
 async function addTab() {
@@ -362,13 +364,13 @@ async function addTab() {
 var currentStateObj = async function() {
   let state = {
     engines: [],
-    currentEngine: await currentEngineObj(),
+    currentEngine: await defaultEngineObj(),
   };
-  for (let engine of Services.search.getVisibleEngines()) {
+  for (let engine of await Services.search.getVisibleEngines()) {
     let uri = engine.getIconURLBySize(16, 16);
     state.engines.push({
       name: engine.name,
-      iconBuffer: await arrayBufferFromDataURI(uri),
+      iconData: await iconDataFromURI(uri),
       hidden: false,
       identifier: engine.identifier,
     });
@@ -376,21 +378,27 @@ var currentStateObj = async function() {
   return state;
 };
 
-var currentEngineObj = async function() {
-  let engine = Services.search.defaultEngine;
+var defaultEngineObj = async function() {
+  let engine = await Services.search.getDefault();
   let uriFavicon = engine.getIconURLBySize(16, 16);
   let bundle = Services.strings.createBundle("chrome://global/locale/autocomplete.properties");
   return {
     name: engine.name,
     placeholder: bundle.formatStringFromName("searchWithEngine", [engine.name], 1),
-    iconBuffer: await arrayBufferFromDataURI(uriFavicon),
+    iconData: await iconDataFromURI(uriFavicon),
   };
 };
 
-function arrayBufferFromDataURI(uri) {
+function iconDataFromURI(uri) {
   if (!uri) {
     return Promise.resolve(null);
   }
+
+  if (!uri.startsWith("data:")) {
+    plainURIIconTested = true;
+    return Promise.resolve(uri);
+  }
+
   return new Promise(resolve => {
     let xhr = new XMLHttpRequest();
     xhr.open("GET", uri, true);
@@ -399,6 +407,7 @@ function arrayBufferFromDataURI(uri) {
       resolve(null);
     };
     xhr.onload = () => {
+      arrayBufferIconTested = true;
       resolve(xhr.response);
     };
     try {

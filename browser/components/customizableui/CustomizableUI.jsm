@@ -1,14 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 "use strict";
 
 var EXPORTED_SYMBOLS = ["CustomizableUI"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   SearchWidgetTracker: "resource:///modules/SearchWidgetTracker.jsm",
@@ -55,7 +54,7 @@ const kSubviewEvents = [
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 15;
+var kVersion = 16;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -202,6 +201,7 @@ var CustomizableUIInternal = {
       "downloads-button",
       "library-button",
       "sidebar-button",
+      "fxa-toolbar-menu-button",
     ];
 
     if (AppConstants.MOZ_DEV_EDITION) {
@@ -270,6 +270,7 @@ var CustomizableUIInternal = {
     }
   },
 
+  // eslint-disable-next-line complexity
   _updateForNewVersion() {
     // We should still enter even if gSavedState.currentVersion >= kVersion
     // because the per-widget pref facility is independent of versioning.
@@ -474,6 +475,15 @@ var CustomizableUIInternal = {
         if (!this._builtinAreas.has(area)) {
           delete gSavedState.placements[area];
         }
+      }
+    }
+
+    // Add the FxA toolbar menu as the right most button item
+    if (currentVersion < 16 && gSavedState.placements) {
+      let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
+      // Place the menu item as the first item to the left of the hamburger menu
+      if (navbarPlacements) {
+        navbarPlacements.push("fxa-toolbar-menu-button");
       }
     }
   },
@@ -1451,6 +1461,9 @@ var CustomizableUIInternal = {
     if (!aWidget) {
       throw new Error("buildWidget was passed a non-widget to build.");
     }
+    if (!aWidget.showInPrivateBrowsing && PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView)) {
+      return null;
+    }
 
     log.debug("Building " + aWidget.id + " of type " + aWidget.type);
 
@@ -1806,7 +1819,6 @@ var CustomizableUIInternal = {
       // that this was prevented, but we probably still want to close the panel.
       // If consumers don't want this to happen, they should specify the closemenu
       // attribute.
-
     } else if (aEvent.type != "command") { // mouse events:
       if (aEvent.defaultPrevented || aEvent.button != 0) {
         return;
@@ -4027,8 +4039,7 @@ function WidgetGroupWrapper(aWidget) {
     }
 
     let instance = aWidget.instances.get(aWindow.document);
-    if (!instance &&
-        (aWidget.showInPrivateBrowsing || !PrivateBrowsingUtils.isWindowPrivate(aWindow))) {
+    if (!instance) {
       instance = CustomizableUIInternal.buildWidget(aWindow.document,
                                                     aWidget);
     }
@@ -4286,6 +4297,7 @@ OverflowableToolbar.prototype = {
     let chevronId = this._toolbar.getAttribute("overflowbutton");
     this._chevron = doc.getElementById(chevronId);
     this._chevron.addEventListener("mousedown", this);
+    this._chevron.addEventListener("keypress", this);
     this._chevron.addEventListener("dragover", this);
     this._chevron.addEventListener("dragend", this);
 
@@ -4322,7 +4334,8 @@ OverflowableToolbar.prototype = {
     window.removeEventListener("resize", this);
     window.gNavToolbox.removeEventListener("customizationstarting", this);
     window.gNavToolbox.removeEventListener("aftercustomization", this);
-    this._chevron.removeEventListener("command", this);
+    this._chevron.removeEventListener("mousedown", this);
+    this._chevron.removeEventListener("keypress", this);
     this._chevron.removeEventListener("dragover", this);
     this._chevron.removeEventListener("dragend", this);
     this._panel.removeEventListener("popuphiding", this);
@@ -4360,6 +4373,12 @@ OverflowableToolbar.prototype = {
           this._onClickChevron(aEvent);
         } else {
           PanelMultiView.hidePopup(this._panel);
+        }
+        break;
+      case "keypress":
+        if (aEvent.target == this._chevron &&
+            (aEvent.key == " " || aEvent.key == "Enter")) {
+          this._onClickChevron(aEvent);
         }
         break;
       case "customizationstarting":
@@ -4649,12 +4668,15 @@ OverflowableToolbar.prototype = {
 
     // If this wasn't overflowed before...
     if (!wasOverflowed) {
-      // ... but it is now, then we added to the overflow panel. Exciting stuff:
+      // ... but it is now, then we added to the overflow panel.
       if (nowOverflowed) {
-        // NB: we're guaranteed that it has a previousSibling, because if it didn't,
-        // we would have added it to the toolbar instead. See getOverflowedNextNode.
-        let prevId = aNode.previousElementSibling.id;
-        let minSize = this._collapsed.get(prevId);
+        // We could be the first item in the overflow panel if we're being inserted
+        // before the previous first item in it. We can't assume the minimum
+        // size is the same (because the other item might be much wider), so if
+        // there is no previous item, just allow this item to be put back in the
+        // toolbar immediately by specifying a very low minimum size.
+        let sourceOfMinSize = aNode.previousElementSibling;
+        let minSize = sourceOfMinSize ? this._collapsed.get(sourceOfMinSize.id) : 1;
         this._collapsed.set(aNode.id, minSize);
         aNode.setAttribute("cui-anchorid", this._chevron.id);
         aNode.setAttribute("overflowedItem", true);

@@ -22,12 +22,15 @@ class SocketProcessBridgeParent final : public PSocketProcessBridgeParent {
   explicit SocketProcessBridgeParent(
       ProcessId aId, Endpoint<PSocketProcessBridgeParent>&& aEndpoint);
 
-  mozilla::ipc::IPCResult RecvTest() override;
+  mozilla::ipc::IPCResult RecvTest();
   mozilla::ipc::IPCResult RecvInitBackground(
-      Endpoint<PBackgroundParent>&& aEndpoint) override;
+      Endpoint<PBackgroundParent>&& aEndpoint);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   void DeferredDestroy();
+
+  dom::PMediaTransportParent* AllocPMediaTransportParent();
+  bool DeallocPMediaTransportParent(dom::PMediaTransportParent* aActor);
 
  private:
   ~SocketProcessBridgeParent();

@@ -15,6 +15,7 @@
 #include "GLContextProvider.h"
 #include "nsExceptionHandler.h"
 #include "mozilla/Range.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/APZSampler.h"
 #include "mozilla/layers/APZUpdater.h"
@@ -52,17 +53,35 @@ bool is_in_render_thread() {
 
 void gecko_profiler_start_marker(const char* name) {
 #ifdef MOZ_GECKO_PROFILER
-  profiler_tracing("WebRender", name,
-                   js::ProfilingStackFrame::Category::GRAPHICS,
+  profiler_tracing("WebRender", name, JS::ProfilingCategoryPair::GRAPHICS,
                    TRACING_INTERVAL_START);
 #endif
 }
 
 void gecko_profiler_end_marker(const char* name) {
 #ifdef MOZ_GECKO_PROFILER
-  profiler_tracing("WebRender", name,
-                   js::ProfilingStackFrame::Category::GRAPHICS,
+  profiler_tracing("WebRender", name, JS::ProfilingCategoryPair::GRAPHICS,
                    TRACING_INTERVAL_END);
+#endif
+}
+
+void gecko_profiler_add_text_marker(const char* name, const char* text_bytes,
+                                    size_t text_len, uint64_t microseconds) {
+#ifdef MOZ_GECKO_PROFILER
+  if (profiler_thread_is_being_profiled()) {
+    auto now = mozilla::TimeStamp::Now();
+    auto start = now - mozilla::TimeDuration::FromMicroseconds(microseconds);
+    profiler_add_text_marker(name, nsDependentCSubstring(text_bytes, text_len),
+                             JS::ProfilingCategoryPair::GRAPHICS, start, now);
+  }
+#endif
+}
+
+bool gecko_profiler_thread_is_being_profiled() {
+#ifdef MOZ_GECKO_PROFILER
+  return profiler_thread_is_being_profiled();
+#else
+  return false;
 #endif
 }
 
@@ -106,15 +125,17 @@ void gecko_printf_stderr_output(const char* msg) { printf_stderr("%s\n", msg); }
 
 void* get_proc_address_from_glcontext(void* glcontext_ptr,
                                       const char* procname) {
-  MOZ_ASSERT(glcontext_ptr);
-
   mozilla::gl::GLContext* glcontext =
       reinterpret_cast<mozilla::gl::GLContext*>(glcontext_ptr);
+  MOZ_ASSERT(glcontext);
   if (!glcontext) {
     return nullptr;
   }
-  PRFuncPtr p = glcontext->LookupSymbol(procname);
-  return reinterpret_cast<void*>(p);
+  const auto& loader = glcontext->GetSymbolLoader();
+  MOZ_ASSERT(loader);
+
+  const auto ret = loader->GetProcAddress(procname);
+  return reinterpret_cast<void*>(ret);
 }
 
 void gecko_profiler_register_thread(const char* name) {
@@ -206,8 +227,7 @@ class SceneBuiltNotification : public wr::NotificationHandler {
 
             profiler_add_marker_for_thread(
                 profiler_current_thread_id(),
-                js::ProfilingStackFrame::Category::GRAPHICS,
-                "CONTENT_FULL_PAINT_TIME",
+                JS::ProfilingCategoryPair::GRAPHICS, "CONTENT_FULL_PAINT_TIME",
                 MakeUnique<ContentFullPaintPayload>(startTime, endTime));
           }
 #endif
@@ -318,7 +338,8 @@ WebRenderBridgeParent::WebRenderBridgeParent(const wr::PipelineId& aPipelineId)
       mIsFirstPaint(false),
       mSkippedComposite(false) {}
 
-/* static */ WebRenderBridgeParent* WebRenderBridgeParent::CreateDestroyed(
+/* static */
+WebRenderBridgeParent* WebRenderBridgeParent::CreateDestroyed(
     const wr::PipelineId& aPipelineId) {
   return new WebRenderBridgeParent(aPipelineId);
 }
@@ -744,15 +765,19 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvDeleteCompositorAnimations(
 void WebRenderBridgeParent::RemoveEpochDataPriorTo(
     const wr::Epoch& aRenderedEpoch) {
   while (!mCompositorAnimationsToDelete.empty()) {
-    if (mCompositorAnimationsToDelete.front().mEpoch.mHandle >
-        aRenderedEpoch.mHandle) {
+    if (aRenderedEpoch < mCompositorAnimationsToDelete.front().mEpoch) {
       break;
     }
     for (uint64_t id : mCompositorAnimationsToDelete.front().mIds) {
-      if (mActiveAnimations.erase(id) > 0) {
-        mAnimStorage->ClearById(id);
-      } else {
+      const auto activeAnim = mActiveAnimations.find(id);
+      if (activeAnim == mActiveAnimations.end()) {
         NS_ERROR("Tried to delete invalid animation");
+        continue;
+      }
+      // Check if animation delete request is still valid.
+      if (activeAnim->second <= mCompositorAnimationsToDelete.front().mEpoch) {
+        mAnimStorage->ClearById(id);
+        mActiveAnimations.erase(activeAnim);
       }
     }
     mCompositorAnimationsToDelete.pop();
@@ -776,7 +801,7 @@ CompositorBridgeParent* WebRenderBridgeParent::GetRootCompositorBridgeParent()
   }
 
   // Otherwise, this WebRenderBridgeParent is attached to a
-  // CrossProcessCompositorBridgeParent so we have an extra level of
+  // ContentCompositorBridgeParent so we have an extra level of
   // indirection to unravel.
   CompositorBridgeParent::LayerTreeState* lts =
       CompositorBridgeParent::GetIndirectShadowTree(GetLayersId());
@@ -931,7 +956,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
     if (IsRootWebRenderBridgeParent()) {
       LayoutDeviceIntSize widgetSize = mWidget->GetClientSize();
       LayoutDeviceIntRect docRect(LayoutDeviceIntPoint(), widgetSize);
-      txn.SetWindowParameters(widgetSize, docRect);
+      txn.SetDocumentView(docRect);
     }
     gfx::Color clearColor(0.f, 0.f, 0.f, 0.f);
     txn.SetDisplayList(clearColor, wrEpoch,
@@ -1048,7 +1073,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
             mCompositorBridge, GetLayersId(), mChildLayersObserverEpoch, true));
   }
 
-  if (txn.IsResourceUpdatesEmpty()) {
+  // Even when txn.IsResourceUpdatesEmpty() is true, there could be resource
+  // updates. It is handled by WebRenderTextureHostWrapper. In this case
+  // txn.IsRenderedFrameInvalidated() becomes true.
+  if (txn.IsResourceUpdatesEmpty() && !txn.IsRenderedFrameInvalidated()) {
     // If TransactionBuilder does not have resource updates nor display list,
     // ScheduleGenerateFrame is not triggered via SceneBuilder and there is no
     // need to update WrEpoch.
@@ -1191,7 +1219,13 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
         }
         if (data.animations().Length()) {
           mAnimStorage->SetAnimations(data.id(), data.animations());
-          mActiveAnimations.insert(data.id());
+          const auto activeAnim = mActiveAnimations.find(data.id());
+          if (activeAnim == mActiveAnimations.end()) {
+            mActiveAnimations.emplace(data.id(), mWrEpoch);
+          } else {
+            // Update wr::Epoch if the animation already exists.
+            activeAnim->second = mWrEpoch;
+          }
         }
         break;
       }
@@ -1347,7 +1381,6 @@ void WebRenderBridgeParent::AddPipelineIdForCompositable(
   }
 
   wrHost->SetWrBridge(this);
-  wrHost->EnableUseAsyncImagePipeline();
   mAsyncCompositables.emplace(wr::AsUint64(aPipelineId), wrHost);
   mAsyncImageManager->AddAsyncImagePipeline(aPipelineId, wrHost);
 
@@ -1444,7 +1477,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvClearCachedResources() {
   ScheduleGenerateFrame();
   // Remove animations.
   for (const auto& id : mActiveAnimations) {
-    mAnimStorage->ClearById(id);
+    mAnimStorage->ClearById(id.first);
   }
   mActiveAnimations.clear();
   std::queue<CompositorAnimationIdsForEpoch>().swap(
@@ -2025,7 +2058,7 @@ void WebRenderBridgeParent::ClearResources() {
   mApi->SendTransaction(txn);
 
   for (const auto& id : mActiveAnimations) {
-    mAnimStorage->ClearById(id);
+    mAnimStorage->ClearById(id.first);
   }
   mActiveAnimations.clear();
   std::queue<CompositorAnimationIdsForEpoch>().swap(

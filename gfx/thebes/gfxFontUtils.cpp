@@ -1769,11 +1769,7 @@ void gfxFontUtils::GetVariationInstances(
    public:
     explicit AutoHBBlob(hb_blob_t* aBlob) : mBlob(aBlob) {}
 
-    ~AutoHBBlob() {
-      if (mBlob) {
-        hb_blob_destroy(mBlob);
-      }
-    }
+    ~AutoHBBlob() { hb_blob_destroy(mBlob); }
 
     operator hb_blob_t*() { return mBlob; }
 

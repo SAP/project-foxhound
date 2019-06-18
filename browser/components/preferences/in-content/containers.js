@@ -4,8 +4,7 @@
 
 /* import-globals-from preferences.js */
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
+var {ContextualIdentityService} = ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
 
 const defaultContainerIcon = "fingerprint";
 const defaultContainerColor = "blue";
@@ -41,8 +40,8 @@ let gContainersPane = {
       userContextIcon.className = "userContext-icon";
       userContextIcon.setAttribute("width", 24);
       userContextIcon.setAttribute("height", 24);
-      userContextIcon.setAttribute("data-identity-icon", container.icon);
-      userContextIcon.setAttribute("data-identity-color", container.color);
+      userContextIcon.classList.add("identity-icon-" + container.icon);
+      userContextIcon.classList.add("identity-color-" + container.color);
       outer.appendChild(userContextIcon);
 
       let label = document.createXULElement("label");

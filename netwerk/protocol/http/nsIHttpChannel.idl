@@ -458,6 +458,13 @@ interface nsIHttpChannel : nsIChannel
                                     in unsigned long long aIdentifier);
 
     /**
+     * Used to determine if there is a Cross-Origin-Opener-Policy mismatch
+     * that would require switching the channel to another process.
+     * @throws NS_ERROR_NOT_AVAILABLE if we don't have a responseHead
+     */
+    [must_use] boolean hasCrossOriginOpenerPolicyMismatch();
+
+    /**
      * Flags a channel to be upgraded to HTTPS.
      *
      * Upgrading to a secure channel must happen before or during
@@ -488,25 +495,106 @@ interface nsIHttpChannel : nsIChannel
     [must_use] attribute uint64_t topLevelContentWindowId;
 
     /**
-     * Returns true if the channel has loaded a resource that is on the tracking
-     * protection list.  This is only available if the
-     * privacy.trackingprotection.annotate_channels pref is set and its value
-     * should only be relied on after the channel has established a connection.
+     * Returns the classification flags if the channel has been processed by
+     * URL-Classifier features and is considered first-party.
+     */
+    [infallible] readonly attribute unsigned long firstPartyClassificationFlags;
+
+    /**
+     * Returns the classification flags if the channel has been processed by
+     * URL-Classifier features and is considered third-party with the top
+     * window URI.
+     */
+    [infallible] readonly attribute unsigned long thirdPartyClassificationFlags;
+
+    /*
+     * Returns the classification flags if the channel has been processed by
+     * URL-Classifier features. This value is equal to
+     * "firstPartyClassificationFlags || thirdPartyClassificationFlags".
+     *
+     * Note that top-level channels could be classified as well.
+     * In order to identify third-party resources specifically, use
+     * classificationThirdPartyFlags;
+     */
+    [infallible] readonly attribute unsigned long classificationFlags;
+
+    cenum ClassificationFlags : 32 {
+      /**
+       * The resource is on the fingerprinting list. This is only available if
+       * the privacy.trackingprotection.fingerprinting_annotate_enabled pref.
+       */
+      CLASSIFIED_FINGERPRINTING = 0x01,
+
+      /**
+       * The resource is on the cryptomining list. This is only available if
+       * the privacy.trackingprotection.cryptomining_annotate_enabled pref is set.
+       */
+      CLASSIFIED_CRYPTOMINING = 0x02,
+
+      /**
+       * The following are about tracking annotation and are available only
+       * if the privacy.trackingprotection.annotate_channels pref.
+       * CLASSIFIED_TRACKING is set if we are not able to identify the
+       * type of classification.
+       */
+      CLASSIFIED_TRACKING = 0x04,
+      CLASSIFIED_TRACKING_AD = 0x08,
+      CLASSIFIED_TRACKING_ANALYTICS = 0x10,
+      CLASSIFIED_TRACKING_SOCIAL = 0x20,
+      CLASSIFIED_TRACKING_CONTENT = 0x40,
+
+      /**
+       * This is exposed to help to identify tracking classification
+       */
+      CLASSIFIED_ANY_TRACKING = CLASSIFIED_TRACKING |
+        CLASSIFIED_TRACKING_AD | CLASSIFIED_TRACKING_ANALYTICS |
+        CLASSIFIED_TRACKING_SOCIAL | CLASSIFIED_TRACKING_CONTENT |
+        CLASSIFIED_FINGERPRINTING,
+    };
+
+    /**
+     * Returns true if the channel has loaded a resource that is classified as
+     * tracker.
+     * This is a helper attribute which returns the same value of
+     * (classificationFlags & CLASSIFIED_ANY_TRACKING)
      *
      * Note that top-level channels could be marked as tracking
      * resource. In order to identify third-party tracking resources
-     * specifically, use isThirdPartyTrackingResource.
+     * specifically, use isThirdPartyTrackingResource().
      */
-    [infallible] readonly attribute boolean isTrackingResource;
+    boolean isTrackingResource();
+
+%{ C++
+  inline bool IsTrackingResource()
+  {
+    bool value = false;
+    if (NS_SUCCEEDED(IsTrackingResource(&value)) && value) {
+      return true;
+    }
+    return false;
+  }
+%}
 
     /**
-     * Returns true if the channel has loaded a resource that is on the tracking
-     * protection list and is considered third-party with the top window URI.
-     * This is only available if the privacy.trackingprotection.annotate_channels
-     * pref is set and its value should only be relied on after the channel has
-     * established a connection.
+     * Returns the classification flags if the channel has been processed by
+     * URL-Classifier features and is considered third-party with the top
+     * window URI.
+     *
+     * This is a helper attribute which returns the same value of
+     * (thirdPartyClassificationFlags & CLASSIFIED_ANY_TRACKING)
      */
-    [infallible] readonly attribute boolean isThirdPartyTrackingResource;
+    boolean isThirdPartyTrackingResource();
+
+%{ C++
+  inline bool IsThirdPartyTrackingResource()
+  {
+    bool value = false;
+    if (NS_SUCCEEDED(IsThirdPartyTrackingResource(&value)) && value) {
+      return true;
+    }
+    return false;
+  }
+%}
 
     /**
      * Returns the allowing status for flash plugin for this channel.

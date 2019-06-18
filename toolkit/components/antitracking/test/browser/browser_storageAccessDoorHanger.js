@@ -1,6 +1,4 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const CHROME_BASE = "chrome://mochitests/content/browser/browser/modules/test/browser/";
 Services.scriptloader.loadSubScript(CHROME_BASE + "head.js", this);
 /* import-globals-from ../../../../../browser/modules/test/browser/head.js */
@@ -24,6 +22,7 @@ async function testDoorHanger(choice, showPrompt, useEscape, topPage, maxConcurr
     ["browser.contentblocking.allowlist.storage.enabled", true],
     [ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS],
     ["dom.storage_access.auto_grants", true],
+    ["dom.storage_access.auto_grants.delayed", false],
     ["dom.storage_access.enabled", true],
     ["dom.storage_access.max_concurrent_auto_grants", maxConcurrent],
     ["dom.storage_access.prompt.testing", false],

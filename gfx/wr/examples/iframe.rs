@@ -12,6 +12,7 @@ mod boilerplate;
 
 use boilerplate::{Example, HandyDandyRectBuilder};
 use webrender::api::*;
+use webrender::api::units::*;
 
 // This example uses the push_iframe API to nest a second pipeline's displaylist
 // inside the root pipeline's display list. When it works, a green square is
@@ -25,7 +26,7 @@ impl Example for App {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         _txn: &mut Transaction,
-        _framebuffer_size: DeviceIntSize,
+        _framebuffer_size: FramebufferIntSize,
         pipeline_id: PipelineId,
         document_id: DocumentId,
     ) {

@@ -92,21 +92,32 @@ set_define('MOZ_GECKO_PROFILER_PARSE_ELF', gecko_profiler_parse_elf)
 set_config('MOZ_PROFILER_MEMORY', gecko_profiler_define)
 set_define('MOZ_PROFILER_MEMORY', gecko_profiler_define)
 
-option('--enable-dmd', env='MOZ_DMD',
-       help='Enable Dark Matter Detector (heap profiler). '
+
+@depends('--enable-debug', milestone, build_project,
+         # Artifact builds are included because the downloaded artifacts can
+         # have DMD enabled.
+         when=artifact_builds | depends(when='--enable-replace-malloc')(lambda: True))
+def dmd_default(debug, milestone, build_project):
+    return bool(build_project == 'browser' and (debug or milestone.is_nightly))
+
+
+option('--enable-dmd', env='MOZ_DMD', default=dmd_default,
+       help='{Enable|Disable} Dark Matter Detector (heap profiler). '
             'Also enables jemalloc, replace-malloc and profiling')
+
 
 @depends('--enable-dmd')
 def dmd(value):
     if value:
         return True
 
+
 set_config('MOZ_DMD', dmd)
 set_define('MOZ_DMD', dmd)
 add_old_configure_assignment('MOZ_DMD', dmd)
 imply_option('--enable-profiling', dmd)
-imply_option('--enable-jemalloc', dmd)
-imply_option('--enable-replace-malloc', dmd)
+imply_option('--enable-jemalloc', dmd, when=compile_environment)
+imply_option('--enable-replace-malloc', dmd, when=compile_environment)
 
 # ALSA cubeb backend
 # ==============================================================
@@ -420,23 +431,27 @@ set_config('MOZ_FFMPEG', ffmpeg)
 set_define('MOZ_FFMPEG', ffmpeg)
 imply_option('--enable-fmp4', ffmpeg, '--enable-ffmpeg')
 
-# Libaom AV1 Video Codec Support
+# AV1 Video Codec Support
 # ==============================================================
-option('--enable-av1',
-        help='Enable libaom for av1 video support')
+option('--disable-av1',
+        help='Disable av1 video support')
 
-@depends('--enable-av1', target, c_compiler)
-def av1(value, target, c_compiler):
-    enabled = bool(value)
-    if value.origin == 'default':
-        if target.os == 'WINNT' and target.cpu == 'x86' and \
-                c_compiler and c_compiler.type == 'msvc':
-            enabled = False
-        else:
-            enabled = True
-    if enabled:
+@depends('--enable-av1')
+def av1(value):
+    if value:
         return True
 
+@depends(target, nasm_version, when=av1 & compile_environment)
+def dav1d_asm(target, nasm_version):
+    if target.os != 'Android' and target.cpu in ('x86', 'x86_64'):
+        if nasm_version < '2.13':
+            die('nasm 2.13 or greater is required for AV1 support. '
+                'Either install nasm or add --disable-av1 to your configure options.')
+        return True
+
+
+set_config('MOZ_DAV1D_ASM', dav1d_asm)
+set_define('MOZ_DAV1D_ASM', dav1d_asm)
 set_config('MOZ_AV1', av1)
 set_define('MOZ_AV1', av1)
 
@@ -497,47 +512,57 @@ set_define('MOZ_OMX', openmax)
 
 # EME Support
 # ==============================================================
-# Widevine is enabled by default in desktop browser builds.
-@depends(build_project)
-def eme_default(build_project):
-    if build_project == 'browser':
-        return 'widevine'
-
-option('--enable-eme',
-       nargs='*',
-       choices=('widevine',),
-       default=eme_default,
-       help='{Enable|Disable} support for Encrypted Media Extensions')
-
-@depends('--enable-eme', target)
-def enable_eme(value, target):
-    # Widevine EME by default enabled on desktop Windows, MacOS and Linux,
-    # x86 and x64 builds.
+@depends(target)
+def eme_choices(target):
     if (target.kernel in ('Darwin', 'WINNT', 'Linux') and
         target.os not in ('Android', 'iOS') and
         target.cpu in ('x86', 'x86_64')):
-        return value
-    elif value and value.origin != 'default':
-        die('%s is not supported on %s' % (value.format('--enable-eme'), target.alias))
-    # Return the same type of OptionValue (Positive or Negative), with an empty tuple.
-    return value.__class__(())
+        return ('widevine',)
+    if target.kernel == 'WINNT' and target.cpu == 'aarch64':
+        return ('widevine',)
 
-@depends(enable_eme, fmp4)
-def eme(value, fmp4):
-    enabled = bool(value)
-    if value.origin == 'default':
-        enabled = enabled or fmp4
-    if enabled and not fmp4:
+
+# Widevine is enabled by default in desktop browser builds, except
+# on aarch64 Windows.
+@depends(build_project, eme_choices, target)
+def eme_default(build_project, choices, target):
+    if build_project == 'browser':
+        if target.kernel != 'WINNT' or target.cpu != 'aarch64':
+            return choices
+
+
+option('--enable-eme',
+       nargs='+',
+       choices=eme_choices,
+       default=eme_default,
+       when=eme_choices,
+       help='{Enable|Disable} support for Encrypted Media Extensions')
+
+
+@depends('--enable-eme', fmp4, when=eme_choices)
+def eme(enabled, fmp4):
+    if enabled and enabled.origin != 'default' and not fmp4:
         die('Encrypted Media Extension support requires '
             'Fragmented MP4 support')
-    if enabled:
-        return True
 
-@depends(enable_eme)
+
+@depends('--enable-eme', when=eme_choices)
 def eme_modules(value):
     return value
 
-set_config('MOZ_EME_MODULES', eme_modules)
+
+# Fallback to an empty list when eme_choices is empty, setting eme_modules to
+# None.
+set_config('MOZ_EME_MODULES', eme_modules | dependable([]))
+
+
+@depends(eme_modules, target, when=eme_modules)
+def eme_win32_artifact(modules, target):
+    if 'widevine' in modules and target.kernel == 'WINNT' and target.cpu == 'aarch64':
+        return True
+
+
+set_config('MOZ_EME_WIN32_ARTIFACT', eme_win32_artifact)
 
 option(name='--enable-chrome-format',
        help='Select FORMAT of chrome files during packaging.',
@@ -566,12 +591,7 @@ def omnijar_name(toolkit):
     # Fennec's static resources live in the assets/ folder of the
     # APK.  Adding a path to the name here works because we only
     # have one omnijar file in the final package (which is not the
-    # case on desktop), and necessitates some contortions during
-    # packaging so that the resources in the omnijar are considered
-    # as rooted at / and not as rooted at assets/ (which again is
-    # not the case on desktop: there are omnijars rooted at webrtc/,
-    # etc). packager.mk handles changing the rooting of the single
-    # omnijar.
+    # case on desktop).
     return 'assets/omni.ja' if toolkit == 'android' else 'omni.ja'
 
 set_config('OMNIJAR_NAME', omnijar_name)
@@ -800,21 +820,6 @@ def skia_android(skia, target):
 
 set_define('SK_BUILD_FOR_ANDROID_NDK', skia_android)
 
-option('--disable-skia-gpu', help='Disable use of Skia-GPU')
-
-@depends('--disable-skia-gpu', skia)
-def skia_gpu(value, skia):
-    if value.origin == 'default':
-        if not skia:
-            return None
-    elif value and not skia:
-        die('Cannot enable Skia-GPU without enabling Skia')
-    if skia and value:
-        return True
-
-set_config('MOZ_ENABLE_SKIA_GPU', skia_gpu)
-set_define('USE_SKIA_GPU', skia_gpu)
-
 option('--enable-skia-pdf', help='Enable Skia PDF')
 
 @depends('--enable-skia-pdf', skia, target, milestone)
@@ -910,6 +915,22 @@ add_old_configure_assignment('FT2_LIBS',
 add_old_configure_assignment('FT2_CFLAGS',
                              ft2_info.cflags)
 
+
+# CDP remote agent
+# ==============================================================
+#
+# The source code lives under ../remote.
+
+option('--enable-cdp', help='Enable CDP-based remote agent')
+
+@depends('--enable-cdp')
+def remote(value):
+    if value:
+        return True
+
+set_config('ENABLE_REMOTE_AGENT', remote)
+
+
 # Marionette remote protocol
 # ==============================================================
 #
@@ -945,6 +966,7 @@ def marionette(value):
 
 set_config('ENABLE_MARIONETTE', marionette)
 
+
 # geckodriver WebDriver implementation
 # ==============================================================
 #
@@ -973,6 +995,7 @@ def geckodriver(enabled):
         return True
 
 set_config('ENABLE_GECKODRIVER', geckodriver)
+
 
 # WebRTC
 # ========================================================
@@ -1083,10 +1106,13 @@ with only_when('--enable-compile-environment'):
 def idl_roots(build_env):
     return namespace(ipdl_root=os.path.join(build_env.topobjdir, 'ipc', 'ipdl'),
                      webidl_root=os.path.join(build_env.topobjdir,
-                                              'dom', 'bindings'))
+                                              'dom', 'bindings'),
+                     xpcom_root=os.path.join(build_env.topobjdir,
+                                             'xpcom', 'components'))
 
 set_config('WEBIDL_ROOT', idl_roots.webidl_root)
 set_config('IPDL_ROOT', idl_roots.ipdl_root)
+set_config('XPCOM_ROOT', idl_roots.xpcom_root)
 
 # Proxy bypass protection
 # ==============================================================
@@ -1129,26 +1155,24 @@ midl = check_prog('MIDL', midl_names, when=check_for_midl, allow_missing=True,
                   paths=sdk_bin_path)
 
 
-@depends(c_compiler, target, vc_compiler_path,
+@depends(c_compiler, target, toolchain_search_path,
          when=depends(midl, target)(lambda m, t: m and t.kernel == 'WINNT'))
 @imports(_from='mozbuild.shellutil', _import='quote')
-def midl_flags(c_compiler, target, vc_compiler_path):
-    if c_compiler and c_compiler.type in ('msvc', 'clang-cl'):
+def midl_flags(c_compiler, target, toolchain_search_path):
+    if c_compiler and c_compiler.type == 'clang-cl':
         env = {
             'x86': 'win32',
             'x86_64': 'x64',
             'aarch64': 'arm64',
         }[target.cpu]
         flags = ['-env', env]
-        if c_compiler.type == 'msvc':
-            flags += ['-cpp_cmd', c_compiler.compiler]
-            if c_compiler.flags:
-                flags += ['-cpp_opt', quote(' '.join(list(c_compiler.flags) + ['-E']))]
-        else:
-            # Ideally, we'd use the same flags setup as for msvc, but clang-cl
-            # currently doesn't work as a preprocessor for midl, so we need to
-            # find cl. https://bugs.llvm.org/show_bug.cgi?id=40140
-            flags += ['-cpp_cmd', find_program('cl', paths=vc_compiler_path)]
+        # Ideally, we'd use ['-cpp_cmd', c_compiler.compiler], but clang-cl
+        # currently doesn't work as a preprocessor for midl, so we need to
+        # find cl. https://bugs.llvm.org/show_bug.cgi?id=40140
+        cl = find_program('cl', paths=toolchain_search_path)
+        if not cl:
+            die('Could not find Microsoft Visual C/C++ compiler for MIDL')
+        flags += ['-cpp_cmd', cl]
         return flags
 
     # mingw
@@ -1163,15 +1187,7 @@ set_config('MIDL_FLAGS', midl_flags)
 # Accessibility
 # ==============================================================
 
-@depends(target)
-def a11y_default(target):
-    # Accessibility doesn't work on aarch64-windows yet.
-    if target.kernel == 'WINNT' and target.cpu == 'aarch64':
-        return False
-    return True
-
-option('--enable-accessibility',
-       default=a11y_default, help='{Enable|Disable} accessibility support')
+option('--disable-accessibility', help='Disable accessibility support')
 
 @depends('--enable-accessibility', check_for_midl, midl, c_compiler)
 def accessibility(value, check_for_midl, midl, c_compiler):
@@ -1216,9 +1232,9 @@ set_config('MOZ_UNSIGNED_SYSTEM_SCOPE', unsigned_addon_scopes.system)
 # Launcher process (Windows only)
 # ==============================================================
 
-@depends(target, milestone)
-def launcher_process_default(target, milestone):
-    return target.os == 'WINNT' and milestone.is_nightly
+@depends(target)
+def launcher_process_default(target):
+    return target.os == 'WINNT'
 
 option('--enable-launcher-process', default=launcher_process_default,
        help='{Enable|Disable} launcher process by default')
@@ -1233,18 +1249,6 @@ def launcher(value, target):
 
 set_config('MOZ_LAUNCHER_PROCESS', launcher)
 set_define('MOZ_LAUNCHER_PROCESS', launcher)
-
-# Prio
-# ==============================================================
-@depends(c_compiler)
-def libprio(info):
-    if info:
-      # MSVC is not supported by libprio.
-      if info.type in ('msvc',):
-        return None
-    return True
-
-set_config('MOZ_LIBPRIO', libprio)
 
 # Maintenance service (Windows only)
 # ==============================================================
@@ -1546,7 +1550,8 @@ with only_when(compile_environment):
 
 # FFmpeg's ffvpx configuration
 # ==============================================================
-with only_when(compile_environment):
+# Artifact builds need MOZ_FFVPX defined as if compilation happened.
+with only_when(compile_environment | artifact_builds):
     @depends_if(yasm_version)
     def yasm_has_avx2(yasm_version):
         return yasm_version >= '1.2'
@@ -1582,7 +1587,8 @@ with only_when(compile_environment):
         elif target.cpu in ('arm', 'aarch64') and \
                 target.kernel not in ('WINNT', 'Darwin'):
             enable = flac_only = True
-            flags.extend(vpx_as_flags)
+            if vpx_as_flags:
+                flags.extend(vpx_as_flags)
 
         if use_yasm:
             # default disabled components
@@ -1680,3 +1686,14 @@ with only_when(compile_environment & target_is_windows):
     set_config('MOZ_D3DCOMPILER_VISTA_DLL', d3d_compiler_dll.name,
                when=d3d_compiler_dll.path)
     set_config('MOZ_D3DCOMPILER_VISTA_DLL_PATH', d3d_compiler_dll.path)
+
+# Remoting protocol support
+# ==============================================================
+
+@depends(toolkit)
+def has_remote(toolkit):
+    if 'gtk' in toolkit or toolkit == 'windows':
+        return True
+
+set_config('MOZ_HAS_REMOTE', has_remote)
+set_define('MOZ_HAS_REMOTE', has_remote)

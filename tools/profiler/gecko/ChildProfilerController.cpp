@@ -5,15 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChildProfilerController.h"
-#include "nsThreadUtils.h"
+
 #include "ProfilerChild.h"
+
+#include "nsThreadUtils.h"
 
 using namespace mozilla::ipc;
 
 namespace mozilla {
 
-/* static */ already_AddRefed<ChildProfilerController>
-ChildProfilerController::Create(
+/* static */
+already_AddRefed<ChildProfilerController> ChildProfilerController::Create(
     mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   RefPtr<ChildProfilerController> cpc = new ChildProfilerController();

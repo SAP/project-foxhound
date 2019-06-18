@@ -4,8 +4,8 @@
 
 // Note: sets Cc and Ci variables
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -76,7 +76,7 @@ function setup_test() {
   Assert.equal(setOK, "http://foo2.invalid:90/bar");
 
   // ChannelListener defined in head_channels.js
-  channel.asyncOpen2(new ChannelListener(checkRequestResponse, channel));
+  channel.asyncOpen(new ChannelListener(checkRequestResponse, channel));
 
   if (dbg) { print("============== setup_test: out"); }
 }

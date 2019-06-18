@@ -172,18 +172,19 @@ class DelayNodeEngine final : public AudioNodeEngine {
 
 DelayNode::DelayNode(AudioContext* aContext, double aMaxDelay)
     : AudioNode(aContext, 2, ChannelCountMode::Max,
-                ChannelInterpretation::Speakers),
-      mDelay(new AudioParam(this, DelayNodeEngine::DELAY, "delayTime", 0.0f,
-                            0.f, aMaxDelay)) {
+                ChannelInterpretation::Speakers) {
+  CreateAudioParam(mDelay, DelayNodeEngine::DELAY, "delayTime", 0.0f, 0.f,
+                   aMaxDelay);
   DelayNodeEngine* engine = new DelayNodeEngine(
       this, aContext->Destination(), aContext->SampleRate() * aMaxDelay);
   mStream = AudioNodeStream::Create(
       aContext, engine, AudioNodeStream::NO_STREAM_FLAGS, aContext->Graph());
 }
 
-/* static */ already_AddRefed<DelayNode> DelayNode::Create(
-    AudioContext& aAudioContext, const DelayOptions& aOptions,
-    ErrorResult& aRv) {
+/* static */
+already_AddRefed<DelayNode> DelayNode::Create(AudioContext& aAudioContext,
+                                              const DelayOptions& aOptions,
+                                              ErrorResult& aRv) {
   if (aAudioContext.CheckClosed(aRv)) {
     return nullptr;
   }

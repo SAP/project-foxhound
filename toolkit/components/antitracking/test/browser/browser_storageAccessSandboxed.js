@@ -1,5 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 let counter = 0;
 
 AntiTracking.runTest("Storage Access API called in a sandboxed iframe",
@@ -71,12 +69,13 @@ AntiTracking.runTest("Verify that sandboxed contexts don't get the saved permiss
     /* import-globals-from storageAccessAPIHelpers.js */
     await noStorageAccessInitially();
 
+    is(window.localStorage, null, "LocalStorage is null");
     try {
       localStorage.foo = 42;
       ok(false, "LocalStorage cannot be used!");
     } catch (e) {
       ok(true, "LocalStorage cannot be used!");
-      is(e.name, "SecurityError", "We want a security error message.");
+      is(e.name, "TypeError", "We want a type error message.");
     }
   },
 
@@ -118,12 +117,13 @@ AntiTracking.runTest("Verify that private browsing contexts don't get the saved 
     /* import-globals-from storageAccessAPIHelpers.js */
     await noStorageAccessInitially();
 
+    is(window.localStorage, null, "LocalStorage is null");
     try {
       localStorage.foo = 42;
       ok(false, "LocalStorage cannot be used!");
     } catch (e) {
       ok(true, "LocalStorage cannot be used!");
-      is(e.name, "SecurityError", "We want a security error message.");
+      is(e.name, "TypeError", "We want a type error message.");
     }
   },
 

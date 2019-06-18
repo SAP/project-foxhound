@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import {
   actions,
   selectors,
@@ -18,7 +20,7 @@ describe("closing tabs", () => {
 
     const fooSource = makeSource("foo.js");
     await dispatch(actions.newSource(fooSource));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
     dispatch(actions.closeTab(fooSource));
 
     expect(getSelectedSource(getState())).toBe(undefined);
@@ -31,11 +33,12 @@ describe("closing tabs", () => {
     const fooSource = makeSource("foo.js");
     await dispatch(actions.newSource(fooSource));
     await dispatch(actions.newSource(makeSource("bar.js")));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bar.js", line: 1 }));
     dispatch(actions.closeTab(fooSource));
 
-    expect(getSelectedSource(getState()).id).toBe("bar.js");
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("bar.js");
     expect(getSourceTabs(getState())).toHaveLength(1);
   });
 
@@ -44,7 +47,7 @@ describe("closing tabs", () => {
 
     const fooSource = makeSource("foo.js");
     await dispatch(actions.newSource(fooSource));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
     dispatch(actions.closeTab(fooSource));
 
     expect(getSelectedSource(getState())).toBe(undefined);
@@ -57,11 +60,12 @@ describe("closing tabs", () => {
     const barSource = makeSource("bar.js");
     await dispatch(actions.newSource(makeSource("foo.js")));
     await dispatch(actions.newSource(barSource));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bar.js", line: 1 }));
     await dispatch(actions.closeTab(barSource));
 
-    expect(getSelectedSource(getState()).id).toBe("foo.js");
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("foo.js");
     expect(getSourceTabs(getState())).toHaveLength(1);
   });
 
@@ -73,9 +77,9 @@ describe("closing tabs", () => {
     await dispatch(actions.newSource(fooSource));
     await dispatch(actions.newSource(barSource));
     await dispatch(actions.newSource(makeSource("bazz.js")));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bazz.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bar.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bazz.js", line: 1 }));
 
     const tabs = [
       "http://localhost:8000/examples/foo.js",
@@ -83,7 +87,8 @@ describe("closing tabs", () => {
     ];
     dispatch(actions.closeTabs(tabs));
 
-    expect(getSelectedSource(getState()).id).toBe("bazz.js");
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("bazz.js");
     expect(getSourceTabs(getState())).toHaveLength(1);
   });
 
@@ -93,16 +98,17 @@ describe("closing tabs", () => {
     await dispatch(actions.newSource(makeSource("foo.js")));
     await dispatch(actions.newSource(makeSource("bar.js")));
     await dispatch(actions.newSource(makeSource("bazz.js")));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bazz.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bar.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bazz.js", line: 1 }));
     const tabs = [
       "http://localhost:8000/examples/bar.js",
       "http://localhost:8000/examples/bazz.js"
     ];
     await dispatch(actions.closeTabs(tabs));
 
-    expect(getSelectedSource(getState()).id).toBe("foo.js");
+    const selected = getSelectedSource(getState());
+    expect(selected && selected.id).toBe("foo.js");
     expect(getSourceTabs(getState())).toHaveLength(1);
   });
 
@@ -111,8 +117,8 @@ describe("closing tabs", () => {
 
     await dispatch(actions.newSource(makeSource("foo.js")));
     await dispatch(actions.newSource(makeSource("bar.js")));
-    await dispatch(actions.selectLocation({ sourceId: "foo.js" }));
-    await dispatch(actions.selectLocation({ sourceId: "bar.js" }));
+    await dispatch(actions.selectLocation({ sourceId: "foo.js", line: 1 }));
+    await dispatch(actions.selectLocation({ sourceId: "bar.js", line: 1 }));
     await dispatch(
       actions.closeTabs([
         "http://localhost:8000/examples/foo.js",

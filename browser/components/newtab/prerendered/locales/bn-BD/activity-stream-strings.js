@@ -40,7 +40,7 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "ঠিক আছে, বুঝেছি",
   "prefs_home_header": "Firefox Home কনটেন্ট",
   "prefs_home_description": "আপনার Firefox Home স্ক্রিনে যেসব কনটেন্ট রাখতে চান তা পছন্দ করুন।",
-  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_header": "Firefox নীড়",
   "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
   "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} সারি; {num} সারিগুলি",
@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Pocket এ আপনার পছন্দের গল্পগুলো সংরক্ষণ করুন, এবং চমৎকার সব লেখা পড়ে আপনার মনের ইন্ধন যোগান।",
   "highlights_empty_state": "ব্রাউজি করা শুরু করুন, এবং কিছু গুরুত্বপূর্ণ নিবন্ধ, ভিডিও, এবং আপনি সম্প্রতি পরিদর্শন বা বুকমার্ক করেছেন এমন কিছু পৃষ্ঠা আমরা এখানে প্রদর্শন করব।",
   "topstories_empty_state": "কিছু একটা ঠিক নেই। {provider} এর শীর্ষ গল্পগুলো পেতে কিছুক্ষণ পর আবার দেখুন। অপেক্ষা করতে চান না? বিশ্বের সেরা গল্পগুলো পেতে কোন জনপ্রিয় বিষয় নির্বাচন করুন।",
-  "manual_migration_explanation2": "অন্য ব্রাউজার থেকে আনা বুকমার্ক, ইতিহাস এবং পাসওয়ার্ডগুলির সাথে ফায়ারফক্স ব্যবহার করে দেখুন।",
-  "manual_migration_cancel_button": "প্রয়োজন নেই",
-  "manual_migration_import_button": "এখনই ইম্পোর্ট করুন",
   "error_fallback_default_info": "ওহো, কনটেন্টটি লোড করতে কিছু ভুল হয়েছে।",
   "error_fallback_default_refresh_suggestion": "পুনরায় চেস্টা করার জন্য পেজটি রিফ্রেশ করুন।",
   "section_menu_action_remove_section": "সেকশনটি সরান",
@@ -111,5 +108,8 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "চালিয়ে যান",
   "firstrun_skip_login": "এই ধাপটি বাদ দিন",
   "context_menu_title": "মেনু খুলুন",
-  "pocket_learn_more": "আরো জানুন"
+  "pocket_learn_more": "আরো জানুন",
+  "manual_migration_explanation2": "অন্য ব্রাউজার থেকে আনা বুকমার্ক, ইতিহাস এবং পাসওয়ার্ডগুলির সাথে ফায়ারফক্স ব্যবহার করে দেখুন।",
+  "manual_migration_cancel_button": "প্রয়োজন নেই",
+  "manual_migration_import_button": "এখনই ইম্পোর্ট করুন"
 };

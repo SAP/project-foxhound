@@ -1173,6 +1173,8 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     base_string_type::mData = aData;
     base_string_type::mLength = aLength;
     base_string_type::mDataFlags = aDataFlags;
+    // Important to keep this here to avoid invalid taint field
+    base_string_type::mTaint.clear();
     AssertValid();
   }
 

@@ -113,7 +113,8 @@ void nsCSSProps::ReleaseTable(void) {
   }
 }
 
-/* static */ bool nsCSSProps::IsCustomPropertyName(const nsAString& aProperty) {
+/* static */
+bool nsCSSProps::IsCustomPropertyName(const nsAString& aProperty) {
   return aProperty.Length() >= CSS_CUSTOM_NAME_PREFIX_LENGTH &&
          StringBeginsWith(aProperty, NS_LITERAL_STRING("--"));
 }
@@ -346,16 +347,6 @@ const KTableEntry nsCSSProps::kLineHeightKTable[] = {
     {eCSSKeyword__moz_block_height, NS_STYLE_LINE_HEIGHT_BLOCK_HEIGHT},
     {eCSSKeyword_UNKNOWN, -1}};
 
-const KTableEntry nsCSSProps::kContainKTable[] = {
-    {eCSSKeyword_none, NS_STYLE_CONTAIN_NONE},
-    {eCSSKeyword_strict, NS_STYLE_CONTAIN_STRICT},
-    {eCSSKeyword_content, NS_STYLE_CONTAIN_CONTENT},
-    {eCSSKeyword_layout, NS_STYLE_CONTAIN_LAYOUT},
-    {eCSSKeyword_style, NS_STYLE_CONTAIN_STYLE},
-    {eCSSKeyword_paint, NS_STYLE_CONTAIN_PAINT},
-    {eCSSKeyword_size, NS_STYLE_CONTAIN_SIZE},
-    {eCSSKeyword_UNKNOWN, -1}};
-
 const KTableEntry nsCSSProps::kTextAlignKTable[] = {
     {eCSSKeyword_left, NS_STYLE_TEXT_ALIGN_LEFT},
     {eCSSKeyword_right, NS_STYLE_TEXT_ALIGN_RIGHT},
@@ -418,28 +409,6 @@ const KTableEntry nsCSSProps::kVerticalAlignKTable[] = {
     {eCSSKeyword_bottom, NS_STYLE_VERTICAL_ALIGN_BOTTOM},
     {eCSSKeyword_text_bottom, NS_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM},
     {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kWidthKTable[] = {
-    {eCSSKeyword_max_content, NS_STYLE_WIDTH_MAX_CONTENT},
-    {eCSSKeyword_min_content, NS_STYLE_WIDTH_MIN_CONTENT},
-    {eCSSKeyword__moz_fit_content, NS_STYLE_WIDTH_FIT_CONTENT},
-    {eCSSKeyword__moz_available, NS_STYLE_WIDTH_AVAILABLE},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-// This must be the same as kWidthKTable, but just with 'content' added:
-const KTableEntry nsCSSProps::kFlexBasisKTable[] = {
-    {eCSSKeyword_max_content, NS_STYLE_WIDTH_MAX_CONTENT},
-    {eCSSKeyword_min_content, NS_STYLE_WIDTH_MIN_CONTENT},
-    {eCSSKeyword__moz_fit_content, NS_STYLE_WIDTH_FIT_CONTENT},
-    {eCSSKeyword__moz_available, NS_STYLE_WIDTH_AVAILABLE},
-    {eCSSKeyword_content, NS_STYLE_FLEX_BASIS_CONTENT},
-    {eCSSKeyword_UNKNOWN, -1}};
-static_assert(ArrayLength(nsCSSProps::kFlexBasisKTable) ==
-                  ArrayLength(nsCSSProps::kWidthKTable) + 1,
-              "kFlexBasisKTable should have the same entries as "
-              "kWidthKTable, plus one more for 'content'");
-
-// Specific keyword tables for XUL.properties
 
 // keyword tables for SVG properties
 
@@ -530,8 +499,8 @@ const CSSPropFlags nsCSSProps::kFlagsTable[eCSSProperty_COUNT] = {
 #undef CSS_PROP_LONGHAND
 };
 
-/* static */ bool
-    nsCSSProps::gPropertyEnabled[eCSSProperty_COUNT_with_aliases] = {
+/* static */
+bool nsCSSProps::gPropertyEnabled[eCSSProperty_COUNT_with_aliases] = {
 // If the property has any "ENABLED_IN" flag set, it is disabled by
 // default. Note that, if a property has pref, whatever its default
 // value is, it will later be changed in nsCSSProps::AddRefTable().

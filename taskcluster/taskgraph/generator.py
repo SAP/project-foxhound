@@ -5,7 +5,6 @@
 from __future__ import absolute_import, print_function, unicode_literals
 import logging
 import os
-import yaml
 import copy
 import attr
 
@@ -21,6 +20,7 @@ from .util.verify import (
     verify_docs,
     verifications,
 )
+from .util.yaml import load_yaml
 from .config import load_graph_config, GraphConfig
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ class Kind(object):
                       task=task_dict['task'],
                       optimization=task_dict.get('optimization'),
                       dependencies=task_dict.get('dependencies'),
+                      soft_dependencies=task_dict.get('soft-dependencies'),
                       release_artifacts=task_dict.get('release-artifacts'),
                       )
                  for task_dict in transforms(trans_config, inputs)]
@@ -84,8 +85,7 @@ class Kind(object):
             raise KindNotFound(kind_yml)
 
         logger.debug("loading kind `{}` from `{}`".format(kind_name, path))
-        with open(kind_yml) as f:
-            config = yaml.safe_load(f)
+        config = load_yaml(kind_yml)
 
         return cls(kind_name, path, config, graph_config)
 

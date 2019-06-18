@@ -6,14 +6,6 @@
 
 /* Wrapper object for reflecting native xpcom objects into JavaScript. */
 
-#if (__GNUC__ && __linux__ && __PPC64__ && _LITTLE_ENDIAN)
-// Stack protection generates incorrect code currently with gcc on ppc64le
-// (bug 1512162).
-#  define MOZ_GCC_STACK_PROTECTOR_DISABLED 1  // removed at end of file
-#  pragma GCC push_options
-#  pragma GCC optimize("no-stack-protector")
-#endif
-
 #include "xpcprivate.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsWrapperCacheInlines.h"
@@ -191,7 +183,7 @@ nsresult XPCWrappedNative::WrapNewGlobal(xpcObjectHelper& nativeHelper,
   if (!global) {
     return NS_ERROR_FAILURE;
   }
-  XPCWrappedNativeScope* scope = CompartmentPrivate::Get(global)->scope;
+  XPCWrappedNativeScope* scope = ObjectScope(global);
 
   // Immediately enter the global's realm, so that everything else we
   // create ends up there.
@@ -1262,13 +1254,23 @@ bool CallMethodHelper::GetInterfaceTypeFromParam(const nsXPTType& type,
 
     *result = inner.GetInterface()->IID();
   } else if (inner.Tag() == nsXPTType::T_INTERFACE_IS) {
-    nsID* id = (nsID*)GetDispatchParam(inner.ArgNum())->val.p;
-    if (!id) {
+    const nsXPTCVariant* param = GetDispatchParam(inner.ArgNum());
+    if (param->type.Tag() != nsXPTType::T_NSID &&
+        param->type.Tag() != nsXPTType::T_NSIDPTR) {
+      return Throw(NS_ERROR_UNEXPECTED, mCallContext);
+    }
+
+    const void* ptr = &param->val;
+    if (param->type.Tag() == nsXPTType::T_NSIDPTR) {
+      ptr = *static_cast<nsID* const*>(ptr);
+    }
+
+    if (!ptr) {
       return ThrowBadParam(NS_ERROR_XPC_CANT_GET_PARAM_IFACE_INFO,
                            inner.ArgNum(), mCallContext);
     }
 
-    *result = *id;
+    *result = *static_cast<const nsID*>(ptr);
   }
   return true;
 }
@@ -1499,9 +1501,9 @@ bool CallMethodHelper::ConvertIndependentParam(uint8_t i) {
   // the default value if IsOptional is true.
   if (i >= mArgc) {
     MOZ_ASSERT(paramInfo.IsOptional(), "missing non-optional argument!");
-    if (type.Tag() == nsXPTType::T_IID) {
-      // NOTE: 'const nsIID&' is supported, so it must be allocated.
-      dp->val.p = new nsIID();
+    if (type.Tag() == nsXPTType::T_NSID) {
+      // Use a default value of the null ID for optional NSID objects.
+      dp->ext.nsid.Clear();
       return true;
     }
   }
@@ -1826,11 +1828,4 @@ static void DEBUG_CheckClassInfoClaims(XPCWrappedNative* wrapper) {
     }
   }
 }
-#endif
-
-#if (MOZ_GCC_STACK_PROTECTOR_DISABLED)
-// Reenable stack protection in following modules, if we disabled it
-// (bug 1512162).
-#  pragma GCC pop_options
-#  undef MOZ_GCC_STACK_PROTECTOR_DISABLED
 #endif

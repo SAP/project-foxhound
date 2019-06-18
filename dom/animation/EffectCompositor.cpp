@@ -19,6 +19,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/EffectSet.h"
+#include "mozilla/LayerAnimationInfo.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"  // Servo_GetProperties_Overriding_Animation
 #include "mozilla/ServoStyleSet.h"
@@ -28,6 +29,7 @@
 #include "nsCSSPseudoElements.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"
+#include "nsDisplayItemTypes.h"
 #include "nsAtom.h"
 #include "nsIPresShell.h"
 #include "nsIPresShellInlines.h"
@@ -62,7 +64,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(EffectCompositor, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(EffectCompositor, Release)
 
-/* static */ bool EffectCompositor::AllowCompositorAnimationsOnFrame(
+/* static */
+bool EffectCompositor::AllowCompositorAnimationsOnFrame(
     const nsIFrame* aFrame,
     AnimationPerformanceWarning::Type& aWarning /* out */) {
   if (aFrame->RefusedAsyncAnimation()) {
@@ -102,8 +105,18 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(EffectCompositor, Release)
 //
 // Returns true if there are eligible animations, false otherwise.
 bool FindAnimationsForCompositor(
-    const nsIFrame* aFrame, nsCSSPropertyID aProperty,
+    const nsIFrame* aFrame, const nsCSSPropertyIDSet& aPropertySet,
     nsTArray<RefPtr<dom::Animation>>* aMatches /*out*/) {
+  MOZ_ASSERT(
+      aPropertySet.IsSubsetOf(LayerAnimationInfo::GetCSSPropertiesFor(
+          DisplayItemType::TYPE_TRANSFORM)) ||
+          aPropertySet.IsSubsetOf(LayerAnimationInfo::GetCSSPropertiesFor(
+              DisplayItemType::TYPE_OPACITY)) ||
+          aPropertySet.IsSubsetOf(LayerAnimationInfo::GetCSSPropertiesFor(
+              DisplayItemType::TYPE_BACKGROUND_COLOR)),
+      "Should be the subset of transform-like properties, or opacity, "
+      "or background color");
+
   MOZ_ASSERT(!aMatches || aMatches->IsEmpty(),
              "Matches array, if provided, should be empty");
 
@@ -116,7 +129,8 @@ bool FindAnimationsForCompositor(
   // synchronized with geometric animations. We need to do this before any
   // other early returns (the one above is ok) since we can only check this
   // state when the animation is newly-started.
-  if (aProperty == eCSSProperty_transform) {
+  if (aPropertySet.Intersects(LayerAnimationInfo::GetCSSPropertiesFor(
+          DisplayItemType::TYPE_TRANSFORM))) {
     PendingAnimationTracker* tracker =
         aFrame->PresContext()->Document()->GetPendingAnimationTracker();
     if (tracker) {
@@ -127,8 +141,8 @@ bool FindAnimationsForCompositor(
   // If the property will be added to the animations level of the cascade but
   // there is an !important rule for that property in the cascade then the
   // animation will not be applied since the !important rule overrides it.
-  if (effects->PropertiesWithImportantRules().HasProperty(aProperty) &&
-      effects->PropertiesForAnimationsLevel().HasProperty(aProperty)) {
+  if (effects->PropertiesWithImportantRules().Intersects(aPropertySet) &&
+      effects->PropertiesForAnimationsLevel().Intersects(aPropertySet)) {
     return false;
   }
 
@@ -136,8 +150,15 @@ bool FindAnimationsForCompositor(
       AnimationPerformanceWarning::Type::None;
   if (!EffectCompositor::AllowCompositorAnimationsOnFrame(aFrame, warning)) {
     if (warning != AnimationPerformanceWarning::Type::None) {
-      EffectCompositor::SetPerformanceWarning(
-          aFrame, aProperty, AnimationPerformanceWarning(warning));
+      // FIXME: Bug 1425837: We should set performance warning by a property set
+      // and write some test cases for this.
+      for (nsCSSPropertyID property : COMPOSITOR_ANIMATABLE_PROPERTY_LIST) {
+        if (!aPropertySet.HasProperty(property)) {
+          continue;
+        }
+        EffectCompositor::SetPerformanceWarning(
+            aFrame, property, AnimationPerformanceWarning(warning));
+      }
     }
     return false;
   }
@@ -162,18 +183,25 @@ bool FindAnimationsForCompositor(
     AnimationPerformanceWarning::Type effectWarning =
         AnimationPerformanceWarning::Type::None;
     KeyframeEffect::MatchForCompositor matchResult =
-        effect->IsMatchForCompositor(aProperty, aFrame, *effects,
+        effect->IsMatchForCompositor(aPropertySet, aFrame, *effects,
                                      effectWarning);
     if (effectWarning != AnimationPerformanceWarning::Type::None) {
-      EffectCompositor::SetPerformanceWarning(
-          aFrame, aProperty, AnimationPerformanceWarning(effectWarning));
+      // FIXME: Bug 1425837: We should set performance warning by a property set
+      // and write some test cases for this.
+      for (nsCSSPropertyID property : COMPOSITOR_ANIMATABLE_PROPERTY_LIST) {
+        if (!aPropertySet.HasProperty(property)) {
+          continue;
+        }
+        EffectCompositor::SetPerformanceWarning(
+            aFrame, property, AnimationPerformanceWarning(effectWarning));
+      }
     }
 
     if (matchResult ==
         KeyframeEffect::MatchForCompositor::NoAndBlockThisProperty) {
-      // For a given |aFrame|, we don't want some animations of |aProperty| to
-      // run on the compositor and others to run on the main thread, so if any
-      // need to be synchronized with the main thread, run them all there.
+      // For a given |aFrame|, we don't want some animations of |aPropertySet|
+      // to run on the compositor and others to run on the main thread, so if
+      // any need to be synchronized with the main thread, run them all there.
       if (aMatches) {
         aMatches->Clear();
       }
@@ -210,7 +238,7 @@ bool FindAnimationsForCompositor(
 }
 
 void EffectCompositor::RequestRestyle(dom::Element* aElement,
-                                      CSSPseudoElementType aPseudoType,
+                                      PseudoStyleType aPseudoType,
                                       RestyleType aRestyleType,
                                       CascadeLevel aCascadeLevel) {
   if (!mPresContext) {
@@ -257,7 +285,7 @@ void EffectCompositor::RequestRestyle(dom::Element* aElement,
 }
 
 void EffectCompositor::PostRestyleForAnimation(dom::Element* aElement,
-                                               CSSPseudoElementType aPseudoType,
+                                               PseudoStyleType aPseudoType,
                                                CascadeLevel aCascadeLevel) {
   if (!mPresContext) {
     return;
@@ -268,16 +296,16 @@ void EffectCompositor::PostRestyleForAnimation(dom::Element* aElement,
     return;
   }
 
-  nsRestyleHint hint = aCascadeLevel == CascadeLevel::Transitions
-                           ? eRestyle_CSSTransitions
-                           : eRestyle_CSSAnimations;
+  RestyleHint hint = aCascadeLevel == CascadeLevel::Transitions
+                         ? StyleRestyleHint_RESTYLE_CSS_TRANSITIONS
+                         : StyleRestyleHint_RESTYLE_CSS_ANIMATIONS;
 
   MOZ_ASSERT(NS_IsMainThread(),
              "Restyle request during restyling should be requested only on "
              "the main-thread. e.g. after the parallel traversal");
   if (ServoStyleSet::IsInServoTraversal() || mIsInPreTraverse) {
-    MOZ_ASSERT(hint == eRestyle_CSSAnimations ||
-               hint == eRestyle_CSSTransitions);
+    MOZ_ASSERT(hint == StyleRestyleHint_RESTYLE_CSS_ANIMATIONS ||
+               hint == StyleRestyleHint_RESTYLE_CSS_TRANSITIONS);
 
     // We can't call Servo_NoteExplicitHints here since AtomicRefCell does not
     // allow us mutate ElementData of the |aElement| in SequentialTask.
@@ -318,20 +346,20 @@ void EffectCompositor::ClearRestyleRequestsFor(Element* aElement) {
 
   auto& elementsToRestyle = mElementsToRestyle[CascadeLevel::Animations];
 
-  CSSPseudoElementType pseudoType = aElement->GetPseudoElementType();
-  if (pseudoType == CSSPseudoElementType::NotPseudo) {
-    PseudoElementHashEntry::KeyType notPseudoKey = {
-        aElement, CSSPseudoElementType::NotPseudo};
-    PseudoElementHashEntry::KeyType beforePseudoKey = {
-        aElement, CSSPseudoElementType::before};
-    PseudoElementHashEntry::KeyType afterPseudoKey = {
-        aElement, CSSPseudoElementType::after};
+  PseudoStyleType pseudoType = aElement->GetPseudoElementType();
+  if (pseudoType == PseudoStyleType::NotPseudo) {
+    PseudoElementHashEntry::KeyType notPseudoKey = {aElement,
+                                                    PseudoStyleType::NotPseudo};
+    PseudoElementHashEntry::KeyType beforePseudoKey = {aElement,
+                                                       PseudoStyleType::before};
+    PseudoElementHashEntry::KeyType afterPseudoKey = {aElement,
+                                                      PseudoStyleType::after};
 
     elementsToRestyle.Remove(notPseudoKey);
     elementsToRestyle.Remove(beforePseudoKey);
     elementsToRestyle.Remove(afterPseudoKey);
-  } else if (pseudoType == CSSPseudoElementType::before ||
-             pseudoType == CSSPseudoElementType::after) {
+  } else if (pseudoType == PseudoStyleType::before ||
+             pseudoType == PseudoStyleType::after) {
     Element* parentElement = aElement->GetParentElement();
     MOZ_ASSERT(parentElement);
     PseudoElementHashEntry::KeyType key = {parentElement, pseudoType};
@@ -339,9 +367,9 @@ void EffectCompositor::ClearRestyleRequestsFor(Element* aElement) {
   }
 }
 
-void EffectCompositor::UpdateEffectProperties(
-    const ComputedStyle* aStyle, Element* aElement,
-    CSSPseudoElementType aPseudoType) {
+void EffectCompositor::UpdateEffectProperties(const ComputedStyle* aStyle,
+                                              Element* aElement,
+                                              PseudoStyleType aPseudoType) {
   EffectSet* effectSet = EffectSet::GetEffectSet(aElement, aPseudoType);
   if (!effectSet) {
     return;
@@ -376,7 +404,7 @@ class EffectCompositeOrderComparator {
 }  // namespace
 
 bool EffectCompositor::GetServoAnimationRule(
-    const dom::Element* aElement, CSSPseudoElementType aPseudoType,
+    const dom::Element* aElement, PseudoStyleType aPseudoType,
     CascadeLevel aCascadeLevel,
     RawServoAnimationValueMapBorrowedMut aAnimationValues) {
   MOZ_ASSERT(aAnimationValues);
@@ -417,16 +445,16 @@ bool EffectCompositor::GetServoAnimationRule(
 }
 
 /* static */ dom::Element* EffectCompositor::GetElementToRestyle(
-    dom::Element* aElement, CSSPseudoElementType aPseudoType) {
-  if (aPseudoType == CSSPseudoElementType::NotPseudo) {
+    dom::Element* aElement, PseudoStyleType aPseudoType) {
+  if (aPseudoType == PseudoStyleType::NotPseudo) {
     return aElement;
   }
 
-  if (aPseudoType == CSSPseudoElementType::before) {
+  if (aPseudoType == PseudoStyleType::before) {
     return nsLayoutUtils::GetBeforePseudo(aElement);
   }
 
-  if (aPseudoType == CSSPseudoElementType::after) {
+  if (aPseudoType == PseudoStyleType::after) {
     return nsLayoutUtils::GetAfterPseudo(aElement);
   }
 
@@ -446,40 +474,46 @@ bool EffectCompositor::HasPendingStyleUpdates() const {
   return false;
 }
 
-/* static */ bool EffectCompositor::HasAnimationsForCompositor(
-    const nsIFrame* aFrame, nsCSSPropertyID aProperty) {
-  return FindAnimationsForCompositor(aFrame, aProperty, nullptr);
+/* static */
+bool EffectCompositor::HasAnimationsForCompositor(const nsIFrame* aFrame,
+                                                  DisplayItemType aType) {
+  return FindAnimationsForCompositor(
+      aFrame, LayerAnimationInfo::GetCSSPropertiesFor(aType), nullptr);
 }
 
-/* static */ nsTArray<RefPtr<dom::Animation>>
-EffectCompositor::GetAnimationsForCompositor(const nsIFrame* aFrame,
-                                             nsCSSPropertyID aProperty) {
+/* static */
+nsTArray<RefPtr<dom::Animation>> EffectCompositor::GetAnimationsForCompositor(
+    const nsIFrame* aFrame, const nsCSSPropertyIDSet& aPropertySet) {
   nsTArray<RefPtr<dom::Animation>> result;
 
 #ifdef DEBUG
   bool foundSome =
 #endif
-      FindAnimationsForCompositor(aFrame, aProperty, &result);
+      FindAnimationsForCompositor(aFrame, aPropertySet, &result);
   MOZ_ASSERT(!foundSome || !result.IsEmpty(),
              "If return value is true, matches array should be non-empty");
 
   return result;
 }
 
-/* static */ void EffectCompositor::ClearIsRunningOnCompositor(
-    const nsIFrame* aFrame, nsCSSPropertyID aProperty) {
+/* static */
+void EffectCompositor::ClearIsRunningOnCompositor(const nsIFrame* aFrame,
+                                                  DisplayItemType aType) {
   EffectSet* effects = EffectSet::GetEffectSet(aFrame);
   if (!effects) {
     return;
   }
 
+  const nsCSSPropertyIDSet& propertySet =
+      LayerAnimationInfo::GetCSSPropertiesFor(aType);
   for (KeyframeEffect* effect : *effects) {
-    effect->SetIsRunningOnCompositor(aProperty, false);
+    effect->SetIsRunningOnCompositor(propertySet, false);
   }
 }
 
-/* static */ void EffectCompositor::MaybeUpdateCascadeResults(
-    Element* aElement, CSSPseudoElementType aPseudoType) {
+/* static */
+void EffectCompositor::MaybeUpdateCascadeResults(Element* aElement,
+                                                 PseudoStyleType aPseudoType) {
   EffectSet* effects = EffectSet::GetEffectSet(aElement, aPseudoType);
   if (!effects || !effects->CascadeNeedsUpdate()) {
     return;
@@ -490,16 +524,17 @@ EffectCompositor::GetAnimationsForCompositor(const nsIFrame* aFrame,
   MOZ_ASSERT(!effects->CascadeNeedsUpdate(), "Failed to update cascade state");
 }
 
-/* static */ Maybe<NonOwningAnimationTarget>
+/* static */
+Maybe<NonOwningAnimationTarget>
 EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   // Always return the same object to benefit from return-value optimization.
   Maybe<NonOwningAnimationTarget> result;
 
-  CSSPseudoElementType pseudoType = aFrame->Style()->GetPseudoType();
+  PseudoStyleType pseudoType = aFrame->Style()->GetPseudoType();
 
-  if (pseudoType != CSSPseudoElementType::NotPseudo &&
-      pseudoType != CSSPseudoElementType::before &&
-      pseudoType != CSSPseudoElementType::after) {
+  if (pseudoType != PseudoStyleType::NotPseudo &&
+      pseudoType != PseudoStyleType::before &&
+      pseudoType != PseudoStyleType::after) {
     return result;
   }
 
@@ -508,8 +543,8 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
     return result;
   }
 
-  if (pseudoType == CSSPseudoElementType::before ||
-      pseudoType == CSSPseudoElementType::after) {
+  if (pseudoType == PseudoStyleType::before ||
+      pseudoType == PseudoStyleType::after) {
     content = content->GetParent();
     if (!content) {
       return result;
@@ -525,9 +560,9 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   return result;
 }
 
-/* static */ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
-    EffectSet& aEffectSet, Element* aElement,
-    CSSPseudoElementType aPseudoType) {
+/* static */
+nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
+    EffectSet& aEffectSet, Element* aElement, PseudoStyleType aPseudoType) {
   MOZ_ASSERT(aElement, "Should have an element to get style data from");
 
   nsCSSPropertyIDSet result;
@@ -568,9 +603,10 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   return result;
 }
 
-/* static */ void EffectCompositor::UpdateCascadeResults(
-    EffectSet& aEffectSet, Element* aElement,
-    CSSPseudoElementType aPseudoType) {
+/* static */
+void EffectCompositor::UpdateCascadeResults(EffectSet& aEffectSet,
+                                            Element* aElement,
+                                            PseudoStyleType aPseudoType) {
   MOZ_ASSERT(EffectSet::GetEffectSet(aElement, aPseudoType) == &aEffectSet,
              "Effect set should correspond to the specified (pseudo-)element");
   if (aEffectSet.IsEmpty()) {
@@ -670,7 +706,8 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   }
 }
 
-/* static */ void EffectCompositor::SetPerformanceWarning(
+/* static */
+void EffectCompositor::SetPerformanceWarning(
     const nsIFrame* aFrame, nsCSSPropertyID aProperty,
     const AnimationPerformanceWarning& aWarning) {
   EffectSet* effects = EffectSet::GetEffectSet(aFrame);
@@ -793,8 +830,9 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
       // middle of the servo traversal.
       mPresContext->RestyleManager()->PostRestyleEventForAnimations(
           target.mElement, target.mPseudoType,
-          cascadeLevel == CascadeLevel::Transitions ? eRestyle_CSSTransitions
-                                                    : eRestyle_CSSAnimations);
+          cascadeLevel == CascadeLevel::Transitions
+              ? StyleRestyleHint_RESTYLE_CSS_TRANSITIONS
+              : StyleRestyleHint_RESTYLE_CSS_ANIMATIONS);
 
       foundElementsNeedingRestyle = true;
 
@@ -828,7 +866,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
 }
 
 bool EffectCompositor::PreTraverse(dom::Element* aElement,
-                                   CSSPseudoElementType aPseudoType) {
+                                   PseudoStyleType aPseudoType) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // If |aElement|'s document does not have a pres shell, e.g. it is document
@@ -839,9 +877,9 @@ bool EffectCompositor::PreTraverse(dom::Element* aElement,
   }
 
   bool found = false;
-  if (aPseudoType != CSSPseudoElementType::NotPseudo &&
-      aPseudoType != CSSPseudoElementType::before &&
-      aPseudoType != CSSPseudoElementType::after) {
+  if (aPseudoType != PseudoStyleType::NotPseudo &&
+      aPseudoType != PseudoStyleType::before &&
+      aPseudoType != PseudoStyleType::after) {
     return found;
   }
 
@@ -871,11 +909,11 @@ bool EffectCompositor::PreTraverse(dom::Element* aElement,
 
     mPresContext->RestyleManager()->PostRestyleEventForAnimations(
         aElement, aPseudoType,
-        cascadeLevel == CascadeLevel::Transitions ? eRestyle_CSSTransitions
-                                                  : eRestyle_CSSAnimations);
+        cascadeLevel == CascadeLevel::Transitions
+            ? StyleRestyleHint_RESTYLE_CSS_TRANSITIONS
+            : StyleRestyleHint_RESTYLE_CSS_ANIMATIONS);
 
-    EffectSet* effects = EffectSet::GetEffectSet(aElement, aPseudoType);
-    if (effects) {
+    if (EffectSet* effects = EffectSet::GetEffectSet(aElement, aPseudoType)) {
       MaybeUpdateCascadeResults(aElement, aPseudoType);
 
       for (KeyframeEffect* effect : *effects) {

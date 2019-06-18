@@ -13,6 +13,7 @@
 #include "mozilla/MediaFeatureChange.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/ScrollStyles.h"
+#include "mozilla/PreferenceSheet.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsColor.h"
@@ -85,12 +86,6 @@ class Document;
 class Element;
 }  // namespace dom
 }  // namespace mozilla
-
-// supported values for cached bool types
-enum nsPresContext_CachedBoolPrefType {
-  kPresContext_UseDocumentFonts = 1,
-  kPresContext_UnderlineLinks
-};
 
 // supported values for cached integer pref types
 enum nsPresContext_CachedIntPrefType {
@@ -263,35 +258,18 @@ class nsPresContext : public nsISupports,
    * For aRestyleHint, see RestyleManager::RebuildAllStyleData.
    * Also rebuild the user font set and counter style manager.
    */
-  void RebuildAllStyleData(nsChangeHint aExtraHint, nsRestyleHint aRestyleHint);
+  void RebuildAllStyleData(nsChangeHint aExtraHint, mozilla::RestyleHint);
   /**
    * Just like RebuildAllStyleData, except (1) asynchronous and (2) it
    * doesn't rebuild the user font set.
    */
   void PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
-                                    nsRestyleHint aRestyleHint);
+                                    mozilla::RestyleHint);
 
   void ContentLanguageChanged();
 
   /**
-   * Handle changes in the values of media features (used in media
-   * queries).
-   *
-   * There are three sensible values to use for aRestyleHint:
-   *  * nsRestyleHint(0) to rebuild style data, with rerunning of
-   *    selector matching, only if media features have changed
-   *  * eRestyle_ForceDescendants to force rebuilding of style data (but
-   *    still only rerun selector matching if media query results have
-   *    changed).  (RebuildAllStyleData always adds
-   *    eRestyle_ForceDescendants internally, so here we're only using
-   *    it to distinguish from nsRestyleHint(0) whether we need to call
-   *    RebuildAllStyleData at all.)
-   *  * eRestyle_Subtree to force rebuilding of style data with
-   *    rerunning of selector matching
-   *
-   * For aChangeHint, see RestyleManager::RebuildAllStyleData.  (Passing
-   * a nonzero aChangeHint forces rebuilding style data even if
-   * nsRestyleHint(0) is passed.)
+   * Handle changes in the values of media features (used in media queries).
    */
   void MediaFeatureValuesChanged(const mozilla::MediaFeatureChange& aChange) {
     if (mShell) {
@@ -359,23 +337,6 @@ class nsPresContext : public nsISupports,
    */
   void StopEmulatingMedium();
 
-  /** Get a cached boolean pref, by its type */
-  // *  - initially created for bugs 31816, 20760, 22963
-  bool GetCachedBoolPref(nsPresContext_CachedBoolPrefType aPrefType) const {
-    // If called with a constant parameter, the compiler should optimize
-    // this switch statement away.
-    switch (aPrefType) {
-      case kPresContext_UseDocumentFonts:
-        return mUseDocumentFonts;
-      case kPresContext_UnderlineLinks:
-        return mUnderlineLinks;
-      default:
-        NS_ERROR("Invalid arg passed to GetCachedBoolPref");
-    }
-
-    return false;
-  }
-
   /** Get a cached integer pref, by its type */
   // *  - initially created for bugs 30910, 61883, 74186, 84398
   int32_t GetCachedIntPref(nsPresContext_CachedIntPrefType aPrefType) const {
@@ -393,29 +354,12 @@ class nsPresContext : public nsISupports,
     return false;
   }
 
-  /**
-   * Get the default colors
-   */
-  nscolor DefaultColor() const { return mDefaultColor; }
-  nscolor DefaultBackgroundColor() const { return mBackgroundColor; }
-  nscolor DefaultLinkColor() const { return mLinkColor; }
-  nscolor DefaultActiveLinkColor() const { return mActiveLinkColor; }
-  nscolor DefaultVisitedLinkColor() const { return mVisitedLinkColor; }
-  nscolor FocusBackgroundColor() const { return mFocusBackgroundColor; }
-  nscolor FocusTextColor() const { return mFocusTextColor; }
-
-  /**
-   * Body text color, for use in quirks mode only.
-   */
-  nscolor BodyTextColor() const { return mBodyTextColor; }
-  void SetBodyTextColor(nscolor aColor) { mBodyTextColor = aColor; }
-
-  bool GetUseFocusColors() const { return mUseFocusColors; }
-  uint8_t FocusRingWidth() const { return mFocusRingWidth; }
-  bool GetFocusRingOnAnything() const { return mFocusRingOnAnything; }
-  uint8_t GetFocusRingStyle() const { return mFocusRingStyle; }
-
-  void SetContainer(nsIDocShell* aContainer);
+  const mozilla::PreferenceSheet::Prefs& PrefSheetPrefs() const {
+    return mozilla::PreferenceSheet::PrefsFor(*mDocument);
+  }
+  nscolor DefaultBackgroundColor() const {
+    return PrefSheetPrefs().mDefaultBackgroundColor;
+  }
 
   nsISupports* GetContainerWeak() const;
 
@@ -427,7 +371,7 @@ class nsPresContext : public nsISupports,
 
   /**
    * Detach this pres context - i.e. cancel relevant timers,
-   * SetLinkHandler(null), SetContainer(null) etc.
+   * SetLinkHandler(null), etc.
    * Only to be used by the DocumentViewer.
    */
   virtual void Detach();
@@ -873,21 +817,12 @@ class nsPresContext : public nsISupports,
   }
 
   // Is this presentation in a chrome docshell?
-  bool IsChrome() const { return mIsChrome; }
-  bool IsChromeOriginImage() const { return mIsChromeOriginImage; }
-  void UpdateIsChrome();
+  bool IsChrome() const;
+  bool IsChromeOriginImage() const;
 
   // Public API for native theme code to get style internals.
   bool HasAuthorSpecifiedRules(const nsIFrame* aFrame,
                                uint32_t ruleTypeMask) const;
-
-  // Is it OK to let the page specify colors and backgrounds?
-  bool UseDocumentColors() const {
-    MOZ_ASSERT(mUseDocumentColors || !(IsChrome() || IsChromeOriginImage()),
-               "We should never have a chrome doc or image that can't use its "
-               "colors.");
-    return mUseDocumentColors;
-  }
 
   // Explicitly enable and disable paint flashing.
   void SetPaintFlashing(bool aPaintFlashing) {
@@ -901,7 +836,7 @@ class nsPresContext : public nsISupports,
 
   bool SuppressingResizeReflow() const { return mSuppressResizeReflow; }
 
-  gfxUserFontSet* GetUserFontSet(bool aFlushUserFontSet = true);
+  gfxUserFontSet* GetUserFontSet();
 
   // Should be called whenever the set of fonts available in the user
   // font set changes (e.g., because a new font loads, or because the
@@ -1197,8 +1132,6 @@ class nsPresContext : public nsISupports,
   bool mInflationDisabledForShrinkWrap;
 
  protected:
-  mozilla::WeakPtr<nsDocShell> mContainer;
-
   float mSystemFontScale;    // Internal text zoom factor, defaults to 1.0
   float mTextZoom;           // Text zoom, defaults to 1.0
   float mEffectiveTextZoom;  // Text zoom * system font scale
@@ -1226,18 +1159,6 @@ class nsPresContext : public nsISupports,
   float mPageScale;
   float mPPScale;
 
-  nscolor mDefaultColor;
-  nscolor mBackgroundColor;
-
-  nscolor mLinkColor;
-  nscolor mActiveLinkColor;
-  nscolor mVisitedLinkColor;
-
-  nscolor mFocusBackgroundColor;
-  nscolor mFocusTextColor;
-
-  nscolor mBodyTextColor;
-
   // This is a non-owning pointer. May be null. If non-null, it's guaranteed to
   // be pointing to an element that's still alive, because we'll reset it in
   // UpdateViewportScrollStylesOverride() as part of the cleanup code when
@@ -1247,8 +1168,6 @@ class nsPresContext : public nsISupports,
   // by Element::UnbindFromTree().)
   mozilla::dom::Element* MOZ_NON_OWNING_REF mViewportScrollOverrideElement;
   ScrollStyles mViewportScrollStyles;
-
-  uint8_t mFocusRingWidth;
 
   bool mExistThrottledUpdates;
 
@@ -1283,13 +1202,7 @@ class nsPresContext : public nsISupports,
   unsigned mHasPendingInterrupt : 1;
   unsigned mPendingInterruptFromTest : 1;
   unsigned mInterruptsEnabled : 1;
-  unsigned mUseDocumentFonts : 1;
-  unsigned mUseDocumentColors : 1;
-  unsigned mUnderlineLinks : 1;
   unsigned mSendAfterPaintToContent : 1;
-  unsigned mUseFocusColors : 1;
-  unsigned mFocusRingOnAnything : 1;
-  unsigned mFocusRingStyle : 1;
   unsigned mDrawImageBackground : 1;
   unsigned mDrawColorBackground : 1;
   unsigned mNeverAnimate : 1;
@@ -1326,9 +1239,6 @@ class nsPresContext : public nsISupports,
 
   unsigned mIsVisual : 1;
 
-  unsigned mIsChrome : 1;
-  unsigned mIsChromeOriginImage : 1;
-
   // Should we paint flash in this context? Do not use this variable directly.
   // Use GetPaintFlashing() method instead.
   mutable unsigned mPaintFlashing : 1;
@@ -1340,9 +1250,6 @@ class nsPresContext : public nsISupports,
 
   // Have we added quirk.css to the style set?
   unsigned mQuirkSheetAdded : 1;
-
-  // Is there a pref update to process once we have a container?
-  unsigned mNeedsPrefUpdate : 1;
 
   // Has NotifyNonBlankPaint been called on this PresContext?
   unsigned mHadNonBlankPaint : 1;
@@ -1359,8 +1266,6 @@ class nsPresContext : public nsISupports,
 
  protected:
   virtual ~nsPresContext();
-
-  nscolor MakeColorPref(const nsString& aColor);
 
   void LastRelease();
 

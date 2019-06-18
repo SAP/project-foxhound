@@ -1,7 +1,6 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/OSCrypto.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {OSCrypto} = ChromeUtils.import("resource://gre/modules/OSCrypto.jsm");
 
 const PROFILE = {
   id: "Default",
@@ -51,7 +50,7 @@ const TEST_LOGINS = [
   {
     id: 4,
     username: "user",
-    password: "password",
+    password: "اقرأPÀßwörd",
     hostname: "http://httpbin.org",
     formSubmitURL: null,
     httpRealm: "me@kennethreitz.com", // Digest auth.

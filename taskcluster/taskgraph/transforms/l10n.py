@@ -36,11 +36,6 @@ def _by_platform(arg):
     return optionally_keyed_by('build-platform', arg)
 
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-job_description_schema = {str(k): v for k, v in job_description_schema.schema.iteritems()}
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 l10n_description_schema = schema.extend({
     # Name for this job, inferred from the dependent job before validation
     Required('name'): basestring,
@@ -287,6 +282,7 @@ def handle_artifact_prefix(config, jobs):
 def all_locales_attribute(config, jobs):
     for job in jobs:
         locales_platform = job['attributes']['build_platform'].replace("-nightly", "")
+        locales_platform = locales_platform.replace("-pgo", "")
         locales_with_changesets = parse_locales_file(job["locales-file"],
                                                      platform=locales_platform)
         locales_with_changesets = _remove_locales(locales_with_changesets,

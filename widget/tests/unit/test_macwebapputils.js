@@ -3,13 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-//Basic tests to verify that MacWebAppUtils works
+// Basic tests to verify that MacWebAppUtils works
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-function test_find_app()
-{
+function test_find_app() {
   var mwaUtils = Cc["@mozilla.org/widget/mac-web-app-utils;1"].
   createInstance(Ci.nsIMacWebAppUtils);
   let sig = "com.apple.TextEdit";
@@ -20,8 +16,7 @@ function test_find_app()
   Assert.notEqual(path, "");
 }
 
-function test_dont_find_fake_app()
-{
+function test_dont_find_fake_app() {
   var mwaUtils = Cc["@mozilla.org/widget/mac-web-app-utils;1"].
   createInstance(Ci.nsIMacWebAppUtils);
   let sig = "calliope.penitentiary.dramamine";
@@ -32,8 +27,7 @@ function test_dont_find_fake_app()
 }
 
 
-function run_test()
-{
+function run_test() {
   test_find_app();
   test_dont_find_fake_app();
 }

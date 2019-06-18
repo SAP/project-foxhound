@@ -231,7 +231,7 @@ void LayerManagerComposite::PostProcessLayers(nsIntRegion& aOpaqueRegion) {
 // intermediate surface. We compute occlusions for leaves and intermediate
 // surfaces against the layer that they actually composite into so that we can
 // use the final (snapped) effective transform.
-bool ShouldProcessLayer(Layer* aLayer) {
+static bool ShouldProcessLayer(Layer* aLayer) {
   if (!aLayer->AsContainerLayer()) {
     return true;
   }
@@ -1204,7 +1204,7 @@ void LayerManagerComposite::HandlePixelsTarget() {
   gl->fReadPixels(0, 0, bufferWidth, bufferHeight, LOCAL_GL_RGBA,
                   LOCAL_GL_UNSIGNED_BYTE, mem.get<uint8_t>());
   Unused << mScreenPixelsTarget->SendScreenPixels(
-      mem, ScreenIntSize(bufferWidth, bufferHeight));
+      std::move(mem), ScreenIntSize(bufferWidth, bufferHeight));
   mScreenPixelsTarget = nullptr;
 }
 #endif
@@ -1406,8 +1406,8 @@ static void AddTransformedRegion(LayerIntRegion& aDest,
 // Async animations can move child layers without updating our visible region.
 // PostProcessLayers will recompute visible regions for layers with an
 // intermediate surface, but otherwise we need to do it now.
-void ComputeVisibleRegionForChildren(ContainerLayer* aContainer,
-                                     LayerIntRegion& aResult) {
+static void ComputeVisibleRegionForChildren(ContainerLayer* aContainer,
+                                            LayerIntRegion& aResult) {
   for (Layer* l = aContainer->GetFirstChild(); l; l = l->GetNextSibling()) {
     if (l->Extend3DContext()) {
       MOZ_ASSERT(l->AsContainerLayer());
@@ -1434,11 +1434,11 @@ bool LayerComposite::HasStaleCompositor() const {
 
 #ifndef MOZ_HAVE_PLATFORM_SPECIFIC_LAYER_BUFFERS
 
-/*static*/ bool LayerManagerComposite::SupportsDirectTexturing() {
-  return false;
-}
+/*static*/
+bool LayerManagerComposite::SupportsDirectTexturing() { return false; }
 
-/*static*/ void LayerManagerComposite::PlatformSyncBeforeReplyUpdate() {}
+/*static*/
+void LayerManagerComposite::PlatformSyncBeforeReplyUpdate() {}
 
 #endif  // !defined(MOZ_HAVE_PLATFORM_SPECIFIC_LAYER_BUFFERS)
 

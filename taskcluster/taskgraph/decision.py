@@ -46,7 +46,7 @@ PER_PROJECT_PARAMETERS = {
     },
 
     'cedar': {
-        'target_tasks_method': 'cedar_tasks',
+        'target_tasks_method': 'default',
     },
 
     'oak': {
@@ -188,7 +188,7 @@ def taskgraph_decision(options, parameters=None):
     write_artifact('label-to-taskid.json', tgg.label_to_taskid)
 
     # actually create the graph
-    create_tasks(tgg.morphed_task_graph, tgg.label_to_taskid, tgg.parameters)
+    create_tasks(tgg.graph_config, tgg.morphed_task_graph, tgg.label_to_taskid, tgg.parameters)
 
 
 def get_decision_parameters(config, options):
@@ -238,6 +238,7 @@ def get_decision_parameters(config, options):
     parameters['message'] = try_syntax_from_message(commit_message)
     parameters['hg_branch'] = get_hg_revision_branch(GECKO, revision=parameters['head_rev'])
     parameters['next_version'] = None
+    parameters['phabricator_diff'] = None
     parameters['release_type'] = ''
     parameters['release_eta'] = ''
     parameters['release_enable_partners'] = False
@@ -338,7 +339,7 @@ def set_try_config(parameters, task_config_file):
     else:
         parameters['try_options'] = None
 
-    if parameters['try_mode']:
+    if parameters['try_mode'] == 'try_task_config':
         # The user has explicitly requested a set of jobs, so run them all
         # regardless of optimization.  Their dependencies can be optimized,
         # though.

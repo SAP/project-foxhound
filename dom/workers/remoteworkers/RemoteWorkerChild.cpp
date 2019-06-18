@@ -18,6 +18,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/CookieSettings.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIPrincipal.h"
 #include "nsNetUtil.h"
@@ -188,21 +189,25 @@ class RemoteWorkerChild::InitializeWorkerRunnable final
 };
 
 RemoteWorkerChild::RemoteWorkerChild()
-    : mIPCActive(true), mWorkerState(ePending) {
+    : mIPCActive(true), mSharedData("RemoteWorkerChild::mSharedData") {
   MOZ_ASSERT(RemoteWorkerService::Thread()->IsOnCurrentThread());
 }
+
+RemoteWorkerChild::SharedData::SharedData() : mWorkerState(ePending) {}
 
 RemoteWorkerChild::~RemoteWorkerChild() {
   nsCOMPtr<nsIEventTarget> target =
       SystemGroup::EventTargetFor(TaskCategory::Other);
 
+  const auto lock = mSharedData.Lock();
   NS_ProxyRelease("RemoteWorkerChild::mWorkerPrivate", target,
-                  mWorkerPrivate.forget());
+                  lock->mWorkerPrivate.forget());
 }
 
 void RemoteWorkerChild::ActorDestroy(ActorDestroyReason aWhy) {
+  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
   mIPCActive = false;
-  mPendingOps.Clear();
+  data->mPendingOps.Clear();
 }
 
 void RemoteWorkerChild::ExecWorker(const RemoteWorkerData& aData) {
@@ -266,13 +271,10 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   info.mDomain = aData.domain();
   info.mPrincipal = principal;
   info.mLoadingPrincipal = loadingPrincipal;
-
-  nsContentUtils::StorageAccess access =
-      nsContentUtils::StorageAllowedForPrincipal(info.mPrincipal);
-  info.mStorageAllowed =
-      access > nsContentUtils::StorageAccess::ePrivateBrowsing;
+  info.mStorageAllowed = aData.isStorageAccessAllowed();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
+  info.mCookieSettings = net::CookieSettings::Create();
 
   // Default CSP permissions for now.  These will be overrided if necessary
   // based on the script CSP headers during load in ScriptLoader.
@@ -294,8 +296,8 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   }
 
   Maybe<ClientInfo> clientInfo;
-  if (aData.clientInfo().type() == OptionalIPCClientInfo::TIPCClientInfo) {
-    clientInfo.emplace(ClientInfo(aData.clientInfo().get_IPCClientInfo()));
+  if (aData.clientInfo().isSome()) {
+    clientInfo.emplace(ClientInfo(aData.clientInfo().ref()));
   }
 
   // Top level workers' main script use the document charset for the script
@@ -305,7 +307,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
       info.mResolvedScriptURI, clientInfo,
       aData.isSharedWorker() ? nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER
                              : nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER,
-      getter_AddRefs(info.mChannel));
+      info.mCookieSettings, getter_AddRefs(info.mChannel));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -314,7 +316,8 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   jsapi.Init();
 
   ErrorResult error;
-  mWorkerPrivate = WorkerPrivate::Constructor(
+  const auto lock = mSharedData.Lock();
+  lock->mWorkerPrivate = WorkerPrivate::Constructor(
       jsapi.cx(), aData.originalScriptURL(), false,
       aData.isSharedWorker() ? WorkerTypeShared : WorkerTypeService,
       aData.name(), VoidCString(), &info, error);
@@ -323,12 +326,12 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   }
 
   RefPtr<InitializeWorkerRunnable> runnable =
-      new InitializeWorkerRunnable(mWorkerPrivate, this);
+      new InitializeWorkerRunnable(lock->mWorkerPrivate, this);
   if (NS_WARN_IF(!runnable->Dispatch())) {
     return NS_ERROR_FAILURE;
   }
 
-  mWorkerPrivate->SetRemoteWorkerController(this);
+  lock->mWorkerPrivate->SetRemoteWorkerController(this);
   return NS_OK;
 }
 
@@ -337,8 +340,11 @@ void RemoteWorkerChild::InitializeOnWorker(WorkerPrivate* aWorkerPrivate) {
   aWorkerPrivate->AssertIsOnWorkerThread();
 
   RefPtr<RemoteWorkerChild> self = this;
-  mWorkerRef = WeakWorkerRef::Create(mWorkerPrivate,
-                                     [self]() { self->ShutdownOnWorker(); });
+  {
+    const auto lock = mSharedData.Lock();
+    mWorkerRef = WeakWorkerRef::Create(lock->mWorkerPrivate,
+                                       [self]() { self->ShutdownOnWorker(); });
+  }
 
   if (NS_WARN_IF(!mWorkerRef)) {
     CreationFailedOnAnyThread();
@@ -350,8 +356,9 @@ void RemoteWorkerChild::InitializeOnWorker(WorkerPrivate* aWorkerPrivate) {
 }
 
 void RemoteWorkerChild::ShutdownOnWorker() {
-  MOZ_ASSERT(mWorkerPrivate);
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  const auto lock = mSharedData.Lock();
+  MOZ_ASSERT(lock->mWorkerPrivate);
+  lock->mWorkerPrivate->AssertIsOnWorkerThread();
 
   // This will release the worker.
   mWorkerRef = nullptr;
@@ -360,7 +367,7 @@ void RemoteWorkerChild::ShutdownOnWorker() {
       SystemGroup::EventTargetFor(TaskCategory::Other);
 
   NS_ProxyRelease("RemoteWorkerChild::mWorkerPrivate", target,
-                  mWorkerPrivate.forget());
+                  lock->mWorkerPrivate.forget());
 
   RefPtr<RemoteWorkerChild> self = this;
   nsCOMPtr<nsIRunnable> r =
@@ -371,10 +378,13 @@ void RemoteWorkerChild::ShutdownOnWorker() {
 }
 
 void RemoteWorkerChild::WorkerTerminated() {
-  MOZ_ASSERT(RemoteWorkerService::Thread()->IsOnCurrentThread());
+  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
 
-  mWorkerState = eTerminated;
-  mPendingOps.Clear();
+  {
+    const auto lock = mSharedData.Lock();
+    lock->mWorkerState = eTerminated;
+  }
+  data->mPendingOps.Clear();
 
   if (!mIPCActive) {
     return;
@@ -436,17 +446,24 @@ void RemoteWorkerChild::ErrorPropagation(const ErrorValue& aValue) {
 
 void RemoteWorkerChild::CloseWorkerOnMainThread() {
   MOZ_ASSERT(NS_IsMainThread());
+  const auto lock = mSharedData.Lock();
 
-  if (mWorkerState == ePending) {
-    mWorkerState = ePendingTerminated;
+  if (lock->mWorkerState == ePending) {
+    lock->mWorkerState = ePendingTerminated;
     // Already released.
     return;
   }
 
   // The holder will be notified by this.
-  if (mWorkerState == eRunning) {
-    MOZ_ASSERT(mWorkerPrivate);
-    mWorkerPrivate->Cancel();
+  if (lock->mWorkerState == eRunning) {
+    // FIXME: mWorkerState transition and each state's associated data should
+    // be improved/fixed in bug 1231213. `!lock->mWorkerPrivate` implies that
+    // the worker state is effectively `eTerminated.`
+    if (!lock->mWorkerPrivate) {
+      return;
+    }
+
+    lock->mWorkerPrivate->Cancel();
   }
 }
 
@@ -473,22 +490,32 @@ void RemoteWorkerChild::FlushReportsOnMainThread(
 }
 
 IPCResult RemoteWorkerChild::RecvExecOp(const RemoteWorkerOp& aOp) {
+  const auto lock = mSharedData.Lock();
+  return ExecuteOperation(aOp, lock);
+}
+
+template <typename T>
+IPCResult RemoteWorkerChild::ExecuteOperation(const RemoteWorkerOp& aOp,
+                                              const T& aLock) {
+  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+
   if (!mIPCActive) {
     return IPC_OK();
   }
 
   // The worker is not ready yet.
-  if (mWorkerState == ePending) {
-    mPendingOps.AppendElement(aOp);
+  if (aLock->mWorkerState == ePending) {
+    data->mPendingOps.AppendElement(aOp);
     return IPC_OK();
   }
 
-  if (mWorkerState == eTerminated || mWorkerState == ePendingTerminated) {
+  if (aLock->mWorkerState == eTerminated ||
+      aLock->mWorkerState == ePendingTerminated) {
     // No op.
     return IPC_OK();
   }
 
-  MOZ_ASSERT(mWorkerState == eRunning);
+  MOZ_ASSERT(aLock->mWorkerState == eRunning);
 
   // Main-thread operations
   if (aOp.type() == RemoteWorkerOp::TRemoteWorkerSuspendOp ||
@@ -513,7 +540,7 @@ IPCResult RemoteWorkerChild::RecvExecOp(const RemoteWorkerOp& aOp) {
     const RemoteWorkerPortIdentifierOp& op =
         aOp.get_RemoteWorkerPortIdentifierOp();
     RefPtr<MessagePortIdentifierRunnable> runnable =
-        new MessagePortIdentifierRunnable(mWorkerPrivate, this,
+        new MessagePortIdentifierRunnable(aLock->mWorkerPrivate, this,
                                           op.portIdentifier());
     if (NS_WARN_IF(!runnable->Dispatch())) {
       ErrorPropagation(NS_ERROR_FAILURE);
@@ -529,32 +556,36 @@ IPCResult RemoteWorkerChild::RecvExecOp(const RemoteWorkerOp& aOp) {
 void RemoteWorkerChild::RecvExecOpOnMainThread(const RemoteWorkerOp& aOp) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (aOp.type() == RemoteWorkerOp::TRemoteWorkerSuspendOp) {
-    if (mWorkerPrivate) {
-      mWorkerPrivate->ParentWindowPaused();
-    }
-    return;
-  }
+  {
+    const auto lock = mSharedData.Lock();
 
-  if (aOp.type() == RemoteWorkerOp::TRemoteWorkerResumeOp) {
-    if (mWorkerPrivate) {
-      mWorkerPrivate->ParentWindowResumed();
+    if (aOp.type() == RemoteWorkerOp::TRemoteWorkerSuspendOp) {
+      if (lock->mWorkerPrivate) {
+        lock->mWorkerPrivate->ParentWindowPaused();
+      }
+      return;
     }
-    return;
-  }
 
-  if (aOp.type() == RemoteWorkerOp::TRemoteWorkerFreezeOp) {
-    if (mWorkerPrivate) {
-      mWorkerPrivate->Freeze(nullptr);
+    if (aOp.type() == RemoteWorkerOp::TRemoteWorkerResumeOp) {
+      if (lock->mWorkerPrivate) {
+        lock->mWorkerPrivate->ParentWindowResumed();
+      }
+      return;
     }
-    return;
-  }
 
-  if (aOp.type() == RemoteWorkerOp::TRemoteWorkerThawOp) {
-    if (mWorkerPrivate) {
-      mWorkerPrivate->Thaw(nullptr);
+    if (aOp.type() == RemoteWorkerOp::TRemoteWorkerFreezeOp) {
+      if (lock->mWorkerPrivate) {
+        lock->mWorkerPrivate->Freeze(nullptr);
+      }
+      return;
     }
-    return;
+
+    if (aOp.type() == RemoteWorkerOp::TRemoteWorkerThawOp) {
+      if (lock->mWorkerPrivate) {
+        lock->mWorkerPrivate->Thaw(nullptr);
+      }
+      return;
+    }
   }
 
   if (aOp.type() == RemoteWorkerOp::TRemoteWorkerTerminateOp) {
@@ -593,10 +624,11 @@ void RemoteWorkerChild::CreationSucceededOnAnyThread() {
 }
 
 void RemoteWorkerChild::CreationSucceeded() {
-  MOZ_ASSERT(RemoteWorkerService::Thread()->IsOnCurrentThread());
+  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
 
   // The worker is created but we need to terminate it already.
-  if (mWorkerState == ePendingTerminated) {
+  const auto lock = mSharedData.Lock();
+  if (lock->mWorkerState == ePendingTerminated) {
     RefPtr<RemoteWorkerChild> self = this;
     nsCOMPtr<nsIRunnable> r =
         NS_NewRunnableFunction("RemoteWorkerChild::CreationSucceeded",
@@ -608,17 +640,17 @@ void RemoteWorkerChild::CreationSucceeded() {
     return;
   }
 
-  mWorkerState = eRunning;
+  lock->mWorkerState = eRunning;
 
   if (!mIPCActive) {
     return;
   }
 
-  for (const RemoteWorkerOp& op : mPendingOps) {
-    RecvExecOp(op);
+  for (const RemoteWorkerOp& op : data->mPendingOps) {
+    ExecuteOperation(op, lock);
   }
 
-  mPendingOps.Clear();
+  data->mPendingOps.Clear();
 
   Unused << SendCreated(true);
 }
@@ -633,10 +665,11 @@ void RemoteWorkerChild::CreationFailedOnAnyThread() {
 }
 
 void RemoteWorkerChild::CreationFailed() {
-  MOZ_ASSERT(RemoteWorkerService::Thread()->IsOnCurrentThread());
+  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
 
-  mWorkerState = eTerminated;
-  mPendingOps.Clear();
+  const auto lock = mSharedData.Lock();
+  lock->mWorkerState = eTerminated;
+  data->mPendingOps.Clear();
 
   if (!mIPCActive) {
     return;

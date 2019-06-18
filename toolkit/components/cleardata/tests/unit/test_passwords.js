@@ -6,8 +6,7 @@
 
 const URL = "http://example.com";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/LoginTestUtils.jsm");
+const {LoginTestUtils} = ChromeUtils.import("resource://testing-common/LoginTestUtils.jsm");
 
 add_task(async function test_principal_downloads() {
   // Store the strings "user" and "pass" using similarly looking glyphs.

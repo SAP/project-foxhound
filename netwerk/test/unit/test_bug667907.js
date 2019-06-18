@@ -1,5 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 var simplePath = "/simple";
@@ -27,17 +27,17 @@ var listener_proto = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
 		this.contentType);
     request.cancel(Cr.NS_BINDING_ABORTED);
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable: function(request, stream, offset, count) {
     do_throw("Unexpected onDataAvailable");
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest: function(request, status) {
     Assert.equal(status, Cr.NS_BINDING_ABORTED);
     this.termination_func();
   }  
@@ -57,7 +57,7 @@ function run_test()
   httpserver.start(-1);
 
   var channel = make_channel(uri1);
-  channel.asyncOpen2(new listener("text/plain", function() { run_test2();}));
+  channel.asyncOpen(new listener("text/plain", function() { run_test2();}));
 
   do_test_pending();
 }
@@ -65,7 +65,7 @@ function run_test()
 function run_test2()
 {
   var channel = make_channel(uri2);
-  channel.asyncOpen2(new listener("text/html", function() {
+  channel.asyncOpen(new listener("text/html", function() {
 	  httpserver.stop(do_test_finished);
   }));
 }

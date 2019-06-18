@@ -3,8 +3,8 @@
 
 var CC = Components.Constructor;
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // Turn off the authentication dialog blocking for this test.
 var prefs = Cc["@mozilla.org/preferences-service;1"].
@@ -134,7 +134,7 @@ Requestor.prototype = {
 var listener = {
   expectedCode: -1, // Uninitialized
 
-  onStartRequest: function test_onStartR(request, ctx) {
+  onStartRequest: function test_onStartR(request) {
     try {
       if (!Components.isSuccessCode(request.status))
         do_throw("Channel should have a success code!");
@@ -156,7 +156,7 @@ var listener = {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function test_onStopR(request, ctx, status) {
+  onStopRequest: function test_onStopR(request, status) {
     Assert.equal(status, Cr.NS_ERROR_ABORT);
     if (requestObserver.suspendOnBeforeConnect) {
       Assert.ok(requestObserver.gotOnBeforeConnect && requestObserver.resumeOnBeforeConnect);
@@ -224,7 +224,7 @@ function test_suspend_on_auth(suspendOnBeforeConnect, suspendOnModifyRequest) {
     new requestListenerObserver(suspendOnBeforeConnect, suspendOnModifyRequest);
   chan.notificationCallbacks = new Requestor();
   listener.expectedCode = 200; // OK
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }

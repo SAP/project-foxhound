@@ -10,8 +10,9 @@ import org.mozilla.gecko.annotation.WrapForJNI;
 
 import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 
-import java.nio.ByteBuffer;
+import java.io.InputStream;
 
 /**
  * WebResponse represents an HTTP[S] response. It is normally created
@@ -31,10 +32,16 @@ public class WebResponse extends WebMessage {
      */
     public final boolean redirected;
 
+    /**
+     * An {@link InputStream} containing the response body, if available.
+     */
+    public final @Nullable InputStream body;
+
     protected WebResponse(final @NonNull Builder builder) {
         super(builder);
         this.statusCode = builder.mStatusCode;
         this.redirected = builder.mRedirected;
+        this.body = builder.mBody;
     }
 
     /**
@@ -45,6 +52,7 @@ public class WebResponse extends WebMessage {
     public static class Builder extends WebMessage.Builder {
         /* package */ int mStatusCode;
         /* package */ boolean mRedirected;
+        /* package */ InputStream mBody;
 
         /**
          * Constructs a new Builder instance with the specified URI.
@@ -73,9 +81,14 @@ public class WebResponse extends WebMessage {
             return this;
         }
 
-        @Override
-        public @NonNull Builder body(final @NonNull ByteBuffer buffer) {
-            super.body(buffer);
+        /**
+         * Sets the {@link InputStream} containing the body of this response.
+         *
+         * @param stream An {@link InputStream} with the body of the response.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder body(final @NonNull InputStream stream) {
+            mBody = stream;
             return this;
         }
 
@@ -85,7 +98,7 @@ public class WebResponse extends WebMessage {
          * @param code A int representing the HTTP status code.
          * @return This Builder instance.
          */
-        public @NonNull Builder statusCode(int code) {
+        public @NonNull Builder statusCode(final int code) {
             mStatusCode = code;
             return this;
         }

@@ -40,6 +40,7 @@ var defaultExts = [
     ['EXT_color_buffer_float'            , [FORBID          , ENSURE          ]],
     ['EXT_color_buffer_half_float'       , [MACHINE_SPECIFIC, FORBID          ]],
     ['EXT_disjoint_timer_query'          , [MACHINE_SPECIFIC, MACHINE_SPECIFIC]],
+    ['EXT_float_blend'                   , [MACHINE_SPECIFIC, MACHINE_SPECIFIC]],
     ['EXT_sRGB'                          , [MACHINE_SPECIFIC, FORBID          ]],
     ['EXT_texture_compression_bptc'      , [MACHINE_SPECIFIC, MACHINE_SPECIFIC]],
     ['EXT_texture_compression_rgtc'      , [MACHINE_SPECIFIC, MACHINE_SPECIFIC]],
@@ -53,13 +54,26 @@ var defaultExts = [
 ];
 
 var draftExts = [
+    ['OES_fbo_render_mipmap', [MACHINE_SPECIFIC, FORBID          ]],
 ];
 
-var nonImplementedExts = [
-    'OES_fbo_render_mipmap',
-    'WEBGL_security_sensitive_resources',
-    'WEBGL_shared_resources',
-];
+////////////////////
+// Ensure that we never see any extensions that we haven't listed above!
+
+(function() {
+    const expectedExts = (defaultExts.concat(draftExts)).map(x => x[0]);
+
+    ['webgl', 'webgl2'].forEach( contextType => {
+        const c = document.createElement('canvas');
+        const gl = c.getContext(contextType);
+        if (!gl) return;
+
+        const actualExts = gl.getSupportedExtensions();
+        actualExts.forEach(actualExt => {
+            ok(expectedExts.includes(actualExt), 'Unexpected ext: ' + actualExt);
+        });
+    });
+})();
 
 ////////////////////
 
@@ -89,10 +103,6 @@ defaultExts.forEach(function(x) {
     var extName = x[0];
     var statusArr = x[1];
     TestExt(extName, statusArr);
-});
-
-nonImplementedExts.forEach(function(extName) {
-    EnsureExt(extName, false);
 });
 
 draftExts.forEach(function(x) {

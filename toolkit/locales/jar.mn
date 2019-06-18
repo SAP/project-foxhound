@@ -10,7 +10,6 @@
 @AB_CD@.jar:
 % locale global @AB_CD@ %locale/@AB_CD@/global/
   locale/@AB_CD@/global/aboutReader.properties          (%chrome/global/aboutReader.properties)
-  locale/@AB_CD@/global/aboutRights.dtd                 (%chrome/global/aboutRights.dtd)
   locale/@AB_CD@/global/aboutStudies.properties         (%chrome/global/aboutStudies.properties)
   locale/@AB_CD@/global/aboutTelemetry.dtd              (%chrome/global/aboutTelemetry.dtd)
   locale/@AB_CD@/global/aboutTelemetry.properties       (%chrome/global/aboutTelemetry.properties)
@@ -44,11 +43,8 @@
 #endif
   locale/@AB_CD@/global/notification.dtd                (%chrome/global/notification.dtd)
 #ifndef MOZ_FENNEC
-  locale/@AB_CD@/global/printPageSetup.dtd              (%chrome/global/printPageSetup.dtd)
   locale/@AB_CD@/global/printPreview.dtd                (%chrome/global/printPreview.dtd)
-  locale/@AB_CD@/global/printPreviewProgress.dtd        (%chrome/global/printPreviewProgress.dtd)
   locale/@AB_CD@/global/printdialog.properties          (%chrome/global/printdialog.properties)
-  locale/@AB_CD@/global/printProgress.dtd               (%chrome/global/printProgress.dtd)
 #endif
   locale/@AB_CD@/global/resetProfile.dtd                (%chrome/global/resetProfile.dtd)
   locale/@AB_CD@/global/resetProfile.properties         (%chrome/global/resetProfile.properties)
@@ -83,6 +79,9 @@
   locale/@AB_CD@/mozapps/profile/createProfileWizard.dtd          (%chrome/mozapps/profile/createProfileWizard.dtd)
   locale/@AB_CD@/mozapps/profile/profileSelection.properties      (%chrome/mozapps/profile/profileSelection.properties)
   locale/@AB_CD@/mozapps/profile/profileSelection.dtd             (%chrome/mozapps/profile/profileSelection.dtd)
+#ifdef MOZ_BLOCK_PROFILE_DOWNGRADE
+  locale/@AB_CD@/mozapps/profile/profileDowngrade.dtd             (%chrome/mozapps/profile/profileDowngrade.dtd)
+#endif
 #ifndef MOZ_FENNEC
   locale/@AB_CD@/mozapps/update/updates.dtd                       (%chrome/mozapps/update/updates.dtd)
   locale/@AB_CD@/mozapps/update/updates.properties                (%chrome/mozapps/update/updates.properties)

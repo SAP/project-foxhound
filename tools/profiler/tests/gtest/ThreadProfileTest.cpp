@@ -4,17 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "ProfileBufferEntry.h"
 #include "ThreadInfo.h"
+
+#include "gtest/gtest.h"
 
 // Make sure we can record one entry and read it
 TEST(ThreadProfile, InsertOneEntry) {
   auto pb = MakeUnique<ProfileBuffer>(10);
   pb->AddEntry(ProfileBufferEntry::Time(123.1));
   ASSERT_TRUE(pb->GetEntry(pb->mRangeStart).IsTime());
-  ASSERT_TRUE(pb->GetEntry(pb->mRangeStart).u.mDouble == 123.1);
+  ASSERT_TRUE(pb->GetEntry(pb->mRangeStart).GetDouble() == 123.1);
 }
 
 // See if we can insert some entries
@@ -27,7 +27,7 @@ TEST(ThreadProfile, InsertEntriesNoWrap) {
   uint64_t readPos = pb->mRangeStart;
   while (readPos != pb->mRangeEnd) {
     ASSERT_TRUE(pb->GetEntry(readPos).IsTime());
-    ASSERT_TRUE(pb->GetEntry(readPos).u.mDouble == readPos);
+    ASSERT_TRUE(pb->GetEntry(readPos).GetDouble() == readPos);
     readPos++;
   }
 }
@@ -48,7 +48,7 @@ TEST(ThreadProfile, InsertEntriesWrap) {
   uint64_t readPos = pb->mRangeStart;
   while (readPos != pb->mRangeEnd) {
     ASSERT_TRUE(pb->GetEntry(readPos).IsTime());
-    ASSERT_TRUE(pb->GetEntry(readPos).u.mDouble == readPos);
+    ASSERT_TRUE(pb->GetEntry(readPos).GetDouble() == readPos);
     readPos++;
   }
 }

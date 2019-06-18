@@ -9,8 +9,8 @@
 // process, and changes after that point are stored as entries in a dynamic hash
 // table, on top of the snapshot.
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/ExtensionXPCShellUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {ExtensionTestUtils} = ChromeUtils.import("resource://testing-common/ExtensionXPCShellUtils.jsm");
 
 ExtensionTestUtils.init(this);
 
@@ -152,7 +152,6 @@ const PREFS = [
 
 for (let {type, values} of PREFS) {
   let set = `set${type}Pref`;
-  let get = `get${type}Pref`;
 
   function prefTest(opts) {
     function check(pref, proc, val, {expectedVal, defaultVal = undefined, expectedDefault = defaultVal, expectedFlags = {}}) {
@@ -179,14 +178,14 @@ for (let {type, values} of PREFS) {
 
     return {
       beforeContent(PREF) {
-        updatePref(PREF, opts.initial)
+        updatePref(PREF, opts.initial);
         check(PREF, "parent", getPref(PREF), opts.initial);
       },
       contentStartup(PREF, contentVal) {
         check(PREF, "content", contentVal, opts.initial);
         check(PREF, "parent", getPref(PREF), opts.initial);
 
-        updatePref(PREF, opts.change1)
+        updatePref(PREF, opts.change1);
         check(PREF, "parent", getPref(PREF), opts.change1);
       },
       contentUpdate1(PREF, contentVal) {
@@ -194,7 +193,7 @@ for (let {type, values} of PREFS) {
         check(PREF, "parent", getPref(PREF), opts.change1);
 
         if (opts.change2) {
-          updatePref(PREF, opts.change2)
+          updatePref(PREF, opts.change2);
           check(PREF, "parent", getPref(PREF), opts.change2);
         }
       },

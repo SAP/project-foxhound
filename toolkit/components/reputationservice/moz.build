@@ -44,5 +44,6 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497
+
+if CONFIG['ENABLE_TESTS']:
+    DIRS += ['test/gtest']

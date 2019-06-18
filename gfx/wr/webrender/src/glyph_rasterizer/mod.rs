@@ -2,19 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, ColorU, DevicePoint};
 use api::{FontInstanceFlags, FontInstancePlatformOptions};
-use api::{FontKey, FontRenderMode, FontTemplate, FontVariation};
-use api::{GlyphIndex, GlyphDimensions, SyntheticItalics};
-use api::{LayoutPoint, LayoutToWorldTransform, WorldPoint};
-use app_units::Au;
+use api::{FontKey, FontInstanceKey, FontRenderMode, FontTemplate, FontVariation};
+use api::{ColorU, GlyphIndex, GlyphDimensions, SyntheticItalics};
+use api::units::*;
 use euclid::approxeq::ApproxEq;
 use internal_types::ResourceCacheError;
+use wr_malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use platform::font::FontContext;
 use rayon::ThreadPool;
 use std::cmp;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::ops::Deref;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -164,18 +164,51 @@ impl<'a> From<&'a LayoutToWorldTransform> for FontTransform {
 // Ensure glyph sizes are reasonably limited to avoid that scenario.
 pub const FONT_SIZE_LIMIT: f64 = 512.0;
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Ord, PartialOrd, MallocSizeOf)]
+/// A mutable font instance description.
+///
+/// Performance is sensitive to the size of this structure, so it should only contain
+/// the fields that we need to modify from the original base font instance.
+#[derive(Clone, PartialEq, Eq, Debug, Ord, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct FontInstance {
-    pub font_key: FontKey,
+    pub base: Arc<BaseFontInstance>,
+    pub transform: FontTransform,
+    pub render_mode: FontRenderMode,
+    pub flags: FontInstanceFlags,
+    pub color: ColorU,
     // The font size is in *device* pixels, not logical pixels.
     // It is stored as an Au since we need sub-pixel sizes, but
     // can't store as a f32 due to use of this type as a hash key.
     // TODO(gw): Perhaps consider having LogicalAu and DeviceAu
     //           or something similar to that.
     pub size: Au,
-    pub color: ColorU,
+}
+
+impl Hash for FontInstance {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash only the base instance's key to avoid the cost of hashing
+        // the rest.
+        self.base.instance_key.hash(state);
+        self.transform.hash(state);
+        self.render_mode.hash(state);
+        self.flags.hash(state);
+        self.color.hash(state);
+        self.size.hash(state);
+    }
+}
+
+/// Immutable description of a font instance requested by the user of the API.
+///
+/// `BaseFontInstance` can be identified by a `FontInstanceKey` so we should
+/// never need to hash it.
+#[derive(Clone, PartialEq, Eq, Debug, Ord, PartialOrd, MallocSizeOf)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct BaseFontInstance {
+    pub instance_key: FontInstanceKey,
+    pub font_key: FontKey,
+    pub size: Au,
     pub bg_color: ColorU,
     pub render_mode: FontRenderMode,
     pub flags: FontInstanceFlags,
@@ -183,36 +216,46 @@ pub struct FontInstance {
     #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
     pub platform_options: Option<FontInstancePlatformOptions>,
     pub variations: Vec<FontVariation>,
-    pub transform: FontTransform,
+}
+
+impl Deref for FontInstance {
+    type Target = BaseFontInstance;
+    fn deref(&self) -> &BaseFontInstance {
+        self.base.as_ref()
+    }
+}
+
+impl MallocSizeOf for  FontInstance {
+    fn size_of(&self, _ops: &mut MallocSizeOfOps) -> usize { 0 }
 }
 
 impl FontInstance {
     pub fn new(
-        font_key: FontKey,
-        size: Au,
-        color: ColorF,
-        bg_color: ColorU,
+        base: Arc<BaseFontInstance>,
+        color: ColorU,
         render_mode: FontRenderMode,
         flags: FontInstanceFlags,
-        synthetic_italics: SyntheticItalics,
-        platform_options: Option<FontInstancePlatformOptions>,
-        variations: Vec<FontVariation>,
     ) -> Self {
-        // If a background color is enabled, it only makes sense
-        // for it to be completely opaque.
-        debug_assert!(bg_color.a == 0 || bg_color.a == 255);
-
         FontInstance {
-            font_key,
-            size,
+            transform: FontTransform::identity(),
             color: color.into(),
-            bg_color,
+            size: base.size,
+            base,
             render_mode,
             flags,
-            synthetic_italics,
-            platform_options,
-            variations,
+        }
+    }
+
+    pub fn from_base(
+        base: Arc<BaseFontInstance>,
+    ) -> Self {
+        FontInstance {
             transform: FontTransform::identity(),
+            color: ColorU::new(0, 0, 0, 255),
+            size: base.size,
+            render_mode: base.render_mode,
+            flags: base.flags,
+            base,
         }
     }
 
@@ -440,6 +483,89 @@ pub struct RasterizedGlyph {
     pub bytes: Vec<u8>,
 }
 
+impl RasterizedGlyph {
+    #[allow(dead_code)]
+    pub fn downscale_bitmap_if_required(&mut self, font: &FontInstance) {
+        // Check if the glyph is going to be downscaled in the shader. If the scaling is
+        // less than 0.5, that means bilinear filtering can't effectively filter the glyph
+        // without aliasing artifacts.
+        //
+        // Instead of fixing this by mipmapping the glyph cache texture, rather manually
+        // produce the appropriate mip level for individual glyphs where bilinear filtering
+        // will still produce acceptable results.
+        match self.format {
+            GlyphFormat::Bitmap | GlyphFormat::ColorBitmap => {},
+            _ => return,
+        }
+        let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
+        let upscaled = x_scale.max(y_scale) as f32;
+        let mut new_scale = self.scale;
+        if new_scale * upscaled <= 0.0 {
+            return;
+        }
+        let mut steps = 0;
+        while new_scale * upscaled <= 0.5 {
+            new_scale *= 2.0;
+            steps += 1;
+        }
+        // If no mipping is necessary, just bail.
+        if steps == 0 {
+            return;
+        }
+
+        // Calculate the actual size of the mip level.
+        let new_width = (self.width as usize + (1 << steps) - 1) >> steps;
+        let new_height = (self.height as usize + (1 << steps) - 1) >> steps;
+        let mut new_bytes: Vec<u8> = Vec::with_capacity(new_width * new_height * 4);
+
+        // Produce destination pixels by applying a box filter to the source pixels.
+        // The box filter corresponds to how graphics drivers may generate mipmaps.
+        for y in 0 .. new_height {
+            for x in 0 .. new_width {
+                // Calculate the number of source samples that contribute to the destination pixel.
+                let src_y = y << steps;
+                let src_x = x << steps;
+                let y_samples = (1 << steps).min(self.height as usize - src_y);
+                let x_samples = (1 << steps).min(self.width as usize - src_x);
+                let num_samples = (x_samples * y_samples) as u32;
+
+                let mut src_idx = (src_y * self.width as usize + src_x) * 4;
+                // Initialize the accumulator with half an increment so that when later divided
+                // by the sample count, it will effectively round the accumulator to the nearest
+                // increment.
+                let mut accum = [num_samples / 2; 4];
+                // Accumulate all the contributing source sampless.
+                for _ in 0 .. y_samples {
+                    for _ in 0 .. x_samples {
+                        accum[0] += self.bytes[src_idx + 0] as u32;
+                        accum[1] += self.bytes[src_idx + 1] as u32;
+                        accum[2] += self.bytes[src_idx + 2] as u32;
+                        accum[3] += self.bytes[src_idx + 3] as u32;
+                        src_idx += 4;
+                    }
+                    src_idx += (self.width as usize - x_samples) * 4;
+                }
+
+                // Finally, divide by the sample count to get the mean value for the new pixel.
+                new_bytes.extend_from_slice(&[
+                    (accum[0] / num_samples) as u8,
+                    (accum[1] / num_samples) as u8,
+                    (accum[2] / num_samples) as u8,
+                    (accum[3] / num_samples) as u8,
+                ]);
+            }
+        }
+
+        // Fix the bounds for the new glyph data.
+        self.top /= (1 << steps) as f32;
+        self.left /= (1 << steps) as f32;
+        self.width = new_width as i32;
+        self.height = new_height as i32;
+        self.scale = new_scale;
+        self.bytes = new_bytes;
+    }
+}
+
 pub struct FontContexts {
     // These worker are mostly accessed from their corresponding worker threads.
     // The goal is that there should be no noticeable contention on the mutexes.
@@ -607,6 +733,13 @@ impl GlyphRasterizer {
 
     pub fn prepare_font(&self, font: &mut FontInstance) {
         FontContext::prepare_font(font);
+
+        // Quantize the transform to minimize thrashing of the glyph cache, but
+        // only quantize the transform when preparing to access the glyph cache.
+        // This way, the glyph subpixel positions, which are calculated before
+        // this, can still use the precise transform which is required to match
+        // the subpixel positions computed for glyphs in the text run shader.
+        font.transform = font.transform.quantize();
     }
 
     pub fn get_glyph_dimensions(
@@ -712,15 +845,15 @@ mod test_glyph_rasterizer {
         use texture_cache::TextureCache;
         use glyph_cache::GlyphCache;
         use gpu_cache::GpuCache;
-        use render_task::{RenderTaskCache, RenderTaskTree};
+        use render_task::{RenderTaskCache, RenderTaskTree, RenderTaskTreeCounters};
         use profiler::TextureCacheProfileCounters;
-        use api::{FontKey, FontTemplate, FontRenderMode,
-                  IdNamespace, ColorF, ColorU, DevicePoint};
+        use api::{FontKey, FontInstanceKey, FontTemplate, FontRenderMode,
+                  IdNamespace, ColorU};
+        use api::units::{Au, DevicePoint};
         use render_backend::FrameId;
-        use app_units::Au;
         use thread_profiler::register_thread_with_profiler;
         use std::sync::Arc;
-        use glyph_rasterizer::{FontInstance, GlyphKey, GlyphRasterizer};
+        use glyph_rasterizer::{FontInstance, BaseFontInstance, GlyphKey, GlyphRasterizer};
 
         let worker = ThreadPoolBuilder::new()
             .thread_name(|idx|{ format!("WRWorker#{}", idx) })
@@ -734,7 +867,7 @@ mod test_glyph_rasterizer {
         let mut gpu_cache = GpuCache::new_for_testing();
         let mut texture_cache = TextureCache::new_for_testing(2048, 1024);
         let mut render_task_cache = RenderTaskCache::new();
-        let mut render_task_tree = RenderTaskTree::new(FrameId::INVALID);
+        let mut render_task_tree = RenderTaskTree::new(FrameId::INVALID, &RenderTaskTreeCounters::new());
         let mut font_file =
             File::open("../wrench/reftests/text/VeraBd.ttf").expect("Couldn't open font file");
         let mut font_data = vec![];
@@ -745,17 +878,18 @@ mod test_glyph_rasterizer {
         let font_key = FontKey::new(IdNamespace(0), 0);
         glyph_rasterizer.add_font(font_key, FontTemplate::Raw(Arc::new(font_data), 0));
 
-        let font = FontInstance::new(
+        let font = FontInstance::from_base(Arc::new(BaseFontInstance {
+            instance_key: FontInstanceKey(IdNamespace(0), 0),
             font_key,
-            Au::from_px(32),
-            ColorF::new(0.0, 0.0, 0.0, 1.0),
-            ColorU::new(0, 0, 0, 0),
-            FontRenderMode::Subpixel,
-            Default::default(),
-            Default::default(),
-            None,
-            Vec::new(),
-        );
+            size: Au::from_px(32),
+            bg_color: ColorU::new(0, 0, 0, 0),
+            render_mode: FontRenderMode::Subpixel,
+            flags: Default::default(),
+            synthetic_italics: Default::default(),
+            platform_options: None,
+            variations: Vec::new(),
+        }));
+
         let subpx_dir = font.get_subpx_dir();
 
         let mut glyph_keys = Vec::with_capacity(200);

@@ -47,8 +47,8 @@ nsIMIMEService *nsJARProtocolHandler::MimeService() {
   return mMimeService.get();
 }
 
-NS_IMPL_ISUPPORTS(nsJARProtocolHandler, nsIJARProtocolHandler,
-                  nsIProtocolHandler, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS(nsJARProtocolHandler, nsIProtocolHandler,
+                  nsISupportsWeakReference)
 
 already_AddRefed<nsJARProtocolHandler> nsJARProtocolHandler::GetSingleton() {
   if (!gJarHandler) {
@@ -60,13 +60,6 @@ already_AddRefed<nsJARProtocolHandler> nsJARProtocolHandler::GetSingleton() {
     }
   }
   return do_AddRef(gJarHandler);
-}
-
-NS_IMETHODIMP
-nsJARProtocolHandler::GetJARCache(nsIZipReaderCache **result) {
-  *result = mJARCache;
-  NS_ADDREF(*result);
-  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,8 +99,8 @@ nsJARProtocolHandler::NewURI(const nsACString &aSpec, const char *aCharset,
 }
 
 NS_IMETHODIMP
-nsJARProtocolHandler::NewChannel2(nsIURI *uri, nsILoadInfo *aLoadInfo,
-                                  nsIChannel **result) {
+nsJARProtocolHandler::NewChannel(nsIURI *uri, nsILoadInfo *aLoadInfo,
+                                 nsIChannel **result) {
   nsJARChannel *chan = new nsJARChannel();
   if (!chan) return NS_ERROR_OUT_OF_MEMORY;
   NS_ADDREF(chan);
@@ -127,11 +120,6 @@ nsJARProtocolHandler::NewChannel2(nsIURI *uri, nsILoadInfo *aLoadInfo,
 
   *result = chan;
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsJARProtocolHandler::NewChannel(nsIURI *uri, nsIChannel **result) {
-  return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP

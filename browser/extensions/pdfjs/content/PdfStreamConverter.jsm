@@ -24,8 +24,8 @@ const PDF_VIEWER_WEB_PAGE = "resource://pdf.js/web/viewer.html";
 const MAX_NUMBER_OF_PREFS = 50;
 const MAX_STRING_PREF_LENGTH = 128;
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
@@ -277,31 +277,31 @@ class ChromeActions {
 
       var listener = {
         extListener: null,
-        onStartRequest(aRequest, aContext) {
+        onStartRequest(aRequest) {
           var loadContext = self.domWindow.docShell
                                 .QueryInterface(Ci.nsILoadContext);
           this.extListener = extHelperAppSvc.doContent(
             (data.isAttachment ? "application/octet-stream" :
                                  "application/pdf"),
             aRequest, loadContext, false);
-          this.extListener.onStartRequest(aRequest, aContext);
+          this.extListener.onStartRequest(aRequest);
         },
-        onStopRequest(aRequest, aContext, aStatusCode) {
+        onStopRequest(aRequest, aStatusCode) {
           if (this.extListener) {
-            this.extListener.onStopRequest(aRequest, aContext, aStatusCode);
+            this.extListener.onStopRequest(aRequest, aStatusCode);
           }
           // Notify the content code we're done downloading.
           if (sendResponse) {
             sendResponse(false);
           }
         },
-        onDataAvailable(aRequest, aContext, aDataInputStream, aOffset, aCount) {
-          this.extListener.onDataAvailable(aRequest, aContext, aDataInputStream,
+        onDataAvailable(aRequest, aDataInputStream, aOffset, aCount) {
+          this.extListener.onDataAvailable(aRequest, aDataInputStream,
                                            aOffset, aCount);
         },
       };
 
-      channel.asyncOpen2(listener);
+      channel.asyncOpen(listener);
     });
   }
 
@@ -548,7 +548,6 @@ class ChromeActions {
 class RangedChromeActions extends ChromeActions {
   constructor(domWindow, contentDispositionFilename, originalRequest,
               rangeEnabled, streamingEnabled, dataListener) {
-
     super(domWindow, contentDispositionFilename);
     this.dataListener = dataListener;
     this.originalRequest = originalRequest;
@@ -848,7 +847,7 @@ PdfStreamConverter.prototype = {
   },
 
   // nsIStreamListener::onDataAvailable
-  onDataAvailable(aRequest, aContext, aInputStream, aOffset, aCount) {
+  onDataAvailable(aRequest, aInputStream, aOffset, aCount) {
     if (!this.dataListener) {
       return;
     }
@@ -861,7 +860,7 @@ PdfStreamConverter.prototype = {
   },
 
   // nsIRequestObserver::onStartRequest
-  onStartRequest(aRequest, aContext) {
+  onStartRequest(aRequest) {
     // Setup the request so we can use it below.
     var isHttpRequest = false;
     try {
@@ -940,19 +939,19 @@ PdfStreamConverter.prototype = {
     // request(aRequest) below so we don't overwrite the original channel and
     // trigger an assertion.
     var proxy = {
-      onStartRequest(request, context) {
-        listener.onStartRequest(aRequest, aContext);
+      onStartRequest(request) {
+        listener.onStartRequest(aRequest);
       },
-      onDataAvailable(request, context, inputStream, offset, count) {
-        listener.onDataAvailable(aRequest, aContext, inputStream,
+      onDataAvailable(request, inputStream, offset, count) {
+        listener.onDataAvailable(aRequest, inputStream,
                                  offset, count);
       },
-      onStopRequest(request, context, statusCode) {
+      onStopRequest(request, statusCode) {
         var domWindow = getDOMWindow(channel, resourcePrincipal);
         if (!Components.isSuccessCode(statusCode) || !domWindow) {
           // The request may have been aborted and the document may have been
           // replaced with something that is not PDF.js, abort attaching.
-          listener.onStopRequest(aRequest, context, statusCode);
+          listener.onStopRequest(aRequest, statusCode);
           return;
         }
         var actions;
@@ -972,7 +971,7 @@ PdfStreamConverter.prototype = {
           var findEventManager = new FindEventManager(domWindow);
           findEventManager.bind();
         }
-        listener.onStopRequest(aRequest, aContext, statusCode);
+        listener.onStopRequest(aRequest, statusCode);
 
         if (domWindow.frameElement) {
           var isObjectEmbed = domWindow.frameElement.tagName !== "IFRAME" ||
@@ -996,11 +995,11 @@ PdfStreamConverter.prototype = {
         aRequest.loadInfo.originAttributes);
     aRequest.owner = resourcePrincipal;
 
-    channel.asyncOpen2(proxy);
+    channel.asyncOpen(proxy);
   },
 
   // nsIRequestObserver::onStopRequest
-  onStopRequest(aRequest, aContext, aStatusCode) {
+  onStopRequest(aRequest, aStatusCode) {
     if (!this.dataListener) {
       // Do nothing
       return;

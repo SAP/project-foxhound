@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+// @flow
+
 import {
   actions,
   createStore,
@@ -16,39 +18,28 @@ const {
   getTextSearchStatus
 } = selectors;
 
-const threadClient = {
-  sourceContents: function(sourceId) {
-    return new Promise((resolve, reject) => {
-      switch (sourceId) {
-        case "foo1":
-          resolve({
-            source: "function foo1() {\n  const foo = 5; return foo;\n}",
-            contentType: "text/javascript"
-          });
-          break;
-        case "foo2":
-          resolve({
-            source: "function foo2(x, y) {\n  return x + y;\n}",
-            contentType: "text/javascript"
-          });
-          break;
-        case "bar":
-          resolve({
-            source: "function bla(x, y) {\n const bar = 4; return 2;\n}",
-            contentType: "text/javascript"
-          });
-          break;
-        case "bar:formatted":
-          resolve({
-            source: "function bla(x, y) {\n const bar = 4; return 2;\n}",
-            contentType: "text/javascript"
-          });
-          break;
-      }
-
-      reject(`unknown source: ${sourceId}`);
-    });
+const sources = {
+  foo1: {
+    source: "function foo1() {\n  const foo = 5; return foo;\n}",
+    contentType: "text/javascript"
+  },
+  foo2: {
+    source: "function foo2(x, y) {\n  return x + y;\n}",
+    contentType: "text/javascript"
+  },
+  bar: {
+    source: "function bla(x, y) {\n const bar = 4; return 2;\n}",
+    contentType: "text/javascript"
+  },
+  "bar:formatted": {
+    source: "function bla(x, y) {\n const bar = 4; return 2;\n}",
+    contentType: "text/javascript"
   }
+};
+
+const threadClient = {
+  sourceContents: async ({ source }) => sources[source],
+  getBreakpointPositions: async () => ({})
 };
 
 describe("project text search", () => {
@@ -85,7 +76,9 @@ describe("project text search", () => {
         source: "function bla(x, y) {\n const bar = 4; return 2;\n}",
         contentType: "text/javascript"
       }),
-      getOriginalURLs: async () => [source2.url]
+      getOriginalURLs: async () => [source2.url],
+      getGeneratedRangesForOriginal: async () => [],
+      getOriginalLocations: async items => items
     };
 
     const { dispatch, getState } = createStore(threadClient, {}, mockMaps);
@@ -103,12 +96,17 @@ describe("project text search", () => {
   it("should search a specific source", async () => {
     const { dispatch, getState } = createStore(threadClient);
 
-    await dispatch(actions.newSource(makeSource("bar")));
-    await dispatch(actions.loadSourceText({ id: "bar" }));
+    const source = makeSource("bar");
+    await dispatch(actions.newSource(source));
+    await dispatch(actions.loadSourceText(source));
 
     dispatch(actions.addSearchQuery("bla"));
 
-    const sourceId = getSource(getState(), "bar").id;
+    const barSource = getSource(getState(), "bar");
+    if (!barSource) {
+      throw new Error("no barSource");
+    }
+    const sourceId = barSource.id;
 
     await dispatch(actions.searchSource(sourceId, "bla"), "bla");
 

@@ -6,9 +6,9 @@
 
 var EXPORTED_SYMBOLS = [ "AboutReader" ];
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/ReaderMode.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {ReaderMode} = ChromeUtils.import("resource://gre/modules/ReaderMode.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AsyncPrefs", "resource://gre/modules/AsyncPrefs.jsm");
 ChromeUtils.defineModuleGetter(this, "NarrateControls", "resource://gre/modules/narrate/NarrateControls.jsm");
@@ -66,7 +66,7 @@ var AboutReader = function(mm, win, articlePromise) {
   doc.addEventListener("click", this);
 
   win.addEventListener("pagehide", this);
-  win.addEventListener("scroll", this);
+  win.addEventListener("mozvisualscroll", this, { mozSystemGroup: true });
   win.addEventListener("resize", this);
 
   Services.obs.addObserver(this, "inner-window-destroyed");
@@ -122,6 +122,25 @@ var AboutReader = function(mm, win, articlePromise) {
   }
 
   this._loadArticle();
+
+  let dropdown = this._toolbarElement;
+
+  let elemL10nMap = {
+    ".minus-button": "minus",
+    ".plus-button": "plus",
+    ".content-width-minus-button": "contentwidthminus",
+    ".content-width-plus-button": "contentwidthplus",
+    ".line-height-minus-button": "lineheightminus",
+    ".line-height-plus-button": "lineheightplus",
+    ".light-button": "colorschemelight",
+    ".dark-button": "colorschemedark",
+    ".sepia-button": "colorschemesepia",
+  };
+
+  for (let [selector, stringID] of Object.entries(elemL10nMap)) {
+    dropdown.querySelector(selector).setAttribute("title",
+      gStrings.GetStringFromName("aboutReader.toolbar." + stringID));
+  }
 };
 
 AboutReader.prototype = {
@@ -249,14 +268,15 @@ AboutReader.prototype = {
           this._closeDropdowns();
         }
         break;
-      case "scroll":
+      case "mozvisualscroll":
         this._closeDropdowns(true);
-        if (!gIsFirefoxDesktop && this._scrollOffset != aEvent.pageY) {
-          let isScrollingUp = this._scrollOffset > aEvent.pageY;
+        const vv = aEvent.originalTarget; // VisualViewport
+        if (!gIsFirefoxDesktop && this._scrollOffset != vv.pageTop) {
+          let isScrollingUp = this._scrollOffset > vv.pageTop;
           this._setSystemUIVisibility(isScrollingUp);
           this._setToolbarVisibility(isScrollingUp);
         }
-        this._scrollOffset = aEvent.pageY;
+        this._scrollOffset = vv.pageTop;
         break;
       case "resize":
         this._updateImageMargins();
@@ -308,13 +328,10 @@ AboutReader.prototype = {
   },
 
   _setFontSize(newFontSize) {
-    let containerClasses = this._containerElement.classList;
-
-    if (this._fontSize > 0)
-      containerClasses.remove("font-size" + this._fontSize);
-
     this._fontSize = newFontSize;
-    containerClasses.add("font-size" + this._fontSize);
+    let size = (10 + 2 * this._fontSize) + "px";
+
+    this._containerElement.style.setProperty("--font-size", size);
     return AsyncPrefs.set("reader.font_size", this._fontSize);
   },
 
@@ -950,7 +967,6 @@ AboutReader.prototype = {
       if (!aEvent.isTrusted)
         return;
 
-      aEvent.stopPropagation();
       let btn = aEvent.target;
       callback(btn);
     }, true);

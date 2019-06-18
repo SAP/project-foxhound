@@ -21,7 +21,8 @@ namespace binding_detail {
 struct FakeString {
   FakeString()
       : mDataFlags(nsString::DataFlags::TERMINATED),
-        mClassFlags(nsString::ClassFlags(0)) {}
+        mClassFlags(nsString::ClassFlags(0)),
+        mTaint() {}
 
   ~FakeString() {
     if (mDataFlags & nsString::DataFlags::REFCOUNTED) {

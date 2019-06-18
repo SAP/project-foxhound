@@ -16,6 +16,17 @@
   overflow: hidden;
 }
 
+#urlbar[pageproxystate="invalid"] > #identity-box > #blocked-permissions-container,
+#urlbar[pageproxystate="invalid"] > #identity-box > #notification-popup-box,
+#urlbar[pageproxystate="invalid"] > #identity-box > #identity-icon-labels {
+  display: none;
+}
+
+#urlbar[pageproxystate="invalid"] > #identity-box {
+  pointer-events: none;
+  -moz-user-focus: ignore;
+}
+
 #identity-box:hover:not(.no-hover):not([open=true]) {
   background-color: hsla(0,0%,70%,.2);
   fill-opacity: .8;
@@ -25,6 +36,12 @@
 #identity-box[open=true] {
   background-color: hsla(0,0%,70%,.3);
   fill-opacity: .8;
+}
+
+#identity-box:not(:active):-moz-focusring {
+  outline: var(--toolbarbutton-focus-outline);
+  outline-offset: -2px;
+  -moz-outline-radius: var(--toolbarbutton-border-radius);
 }
 
 #urlbar[pageproxystate="valid"] > #identity-box.verifiedIdentity > #identity-icon-labels {

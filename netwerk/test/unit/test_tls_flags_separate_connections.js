@@ -1,6 +1,5 @@
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -59,7 +58,7 @@ function Listener(tlsFlags) {
 
 let gTestsRun = 0;
 Listener.prototype = {
-  onStartRequest: function(request, context) {
+  onStartRequest: function(request) {
     request.QueryInterface(Ci.nsIHttpChannel)
            .QueryInterface(Ci.nsIHttpChannelInternal);
 
@@ -81,7 +80,7 @@ Listener.prototype = {
       previousHashKeys[this.tlsFlags] = hashKey;
     }
   },
-  onDataAvailable: function(request, ctx, stream, off, cnt) {
+  onDataAvailable: function(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
   onStopRequest: function() {
@@ -104,7 +103,7 @@ function doTest() {
   for (let tlsFlags of randomFlagValues) {
     let chan = makeChan(URL, tlsFlags);
     let listener = new Listener(tlsFlags);
-    chan.asyncOpen2(listener);
+    chan.asyncOpen(listener);
   }
 }
 

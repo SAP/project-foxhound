@@ -48,10 +48,8 @@ StaticAutoPtr<mozilla::Monitor> sImageBridgesLock;
 
 static StaticRefPtr<ImageBridgeParent> sImageBridgeParentSingleton;
 
-// defined in CompositorBridgeParent.cpp
-CompositorThreadHolder* GetCompositorThreadHolder();
-
-/* static */ void ImageBridgeParent::Setup() {
+/* static */
+void ImageBridgeParent::Setup() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!sImageBridgesLock) {
     sImageBridgesLock = new Monitor("ImageBridges");
@@ -70,7 +68,8 @@ ImageBridgeParent::ImageBridgeParent(MessageLoop* aLoop,
 
 ImageBridgeParent::~ImageBridgeParent() {}
 
-/* static */ ImageBridgeParent* ImageBridgeParent::CreateSameProcess() {
+/* static */
+ImageBridgeParent* ImageBridgeParent::CreateSameProcess() {
   base::ProcessId pid = base::GetCurrentProcId();
   RefPtr<ImageBridgeParent> parent =
       new ImageBridgeParent(CompositorThreadHolder::Loop(), pid);
@@ -86,11 +85,16 @@ ImageBridgeParent::~ImageBridgeParent() {}
   return parent;
 }
 
-/* static */ bool ImageBridgeParent::CreateForGPUProcess(
+/* static */
+bool ImageBridgeParent::CreateForGPUProcess(
     Endpoint<PImageBridgeParent>&& aEndpoint) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
 
   MessageLoop* loop = CompositorThreadHolder::Loop();
+  if (!loop) {
+    return false;
+  }
+
   RefPtr<ImageBridgeParent> parent =
       new ImageBridgeParent(loop, aEndpoint.OtherPid());
 
@@ -102,7 +106,8 @@ ImageBridgeParent::~ImageBridgeParent() {}
   return true;
 }
 
-/* static */ void ImageBridgeParent::ShutdownInternal() {
+/* static */
+void ImageBridgeParent::ShutdownInternal() {
   // We make a copy because we don't want to hold the lock while closing and we
   // don't want the object to get freed underneath us.
   nsTArray<RefPtr<ImageBridgeParent>> actors;
@@ -121,7 +126,8 @@ ImageBridgeParent::~ImageBridgeParent() {}
   sImageBridgeParentSingleton = nullptr;
 }
 
-/* static */ void ImageBridgeParent::Shutdown() {
+/* static */
+void ImageBridgeParent::Shutdown() {
   CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
       "ImageBridgeParent::Shutdown",
       []() -> void { ImageBridgeParent::ShutdownInternal(); }));
@@ -173,6 +179,9 @@ class MOZ_STACK_CLASS AutoImageBridgeParentAsyncMessageSender {
 mozilla::ipc::IPCResult ImageBridgeParent::RecvUpdate(
     EditArray&& aEdits, OpDestroyArray&& aToDestroy,
     const uint64_t& aFwdTransactionId) {
+  AUTO_PROFILER_TRACING("Paint", "ImageBridgeTransaction", GRAPHICS);
+  AUTO_PROFILER_LABEL("ImageBridgeParent::RecvUpdate", GRAPHICS);
+
   // This ensures that destroy operations are always processed. It is not safe
   // to early-return from RecvUpdate without doing so.
   AutoImageBridgeParentAsyncMessageSender autoAsyncMessageSender(this,
@@ -202,9 +211,13 @@ mozilla::ipc::IPCResult ImageBridgeParent::RecvUpdate(
   return IPC_OK();
 }
 
-/* static */ bool ImageBridgeParent::CreateForContent(
+/* static */
+bool ImageBridgeParent::CreateForContent(
     Endpoint<PImageBridgeParent>&& aEndpoint) {
   MessageLoop* loop = CompositorThreadHolder::Loop();
+  if (!loop) {
+    return false;
+  }
 
   RefPtr<ImageBridgeParent> bridge =
       new ImageBridgeParent(loop, aEndpoint.OtherPid());
@@ -317,7 +330,8 @@ class ProcessIdComparator {
   }
 };
 
-/* static */ bool ImageBridgeParent::NotifyImageComposites(
+/* static */
+bool ImageBridgeParent::NotifyImageComposites(
     nsTArray<ImageCompositeNotificationInfo>& aNotifications) {
   // Group the notifications by destination process ID and then send the
   // notifications in one message per group.

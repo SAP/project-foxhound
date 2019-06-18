@@ -126,7 +126,8 @@ nsresult BlobURL::CloneInternal(
   return NS_OK;
 }
 
-/* virtual */ nsresult BlobURL::EqualsInternal(
+/* virtual */
+nsresult BlobURL::EqualsInternal(
     nsIURI* aOther, mozilla::net::nsSimpleURI::RefHandlingEnum aRefHandlingMode,
     bool* aResult) {
   if (!aOther) {
@@ -166,9 +167,8 @@ BlobURL::Mutate(nsIURIMutator** aMutator) {
 
 // nsIClassInfo methods:
 NS_IMETHODIMP
-BlobURL::GetInterfaces(uint32_t* count, nsIID*** array) {
-  *count = 0;
-  *array = nullptr;
+BlobURL::GetInterfaces(nsTArray<nsIID>& array) {
+  array.Clear();
   return NS_OK;
 }
 

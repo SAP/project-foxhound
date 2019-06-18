@@ -16,7 +16,10 @@ use std::hash::{Hash, Hasher};
 #[cfg(not(target_os = "macos"))]
 use std::path::PathBuf;
 use std::sync::Arc;
-use {ColorU, IdNamespace, LayoutPoint};
+// local imports
+use api::IdNamespace;
+use color::ColorU;
+use units::LayoutPoint;
 
 
 #[cfg(not(target_os = "macos"))]
@@ -345,7 +348,7 @@ impl Default for FontInstancePlatformOptions {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, Ord, PartialOrd, MallocSizeOf)]
 pub struct FontInstanceKey(pub IdNamespace, pub u32);
 
 impl FontInstanceKey {

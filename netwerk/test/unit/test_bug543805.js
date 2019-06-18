@@ -1,5 +1,5 @@
 const URL = "ftp://localhost/bug543805/";
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var year = new Date().getFullYear().toString();
@@ -71,7 +71,7 @@ function storeData(status, entry) {
   };
 
   converter.onStartRequest(channel, null);
-  converter.onDataAvailable(channel, null, stream, 0, 0);
+  converter.onDataAvailable(channel, stream, 0, 0);
   channel.pending = false;
   converter.onStopRequest(channel, null, Cr.NS_OK);
 }

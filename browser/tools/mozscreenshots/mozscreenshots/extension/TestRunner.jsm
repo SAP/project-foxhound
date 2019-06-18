@@ -10,12 +10,12 @@ const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironmen
 const APPLY_CONFIG_TIMEOUT_MS = 60 * 1000;
 const HOME_PAGE = "resource://mozscreenshots/lib/mozscreenshots.html";
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/Geometry.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {Rect} = ChromeUtils.import("resource://gre/modules/Geometry.jsm");
 
 ChromeUtils.defineModuleGetter(this, "BrowserTestUtils",
                                "resource://testing-common/BrowserTestUtils.jsm");
@@ -257,9 +257,9 @@ var TestRunner = {
       }
 
       // Calculate box region, convert to Rect
-      let box = element.ownerDocument.getBoxObjectFor(element);
-      let rect = new Rect(box.screenX * scale, box.screenY * scale,
-                             box.width * scale, box.height * scale);
+      let elementRect = element.getBoundingClientRect();
+      let rect = new Rect(element.screenX * scale, element.screenY * scale,
+                             elementRect.width * scale, elementRect.height * scale);
       rect.inflateFixed(this.croppingPadding * scale);
       rect.left = Math.max(rect.left, windowLeft);
       rect.top = Math.max(rect.top, windowTop);

@@ -6,7 +6,7 @@ treeherder:
         'cram': 'Cram tests'
         'js-bench-sm': 'JavaScript shell benchmarks with Spidermonkey'
         'js-bench-v8': 'JavaScript shell benchmarks with Google V8'
-        'mocha': 'Mocha unit tests'
+        'node': 'Node tests'
         'py2': 'Python 2 unit tests'
         'py3': 'Python 3 unit tests'
         'A': 'Android Gradle tests'
@@ -18,7 +18,9 @@ treeherder:
         'Fxfn-r-e10s': 'Firefox functional tests (remote) with e10s'
         'M': 'Mochitests'
         'M-sw': 'Mochitests with serviceworker redesign'
+        'M-spi': 'Mochitests with socket process'
         'M-e10s': 'Mochitests with e10s'
+        'M-e10s-spi': 'Mochitests with socket process and e10s'
         'M-sw-e10s': 'Mochitests with serviceworker redesign and e10s'
         'M-V': 'Mochitests on Valgrind'
         'MSI': 'Repack installers into MSIs'
@@ -83,6 +85,7 @@ treeherder:
         'p': 'Partial generation'
         'ps': 'Partials signing'
         'ms': 'Complete MAR signing'
+        'ms-stage': 'Autograph-stage MAR signing test'
         'Rel': 'Release promotion'
         'Snap': 'Snap image generation'
         'langpack': 'Langpack sigatures and uploads'
@@ -90,6 +93,7 @@ treeherder:
         'UV': 'Update verify'
         'pipfu': 'pipfile update'
         'WR': 'WebRender standalone'
+        'Gd': 'Geckodriver'
 
 index:
     products:
@@ -243,3 +247,14 @@ partner-urls:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/mozilla-EME-free-manifest.git'
                             staging: 'git@github.com:moz-releng-automation-stage/mozilla-EME-free-manifest.git'
+
+
+task-priority:
+    by-project:
+        'mozilla-release': 'highest'
+        'mozilla-esr60': 'very-high'
+        'mozilla-beta': 'high'
+        'mozilla-central': 'medium'
+        'autoland': 'low'
+        'mozilla-inbound': 'low'
+        'default': 'very-low'

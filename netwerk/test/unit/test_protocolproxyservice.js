@@ -20,7 +20,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService);
@@ -54,10 +54,7 @@ TestProtocolHandler.prototype = {
              .setSpec(spec)
              .finalize();
   },
-  newChannel2: function(uri, aLoadInfo) {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
-  newChannel: function(uri) {
+  newChannel: function(uri, aLoadInfo) {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
   allowPort: function(port, scheme) {
@@ -939,16 +936,16 @@ function failed_script_callback(pi)
     uri: "http://127.0.0.1:7247",
     loadUsingSystemPrincipal: true
   });
-  chan.asyncOpen2(directFilterListener);
+  chan.asyncOpen(directFilterListener);
 }
 
 var directFilterListener = {
   onModifyRequestCalled : false,
 
-  onStartRequest: function test_onStart(request, ctx) {  },
+  onStartRequest: function test_onStart(request) {  },
   onDataAvailable: function test_OnData() { },
 
-  onStopRequest: function test_onStop(request, ctx, status) {
+  onStopRequest: function test_onStop(request, status) {
     // check on the PI from the channel itself
     request.QueryInterface(Ci.nsIProxiedChannel);
     check_proxy(request.proxyInfo, "http", "127.0.0.1", 7246, 0, 0, false);

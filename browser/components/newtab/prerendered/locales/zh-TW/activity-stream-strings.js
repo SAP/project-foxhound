@@ -83,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "將您喜愛的故事儲存到 Pocket，閱讀一篇篇好文章。",
   "highlights_empty_state": "開始上網，我們就會把您在網路上發現的好文章、影片、剛加入書籤的頁面顯示於此。",
   "topstories_empty_state": "所有文章都讀完啦！晚點再來，{provider} 將提供更多推薦故事。等不及了？選擇熱門主題，看看 Web 上各式精采資訊。",
-  "manual_migration_explanation2": "試試將其他瀏覽器的書籤、瀏覽記錄與密碼匯入 Firefox。",
-  "manual_migration_cancel_button": "不要，謝謝",
-  "manual_migration_import_button": "立即匯入",
   "error_fallback_default_info": "唉唷，載入內容時發生錯誤。",
   "error_fallback_default_refresh_suggestion": "請重新整理頁面再試一次。",
   "section_menu_action_remove_section": "移除段落",
@@ -99,7 +96,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_move_down": "下移",
   "section_menu_action_privacy_notice": "隱私權公告",
   "firstrun_title": "Firefox 隨身帶著走",
-  "firstrun_content": "在您的任何裝置上取得書籤、瀏覽紀錄、密碼及其他設定。",
+  "firstrun_content": "在您的各種裝置上同步書籤、瀏覽紀錄、登入資訊及其他設定。",
   "firstrun_learn_more_link": "了解 Firefox Accounts 的更多資訊",
   "firstrun_form_header": "輸入您的電子郵件地址",
   "firstrun_form_sub_header": "繼續前往 Firefox Sync",
@@ -110,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "隱私權公告",
   "firstrun_continue_to_login": "繼續",
   "firstrun_skip_login": "跳過這步",
-  "context_menu_title": "開啟選單"
+  "context_menu_title": "開啟選單",
+  "manual_migration_explanation2": "試試將其他瀏覽器的書籤、瀏覽記錄與密碼匯入 Firefox。",
+  "manual_migration_cancel_button": "不要，謝謝",
+  "manual_migration_import_button": "立即匯入"
 };

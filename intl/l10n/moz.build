@@ -11,16 +11,15 @@ EXTRA_JS_MODULES += [
     'Localization.jsm',
 ]
 
+TESTING_JS_MODULES += [
+    'FluentSyntax.jsm',
+]
+
 XPIDL_SOURCES += [
     'mozIDOMLocalization.idl',
 ]
 
 XPIDL_MODULE = 'locale'
-
-EXTRA_COMPONENTS += [
-    'mozDOMLocalization.js',
-    'mozDOMLocalization.manifest',
-]
 
 EXPORTS.mozilla.dom += [
     'DocumentL10n.h',

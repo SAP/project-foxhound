@@ -5,7 +5,7 @@
 // @flow
 
 import type { Source } from "../types";
-import type { TabList } from "../reducers";
+import type { TabList } from "../reducers/tabs";
 
 type SourcesList = Source[];
 /*
@@ -41,7 +41,7 @@ export function getHiddenTabs(
   });
 }
 
-export function getFramework(tabs: TabList[], url: string) {
+export function getFramework(tabs: TabList, url: string) {
   const tab = tabs.find(t => t.url === url);
 
   if (tab) {
@@ -93,6 +93,12 @@ export function getTabMenuItems() {
       id: "node-menu-copy-source-url",
       label: L10N.getStr("copySourceUri2"),
       accesskey: L10N.getStr("copySourceUri2.accesskey"),
+      disabled: false
+    },
+    toggleBlackBox: {
+      id: "node-menu-blackbox",
+      label: L10N.getStr("sourceFooter.blackbox"),
+      accesskey: L10N.getStr("sourceFooter.blackbox.accesskey"),
       disabled: false
     },
     prettyPrint: {

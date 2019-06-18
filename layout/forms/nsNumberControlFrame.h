@@ -17,7 +17,7 @@ class nsITextControlFrame;
 class nsPresContext;
 
 namespace mozilla {
-enum class CSSPseudoElementType : uint8_t;
+enum class PseudoStyleType : uint8_t;
 class WidgetEvent;
 class WidgetGUIEvent;
 namespace dom {
@@ -34,13 +34,14 @@ class nsNumberControlFrame final : public nsContainerFrame,
   friend nsIFrame* NS_NewNumberControlFrame(nsIPresShell* aPresShell,
                                             ComputedStyle* aStyle);
 
-  typedef mozilla::CSSPseudoElementType CSSPseudoElementType;
+  typedef mozilla::PseudoStyleType PseudoStyleType;
   typedef mozilla::dom::Element Element;
   typedef mozilla::dom::HTMLInputElement HTMLInputElement;
   typedef mozilla::WidgetEvent WidgetEvent;
   typedef mozilla::WidgetGUIEvent WidgetGUIEvent;
 
-  explicit nsNumberControlFrame(ComputedStyle* aStyle);
+  explicit nsNumberControlFrame(ComputedStyle* aStyle,
+                                nsPresContext* aPresContext);
 
  public:
   NS_DECL_QUERYFRAME
@@ -157,8 +158,9 @@ class nsNumberControlFrame final : public nsContainerFrame,
 
  private:
   nsITextControlFrame* GetTextFieldFrame();
-  already_AddRefed<Element> MakeAnonymousElement(
-      Element* aParent, nsAtom* aTagName, CSSPseudoElementType aPseudoType);
+  already_AddRefed<Element> MakeAnonymousElement(Element* aParent,
+                                                 nsAtom* aTagName,
+                                                 PseudoStyleType aPseudoType);
 
   class SyncDisabledStateEvent;
   friend class SyncDisabledStateEvent;

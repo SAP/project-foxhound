@@ -7,8 +7,8 @@
 // We attach Preferences to the window object so other contexts (tests, JSMs)
 // have access to it.
 const Preferences = window.Preferences = (function() {
-  ChromeUtils.import("resource://gre/modules/EventEmitter.jsm");
-  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  const {EventEmitter} = ChromeUtils.import("resource://gre/modules/EventEmitter.jsm");
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
   ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
   const lazy = {};
@@ -113,6 +113,24 @@ const Preferences = window.Preferences = (function() {
           console.error(`Missing preference for ID ${id}`);
         }
       }
+    },
+
+    updateQueued: false,
+
+    updateAllElements() {
+      if (this.updateQueued) {
+        return;
+      }
+
+      this.updateQueued = true;
+
+      Promise.resolve().then(() => {
+        const preferences = Preferences.getAll();
+        for (const preference of preferences) {
+          preference.updateElements();
+        }
+        this.updateQueued = false;
+      });
     },
 
     onUnload() {
@@ -301,8 +319,9 @@ const Preferences = window.Preferences = (function() {
         // Don't use the value setter here, we don't want updateElements to be
         // prematurely fired.
         this._value = preference ? preference.value : this.valueFromPreferences;
-      } else
+      } else {
         this._value = this.valueFromPreferences;
+      }
     }
 
     reset() {
@@ -367,16 +386,17 @@ const Preferences = window.Preferences = (function() {
           element.setAttribute(attribute, value);
         }
       }
-      if (aElement.localName == "checkbox")
+      if (aElement.localName == "checkbox") {
         setValue(aElement, "checked", val);
-      else if (aElement.localName == "textbox") {
+      } else if (aElement.localName == "textbox") {
         // XXXmano Bug 303998: Avoid a caret placement issue if either the
         // preference observer or its setter calls updateElements as a result
         // of the input event handler.
         if (aElement.value !== val)
           setValue(aElement, "value", val);
-      } else
+      } else {
         setValue(aElement, "value", val);
+      }
     }
 
     getElementValue(aElement) {
@@ -426,6 +446,7 @@ const Preferences = window.Preferences = (function() {
       case "checkbox":
       case "input":
       case "radiogroup":
+      case "textarea":
       case "textbox":
       case "menulist":
         return true;
@@ -591,8 +612,9 @@ const Preferences = window.Preferences = (function() {
           lf.persistentDescriptor = val;
           if (!lf.exists())
             lf.initWithPath(val);
-        } else
+        } else {
           lf = val.QueryInterface(Ci.nsIFile);
+        }
         Services.prefs
             .setComplexValue(this.name, Ci.nsIFile, lf);
         break;
