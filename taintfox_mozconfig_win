@@ -8,8 +8,12 @@ ac_add_options --with-branding=browser/branding/taintfox
 WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x86\Microsoft.VC141.CRT"
 
 # Force Visual Studio compiler (default is clang)
-#export CC=cl 
+#export CC=cl
 #export LINKER=link 
+
+# Set 32-bit build
+ac_add_options --target=i686-pc-mingw32
+ac_add_options --host=x86_64-pc-mingw32
 
 # diasble updater
 ac_add_options --disable-updater
