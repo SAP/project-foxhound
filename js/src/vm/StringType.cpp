@@ -1516,37 +1516,33 @@ JSLinearString* js::NewDependentString(JSContext* cx, JSString* baseArg,
       return base;
   */
 
-    /* TaintFox: Same here, we currently require a new instance in every case.
-     * TODO maybe fix this some time.
-    if (base->hasTwoByteChars()) {
-        AutoCheckCannotGC nogc;
-        const char16_t* chars = base->twoByteChars(nogc) + start;
-        if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
-            return staticStr;
-    } else {
-        AutoCheckCannotGC nogc;
-        const Latin1Char* chars = base->latin1Chars(nogc) + start;
-        if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
-            return staticStr;
-    }
-    */
+  /* TaintFox: Same here, we currently require a new instance in every case.
+   * TODO maybe fix this some time.
+  if (base->hasTwoByteChars()) {
+      AutoCheckCannotGC nogc;
+      const char16_t* chars = base->twoByteChars(nogc) + start;
+      if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
+          return staticStr;
+  } else {
+      AutoCheckCannotGC nogc;
+      const Latin1Char* chars = base->latin1Chars(nogc) + start;
+      if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
+          return staticStr;
+  }
+  */
 
-  return JSDependentString::new_(cx, base, start, length);
-}
+  // Need to capture the taint here in case base is GC'd
+  StringTaint taint = base->taint().subtaint(start, start + length);
 
-JSLinearString*
-js::NewTaintedDependentString(JSContext* cx, JSString* baseArg, const StringTaint& taint, size_t start, size_t length)
-{
-    JSLinearString* base = baseArg->ensureLinear(cx);
-    if (!base)
-        return nullptr;
-
-    if (length > base->length())
-        length = base->length();
-
-    JSLinearString* res = JSDependentString::new_(cx, base, start, length);
-    res->setTaint(taint);
-    return res;
+  JSLinearString* str = JSDependentString::new_(cx, base, start, length);
+  // Propagate the taint here rather than in new_ or init as there is
+  // the risk of taint loss if base is already a DependentString
+  if (str && taint.hasTaint()) {
+    str->setTaint(taint);
+  } else {
+    str->clearTaint();
+  }
+  return str;
 }
 
 static bool CanStoreCharsAsLatin1(const char16_t* s, size_t length) {

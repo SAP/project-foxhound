@@ -84,6 +84,9 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleString input,
       if (!str) {
         return false;
       }
+      // Taintfox: taint propagated by NewDependentString, just need
+      // to add the operation here
+      str->taint().extend(TaintOperation("RegExp.prototype.exec"));
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));
     }

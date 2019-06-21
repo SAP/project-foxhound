@@ -1,4 +1,4 @@
-function regexMatchTest() {
+function matchTest() {
     var a = 'Hello ';
     var b = taint('tainted');
     var c = ' World!';
@@ -27,7 +27,7 @@ function regexMatchTest() {
     assertNotHasTaintOperation(str, 'match');
 }
 
-runTaintTest(regexMatchTest);
+runTaintTest(matchTest);
 
 if (typeof reportCompare === 'function')
   reportCompare(true, true);

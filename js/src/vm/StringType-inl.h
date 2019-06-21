@@ -225,6 +225,8 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   if (baseArg->isDependent()) {
     if (mozilla::Maybe<size_t> offset = baseArg->asDependent().baseOffset()) {
       start += *offset;
+      // Taintfox: taint lost if the base is followed and is untainted
+      // We ensure taint is propagated in NewDependentString function
       baseArg = baseArg->asDependent().base();
     }
   }

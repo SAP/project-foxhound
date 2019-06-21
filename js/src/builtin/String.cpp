@@ -135,9 +135,11 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
     // the original value of a manually tainted string was for debugging/testing.
     StringTaint taint(0, str->length(), TaintSource("manual taint source", { taintarg(cx, str) }));
 
-    JSString* tainted_str = NewTaintedDependentString(cx, str, taint);
+    JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
     if (!tainted_str)
         return false;
+    tainted_str->setTaint(taint);
+
     MOZ_ASSERT(tainted_str->isTainted());
 
     args.rval().setString(tainted_str);
