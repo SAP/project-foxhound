@@ -971,7 +971,8 @@ class JSDependentString : public JSLinearString {
   template <typename CharT>
   JSFlatString* undependInternal(JSContext* cx);
 
-  void init(JSContext* cx, JSLinearString* base, size_t start, size_t length);
+  void init(JSContext* cx, JSLinearString* base, size_t start, size_t length,
+            const StringTaint* optTaint = nullptr);
 
   /* Vacuous and therefore unimplemented. */
   bool isDependent() const = delete;

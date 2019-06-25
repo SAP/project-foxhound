@@ -1447,6 +1447,9 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   MOZ_ASSERT(hasTwoByteChars());
 
   size_t n = length();
+  // Taintfox: propagate taint
+  StringTaint taint = this->taint();
+
   auto s = cx->make_pod_array<char16_t>(n + 1);
   if (!s) {
     return nullptr;
@@ -1466,6 +1469,7 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   }
 
   // Release the external chars.
+  // Taintfox: this will also remove any taint information
   finalize(cx->runtime()->defaultFreeOp());
 
   // Transform the string into a non-external, flat string. Note that the
@@ -1473,6 +1477,8 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   // but will no longer be an external string.
   setLengthAndFlags(n, INIT_FLAT_FLAGS);
   setNonInlineChars<char16_t>(s.release());
+  // Taintfox: set taint
+  this->setTaint(taint);
 
   return &this->asFlat();
 }
@@ -1531,18 +1537,7 @@ JSLinearString* js::NewDependentString(JSContext* cx, JSString* baseArg,
   }
   */
 
-  // Need to capture the taint here in case base is GC'd
-  StringTaint taint = base->taint().subtaint(start, start + length);
-
-  JSLinearString* str = JSDependentString::new_(cx, base, start, length);
-  // Propagate the taint here rather than in new_ or init as there is
-  // the risk of taint loss if base is already a DependentString
-  if (str && taint.hasTaint()) {
-    str->setTaint(taint);
-  } else {
-    str->clearTaint();
-  }
-  return str;
+  return JSDependentString::new_(cx, base, start, length);
 }
 
 static bool CanStoreCharsAsLatin1(const char16_t* s, size_t length) {

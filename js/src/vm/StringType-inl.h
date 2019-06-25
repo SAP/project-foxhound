@@ -195,7 +195,8 @@ MOZ_ALWAYS_INLINE JSRope* JSRope::new_(
 
 MOZ_ALWAYS_INLINE void JSDependentString::init(JSContext* cx,
                                                JSLinearString* base,
-                                               size_t start, size_t length) {
+                                               size_t start, size_t length,
+                                               const StringTaint* optTaint) {
   MOZ_ASSERT(start + length <= base->length());
   JS::AutoCheckCannotGC nogc;
   if (base->hasLatin1Chars()) {
@@ -212,8 +213,11 @@ MOZ_ALWAYS_INLINE void JSDependentString::init(JSContext* cx,
 
   // TaintFox: copy taint information from the base string.
   this->initTaint();
-  if (base->isTainted())
+  if (optTaint != nullptr) {
+    this->setTaint(*optTaint);
+  } else if (base->isTainted()) {
     this->setTaint(base->taint().subtaint(start, start + length));
+  }
 }
 
 MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
@@ -222,6 +226,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
    * Try to avoid long chains of dependent strings. We can't avoid these
    * entirely, however, due to how ropes are flattened.
    */
+  StringTaint taint = baseArg->taint().subtaint(start, start + length);
   if (baseArg->isDependent()) {
     if (mozilla::Maybe<size_t> offset = baseArg->asDependent().baseOffset()) {
       start += *offset;
@@ -255,7 +260,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   JSDependentString* str =
       js::AllocateString<JSDependentString, js::NoGC>(cx, js::gc::DefaultHeap);
   if (str) {
-    str->init(cx, baseArg, start, length);
+    str->init(cx, baseArg, start, length, &taint);
     return str;
   }
 
@@ -265,7 +270,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   if (!str) {
     return nullptr;
   }
-  str->init(cx, base, start, length);
+  str->init(cx, base, start, length, &taint);
   return str;
 }
 
