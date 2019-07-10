@@ -4,7 +4,7 @@ services:
   - docker
 
 git:
-  - depth: 3
+  depth: 3
 
 before_install:
   - docker build -t taintfox-dev --target taintfox-dev dockerfiles
