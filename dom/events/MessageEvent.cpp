@@ -61,9 +61,13 @@ JSObject* MessageEvent::WrapObjectInternal(JSContext* aCx,
 void MessageEvent::GetData(JSContext* aCx, JS::MutableHandle<JS::Value> aData,
                            ErrorResult& aRv) {
   aData.set(mData);
+
   if (!JS_WrapValue(aCx, aData)) {
     aRv.Throw(NS_ERROR_FAILURE);
   }
+
+  // Taintfox: window.MessageEvent source
+  JS_SetStringTaint(aData, "window.MessageEvent");
 }
 
 void MessageEvent::GetOrigin(nsAString& aOrigin) const { aOrigin = mOrigin; }

@@ -6037,6 +6037,9 @@ void nsGlobalWindowOuter::PostMessageMozOuter(JSContext* aCx,
     return;
   }
 
+  // Taintfox: window.postMessage sink
+  JS_ReportTaintSink(aCx, aMessage, "window.postMessage");
+
   aError = Dispatch(TaskCategory::Other, event.forget());
 }
 

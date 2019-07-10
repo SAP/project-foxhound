@@ -3584,8 +3584,7 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
   }
 
   // TaintFox: outerHTML sink.
-  if (aOuterHTML.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
 
   if (OwnerDoc()->IsHTMLDocument()) {
     nsAtom* localName;

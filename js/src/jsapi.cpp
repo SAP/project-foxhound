@@ -6026,13 +6026,56 @@ JS_SetStringTaint(JSString* str, const StringTaint& taint)
     str->setTaint(taint);
 }
 
+JS_PUBLIC_API void
+JS_SetStringTaint(JSString* str, const char* source)
+{
+    JS_SetStringTaint(str, StringTaint(0, str->length(), TaintOperation(source)));
+}
+
+JS_PUBLIC_API void
+JS_SetStringTaint(JS::MutableHandleValue value, const char* source)
+{
+    if (value.isString()) {
+        // If we have a string, set taint directly
+        JS_SetStringTaint(value.toString(), source);
+    } else if (value.isObject()) {
+        // If it is an object, loop over contents
+        // This function is used for convenience to taint all
+        // strings in an object like '{ payload : "hello!" }'
+        NativeObject *obj = MaybeNativeObject(value.toObjectOrNull());
+        if (obj) {
+            for (size_t i = 0; i < obj->slotSpan(); i++) {
+                JS::Value slot = obj->getSlot(i);
+                if (slot.isString()) {
+                    JS_SetStringTaint(slot.toString(), source);
+                }
+            }
+        }
+    }
+}
+
+JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink)
+{
+    if (value.isString()) {
+        JSString *str = value.toString();
+        if (str) {
+            JS::RootedString strobj(cx, str);
+            JS_ReportTaintSink(cx, strobj, sink);
+        }
+    }
+}
 
 JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
 {
-    MOZ_ASSERT(str->isTainted());
-    MOZ_ASSERT(!cx->isExceptionPending());
     const unsigned TAINT_REPORT_FUNCTION_SLOT = 5;
+
+    if (!str->isTainted()) {
+      return;
+    }
+
+    MOZ_ASSERT(!cx->isExceptionPending());
 
     // Print a message to stdout. Also include the current JS backtrace.
     auto& firstRange = *str->taint().begin();

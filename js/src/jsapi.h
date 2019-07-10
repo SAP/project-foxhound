@@ -3469,11 +3469,20 @@ JS_GetStringTaint(const JSFlatString* str);
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JSString* str, const StringTaint& taint);
 
+extern JS_PUBLIC_API void
+JS_SetStringTaint(JSString* str, const char* source);
+
+extern JS_PUBLIC_API void
+JS_SetStringTaint(JS::MutableHandleValue value, const char* source);
+
 // TaintFox: Report tainted flows into a sink.
 //
 // This will print to stdout and trigger a custom JavaScript event on the current page.
 extern JS_PUBLIC_API void 
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink);
+
+extern JS_PUBLIC_API void 
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink);
 
 namespace JS {
 

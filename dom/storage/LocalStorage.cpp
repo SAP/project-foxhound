@@ -101,11 +101,7 @@ void LocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   aRv = mCache->GetItem(this, aKey, aResult);
 
   // TaintFox: localStorage.getItem source
-  if (aResult.isTainted()) {
-    aResult.Taint().extend(TaintOperation("localStorage.getItem"));
-  } else {
-    aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
-  }
+  aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
 }
 
 void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
@@ -131,6 +127,9 @@ void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
   if (!aRv.ErrorCodeIs(NS_SUCCESS_DOM_NO_OPERATION)) {
     OnChange(aKey, old, aData);
   }
+
+  // TaintFox: localStorage.setItem sink.
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aData, "localStorage.setItem");
 }
 
 void LocalStorage::RemoveItem(const nsAString& aKey,

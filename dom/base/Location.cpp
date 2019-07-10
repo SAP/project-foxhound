@@ -307,8 +307,7 @@ void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
 
   // TaintFox: location.hash sink.
   // TODO(samuel) why?
-  if (aHash.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHash, "location.hash");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHash, "location.hash");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -361,8 +360,7 @@ void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
   }
 
   // TaintFox: location.host sink.
-  if (aHost.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHost, "location.host");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHost, "location.host");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -437,8 +435,7 @@ void Location::SetHref(const nsAString& aHref, nsIPrincipal& aSubjectPrincipal,
   // TaintFox: location.href sink.
   // TODO: Tainting is also done in SetURL (which this eventaully calls)
   // so this call might not be needed?
-  if (aHref.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHref, "location.href");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHref, "location.href");
 
 }
 
@@ -577,10 +574,9 @@ void Location::SetPathname(const nsAString& aPathname,
   if (NS_FAILED(rv)) {
     return;
   }
-  
-  if (aPathname.isTainted()) {
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
-  }
+
+  // Taintfox: location.pathname sink
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -643,8 +639,7 @@ void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
   }
 
   // TaintFox: location.port sink.
-  if (aPort.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPort, "location.port");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPort, "location.port");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -727,8 +722,7 @@ void Location::SetProtocol(const nsAString& aProtocol,
   }
 
   // TaintFox: location.protocol sink.
-  if (aProtocol.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aProtocol, "location.protocol");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aProtocol, "location.protocol");
 
   bool isHttps;
   aRv = uri->SchemeIs("https", &isHttps);
@@ -804,8 +798,7 @@ void Location::SetSearch(const nsAString& aSearch,
   }
 
   // TaintFox: location.search sink.
-  if (aSearch.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aSearch, "location.search");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aSearch, "location.search");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }

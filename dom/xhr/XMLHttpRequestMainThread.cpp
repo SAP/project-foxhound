@@ -544,6 +544,9 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
+
+  // Taintfox: XMLHttpRequest.response source
+  aResponseText.AssignTaint(StringTaint(0, aResponseText.Length(), TaintSource("XMLHttpRequest.reponse")));
 }
 
 void XMLHttpRequestMainThread::GetResponseText(
@@ -1357,6 +1360,11 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
 
   Telemetry::Accumulate(Telemetry::XMLHTTPREQUEST_ASYNC_OR_SYNC,
                         aAsync ? 0 : 1);
+
+  // TaintFox: XMLHttpRequest.open sink
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), NS_ConvertUTF8toUTF16(aUrl), "XMLHttpRequest.open(url)");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aUsername, "XMLHttpRequest.open(username)");
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPassword, "XMLHttpRequest.open(password)");
 
   // Step 1
   nsCOMPtr<Document> responsibleDocument = GetDocumentIfCurrent();
@@ -2686,6 +2694,8 @@ void XMLHttpRequestMainThread::Send(
 
   if (aData.Value().IsUSVString()) {
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
+    // Taintfox: XMLHttpRequest.send() sink
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aData.Value().GetAsUSVString(), "XMLHttpRequest.send");
     aRv = SendInternal(&body, true);
     return;
   }

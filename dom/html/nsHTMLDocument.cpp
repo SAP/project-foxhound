@@ -1117,9 +1117,7 @@ void nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv) {
     }
 
     // TaintFox: document.cookie sink.
-    if (aCookie.isTainted()) {
-      ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aCookie, "document.cookie");
-    }
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aCookie, "document.cookie");
 
     nsCOMPtr<nsIChannel> channel(mChannel);
     if (!channel) {
@@ -1538,9 +1536,7 @@ void nsHTMLDocument::WriteCommon(const nsAString& aText, bool aNewlineTerminate,
   }
 
   // TaintFox: document.write sink.
-  if (aText.isTainted()) {
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aText, "document.write");
-  }
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aText, "document.write");
 
   static NS_NAMED_LITERAL_STRING(new_line, "\n");
 

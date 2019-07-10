@@ -1860,9 +1860,13 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     if (!AppendUTF8toUTF16(aData, utf16Data, mozilla::fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
+
     JSString* jsString;
     jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
     NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
+
+    // Taintfox: WebSocket.MessageEvent.data
+    JS_SetStringTaint(jsString, "WebSocket.MessageEvent.data");
 
     jsData.setString(jsString);
   }
@@ -2208,6 +2212,9 @@ void WebSocket::GetProtocol(nsAString& aProtocol) {
 // webIDL: void send(DOMString data);
 void WebSocket::Send(const nsAString& aData, ErrorResult& aRv) {
   AssertIsOnTargetThread();
+
+  // Taintfox: WebSocket.send() sink
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aData, "WebSocket.send");
 
   NS_ConvertUTF16toUTF8 msgString(aData);
   Send(nullptr, msgString, msgString.Length(), false, aRv);

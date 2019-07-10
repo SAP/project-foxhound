@@ -62,11 +62,7 @@ void PartitionedLocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   mCache->GetItem(SessionStorageCache::eSessionSetType, aKey, aResult);
 
   // TaintFox: localStorage.getItem source
-  if (aResult.isTainted()) {
-    aResult.Taint().extend(TaintOperation("localStorage.getItem"));
-  } else {
-    aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
-  }
+  aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
 
 }
 
@@ -100,6 +96,9 @@ void PartitionedLocalStorage::SetItem(const nsAString& aKey,
   if (rv == NS_SUCCESS_DOM_NO_OPERATION) {
     return;
   }
+
+  // TaintFox: localStorage.setItem sink.
+  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aValue, "localStorage.setItem");
 }
 
 void PartitionedLocalStorage::RemoveItem(const nsAString& aKey,

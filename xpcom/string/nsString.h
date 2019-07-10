@@ -96,6 +96,8 @@ class NS_ConvertUTF16toUTF8 : public nsAutoCString {
 
   explicit NS_ConvertUTF16toUTF8(const nsAString& aString) {
     AppendUTF16toUTF8(aString, *this);
+    // Taintfox: propagate taint
+    this->AssignTaint(aString.Taint());
   }
 
  private:
@@ -115,6 +117,8 @@ class NS_ConvertUTF8toUTF16 : public nsAutoString {
 
   explicit NS_ConvertUTF8toUTF16(const nsACString& aCString) {
     AppendUTF8toUTF16(aCString, *this);
+    // Taintfox: propagate taint
+    this->AssignTaint(aCString.Taint());
   }
 
  private:
