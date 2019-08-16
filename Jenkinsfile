@@ -67,7 +67,7 @@ node ('master') {
 		       rm /tmp/install.sh
 		       """
 		    sh """
-		       $HOME/.nvm/nvm.sh
+		       source $HOME/.nvm/nvm.sh
 		       nvm install node
 		       """
 		    sh """
@@ -107,7 +107,7 @@ node ('master') {
                 
                 stage('Build') {
 		    sh "cp taintfox_mozconfig_ubuntu .mozconfig"
-                    sh "$HOME/.nvm/nvm.sh && ./mach build"
+                    sh "source $HOME/.nvm/nvm.sh && ./mach build"
                 }
         
             }

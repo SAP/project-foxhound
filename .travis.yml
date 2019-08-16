@@ -6,6 +6,10 @@ services:
 git:
   depth: 3
 
+cache:
+  directories:
+    - obj-tf-release
+
 before_install:
   - docker build -t taintfox-dev --target taintfox-dev dockerfiles
 
@@ -13,4 +17,5 @@ install:
   - true
 
 script:
+  - cp taintfox_mozconfig_ubuntu .mozconfig
   - docker run --name taintfox-build -v $TRAVIS_BUILD_DIR:/usr/local/src/taintfox taintfox-dev
