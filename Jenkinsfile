@@ -66,14 +66,11 @@ node ('master') {
     		       bash /tmp/install.sh && \
 		       rm /tmp/install.sh
 		       """
-		    sh """
-		       source $HOME/.nvm/nvm.sh
-		       nvm install node
-		       """
+		    sh "export NVM_DIR='$HOME/.nvm' && [ -s '$NVM_DIR/nvm.sh' ] && \. '$NVM_DIR/nvm.sh' && nvm install node"
 		    sh """
 		       wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key && \
     		       apt-key add /tmp/llvm-snapshot.gpg.key && \
-    		       apt-add-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" && \
+    		       apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main' && \
     		       apt-get update && \
     		       apt-get install -y clang-6.0 && \
     		       apt-get remove -y clang && \
