@@ -30,6 +30,7 @@ node ('master') {
 
             jdk = tool name: 'openjdk-12.0.1'
             env.JAVA_HOME = "${jdk}"
+            env.SHELL = "/bin/bash"
 
             echo "Execute container content in Kubernetes pod"        
             container('container-exec'){
@@ -98,13 +99,31 @@ node ('master') {
                 }
 
 		stage('Checkout') {
-		    git branch: 'master', depth: '1', url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git'
+//		    git branch: 'master', depth: "1", url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git'
+            sh """
+                wget --no-check-certificate https://github.wdf.sap.corp/i505600/taintfox/archive/master.zip
+                unzip -q master.zip
+                rm master.zip
+            """
 		}
                  
-                
                 stage('Build') {
-		    sh "cp taintfox_mozconfig_ubuntu .mozconfig"
-                    sh "source $HOME/.nvm/nvm.sh && ./mach build"
+                    dir ('taintfox-master') {
+		            sh "cp taintfox_mozconfig_ubuntu .mozconfig"
+                    sh """#!/bin/bash
+                          [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+                          ./mach package
+                    """
+                    }
+                }
+                
+                stage('Package') {
+                    dir ('taintfox-master') {
+                    sh """#!/bin/bash
+                          [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+                          ./mach package
+                    """
+                    }
                 }
         
             }
