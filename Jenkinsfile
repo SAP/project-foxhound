@@ -129,7 +129,7 @@ node ('master') {
             }
             
             stage('Slave Cleanup') {
-		archiveArtifacts artifacts: 'obj-tf-release/dist/taintfox-*.en-US.linux-x86_64.tar.bz2', fingerprint: true
+		        archiveArtifacts artifacts: 'taintfox-master/obj-tf-release/dist/taintfox-*.en-US.linux-x86_64.tar.bz2', fingerprint: true
             }
         }
     }
