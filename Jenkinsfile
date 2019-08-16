@@ -58,15 +58,15 @@ node ('master') {
 	    	       libnspr4-dev \
 	    	       software-properties-common
 		       """
+		    sh """#!/bin/bash
+		          wget -q https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh -O /tmp/install.sh
+    		      bash /tmp/install.sh
+		          rm /tmp/install.sh
+		          [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+		       """
 		    sh """
 		       cargo install cbindgen
 		       """
-		    sh """
-		       wget -q https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh -O /tmp/install.sh && \
-    		       bash /tmp/install.sh && \
-		       rm /tmp/install.sh
-		       """
-		    sh "export NVM_DIR='$HOME/.nvm' && [ -s '$NVM_DIR/nvm.sh' ] && \. '$NVM_DIR/nvm.sh' && nvm install node"
 		    sh """
 		       wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key && \
     		       apt-key add /tmp/llvm-snapshot.gpg.key && \
@@ -98,7 +98,7 @@ node ('master') {
                 }
 
 		stage('Checkout') {
-		    git 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git'
+		    git branch: 'master', depth: '1', url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git'
 		}
                  
                 
