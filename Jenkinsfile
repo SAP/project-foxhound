@@ -112,7 +112,7 @@ node ('master') {
 		            sh "cp taintfox_mozconfig_ubuntu .mozconfig"
                     sh """#!/bin/bash
                           [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
-                          ./mach package
+                          ./mach build
                     """
                     }
                 }
